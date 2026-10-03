@@ -1,0 +1,51 @@
+name: Andromeda (Server 1) Diagnostic
+
+on:
+  push:
+    branches:
+      - 'arena/**'
+      - main
+    paths:
+      - 'cloudflare-worker/worker.js'
+      - 'src/services/resolver.js'
+      - 'src/services/proxy.js'
+      - 'tools/diag-andromeda.js'
+      - '.github/workflows/diag-andromeda.yml'
+  workflow_dispatch:
+    inputs:
+      type:
+        description: 'media type (movie|tv)'
+        default: movie
+      tmdb_id:
+        description: 'TMDB id'
+        default: '550'
+      season:
+        description: 'season (tv)'
+        default: '1'
+      episode:
+        description: 'episode (tv)'
+        default: '1'
+
+jobs:
+  diagnose:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Run Andromeda end-to-end diagnostic
+        env:
+          DIAG_WORKER_ORIGIN: https://proxy.niggasoup45.workers.dev
+        run: |
+          node tools/diag-andromeda.js \
+            "${{ github.event.inputs.type || 'movie' }}" \
+            "${{ github.event.inputs.tmdb_id || '550' }}" \
+            "${{ github.event.inputs.season || '1' }}" \
+            "${{ github.event.inputs.episode || '1' }}"
+
+      - name: Summarise
+        if: always()
+        run: echo "Diagnostic finished — see the run log above for the full per-step trace."
