@@ -27,6 +27,14 @@ const UA =
 const trace = [];
 let stepNo = 0;
 
+// Capture the whole console output so CI can commit a durable report file.
+const captured = [];
+const origLog = console.log.bind(console);
+console.log = (...args) => {
+  captured.push(args.map((a) => (typeof a === 'string' ? a : JSON.stringify(a))).join(' '));
+  origLog(...args);
+};
+
 function label(url = '') {
   if (/\/backend\/meow/.test(url)) return 'POST /backend/meow  (session token)';
   if (/\/backend\/tmdb\/details/.test(url)) return 'GET  /backend/tmdb/details  (title/year/imdb)';
@@ -251,34 +259,43 @@ async function main() {
   }
 
   console.log('\n\n===DIAG_REPORT_START===');
-  console.log(
-    JSON.stringify(
-      {
-        target: `${TYPE}/${TMDB_ID}`,
-        node: process.version,
-        workerOrigin: WORKER_ORIGIN || null,
-        metadataOk: Boolean(metadata),
-        resolved: Boolean(result && result.streamUrl),
-        rawUrl: result ? result.rawUrl : null,
-        format: result ? result.format : null,
-        steps: trace.map((t) => ({
-          n: t.n,
-          label: t.label,
-          status: t.status,
-          ms: t.ms,
-          contentType: t.contentType,
-          server: t.server,
-          setCookie: t.setCookieNames,
-          snippet: t.bodySnippet.slice(0, 180),
-          error: t.error
-        })),
-        smoke
-      },
-      null,
-      2
-    )
-  );
+  const report = {
+    target: `${TYPE}/${TMDB_ID}`,
+    node: process.version,
+    workerOrigin: WORKER_ORIGIN || null,
+    metadataOk: Boolean(metadata),
+    resolved: Boolean(result && result.streamUrl),
+    rawUrl: result ? result.rawUrl : null,
+    format: result ? result.format : null,
+    steps: trace.map((t) => ({
+      n: t.n,
+      label: t.label,
+      status: t.status,
+      ms: t.ms,
+      contentType: t.contentType,
+      server: t.server,
+      setCookie: t.setCookieNames,
+      snippet: t.bodySnippet.slice(0, 180),
+      error: t.error
+    })),
+    smoke
+  };
+  console.log(JSON.stringify(report, null, 2));
   console.log('===DIAG_REPORT_END===');
+
+  // Persist a durable copy so the run can be inspected without the Actions log
+  // (the sandbox/dev environment may not be able to download runner logs).
+  try {
+    const fs = require('fs');
+    const path = require('path');
+    const dir = path.join(__dirname, '..', 'diagnostics');
+    fs.mkdirSync(dir, { recursive: true });
+    fs.writeFileSync(path.join(dir, 'andromeda-report.json'), JSON.stringify(report, null, 2));
+    fs.writeFileSync(path.join(dir, 'andromeda-report.txt'), captured.join('\n') + '\n');
+    console.log(`\nreport written to diagnostics/andromeda-report.{json,txt}`);
+  } catch (e) {
+    console.log(`\nfailed to write report files: ${e.message}`);
+  }
 }
 
 main()
