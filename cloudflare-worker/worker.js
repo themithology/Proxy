@@ -634,6 +634,20 @@ async function sniffStreamFormat(url, headers = {}) {
 }
 
 async function resolveVidstuckUpstream(metadata, serverId, env) {
+  // Internal diagnostic — every failure branch stamps a stage + reason so
+  // the owner debug endpoint can tell us exactly where the upstream broke.
+  // We never throw / swallow silently anymore: we always return either
+  // { server, format, streamUrl, ... } on success or
+  // { ok: false, reason, diag } on failure. The dispatcher in
+  // resolveWorkerStream picks this up and aggregates it.
+  const diag = { stage: 'init', steps: [] };
+  const stamp = (stage, message, extra) => {
+    diag.stage = stage;
+    diag.steps.push({ stage, message, ...(extra || {}) });
+    diag.message = message;
+  };
+  stamp('init', `resolveVidstuckUpstream(server=${serverId})`);
+
   try {
     const isTv = metadata.type === 'tv';
     const apiBase = 'https://vidstuck.xyz';
@@ -706,9 +720,15 @@ async function resolveVidstuckUpstream(metadata, serverId, env) {
       headers: { ...baseHeaders, 'Content-Type': 'application/json' },
       body: JSON.stringify(meowBody)
     }).catch(() => null);
-    if (!meowRes?.ok) return null;
+    if (!meowRes?.ok) {
+      stamp('meow', `VidStuck /backend/meow returned HTTP ${meowRes ? meowRes.status : 0}. Upstream is blocking the request (often a stale Origin/Referer or dead session).`);
+      return { ok: false, reason: meowRes ? `meow_${meowRes.status}` : 'meow_unreachable', diag };
+    }
     const meow = await meowRes.json().catch(() => null);
-    if (!meow?.token) return null;
+    if (!meow?.token) {
+      stamp('meow_token', 'VidStuck /backend/meow responded 200 but no session token was returned (upstream contract changed or key is stale).');
+      return { ok: false, reason: 'meow_no_token', diag };
+    }
 
     // Step 4: /backend/servers/:serverId -> links[0].link
     const qs = new URLSearchParams({
@@ -731,10 +751,16 @@ async function resolveVidstuckUpstream(metadata, serverId, env) {
       `${apiBase}/backend/servers/${encodeURIComponent(serverId)}?${qs.toString()}`,
       { headers: baseHeaders }
     ).catch(() => null);
-    if (!srvRes?.ok) return null;
+    if (!srvRes?.ok) {
+      stamp('servers_lookup', `VidStuck /backend/servers/${serverId} returned HTTP ${srvRes ? srvRes.status : 0}. Token probably expired or this server is not provisioned for this title.`);
+      return { ok: false, reason: srvRes ? `servers_${srvRes.status}` : 'servers_unreachable', diag };
+    }
     const srvJson = await srvRes.json().catch(() => null);
     const encLink = srvJson?.links?.[0]?.link || srvJson?.data?.link || srvJson?.link;
-    if (!encLink) return null;
+    if (!encLink) {
+      stamp('servers_empty', `VidStuck has no stream link for this title on server "${serverId}" (it may be missing in their catalog or restricted by region).`);
+      return { ok: false, reason: 'servers_no_link', diag };
+    }
 
     // Step 5: AES-256-CBC decrypt the internal stream path
     let rawUrl = String(encLink);
@@ -747,7 +773,8 @@ async function resolveVidstuckUpstream(metadata, serverId, env) {
       } else if (rawUrl.startsWith('/')) {
         rawUrl = `${apiBase}${rawUrl}`;
       } else {
-        return null;
+        stamp('aes_decrypt', 'AES-256-CBC decryption of the stream link failed. The ZXC_AES_KEY has likely been rotated by the upstream.');
+        return { ok: false, reason: 'aes_decrypt_failed', diag };
       }
     }
 
@@ -787,8 +814,15 @@ async function resolveVidstuckUpstream(metadata, serverId, env) {
       ],
       qualities: [{ label: 'Auto', height: 0, url: streamUrl }]
     };
-  } catch {
-    return null;
+  } catch (err) {
+    const isAbort = err && (err.name === 'AbortError' || /aborted/i.test(String(err.message)));
+    stamp(
+      isAbort ? 'timeout' : 'exception',
+      isAbort
+        ? `Timed out talking to VidStuck upstream. The host may be unreachable from this region.`
+        : `Unhandled error talking to VidStuck upstream: ${err && err.message ? err.message : 'unknown'}`
+    );
+    return { ok: false, reason: isAbort ? 'upstream_timeout' : 'upstream_exception', diag };
   }
 }
 
@@ -1390,7 +1424,13 @@ async function resolveStreamWaterfall(metadata, requestedServer, preferredAudio,
   ];
   const order = [validServer, ...prioritized.filter((id) => id !== validServer)];
 
+  // Per-server diagnostic aggregation so the embed UI / admin debug endpoint
+  // can tell the user exactly which stage each server died on, instead of
+  // the useless generic "All upstream servers failed" toast.
+  const serverAttempts = [];
+
   for (const srvId of order) {
+    const t0 = Date.now();
     let resolved = null;
     if (srvId === 'andromeda' || srvId === 'atlas') {
       resolved = await withTimeout(
@@ -1408,6 +1448,8 @@ async function resolveStreamWaterfall(metadata, requestedServer, preferredAudio,
         WATERFALL_UPSTREAM_TIMEOUT_MS
       );
     }
+    const latencyMs = Date.now() - t0;
+
     if (resolved && resolved.streamUrl) {
       const payload = {
         ...resolved,
@@ -1416,9 +1458,22 @@ async function resolveStreamWaterfall(metadata, requestedServer, preferredAudio,
       };
       await edgeCacheSet(cacheKey, payload, 900);
       return payload;
+    } else {
+      const reason =
+        resolved && resolved.reason ? resolved.reason : 'no_stream';
+      const diag = resolved && resolved.diag ? resolved.diag : null;
+      recordWorkerServerAttempt(srvId, false, latencyMs, reason);
+      serverAttempts.push({ server: srvId, latencyMs, reason, diag });
     }
   }
-  return null;
+
+  return {
+    server: null,
+    streamUrl: null,
+    reason: 'all_servers_failed',
+    serverAttempts,
+    servers: SERVERS.map((s) => ({ ...s, active: false }))
+  };
 }
 
 /**
@@ -1701,6 +1756,44 @@ export default {
         return jsonResponse({ ok: true, probeResults, snapshot: getWorkerAdminSnapshot() });
       }
 
+      // Owner-only diagnostic for server 1 (Andromeda / VidStuck). Walks the
+      // EXACT production code path and returns the structured failure reason
+      // so the owner can see whether the upstream is dead, the AES key
+      // rotated, the catalog is missing this title, etc.
+      const andromedaDebugMatch = pathname.match(/^\/api\/debug\/andromeda\/(movie|tv)\/([^/]+)$/);
+      if (andromedaDebugMatch && request.method === 'GET') {
+        const [, dbgType, dbgTmdb] = andromedaDebugMatch;
+        const dbgSeason = parseInt(url.searchParams.get('season') || '1', 10);
+        const dbgEpisode = parseInt(url.searchParams.get('episode') || '1', 10);
+        try {
+          const meta = await resolveTmdbMetadata(dbgType, dbgTmdb, dbgSeason, dbgEpisode);
+          // Bypass the waterfall: ask the andromeda resolver directly so the
+          // diag reflects ONLY what server 1 saw, not what the next 4 did.
+          const direct = await withTimeout(
+            resolveVidstuckUpstream(meta, 'andromeda', env),
+            WATERFALL_UPSTREAM_TIMEOUT_MS
+          );
+          return jsonResponse({
+            ok: !!(direct && direct.streamUrl),
+            metadata: {
+              title: meta.title,
+              releaseYear: meta.releaseYear,
+              unresolvedTmdb: !!meta.unresolvedTmdb,
+              externalIds: meta.externalIds
+            },
+            upstream: {
+              vidstuckBase: runtimeState.upstreams.vidstuckBase,
+              zxcBase: runtimeState.upstreams.zxcBase,
+              aesKeySet: !!(env && env.ZXC_AES_KEY) || !!runtimeState.zxcAesKey,
+              tmdbKeySet: !!(env && env.TMDB_API_KEY)
+            },
+            result: direct
+          });
+        } catch (err) {
+          return jsonResponse({ ok: false, error: err.message }, 500);
+        }
+      }
+
       if (pathname === '/api/admin/upstreams' && request.method === 'POST') {
         const body = await request.json().catch(() => ({}));
         if (body.upstreams && typeof body.upstreams === 'object') {
@@ -1895,14 +1988,41 @@ export default {
         ]);
 
         if (!streamData || !streamData.streamUrl) {
+          // Build a human-readable per-server explanation so the embed UI
+          // doesn't have to show the useless generic toast.
+          const attempts = (streamData && streamData.serverAttempts) || [];
+          const firstFailed = attempts.find((a) => a.server === server) || attempts[0];
+          const reasonMap = {
+            circuit_open: 'Server paused (too many recent failures).',
+            meow_403: 'Upstream rejected the session token (Origin/Referer or session expired).',
+            meow_404: 'Upstream endpoint not found (VidStuck domain may have changed).',
+            meow_5xx: 'Upstream 5xx while issuing the session token.',
+            meow_no_token: 'Upstream returned no session token.',
+            servers_403: 'Upstream refused the server lookup (stale token).',
+            servers_404: 'Upstream has no record for this server.',
+            servers_5xx: 'Upstream 5xx on the server lookup.',
+            servers_no_link: 'Upstream has no stream link for this title on this server.',
+            aes_decrypt_failed: 'Stream link decryption failed (ZXC_AES_KEY rotated).',
+            upstream_timeout: 'Timed out talking to the upstream provider.',
+            upstream_exception: 'Unhandled error contacting the upstream provider.'
+          };
+          const humanReason = firstFailed
+            ? reasonMap[firstFailed.reason] || firstFailed.reason
+            : 'No working server in the waterfall.';
+          const humanDiag = firstFailed && firstFailed.diag ? firstFailed.diag.message : null;
           return jsonResponse(
             {
               ok: false,
               error: 'Unable to resolve stream from upstream providers for this title.',
+              explanation: humanReason,
+              serverExplanation: humanDiag,
+              requestedServer: server,
+              failedReason: firstFailed ? firstFailed.reason : null,
+              serverAttempts: attempts,
               metadata,
               subtitles,
               segments,
-              servers: SERVERS
+              servers: (streamData && streamData.servers) || SERVERS
             },
             502
           );

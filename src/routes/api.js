@@ -265,13 +265,40 @@ router.get('/resolve/:type/:tmdbId', async (req, res) => {
     ]);
 
     if (!streamData || !streamData.streamUrl) {
+      // Build a human-readable per-server explanation so the embed UI doesn't
+      // have to show the useless generic "All upstream servers failed" toast.
+      const attempts = (streamData && streamData.serverAttempts) || [];
+      const firstFailed = attempts.find((a) => a.server === server) || attempts[0];
+      const reasonMap = {
+        circuit_open: 'Server paused (too many recent failures).',
+        meow_403: 'Upstream rejected the session token (Origin/Referer or session expired).',
+        meow_404: 'Upstream endpoint not found (VidStuck domain may have changed).',
+        meow_5xx: 'Upstream 5xx while issuing the session token.',
+        meow_no_token: 'Upstream returned no session token.',
+        servers_403: 'Upstream refused the server lookup (stale token).',
+        servers_404: 'Upstream has no record for this server.',
+        servers_5xx: 'Upstream 5xx on the server lookup.',
+        servers_no_link: 'Upstream has no stream link for this title on this server.',
+        aes_decrypt_failed: 'Stream link decryption failed (ZXC_AES_KEY rotated).',
+        upstream_timeout: 'Timed out talking to the upstream provider.',
+        upstream_exception: 'Unhandled error contacting the upstream provider.'
+      };
+      const humanReason = firstFailed
+        ? reasonMap[firstFailed.reason] || firstFailed.reason
+        : 'No working server in the waterfall.';
+      const humanDiag = firstFailed && firstFailed.diag ? firstFailed.diag.message : null;
       return res.status(502).json({
         ok: false,
         error: 'Unable to resolve stream from upstream providers for this title.',
+        explanation: humanReason,
+        serverExplanation: humanDiag,
+        requestedServer: server,
+        failedReason: firstFailed ? firstFailed.reason : null,
+        serverAttempts: attempts,
         metadata,
         subtitles,
         segments: segmentsData.segments,
-        servers: config.servers
+        servers: (streamData && streamData.servers) || config.servers
       });
     }
 
@@ -396,6 +423,41 @@ router.delete('/admin/overrides/:key', requireAdminAuth, (req, res) => {
     ok: true,
     snapshot: telemetry.getDashboardSnapshot()
   });
+});
+
+/**
+ * GET /api/debug/andromeda/:type/:tmdbId
+ * Owner-only diagnostic: walks the EXACT same code path the player uses for
+ * server 1 (Andromeda / VidStuck) and returns the structured failure reason
+ * instead of a generic 502. Hit this on the live worker to know whether the
+ * upstream is dead, the AES key rotated, the catalog is missing this title, etc.
+ */
+router.get('/debug/andromeda/:type/:tmdbId', requireAdminAuth, async (req, res) => {
+  const { type, tmdbId } = req.params;
+  const season = parseInt(req.query.season || '1', 10);
+  const episode = parseInt(req.query.episode || '1', 10);
+  try {
+    const metadata = await resolveTmdbMetadata(type, tmdbId, season, episode);
+    const result = await resolveStreamForServer(metadata, 'andromeda', '');
+    return res.json({
+      ok: !!(result && result.streamUrl),
+      metadata: {
+        title: metadata.title,
+        releaseYear: metadata.releaseYear,
+        unresolvedTmdb: !!metadata.unresolvedTmdb,
+        externalIds: metadata.externalIds
+      },
+      upstream: {
+        vidstuckBase: config.upstreams.vidstuckBase,
+        zxcBase: config.upstreams.zxcBase,
+        aesKeySet: !!config.zxcAesKey,
+        tmdbKeySet: !!config.tmdbApiKey
+      },
+      result
+    });
+  } catch (err) {
+    return res.status(500).json({ ok: false, error: err.message });
+  }
 });
 
 module.exports = router;
