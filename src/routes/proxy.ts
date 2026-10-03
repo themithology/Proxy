@@ -2,7 +2,7 @@ import type { FastifyInstance, FastifyRequest, FastifyReply } from 'fastify';
 import { config } from '../config.js';
 import { logFor } from '../logger.js';
 import { verifyToken, type ProxyTokenPayload } from '../util/crypto.js';
-import { cache } from '../cache/index.js';
+import { cache } from '../store/cache.js';
 import { stableHash } from '../util/crypto.js';
 import { AppError } from '../util/errors.js';
 import {

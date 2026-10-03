@@ -1,6 +1,6 @@
 import { config } from '../config.js';
 import { logFor } from '../logger.js';
-import { cache, ck } from '../cache/index.js';
+import { cache, ck } from '../store/cache.js';
 import { fetchJson } from '../util/http.js';
 import type { MediaType } from '../providers/types.js';
 

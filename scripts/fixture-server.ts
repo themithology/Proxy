@@ -13,7 +13,7 @@
  */
 import { startFixture } from '../test/fixtures/upstream.js';
 
-const fixture = await startFixture();
+const fixture = await startFixture(Number(process.env.FIXTURE_PORT ?? 0) || 0);
 
 console.log(`\n  Upstream fixture running at ${fixture.baseUrl}\n`);
 console.log('  Try:');

@@ -1,7 +1,7 @@
 import 'dotenv/config';
 import { config } from './config.js';
 import { logger } from './logger.js';
-import { cache } from './cache/index.js';
+import { cache } from './store/cache.js';
 import { registry } from './providers/registry.js';
 import { startServer } from './http/server.js';
 

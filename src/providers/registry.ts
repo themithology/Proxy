@@ -1,7 +1,7 @@
 import { readFileSync, existsSync, writeFileSync } from 'node:fs';
 import { config } from '../config.js';
 import { logFor } from '../logger.js';
-import { ck, cache } from '../cache/index.js';
+import { ck, cache } from '../store/cache.js';
 import { AppError } from '../util/errors.js';
 import { stableHash } from '../util/crypto.js';
 import { StremioProvider } from './stremio.js';

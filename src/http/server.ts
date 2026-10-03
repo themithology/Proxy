@@ -171,7 +171,7 @@ export async function startServer(): Promise<FastifyInstance> {
       await app.close();
       const { registry } = await import('../providers/registry.js');
       await registry.shutdown();
-      const { cache } = await import('../cache/index.js');
+      const { cache } = await import('../store/cache.js');
       await cache.close();
       process.exit(0);
     } catch (err) {

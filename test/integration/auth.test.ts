@@ -23,7 +23,7 @@ writeFileSync(configPath, JSON.stringify({ version: 1, providers: [] }));
 
 const { buildServer } = await import('../../src/http/server.js');
 const { registry } = await import('../../src/providers/registry.js');
-const { cache } = await import('../../src/cache/index.js');
+const { cache } = await import('../../src/store/cache.js');
 
 let app: Awaited<ReturnType<typeof buildServer>>;
 

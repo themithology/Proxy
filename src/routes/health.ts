@@ -1,6 +1,6 @@
 import type { FastifyInstance } from 'fastify';
 import { config } from '../config.js';
-import { cache } from '../cache/index.js';
+import { cache } from '../store/cache.js';
 import { registry } from '../providers/registry.js';
 import { tmdb } from '../metadata/tmdb.js';
 

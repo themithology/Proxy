@@ -163,7 +163,7 @@ const B64_PAGE = `<!doctype html>
 </body></html>
 `;
 
-export async function startFixture(): Promise<FixtureServer> {
+export async function startFixture(listenPort = 0): Promise<FixtureServer> {
   const requests: Array<{ url: string; headers: Record<string, string> }> = [];
 
   const routes: Record<string, { body: Buffer | string; type: string }> = {
@@ -243,7 +243,7 @@ export async function startFixture(): Promise<FixtureServer> {
     res.end(body);
   });
 
-  await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
+  await new Promise<void>((resolve) => server.listen(listenPort, '127.0.0.1', resolve));
   const port = (server.address() as AddressInfo).port;
 
   return {

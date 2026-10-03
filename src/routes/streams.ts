@@ -4,7 +4,7 @@ import { tmdb } from '../metadata/tmdb.js';
 import { parseId, parseLanguages, parseType } from '../util/ids.js';
 import { AppError } from '../util/errors.js';
 import { buildResolved } from '../stream/playback.js';
-import { cache, ck } from '../cache/index.js';
+import { cache, ck } from '../store/cache.js';
 import type { MediaType, ResolveQuery, StreamCandidate } from '../providers/types.js';
 
 /** Bounded-concurrency map. */

@@ -27,7 +27,7 @@ process.env.PROVIDERS_CONFIG = configPath;
 const { startFixture } = await import('../fixtures/upstream.js');
 const { buildServer } = await import('../../src/http/server.js');
 const { registry } = await import('../../src/providers/registry.js');
-const { cache } = await import('../../src/cache/index.js');
+const { cache } = await import('../../src/store/cache.js');
 const { verifyToken } = await import('../../src/util/crypto.js');
 
 let fixture: Awaited<ReturnType<typeof startFixture>>;

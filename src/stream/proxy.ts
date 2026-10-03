@@ -2,7 +2,7 @@ import { Readable } from 'node:stream';
 import { fetch, type Dispatcher } from 'undici';
 import { config } from '../config.js';
 import { logFor } from '../logger.js';
-import { cache } from '../cache/index.js';
+import { cache } from '../store/cache.js';
 import { signToken, type ProxyTokenPayload } from '../util/crypto.js';
 import { hostOf, hostMatches, resolveUrl } from '../util/url.js';
 import { currentOrigin } from '../util/origin.js';
