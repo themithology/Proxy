@@ -281,7 +281,8 @@
   async function loadMediaBundle(preserveTime = false) {
     const savedTime = preserveTime ? video.currentTime : 0;
     loadingOverlay.classList.remove('hidden');
-    const serverCap = state.server.charAt(0).toUpperCase() + state.server.slice(1);
+    const requestedServer = state.server;
+    const serverCap = requestedServer.charAt(0).toUpperCase() + requestedServer.slice(1);
     loadingStatusText.textContent = `Connecting to ${serverCap}...`;
 
     try {
@@ -289,7 +290,7 @@
         (window.location.ancestorOrigins && window.location.ancestorOrigins[0]) ||
         document.referrer ||
         window.location.origin;
-      const url = `/api/resolve/${state.type}/${encodeURIComponent(state.tmdbId)}?season=${state.season}&episode=${state.episode}&server=${state.server}&audio=${state.activeAudioId}&parent=${encodeURIComponent(parentDomain)}`;
+      const url = `/api/resolve/${state.type}/${encodeURIComponent(state.tmdbId)}?season=${state.season}&episode=${state.episode}&server=${requestedServer}&audio=${state.activeAudioId}&parent=${encodeURIComponent(parentDomain)}`;
       const res = await fetch(url);
       const data = await res.json();
 
@@ -316,7 +317,14 @@
       }
 
       state.stream = data.stream;
+      // Register BOTH the requested server and the server that actually answered
+      // *before* switching state.server: otherwise `triedServers` only ever holds
+      // the resolved id, the waterfall keeps handing the same two servers back to
+      // each other and the player loops forever on "Switching to backup server".
+      triedServers.add(requestedServer);
+      if (data.stream.server) triedServers.add(data.stream.server);
       state.server = data.stream.server || state.server;
+      state._triedStreamUrls = new Set();
       state.audioTracks = (data.stream && data.stream.audioTracks) || [];
       state.qualities = ((data.stream && data.stream.qualities) || []).map((q, idx) => ({
         id: q.label.toLowerCase() === 'auto' ? 'auto' : `q-${idx}`,
@@ -399,6 +407,85 @@
     });
   }
 
+  // --- VidSrc.sh Browser WASM Assist (Ursa) -------------------------------
+  // Cloudflare Workers V8 isolates refuse runtime `WebAssembly.compile()`
+  // ("CompileError: Wasm code generation disallowed by embedder"), so the edge
+  // ships the sealed ChaCha20 envelope (`vsEnvelope`) and the *browser* finishes
+  // the decryption with the exact vicine v1.5.2 ABI:
+  //   alloc -> memcpy ciphertext -> decrypt(ptr, len) -> utf8 at ptr + 12
+  const VSRC_WASM_ENVELOPE_URL = 'vidsrc://wasm-envelope';
+  const VSRC_REFERER = 'https://vidsrc.sh/';
+
+  function base64ToBytes(b64) {
+    const clean = String(b64 || '').replace(/\s+/g, '').replace(/-/g, '+').replace(/_/g, '/');
+    const padded = clean + '='.repeat((4 - (clean.length % 4)) % 4);
+    const bin = atob(padded);
+    const out = new Uint8Array(bin.length);
+    for (let i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i);
+    return out;
+  }
+
+  /**
+   * Decrypt a `vsEnvelope` in the browser and return absolute playable URLs.
+   */
+  async function decryptVidsrcEnvelope(envelope) {
+    if (!envelope) throw new Error('Missing VidSrc WASM envelope');
+
+    let wasmBuffer;
+    if (envelope.wasmBase64) {
+      wasmBuffer = base64ToBytes(envelope.wasmBase64).buffer;
+    } else if (envelope.wasmUrl) {
+      const wasmRes = await fetch(envelope.wasmUrl);
+      if (!wasmRes.ok) throw new Error(`Unable to fetch stream decryptor (HTTP ${wasmRes.status})`);
+      wasmBuffer = await wasmRes.arrayBuffer();
+    } else {
+      throw new Error('Envelope carries neither wasmUrl nor wasmBase64');
+    }
+
+    const mod = await WebAssembly.compile(wasmBuffer);
+    const inst = await WebAssembly.instantiate(mod, {
+      env: { emscripten_notify_memory_growth() {} }
+    });
+    const ex = inst.exports;
+    const mem = ex.memory;
+    if (!mem || typeof ex.decrypt !== 'function') throw new Error('Unsupported decryptor ABI');
+
+    const raw = base64ToBytes(envelope.streamUrls);
+    const alloc = typeof ex.alloc === 'function' ? ex.alloc : ex.malloc;
+    if (typeof alloc !== 'function') throw new Error('Decryptor exposes no allocator');
+
+    const ptr = alloc(raw.length);
+    new Uint8Array(mem.buffer, ptr, raw.length).set(raw);
+    // vicine v1.5.2: decrypt() returns the plaintext byte length and the UTF-8
+    // payload starts 12 bytes past the input pointer.
+    const len = ex.decrypt(ptr, raw.length);
+    const decoded = new TextDecoder().decode(new Uint8Array(mem.buffer, ptr + 12, len));
+    const parsed = JSON.parse(decoded);
+    const list = Array.isArray(parsed)
+      ? parsed
+      : parsed?.stream_urls || parsed?.urls || parsed?.sources || [];
+
+    return list
+      .filter((u) => typeof u === 'string' && u)
+      .map((u) => {
+        try {
+          return new URL(u, 'https://data.vidsrc.sh/').toString();
+        } catch {
+          return u;
+        }
+      })
+      .filter((u) => /^https?:\/\//i.test(u));
+  }
+
+  /**
+   * Wrap a decrypted CDN URL in the Worker proxy with the VidSrc JWT stamp:
+   * the host is Origin/Referer gated and every variant + segment must carry the
+   * per-host `generate.php` token (fetched by /api/proxy when vidsrcStamp=1).
+   */
+  function buildVidsrcProxyUrl(targetUrl) {
+    return `/api/proxy?url=${encodeURIComponent(targetUrl)}&referer=${encodeURIComponent(VSRC_REFERER)}&vidsrcStamp=1&mode=full`;
+  }
+
   // --- Attach Stream via HLS.js / Dash.js / Native Video ---
   async function attachStreamToVideo(streamUrl, resumeTime = 0) {
     if (state.hlsInstance) {
@@ -415,6 +502,61 @@
     const savedProgressKey = `vidstuck_prog_${state.type}_${state.tmdbId}_${state.season}_${state.episode}`;
     const savedProgress = parseFloat(localStorage.getItem(savedProgressKey) || '0');
     const targetStartTime = resumeTime > 0 ? resumeTime : (startParam > 0 ? startParam : savedProgress);
+
+    // --- VidSrc browser WASM assist: the edge could not run WebAssembly.compile
+    // ("Wasm code generation disallowed by embedder"), so decrypt right here and
+    // stream the result through /api/proxy with vidsrcStamp=1 + mode=full.
+    if (streamUrl === VSRC_WASM_ENVELOPE_URL || (state.stream && state.stream.vsEnvelope && !streamUrl)) {
+      const envelope = state.stream && state.stream.vsEnvelope;
+      if (!envelope) {
+        handleFatalStreamError();
+        return;
+      }
+      loadingOverlay.classList.remove('hidden');
+      loadingStatusText.textContent = 'Decrypting secure stream...';
+      try {
+        const decrypted = await decryptVidsrcEnvelope(envelope);
+        if (decrypted.length === 0) throw new Error('Decryptor returned no stream URLs');
+        const playable = decrypted.map(buildVidsrcProxyUrl);
+        state.stream.streamUrl = playable[0];
+        state.stream.format = 'hls';
+        state.stream.backupUrls = playable.slice(1).concat(state.stream.backupUrls || []);
+        state.qualities = playable.map((u, idx) => ({
+          id: idx === 0 ? 'auto' : `q-${idx}`,
+          label: idx === 0 ? 'Auto' : `Mirror ${idx}`,
+          height: 0,
+          url: u
+        }));
+        renderServersModal();
+        attachStreamToVideo(playable[0], targetStartTime);
+      } catch (err) {
+        showToast(`Secure stream decrypt failed: ${err.message}`, 4200);
+        handleFatalStreamError();
+      }
+      return;
+    }
+
+    // Track which URLs the fallback ladder already burned through this session.
+    if (!state.stream) state.stream = {};
+    if (!Array.isArray(state.stream.backupUrls)) state.stream.backupUrls = [];
+    if (!state._triedStreamUrls) state._triedStreamUrls = new Set();
+    state._triedStreamUrls.add(streamUrl);
+    if (state.stream.streamUrl !== streamUrl) state.stream.streamUrl = streamUrl;
+
+    // Walk the resolved backup ladder (googleusercontent -> fsl2 -> 480p ->
+    // /api/proxy) before declaring the stream dead.
+    const tryNextBackupStream = (fromTime = 0) => {
+      const backups = Array.isArray(state.stream && state.stream.backupUrls)
+        ? state.stream.backupUrls
+        : [];
+      for (const candidate of backups) {
+        if (!candidate || state._triedStreamUrls.has(candidate)) continue;
+        showToast('Switching to backup stream mirror...', 2200);
+        attachStreamToVideo(candidate, fromTime);
+        return true;
+      }
+      return false;
+    };
 
     if (streamUrl.includes('.mpd') && window.dashjs) {
       const player = window.dashjs.MediaPlayer().create();
@@ -458,24 +600,27 @@
         if (errData.fatal) {
           hls.destroy();
           state.hlsInstance = null;
+          if (tryNextBackupStream(video.currentTime || 0)) return;
           handleFatalStreamError();
         }
       });
       return;
     }
 
-    // Native HLS (Safari/iOS) or MP4
+    // Native HLS (Safari/iOS) or direct MP4/MKV CDN playback
     video.src = streamUrl;
-    video.addEventListener('loadedmetadata', function onLoaded() {
-      video.removeEventListener('loadedmetadata', onLoaded);
+    video.onloadedmetadata = () => {
       loadingOverlay.classList.add('hidden');
       if (targetStartTime > 2) video.currentTime = targetStartTime;
       video.play().catch(() => {});
-    });
-    video.addEventListener('error', function onErr() {
-      video.removeEventListener('error', onErr);
+    };
+    video.onerror = () => {
+      // Direct CDN <video src> failed (hotlink/ISP block) — iterate the resolved
+      // backup URLs before giving up on the whole server.
+      if (tryNextBackupStream(video.currentTime || targetStartTime || 0)) return;
       handleFatalStreamError();
-    });
+    };
+    video.load();
   }
 
   // --- Automatic Server Failover on Fatal Stream Error ---
@@ -771,6 +916,10 @@
         <span class="server-badge-pill">${srv.latencyMs || 140}ms</span>
       `;
       btn.addEventListener('click', () => {
+        // Manual selection: forget every previously failed server so the user's
+        // explicit choice is always retried with a clean slate.
+        triedServers.clear();
+        state._triedStreamUrls = new Set();
         state.server = srv.id;
         modalServersBackdrop.classList.add('hidden');
         loadMediaBundle(true);
