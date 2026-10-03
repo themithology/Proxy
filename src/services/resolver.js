@@ -3,6 +3,7 @@ const { cache, circuitBreaker } = require('../utils/cache');
 const { decryptZxcLink } = require('../utils/crypto');
 const { buildProxyStreamUrl } = require('./proxy');
 const { telemetry } = require('./telemetry');
+const { resolveArchiveServer } = require('./providers/archive');
 
 const USER_AGENT =
   'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36';
@@ -1167,7 +1168,7 @@ async function resolveHianimeServer(metadata) {
  * Resolve stream for a specific server ID, or waterfall across all production servers
  * until a working stream is found. Zero test/demo videos.
  */
-async function resolveStreamForServer(metadata, requestedServerId = 'andromeda', preferredAudio = '') {
+async function resolveStreamForServer(metadata, requestedServerId = 'archive', preferredAudio = '') {
   // 1. Check if the owner configured a custom stream override for this TMDB ID in /admin
   const customOverride = telemetry.getCustomOverride(
     metadata.type,
@@ -1214,7 +1215,7 @@ async function resolveStreamForServer(metadata, requestedServerId = 'andromeda',
   // Build ordered waterfall starting with the user's selected server, then the
   // fast edge-first priority used by the Cloudflare Worker:
   // centaurus -> ursa -> andromeda -> atlas -> strings.
-  const WATERFALL_PRIORITY = ['centaurus', 'ursa', 'andromeda', 'atlas', 'strings'];
+  const WATERFALL_PRIORITY = ['archive', 'centaurus', 'ursa', 'andromeda', 'atlas', 'strings'];
   const enabledIds = enabledServers.map((s) => s.id);
   const prioritized = [
     ...WATERFALL_PRIORITY.filter((id) => enabledIds.includes(id)),
@@ -1225,7 +1226,9 @@ async function resolveStreamForServer(metadata, requestedServerId = 'andromeda',
   for (const srvId of serverOrder) {
     const t0 = Date.now();
     let resolved = null;
-    if (srvId === 'andromeda' || srvId === 'atlas') {
+    if (srvId === 'archive') {
+      resolved = await resolveArchiveServer(metadata);
+    } else if (srvId === 'andromeda' || srvId === 'atlas') {
       resolved = await resolveVidstuckServer(metadata, srvId);
     } else if (srvId === 'ursa') {
       resolved = await resolveVidsrcServer(metadata);
@@ -1276,6 +1279,7 @@ async function resolveStreamForServer(metadata, requestedServerId = 'andromeda',
 
 module.exports = {
   resolveStreamForServer,
+  resolveArchiveServer,
   resolveVidstuckServer,
   resolveVidsrcServer,
   resolveHicineServer,

@@ -6,7 +6,8 @@
   "scripts": {
     "start": "node src/server.js",
     "dev": "node src/server.js",
-    "test": "node test/verify.js"
+    "test": "node test/verify.js && node test/worker-archive.mjs",
+    "test:worker": "node test/worker-archive.mjs"
   },
   "repository": {
     "type": "git",

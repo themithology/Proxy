@@ -100,7 +100,7 @@
     tmdbId: '94605',
     season: 1,
     episode: 1,
-    server: 'atlas',
+    server: 'archive',
     branding: 'vidstuck.xyz',
     media: null,
     stream: null,

@@ -52,11 +52,25 @@ const config = {
     openSubtitlesStremioUrl: 'https://opensubtitles-v3.strem.io',
     introDbUrl: process.env.INTRODB_URL || 'https://api.introdb.app',
     aniSkipUrl: process.env.ANISKIP_URL || 'https://api.aniskip.com/v2',
-    cinemetaUrl: 'https://v3-cinemeta.strem.io'
+    cinemetaUrl: 'https://v3-cinemeta.strem.io',
+
+    // Internet Archive (public-domain films) — the lawful default source.
+    // Set ARCHIVE_ALLOW_CC=1 to also accept Creative Commons (attribution) items.
+    archiveSearchUrl: process.env.ARCHIVE_SEARCH_URL || 'https://archive.org/advancedsearch.php',
+    archiveMetadataUrl: process.env.ARCHIVE_METADATA_URL || 'https://archive.org/metadata',
+    archiveDownloadBase: process.env.ARCHIVE_DOWNLOAD_BASE || 'https://archive.org/download',
+    archiveDetailsBase: process.env.ARCHIVE_DETAILS_BASE || 'https://archive.org/details'
   },
 
   // Server definitions matching VidStuck's cloud server switcher
   servers: [
+    {
+      id: 'archive',
+      name: 'Archive',
+      badge: 'Public Domain • Internet Archive',
+      priority: 0,
+      supportsMultiAudio: false
+    },
     {
       id: 'andromeda',
       name: 'Andromeda',

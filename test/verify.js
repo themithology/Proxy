@@ -17,6 +17,14 @@ const {
   decodeZokoAnimeXorPayload,
   parseHicineLinks
 } = require('../src/services/resolver');
+const {
+  resolveArchiveServer,
+  titleSimilarity,
+  licenceInfo,
+  pickPlayableFiles,
+  pickBestItem,
+  buildSearchQuery
+} = require('../src/services/providers/archive');
 
 function httpRequest(baseUrl, path, options = {}) {
   return new Promise((resolve, reject) => {
@@ -129,6 +137,22 @@ function startUpstreamMockServer() {
         );
       }
 
+      // 3b. TMDB v3 Movie Details — public-domain era title ("The General", 1926)
+      if (u.pathname === '/tmdb/movie/961') {
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        return res.end(
+          JSON.stringify({
+            id: 961,
+            title: 'The General',
+            release_date: '1926-12-31',
+            runtime: 78,
+            genres: [{ id: 35, name: 'Comedy' }, { id: 10752, name: 'War' }],
+            imdb_id: 'tt0017925',
+            external_ids: { imdb_id: 'tt0017925' }
+          })
+        );
+      }
+
       // 4. IntroDB Skip Intro API
       if (u.pathname === '/introdb/intro') {
         res.writeHead(200, { 'Content-Type': 'application/json' });
@@ -227,6 +251,67 @@ function startUpstreamMockServer() {
       if (u.pathname === '/generate.php') {
         res.writeHead(200, { 'Content-Type': 'application/json' });
         return res.end(JSON.stringify({ token: 'vidsrc-short-lived-jwt' }));
+      }
+
+      // 7b. Internet Archive public-domain catalogue (search + item metadata + file CDN)
+      if (u.pathname === '/archive/search') {
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        return res.end(
+          JSON.stringify({
+            response: {
+              numFound: 2,
+              docs: [
+                {
+                  identifier: 'the-general-1926',
+                  title: 'The General',
+                  year: '1926',
+                  collection: ['publicmovies'],
+                  licenseurl: 'http://creativecommons.org/publicdomain/mark/1.0/'
+                },
+                {
+                  // Decoy: right title, copyrighted and 100 years off — must never win.
+                  identifier: 'modern-copyrighted-restoration',
+                  title: 'The General (2026 Restoration)',
+                  year: '2026',
+                  collection: ['moviesandfilms'],
+                  rights: 'All rights reserved'
+                }
+              ]
+            }
+          })
+        );
+      }
+
+      if (u.pathname === '/archive/metadata/the-general-1926') {
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        return res.end(
+          JSON.stringify({
+            metadata: {
+              identifier: 'the-general-1926',
+              title: 'The General',
+              year: '1926',
+              collection: ['publicmovies'],
+              licenseurl: 'http://creativecommons.org/publicdomain/mark/1.0/'
+            },
+            files: [
+              { name: 'the_general_512kb.mp4', format: '512Kb MPEG4', size: '180000000' },
+              { name: 'the_general.mp4', format: 'h.264', size: '900000000' },
+              { name: 'the_general_files.xml', format: 'Metadata' },
+              { name: 'the_general.thumbs', format: 'Thumbnail' }
+            ]
+          })
+        );
+      }
+
+      if (u.pathname.startsWith('/archive/download/')) {
+        const body = Buffer.alloc(2048, 0);
+        res.writeHead(200, {
+          'Content-Type': 'video/mp4',
+          'Content-Length': String(body.length),
+          'Accept-Ranges': 'bytes',
+          'Access-Control-Allow-Origin': '*'
+        });
+        return res.end(body);
       }
 
       // 8. Upstream HLS Playlist for Proxy Rewriter verification
@@ -360,6 +445,51 @@ async function runTests() {
   );
   console.log('  ✔ Passed M3U8 manifest rewriting.');
 
+  // 4b. Internet Archive provider unit tests (licence gating, matching, file picker)
+  console.log('[4b/9] Testing Internet Archive public-domain provider (licence gating & file picker)...');
+  assert.strictEqual(titleSimilarity('The General', 'the general'), 1);
+  assert.ok(titleSimilarity('The General', 'The General (1926 restoration)') >= 0.9);
+  assert.ok(titleSimilarity('The General', 'General Hospital') < 0.6, 'Unrelated titles must not match');
+
+  assert.strictEqual(
+    licenceInfo({ licenseurl: 'http://creativecommons.org/publicdomain/mark/1.0/' }).publicDomain,
+    true,
+    'Public Domain Mark items must be accepted'
+  );
+  assert.strictEqual(
+    licenceInfo({ collection: ['publicmovies'] }).publicDomain,
+    true,
+    'Curated public-domain collections must be accepted'
+  );
+  assert.strictEqual(
+    licenceInfo({ collection: ['moviesandfilms'], rights: 'All rights reserved' }).publicDomain,
+    false,
+    'Copyrighted items must be rejected'
+  );
+
+  const gradedFiles = pickPlayableFiles([
+    { name: 'the_general_512kb.mp4', format: '512Kb MPEG4', size: '180000000' },
+    { name: 'the_general.mp4', format: 'h.264', size: '900000000' },
+    { name: 'the_general_files.xml', format: 'Metadata' },
+    { name: 'the_general.thumbs', format: 'Thumbnail' }
+  ]);
+  assert.strictEqual(gradedFiles.length, 2, 'Only real video derivatives may be offered as qualities');
+  assert.strictEqual(gradedFiles[0].name, 'the_general.mp4', 'Highest-quality derivative must rank first');
+
+  const matched = pickBestItem(
+    [
+      { identifier: 'modern-copyrighted-restoration', title: 'The General (2026 Restoration)', year: '2026' },
+      { identifier: 'the-general-1926', title: 'The General', year: '1926' }
+    ],
+    { title: 'The General', year: 1926 }
+  );
+  assert.strictEqual(matched.doc.identifier, 'the-general-1926', 'Year proximity must break title ties');
+  assert.ok(
+    buildSearchQuery({ title: 'The General', year: 1926 }).includes('year:[1924 TO 1929]'),
+    'Search query must constrain the release year window'
+  );
+  console.log('  ✔ Passed Internet Archive provider unit tests.');
+
   // Start Mock Upstream Server & Application HTTP Server for End-to-End Integration Tests
   const mockUpstream = await startUpstreamMockServer();
   config.tmdbBaseUrl = `${mockUpstream.url}/tmdb`;
@@ -368,6 +498,10 @@ async function runTests() {
   config.upstreams.zxcBase = `${mockUpstream.url}/zxc`;
   config.upstreams.vidstuckBase = `${mockUpstream.url}/vidstuck`;
   config.upstreams.vidsrcDataUrl = `${mockUpstream.url}/vidsrc/api.php`;
+  config.upstreams.archiveSearchUrl = `${mockUpstream.url}/archive/search`;
+  config.upstreams.archiveMetadataUrl = `${mockUpstream.url}/archive/metadata`;
+  config.upstreams.archiveDownloadBase = `${mockUpstream.url}/archive/download`;
+  config.upstreams.archiveDetailsBase = `${mockUpstream.url}/archive/details`;
 
   const server = await new Promise((resolve) => {
     const s = app.listen(0, '127.0.0.1', () => resolve(s));
@@ -381,7 +515,7 @@ async function runTests() {
     const health = await httpRequest(baseUrl, '/api/health');
     assert.strictEqual(health.status, 200);
     assert.strictEqual(health.json.ok, true);
-    assert.ok(Array.isArray(health.json.servers) && health.json.servers.length === 5);
+    assert.ok(Array.isArray(health.json.servers) && health.json.servers.length === 6);
 
     const hs = await httpRequest(baseUrl, '/api/handshake', {
       method: 'POST',
@@ -452,6 +586,29 @@ async function runTests() {
       'VidSrc stream URL must be stamped with generate.php JWT'
     );
     console.log('  ✔ Passed end-to-end stream resolution, .srt.gz -> .vtt, and M3U8 proxy.');
+
+    // 7c. Public-domain source end-to-end: /api/resolve/movie/961?server=archive
+    console.log('[7c/9] Testing /api/resolve?server=archive (public-domain end-to-end)...');
+    const archiveRes = await httpRequest(baseUrl, '/api/resolve/movie/961?server=archive');
+    assert.strictEqual(archiveRes.status, 200);
+    assert.strictEqual(archiveRes.json.ok, true);
+    assert.strictEqual(archiveRes.json.stream.server, 'archive');
+    assert.strictEqual(archiveRes.json.stream.format, 'mp4');
+    assert.ok(
+      archiveRes.json.stream.rawUrl.endsWith('/archive/download/the-general-1926/the_general.mp4'),
+      'Best-quality public-domain derivative must be selected'
+    );
+    assert.strictEqual(archiveRes.json.stream.streamUrl, archiveRes.json.stream.rawUrl);
+    assert.strictEqual(archiveRes.json.stream.provenance.publicDomain, true);
+    assert.ok(
+      archiveRes.json.stream.provenance.sourcePage.includes('the-general-1926'),
+      'Provenance must expose the archive.org source page for attribution'
+    );
+
+    // Licence gating: a copyrighted title must NOT resolve through the archive source.
+    const nonPd = await resolveArchiveServer({ type: 'movie', title: 'Dune: Part Two', releaseYear: 2024 });
+    assert.strictEqual(nonPd, null, 'Copyrighted titles must never be served by the archive source');
+    console.log('  ✔ Passed public-domain resolution & licence gating.');
 
     // 8. Embed Player Routes & Developer Portal HTML
     console.log('[8/8] Testing TMDB-ID Embed Routes (/embed/tv/94605/1/1, /embed/movie/693134)...');

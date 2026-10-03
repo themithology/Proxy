@@ -14,6 +14,7 @@ const USER_AGENT =
   'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36';
 
 const SERVERS = [
+  { id: 'archive', name: 'Archive', badge: 'Public Domain • Internet Archive', priority: 0, enabled: true, supportsMultiAudio: false },
   { id: 'andromeda', name: 'Andromeda', badge: 'Primary • Multi-Audio HLS', priority: 1, enabled: true, supportsMultiAudio: true },
   { id: 'ursa', name: 'Ursa', badge: 'VidSrc • Fast CDN HLS', priority: 2, enabled: true, supportsMultiAudio: false },
   { id: 'centaurus', name: 'Centaurus', badge: 'HiCine • Direct 1080p/720p MP4', priority: 3, enabled: true, supportsMultiAudio: true },
@@ -29,7 +30,11 @@ const runtimeState = {
     zxcBase: 'https://zxcstream.icu',
     vidsrcDataUrl: 'https://data.vidsrc.sh/api.php',
     hicineApiBase: 'https://api.hicine.sbs',
-    hianimeBase: 'https://hianime.at'
+    hianimeBase: 'https://hianime.at',
+    archiveSearchUrl: 'https://archive.org/advancedsearch.php',
+    archiveMetadataUrl: 'https://archive.org/metadata',
+    archiveDownloadBase: 'https://archive.org/download',
+    archiveDetailsBase: 'https://archive.org/details'
   },
   zxcAesKey: '7f4c9e2a81d63b05c4f7a9e8126d3b50e1a8c7f23d9465ab0c6e9f1d4a7b832c',
   externalProxyPool: [],
@@ -1352,11 +1357,215 @@ async function resolveHicineUpstream(metadata) {
 }
 
 /**
- * Server priority for the automatic waterfall on Cloudflare Workers.
- * Centaurus first (single CDN request, direct MP4, sub-400ms), then Ursa, then
- * the heavier VidStuck/ZXC session dance (Andromeda/Atlas), Strings last.
+ * Archive (Internet Archive) — public-domain film provider.
+ *
+ * No gating bypass of any kind: archive.org exposes a public JSON search API,
+ * marks the licence on the item, and serves the files from a CORS-enabled CDN.
+ * Only items carrying an explicit Public Domain / CC0 marker (or belonging to a
+ * public-domain collection) are surfaced, and the licence + source page are
+ * returned as `provenance` so the UI can show them.
  */
-const WATERFALL_PRIORITY = ['centaurus', 'ursa', 'andromeda', 'atlas', 'strings'];
+const ARCHIVE_PD_COLLECTIONS = [
+  'prelinger',
+  'classic_cartoons',
+  'film_noir',
+  'sci-fi_horror',
+  'publicmovies',
+  'public_domain_movies',
+  'academic_films'
+];
+
+function archiveNormalizeTitle(value) {
+  return String(value || '')
+    .toLowerCase()
+    .normalize('NFKD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/[^a-z0-9\s]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function archiveTitleSimilarity(wanted, candidate) {
+  const a = archiveNormalizeTitle(wanted);
+  const b = archiveNormalizeTitle(candidate);
+  if (!a || !b) return 0;
+  if (a === b) return 1;
+  if (b.includes(a) || a.includes(b)) return 0.95;
+  const aTokens = new Set(a.split(' ').filter((t) => t.length > 1));
+  const bTokens = new Set(b.split(' ').filter((t) => t.length > 1));
+  if (!aTokens.size || !bTokens.size) return 0;
+  let shared = 0;
+  for (const t of aTokens) if (bTokens.has(t)) shared += 1;
+  return shared / Math.min(aTokens.size, bTokens.size);
+}
+
+function archiveLicenceInfo(source = {}) {
+  const collection = (Array.isArray(source.collection) ? source.collection : [source.collection])
+    .filter(Boolean)
+    .map((c) => String(c).toLowerCase());
+  const haystack = [
+    source.licenseurl,
+    source.license,
+    source.rights,
+    source.usage,
+    ...collection
+  ]
+    .filter(Boolean)
+    .join(' ')
+    .toLowerCase();
+
+  if (
+    haystack.includes('publicdomain') ||
+    haystack.includes('creativecommons.org/publicdomain') ||
+    haystack.includes('creativecommons.org/licenses/zero') ||
+    /public domain/.test(haystack)
+  ) {
+    return { publicDomain: true, licence: source.licenseurl || 'Public Domain' };
+  }
+  const pdCollection = collection.find((c) => ARCHIVE_PD_COLLECTIONS.includes(c));
+  if (pdCollection) {
+    return { publicDomain: true, licence: `Public Domain collection: ${pdCollection}` };
+  }
+  return { publicDomain: false, licence: source.licenseurl || '' };
+}
+
+function archiveFileScore(file = {}) {
+  const name = String(file.name || '');
+  if (!/\.(mp4|m4v|mkv)$/i.test(name)) return -1;
+  if (/\.(thumbs|torrent|xml|sqlite|gz)$/i.test(name)) return -1;
+  let score = 100;
+  const format = String(file.format || '').toLowerCase();
+  if (format.includes('h.264') || format.includes('mpeg4')) score += 40;
+  const size = Number(file.size || 0);
+  if (size > 0) score += Math.min(size / 1073741824, 6) * 4;
+  if (/_512kb|_256kb|_64kb/i.test(name)) score -= 25;
+  return score;
+}
+
+function archiveHeight(file = {}) {
+  const hint = String(file.name || '').match(/(\d{3,4})p/i);
+  return hint ? Number(hint[1]) : 0;
+}
+
+function archiveDownloadUrl(identifier, fileName) {
+  const base = (runtimeState.upstreams.archiveDownloadBase || 'https://archive.org/download').replace(/\/$/, '');
+  return `${base}/${encodeURIComponent(identifier)}/${String(fileName)
+    .split('/')
+    .map(encodeURIComponent)
+    .join('/')}`;
+}
+
+async function resolveArchiveUpstream(metadata = {}) {
+  try {
+    if (metadata.type === 'tv') return null; // items are not episode-addressable
+    const title = metadata.title || metadata.originalTitle || '';
+    if (!title) return null;
+
+    const searchBase = (runtimeState.upstreams.archiveSearchUrl || 'https://archive.org/advancedsearch.php').replace(/\/$/, '');
+    const params = new URLSearchParams();
+    const clauses = ['mediatype:movies'];
+    const safeTitle = String(title).replace(/["\\]/g, ' ').trim();
+    if (safeTitle) clauses.push(`title:(${safeTitle.split(/\s+/).slice(0, 8).join(' ')})`);
+    if (metadata.releaseYear) clauses.push(`year:[${metadata.releaseYear - 2} TO ${metadata.releaseYear + 3}]`);
+    params.set('q', clauses.join(' AND '));
+    for (const field of ['identifier', 'title', 'year', 'date', 'collection', 'licenseurl']) {
+      params.append('fl[]', field);
+    }
+    params.set('rows', '12');
+    params.set('output', 'json');
+
+    const searchRes = await fetch(`${searchBase}?${params.toString()}`, {
+      headers: { Accept: 'application/json', 'User-Agent': USER_AGENT }
+    });
+    if (!searchRes.ok) return null;
+    const searchJson = await searchRes.json().catch(() => null);
+    const docs = searchJson?.response?.docs || [];
+
+    let best = null;
+    for (const doc of docs) {
+      if (!doc || !doc.identifier) continue;
+      const similarity = archiveTitleSimilarity(title, doc.title || doc.identifier);
+      if (similarity < 0.6) continue;
+      const yearMatch = String(doc.year || doc.date || '').match(/(19|20)\d{2}/);
+      const year = yearMatch ? Number(yearMatch[0]) : null;
+      let penalty = 0;
+      if (metadata.releaseYear && year) {
+        const delta = Math.abs(year - metadata.releaseYear);
+        if (delta > 3) continue;
+        penalty = delta * 0.03;
+      }
+      const score = similarity - penalty;
+      if (!best || score > best.score) best = { doc, score, year };
+    }
+    if (!best) return null;
+
+    const metaBase = (runtimeState.upstreams.archiveMetadataUrl || 'https://archive.org/metadata').replace(/\/$/, '');
+    const metaRes = await fetch(`${metaBase}/${encodeURIComponent(best.doc.identifier)}`, {
+      headers: { Accept: 'application/json', 'User-Agent': USER_AGENT }
+    });
+    if (!metaRes.ok) return null;
+    const metaJson = await metaRes.json().catch(() => null);
+    if (!metaJson || !Array.isArray(metaJson.files)) return null;
+
+    const licence = archiveLicenceInfo({ ...best.doc, ...(metaJson.metadata || {}) });
+    if (!licence.publicDomain) return null;
+
+    const files = metaJson.files
+      .map((f) => ({ f, score: archiveFileScore(f) }))
+      .filter((e) => e.score >= 0)
+      .sort((a, b) => b.score - a.score)
+      .map((e) => e.f);
+    if (!files.length) return null;
+
+    const urls = files.map((f) => archiveDownloadUrl(best.doc.identifier, f.name));
+    const detailsBase = (runtimeState.upstreams.archiveDetailsBase || 'https://archive.org/details').replace(/\/$/, '');
+
+    return {
+      server: 'archive',
+      format: 'mp4',
+      rawUrl: urls[0],
+      streamUrl: urls[0],
+      referer: '',
+      headers: {},
+      backupUrls: urls.slice(1),
+      audioTracks: [
+        {
+          id: 'archive-orig',
+          lang: 'en',
+          label: 'Original Audio',
+          type: 'sub',
+          streamUrl: urls[0],
+          rawUrl: urls[0],
+          default: true
+        }
+      ],
+      qualities: files.map((f, idx) => ({
+        label: idx === 0 ? 'Auto' : `${archiveHeight(f) || 'source'}${archiveHeight(f) ? 'p' : ''}`,
+        height: archiveHeight(f),
+        url: urls[idx]
+      })),
+      provenance: {
+        provider: 'Internet Archive',
+        identifier: best.doc.identifier,
+        title: metaJson.metadata?.title || best.doc.title || title,
+        year: best.year,
+        licence: licence.licence,
+        publicDomain: true,
+        sourcePage: `${detailsBase}/${encodeURIComponent(best.doc.identifier)}`
+      }
+    };
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Server priority for the automatic waterfall on Cloudflare Workers.
+ * Archive (public domain, always available) first, then Centaurus (single CDN
+ * request, direct MP4, sub-400ms), then Ursa, then the heavier VidStuck/ZXC
+ * session dance (Andromeda/Atlas), Strings last.
+ */
+const WATERFALL_PRIORITY = ['archive', 'centaurus', 'ursa', 'andromeda', 'atlas', 'strings'];
 /** Hard per-upstream budget: the waterfall must stay fast and deterministic. */
 const WATERFALL_UPSTREAM_TIMEOUT_MS = 9000;
 
@@ -1375,7 +1584,7 @@ async function withTimeout(promise, ms, fallback = null) {
 }
 
 async function resolveStreamWaterfall(metadata, requestedServer, preferredAudio, env) {
-  const validServer = SERVERS.find((s) => s.id === requestedServer)?.id || 'centaurus';
+  const validServer = SERVERS.find((s) => s.id === requestedServer)?.id || 'archive';
   const cacheKey = `cf:resolve:${metadata.type}:${metadata.tmdbId}:s${metadata.season}:e${metadata.episode}:${validServer}`;
   const cached = await edgeCacheGet(cacheKey);
   if (cached) return cached;
@@ -1392,7 +1601,9 @@ async function resolveStreamWaterfall(metadata, requestedServer, preferredAudio,
 
   for (const srvId of order) {
     let resolved = null;
-    if (srvId === 'andromeda' || srvId === 'atlas') {
+    if (srvId === 'archive') {
+      resolved = await withTimeout(resolveArchiveUpstream(metadata), WATERFALL_UPSTREAM_TIMEOUT_MS);
+    } else if (srvId === 'andromeda' || srvId === 'atlas') {
       resolved = await withTimeout(
         resolveVidstuckUpstream(metadata, srvId, env),
         WATERFALL_UPSTREAM_TIMEOUT_MS
@@ -1678,6 +1889,7 @@ export default {
       if (pathname === '/api/admin/probe' && request.method === 'POST') {
         const targets = [
           { serverId: 'andromeda', url: `${runtimeState.upstreams.vidstuckBase}/backend/tmdb/details/tv/94605?language=en-US` },
+          { serverId: 'archive', url: `${runtimeState.upstreams.archiveSearchUrl}?q=mediatype%3Amovies&rows=1&output=json` },
           { serverId: 'ursa', url: `${runtimeState.upstreams.vidsrcDataUrl}?type=tv&tmdb=94605&season=1&episode=1&stream_urls`, headers: { Referer: 'https://vidsrc.sh/' } },
           { serverId: 'centaurus', url: `${runtimeState.upstreams.hicineApiBase}/api/search/arcane` },
           { serverId: 'atlas', url: `${runtimeState.upstreams.zxcBase}/movie` },

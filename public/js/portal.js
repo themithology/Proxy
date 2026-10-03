@@ -35,7 +35,7 @@
       : `/embed/movie/${encodeURIComponent(tmdb)}`;
 
     const params = new URLSearchParams();
-    if (selectServer.value && selectServer.value !== 'atlas') {
+    if (selectServer.value && selectServer.value !== 'archive') {
       params.set('server', selectServer.value);
     }
     if (selectColor.value) {
