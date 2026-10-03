@@ -1001,28 +1001,77 @@ function buildMovieboxHeadersWorker(method, urlStr, bodyStr, secret) {
   };
 }
 
-async function resolveMovieboxUpstream(metadata, preferredAudio = '', env = null) {
-  const movieboxBase = (
+let workerCachedMovieboxHost = '';
+let workerCachedMovieboxHostExpiry = 0;
+
+function getWorkerMovieboxCandidates(env = null) {
+  const primary = (
     (env && env.MOVIEBOX_BASE_URL) ||
     runtimeState.upstreams.movieboxBase ||
-    'https://api3.aoneroom.com'
+    'https://api.inmoviebox.com'
   ).replace(/\/$/, '');
 
+  const hostsStr = (env && env.MOVIEBOX_HOSTS) || '';
+  const hosts = hostsStr ? hostsStr.split(',').map((s) => s.trim().replace(/\/$/, '')).filter(Boolean) : [];
+  const extraStr = (env && env.MOVIEBOX_EXTRA_HOSTS) || '';
+  const extra = extraStr ? extraStr.split(',').map((s) => s.trim().replace(/\/$/, '')).filter(Boolean) : [];
+
+  const rawList = [
+    primary,
+    ...hosts,
+    ...extra,
+    'https://api.inmoviebox.com',
+    'https://api6.aoneroom.com',
+    'https://h5-api.aoneroom.com',
+    'https://apii.inmoviebox.com',
+    'https://api.aoneroom.com',
+    'https://i-api.aoneroom.com',
+    'https://api5.aoneroom.com',
+    'https://h5.aoneroom.com'
+  ].filter(Boolean);
+
+  const unique = [...new Set(rawList)];
+  if (workerCachedMovieboxHost && Date.now() < workerCachedMovieboxHostExpiry && unique.includes(workerCachedMovieboxHost)) {
+    return [workerCachedMovieboxHost, ...unique.filter((h) => h !== workerCachedMovieboxHost)];
+  }
+  return unique;
+}
+
+async function resolveMovieboxUpstream(metadata, preferredAudio = '', env = null) {
   const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), 3500);
+  const timeoutId = setTimeout(() => controller.abort(), 6000);
   const secret = getMovieboxSecretWorker();
+  const candidates = getWorkerMovieboxCandidates(env);
 
   try {
     const searchBody = JSON.stringify({ page: 1, perPage: 20, keyword: metadata.title || '' });
-    const searchUrl = `${movieboxBase}/wefeed-mobile-bff/subject-api/search/v2`;
-    const searchRes = await fetch(searchUrl, {
-      method: 'POST',
-      headers: buildMovieboxHeadersWorker('POST', searchUrl, searchBody, secret),
-      body: searchBody,
-      signal: controller.signal
-    });
-    if (!searchRes.ok) return null;
-    const searchJson = await searchRes.json();
+    let activeHost = '';
+    let searchJson = null;
+
+    // Dynamically iterate through candidate hosts with failover
+    for (const host of candidates) {
+      try {
+        const searchUrl = `${host}/wefeed-mobile-bff/subject-api/search/v2`;
+        const searchRes = await fetch(searchUrl, {
+          method: 'POST',
+          headers: buildMovieboxHeadersWorker('POST', searchUrl, searchBody, secret),
+          body: searchBody,
+          signal: controller.signal
+        });
+        if (!searchRes.ok) continue;
+        const json = await searchRes.json().catch(() => null);
+        if (json && (json.code === 0 || json.data)) {
+          searchJson = json;
+          activeHost = host;
+          workerCachedMovieboxHost = host;
+          workerCachedMovieboxHostExpiry = Date.now() + 15 * 60 * 1000;
+          break;
+        }
+      } catch {}
+    }
+
+    if (!activeHost || !searchJson) return null;
+
     const subjects = [];
     if (searchJson?.data?.results) {
       searchJson.data.results.forEach((group) => {
@@ -1044,13 +1093,13 @@ async function resolveMovieboxUpstream(metadata, preferredAudio = '', env = null
     if (!best || !best.subjectId) return null;
     const subjectId = best.subjectId;
 
-    const getUrl = `${movieboxBase}/wefeed-mobile-bff/subject-api/get?subjectId=${subjectId}`;
+    const getUrl = `${activeHost}/wefeed-mobile-bff/subject-api/get?subjectId=${subjectId}`;
     const getRes = await fetch(getUrl, {
       headers: buildMovieboxHeadersWorker('GET', getUrl, null, secret),
       signal: controller.signal
     });
     if (!getRes.ok) return null;
-    const getJson = await getRes.json();
+    const getJson = await getRes.json().catch(() => null);
     const dubs = getJson?.data?.dubs || [];
     const dubTargets = [{ id: subjectId, lang: 'Original' }];
     if (Array.isArray(dubs)) {
@@ -1063,17 +1112,17 @@ async function resolveMovieboxUpstream(metadata, preferredAudio = '', env = null
 
     const season = metadata.type === 'tv' ? metadata.season || 1 : 0;
     const episode = metadata.type === 'tv' ? metadata.episode || 1 : 0;
-    const referer = `${movieboxBase}/`;
+    const referer = `${activeHost}/`;
 
     const streamJobs = dubTargets.map(async (t) => {
-      const playUrl = `${movieboxBase}/wefeed-mobile-bff/subject-api/play-info?subjectId=${t.id}&se=${season}&ep=${episode}`;
+      const playUrl = `${activeHost}/wefeed-mobile-bff/subject-api/play-info?subjectId=${t.id}&se=${season}&ep=${episode}`;
       try {
         const pRes = await fetch(playUrl, {
           headers: buildMovieboxHeadersWorker('GET', playUrl, null, secret),
           signal: controller.signal
         });
         if (!pRes.ok) return null;
-        const pJson = await pRes.json();
+        const pJson = await pRes.json().catch(() => null);
         const streams = pJson?.data?.streams || [];
         const chosen = streams.find((s) => s.url) || null;
         if (chosen?.url) {
@@ -1143,16 +1192,46 @@ async function resolveMovieboxUpstream(metadata, preferredAudio = '', env = null
  */
 let workerCachedNetmirrorApi = '';
 let workerCachedNetmirrorExpiry = 0;
+let workerCachedNetmirrorReferer = 'https://net52.cc';
 
-async function getWorkerNetmirrorApiBase(signal) {
+function getWorkerNetmirrorDiscoveryPool(env = null) {
+  const envUrls = (env && env.NETMIRROR_DISCOVERY_URLS) ? env.NETMIRROR_DISCOVERY_URLS.split(',') : [];
+  const pool = [
+    ...envUrls,
+    'https://mobiledetect.app',
+    'https://mobiledetects.com',
+    'https://mobidetect.cc',
+    'https://mobidetects.top',
+    'https://getimgcdn.com',
+    'https://mobidetect.art',
+    'https://mobidetect.click',
+    'https://mobidetect.ink',
+    'https://mobidetect.live',
+    'https://mobidetect.pro',
+    'https://mobidetect.shop',
+    'https://mobidetect.site',
+    'https://mobidetect.space',
+    'https://mobidetect.store',
+    'https://mobidetect.vip',
+    'https://mobidetect.wiki',
+    'https://mobidetect.xyz',
+    'https://mobidetects.art',
+    'https://mobidetects.info',
+    'https://mobidetects.pro',
+    'https://mobidetects.store',
+    'https://mobidetects.xyz'
+  ]
+    .map((s) => s.trim().replace(/\/$/, ''))
+    .filter(Boolean);
+
+  return [...new Set(pool)];
+}
+
+async function getWorkerNetmirrorApiBase(signal, env = null) {
   if (workerCachedNetmirrorApi && Date.now() < workerCachedNetmirrorExpiry) {
     return workerCachedNetmirrorApi;
   }
-  const checkDomains = [
-    'https://mobiledetect.app',
-    'https://mobiledetects.com',
-    'https://getimgcdn.com'
-  ];
+  const checkDomains = getWorkerNetmirrorDiscoveryPool(env);
   for (const base of checkDomains) {
     try {
       const res = await fetch(`${base}/checknewtv.php`, {
@@ -1179,21 +1258,21 @@ async function getWorkerNetmirrorApiBase(signal) {
 }
 
 async function resolveNetmirrorUpstream(metadata, preferredAudio = '', env = null) {
-  const netmirrorBase = (
+  const configuredBase = (
     (env && env.NETMIRROR_BASE_URL) ||
     runtimeState.upstreams.netmirrorBase ||
-    'https://net27.cc'
+    ''
   ).replace(/\/$/, '');
 
   const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), 4000);
+  const timeoutId = setTimeout(() => controller.abort(), 4500);
 
   try {
     const isTv = metadata.type === 'tv';
 
     // 1. NewTV dynamic OTT mirror API flow (Netflix, Prime, Hotstar)
     try {
-      const apiBase = await getWorkerNetmirrorApiBase(controller.signal);
+      const apiBase = await getWorkerNetmirrorApiBase(controller.signal, env);
       if (apiBase) {
         const ottList = ['nf', 'pv', 'hs'];
         for (const ott of ottList) {
@@ -1210,6 +1289,9 @@ async function resolveNetmirrorUpstream(metadata, preferredAudio = '', env = nul
             });
             if (!sRes.ok) continue;
             const sJson = await sRes.json().catch(() => null);
+            if (sJson?.img_referer) {
+              workerCachedNetmirrorReferer = sJson.img_referer.replace(/\/$/, '');
+            }
             const results = sJson?.searchResult || [];
             if (!results.length) continue;
 
@@ -1229,6 +1311,9 @@ async function resolveNetmirrorUpstream(metadata, preferredAudio = '', env = nul
               });
               if (postRes.ok) {
                 const postJson = await postRes.json().catch(() => null);
+                if (postJson?.img_referer) {
+                  workerCachedNetmirrorReferer = postJson.img_referer.replace(/\/$/, '');
+                }
                 const eps = (postJson?.episodes || []).filter(Boolean);
                 const wantedS = metadata.season || 1;
                 const wantedE = metadata.episode || 1;
@@ -1255,7 +1340,9 @@ async function resolveNetmirrorUpstream(metadata, preferredAudio = '', env = nul
             const pJson = await pRes.json().catch(() => null);
             if (pJson && pJson.video_link) {
               const streamUrl = pJson.video_link;
-              const referer = pJson.referer || 'https://net52.cc';
+              const dynamicReferer = pJson.referer ? pJson.referer.replace(/\/$/, '') : workerCachedNetmirrorReferer;
+              workerCachedNetmirrorReferer = dynamicReferer;
+              const referer = `${dynamicReferer}/`;
               const proxiedUrl = buildWorkerProxyUrl(streamUrl, referer, 'full');
               return {
                 server: 'andromeda',
@@ -1285,26 +1372,36 @@ async function resolveNetmirrorUpstream(metadata, preferredAudio = '', env = nul
       }
     } catch {}
 
-    // 2. Direct embed-tmdb endpoint fallback
+    // 2. Direct embed-tmdb endpoint fallback (using dynamic active referer or configuredBase)
+    const effectiveWebBase = configuredBase || workerCachedNetmirrorReferer || 'https://net52.cc';
     const netflixUrl = isTv
-      ? `${netmirrorBase}/api/embed-tmdb/${encodeURIComponent(metadata.tmdbId)}?type=tv&se=${metadata.season || 1}&ep=${metadata.episode || 1}`
-      : `${netmirrorBase}/api/embed-tmdb/${encodeURIComponent(metadata.tmdbId)}`;
+      ? `${effectiveWebBase}/api/embed-tmdb/${encodeURIComponent(metadata.tmdbId)}?type=tv&se=${metadata.season || 1}&ep=${metadata.episode || 1}`
+      : `${effectiveWebBase}/api/embed-tmdb/${encodeURIComponent(metadata.tmdbId)}`;
 
     const res = await fetch(netflixUrl, {
       headers: {
         Accept: 'application/json, text/plain, */*',
-        Referer: `${netmirrorBase}/`,
+        Referer: `${effectiveWebBase}/`,
         'User-Agent': USER_AGENT
       },
+      redirect: 'follow',
       signal: controller.signal
     });
 
     if (res.ok) {
+      if (res.url) {
+        try {
+          const finalOrigin = new URL(res.url).origin;
+          if (finalOrigin && finalOrigin.startsWith('http')) {
+            workerCachedNetmirrorReferer = finalOrigin;
+          }
+        } catch {}
+      }
       const data = await res.json().catch(() => null);
       if (data && data.ok) {
         const streamUrl = data.streams?.[0]?.url || data.mp4;
         if (streamUrl) {
-          const referer = 'https://videodownloader.site/';
+          const referer = `${workerCachedNetmirrorReferer}/`;
           const proxiedUrl = buildWorkerProxyUrl(streamUrl, referer, 'full');
           const qualities = (data.streams || [])
             .filter((s) => s.url)

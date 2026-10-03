@@ -379,27 +379,76 @@ function buildMovieboxHeaders(method, urlStr, bodyStr, secret) {
   };
 }
 
+let cachedMovieboxHost = '';
+let cachedMovieboxHostExpiry = 0;
+
+function getMovieboxCandidates() {
+  const primary = (config.upstreams.movieboxBase || '').replace(/\/$/, '');
+  const hosts = Array.isArray(config.upstreams.movieboxHosts) ? config.upstreams.movieboxHosts : [];
+  const extra = process.env.MOVIEBOX_EXTRA_HOSTS
+    ? process.env.MOVIEBOX_EXTRA_HOSTS.split(',').map((s) => s.trim().replace(/\/$/, '')).filter(Boolean)
+    : [];
+
+  const rawList = [
+    primary,
+    ...hosts,
+    ...extra,
+    'https://api.inmoviebox.com',
+    'https://api6.aoneroom.com',
+    'https://h5-api.aoneroom.com',
+    'https://apii.inmoviebox.com',
+    'https://api.aoneroom.com',
+    'https://i-api.aoneroom.com',
+    'https://api5.aoneroom.com',
+    'https://h5.aoneroom.com'
+  ].filter(Boolean);
+
+  const unique = [...new Set(rawList)];
+  if (cachedMovieboxHost && Date.now() < cachedMovieboxHostExpiry && unique.includes(cachedMovieboxHost)) {
+    return [cachedMovieboxHost, ...unique.filter((h) => h !== cachedMovieboxHost)];
+  }
+  return unique;
+}
+
 async function resolveMoviebox(metadata, preferredAudio = '', parentSignal = null) {
-  const movieboxBase = (config.upstreams.movieboxBase || 'https://api3.aoneroom.com').replace(/\/$/, '');
   const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), 3500);
+  const timeoutId = setTimeout(() => controller.abort(), 6000);
   if (parentSignal) {
     parentSignal.addEventListener('abort', () => controller.abort(), { once: true });
   }
 
   const secret = getMovieboxSecret();
+  const candidates = getMovieboxCandidates();
 
   try {
     const searchBody = JSON.stringify({ page: 1, perPage: 20, keyword: metadata.title || '' });
-    const searchUrl = `${movieboxBase}/wefeed-mobile-bff/subject-api/search/v2`;
-    const searchRes = await fetch(searchUrl, {
-      method: 'POST',
-      headers: buildMovieboxHeaders('POST', searchUrl, searchBody, secret),
-      body: searchBody,
-      signal: controller.signal
-    });
-    if (!searchRes.ok) return null;
-    const searchJson = await searchRes.json();
+    let activeHost = '';
+    let searchJson = null;
+
+    // Dynamically iterate through candidate hosts with failover (bypasses dead/440/unreachable clusters)
+    for (const host of candidates) {
+      try {
+        const searchUrl = `${host}/wefeed-mobile-bff/subject-api/search/v2`;
+        const searchRes = await fetch(searchUrl, {
+          method: 'POST',
+          headers: buildMovieboxHeaders('POST', searchUrl, searchBody, secret),
+          body: searchBody,
+          signal: controller.signal
+        });
+        if (!searchRes.ok) continue;
+        const json = await searchRes.json().catch(() => null);
+        if (json && (json.code === 0 || json.data)) {
+          searchJson = json;
+          activeHost = host;
+          cachedMovieboxHost = host;
+          cachedMovieboxHostExpiry = Date.now() + 15 * 60 * 1000;
+          break;
+        }
+      } catch {}
+    }
+
+    if (!activeHost || !searchJson) return null;
+
     const subjects = [];
     if (searchJson?.data?.results) {
       searchJson.data.results.forEach((group) => {
@@ -421,13 +470,13 @@ async function resolveMoviebox(metadata, preferredAudio = '', parentSignal = nul
     if (!best || !best.subjectId) return null;
     const subjectId = best.subjectId;
 
-    const getUrl = `${movieboxBase}/wefeed-mobile-bff/subject-api/get?subjectId=${subjectId}`;
+    const getUrl = `${activeHost}/wefeed-mobile-bff/subject-api/get?subjectId=${subjectId}`;
     const getRes = await fetch(getUrl, {
       headers: buildMovieboxHeaders('GET', getUrl, null, secret),
       signal: controller.signal
     });
     if (!getRes.ok) return null;
-    const getJson = await getRes.json();
+    const getJson = await getRes.json().catch(() => null);
     const dubs = getJson?.data?.dubs || [];
     const dubTargets = [{ id: subjectId, lang: 'Original' }];
     if (Array.isArray(dubs)) {
@@ -440,17 +489,17 @@ async function resolveMoviebox(metadata, preferredAudio = '', parentSignal = nul
 
     const season = metadata.type === 'tv' ? metadata.season || 1 : 0;
     const episode = metadata.type === 'tv' ? metadata.episode || 1 : 0;
-    const referer = `${movieboxBase}/`;
+    const referer = `${activeHost}/`;
 
     const streamJobs = dubTargets.map(async (t) => {
-      const playUrl = `${movieboxBase}/wefeed-mobile-bff/subject-api/play-info?subjectId=${t.id}&se=${season}&ep=${episode}`;
+      const playUrl = `${activeHost}/wefeed-mobile-bff/subject-api/play-info?subjectId=${t.id}&se=${season}&ep=${episode}`;
       try {
         const pRes = await fetch(playUrl, {
           headers: buildMovieboxHeaders('GET', playUrl, null, secret),
           signal: controller.signal
         });
         if (!pRes.ok) return null;
-        const pJson = await pRes.json();
+        const pJson = await pRes.json().catch(() => null);
         const streams = pJson?.data?.streams || [];
         const chosen = streams.find((s) => s.url) || null;
         if (chosen?.url) {
@@ -517,16 +566,48 @@ async function resolveMoviebox(metadata, preferredAudio = '', parentSignal = nul
 
 let cachedNetmirrorApiUrl = '';
 let cachedNetmirrorExpiry = 0;
+let cachedNetmirrorActiveReferer = 'https://net52.cc';
+
+function getNetmirrorDiscoveryPool() {
+  const configured = Array.isArray(config.upstreams.netmirrorDiscoveryUrls)
+    ? config.upstreams.netmirrorDiscoveryUrls
+    : [];
+  const pool = [
+    ...configured,
+    'https://mobiledetect.app',
+    'https://mobiledetects.com',
+    'https://mobidetect.cc',
+    'https://mobidetects.top',
+    'https://getimgcdn.com',
+    'https://mobidetect.art',
+    'https://mobidetect.click',
+    'https://mobidetect.ink',
+    'https://mobidetect.live',
+    'https://mobidetect.pro',
+    'https://mobidetect.shop',
+    'https://mobidetect.site',
+    'https://mobidetect.space',
+    'https://mobidetect.store',
+    'https://mobidetect.vip',
+    'https://mobidetect.wiki',
+    'https://mobidetect.xyz',
+    'https://mobidetects.art',
+    'https://mobidetects.info',
+    'https://mobidetects.pro',
+    'https://mobidetects.store',
+    'https://mobidetects.xyz'
+  ]
+    .map((s) => s.trim().replace(/\/$/, ''))
+    .filter(Boolean);
+
+  return [...new Set(pool)];
+}
 
 async function getNetmirrorApiBase(signal) {
   if (cachedNetmirrorApiUrl && Date.now() < cachedNetmirrorExpiry) {
     return cachedNetmirrorApiUrl;
   }
-  const checkDomains = [
-    'https://mobiledetect.app',
-    'https://mobiledetects.com',
-    'https://getimgcdn.com'
-  ];
+  const checkDomains = getNetmirrorDiscoveryPool();
   for (const base of checkDomains) {
     try {
       const res = await fetch(`${base}/checknewtv.php`, {
@@ -553,13 +634,13 @@ async function getNetmirrorApiBase(signal) {
 }
 
 /**
- * Sub-provider 3 for Andromeda: NetMirror (https://net27.cc / NewTV OTT Mirror)
- * Official OTT mirror for Netflix, Prime Video, and Disney+/Hotstar releases.
+ * Sub-provider 3 for Andromeda: NetMirror (Dynamic NewTV Discovery & Rotating OTT Mirrors)
+ * Dynamically discovers the active API endpoint and tracks live rotating web mirror domains (net27 -> net52 -> net77, etc.).
  */
 async function resolveNetmirror(metadata, preferredAudio = '', parentSignal = null) {
-  const netmirrorBase = (config.upstreams.netmirrorBase || 'https://net27.cc').replace(/\/$/, '');
+  const configuredBase = (config.upstreams.netmirrorBase || '').replace(/\/$/, '');
   const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), 4000);
+  const timeoutId = setTimeout(() => controller.abort(), 4500);
   if (parentSignal) {
     parentSignal.addEventListener('abort', () => controller.abort(), { once: true });
   }
@@ -586,6 +667,9 @@ async function resolveNetmirror(metadata, preferredAudio = '', parentSignal = nu
             });
             if (!sRes.ok) continue;
             const sJson = await sRes.json().catch(() => null);
+            if (sJson?.img_referer) {
+              cachedNetmirrorActiveReferer = sJson.img_referer.replace(/\/$/, '');
+            }
             const results = sJson?.searchResult || [];
             if (!results.length) continue;
 
@@ -605,6 +689,9 @@ async function resolveNetmirror(metadata, preferredAudio = '', parentSignal = nu
               });
               if (postRes.ok) {
                 const postJson = await postRes.json().catch(() => null);
+                if (postJson?.img_referer) {
+                  cachedNetmirrorActiveReferer = postJson.img_referer.replace(/\/$/, '');
+                }
                 const eps = (postJson?.episodes || []).filter(Boolean);
                 const wantedS = metadata.season || 1;
                 const wantedE = metadata.episode || 1;
@@ -631,7 +718,9 @@ async function resolveNetmirror(metadata, preferredAudio = '', parentSignal = nu
             const pJson = await pRes.json().catch(() => null);
             if (pJson && pJson.video_link) {
               const streamUrl = pJson.video_link;
-              const referer = pJson.referer || 'https://net52.cc';
+              const dynamicReferer = pJson.referer ? pJson.referer.replace(/\/$/, '') : cachedNetmirrorActiveReferer;
+              cachedNetmirrorActiveReferer = dynamicReferer;
+              const referer = `${dynamicReferer}/`;
               const proxiedUrl = buildProxyStreamUrl(streamUrl, referer, '', { mode: 'full' });
               return {
                 server: 'andromeda',
@@ -661,26 +750,36 @@ async function resolveNetmirror(metadata, preferredAudio = '', parentSignal = nu
       }
     } catch {}
 
-    // 2. Direct embed-tmdb endpoint fallback
+    // 2. Direct embed-tmdb endpoint fallback (using dynamic active referer or configuredBase)
+    const effectiveWebBase = configuredBase || cachedNetmirrorActiveReferer || 'https://net52.cc';
     const netflixUrl = isTv
-      ? `${netmirrorBase}/api/embed-tmdb/${encodeURIComponent(metadata.tmdbId)}?type=tv&se=${metadata.season || 1}&ep=${metadata.episode || 1}`
-      : `${netmirrorBase}/api/embed-tmdb/${encodeURIComponent(metadata.tmdbId)}`;
+      ? `${effectiveWebBase}/api/embed-tmdb/${encodeURIComponent(metadata.tmdbId)}?type=tv&se=${metadata.season || 1}&ep=${metadata.episode || 1}`
+      : `${effectiveWebBase}/api/embed-tmdb/${encodeURIComponent(metadata.tmdbId)}`;
 
     const res = await fetch(netflixUrl, {
       headers: {
         Accept: 'application/json, text/plain, */*',
-        Referer: `${netmirrorBase}/`,
+        Referer: `${effectiveWebBase}/`,
         'User-Agent': USER_AGENT
       },
+      redirect: 'follow',
       signal: controller.signal
     });
 
     if (res.ok) {
+      if (res.url) {
+        try {
+          const finalOrigin = new URL(res.url).origin;
+          if (finalOrigin && finalOrigin.startsWith('http')) {
+            cachedNetmirrorActiveReferer = finalOrigin;
+          }
+        } catch {}
+      }
       const data = await res.json().catch(() => null);
       if (data && data.ok) {
         const streamUrl = data.streams?.[0]?.url || data.mp4;
         if (streamUrl) {
-          const referer = 'https://videodownloader.site/';
+          const referer = `${cachedNetmirrorActiveReferer}/`;
           const proxiedUrl = buildProxyStreamUrl(streamUrl, referer, '', { mode: 'full' });
           const qualities = (data.streams || [])
             .filter((s) => s.url)

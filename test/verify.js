@@ -557,6 +557,38 @@ function startUpstreamMockServer() {
       }
 
       // 11. NetMirror Mock Upstream (/netmirror/...)
+      if (u.pathname === '/checknewtv.php') {
+        const tokenHash = Buffer.from(mockOrigin).toString('base64');
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        return res.end(JSON.stringify({ token_hash: tokenHash, var: '1.0' }));
+      }
+
+      if (u.pathname === '/newtv/search.php') {
+        const query = u.searchParams.get('s') || '';
+        if (query.includes('fail-netmirror') || query.includes('cascade-test-fail-all')) {
+          res.writeHead(200, { 'Content-Type': 'application/json' });
+          return res.end(JSON.stringify({ searchResult: [], img_referer: 'https://net77.cc' }));
+        }
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        return res.end(
+          JSON.stringify({
+            searchResult: [{ id: 'nm-live-999', t: query }],
+            img_referer: 'https://net77.cc'
+          })
+        );
+      }
+
+      if (u.pathname === '/newtv/player.php') {
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        return res.end(
+          JSON.stringify({
+            status: 'ok',
+            video_link: `${mockOrigin}/cdn/hls/netmirror-master.m3u8`,
+            referer: 'https://net77.cc'
+          })
+        );
+      }
+
       if (u.pathname.startsWith('/netmirror/api/embed-tmdb/')) {
         const pathParts = u.pathname.split('/');
         const tmdbParam = pathParts[pathParts.length - 1];
@@ -1511,11 +1543,15 @@ async function runTests() {
       assert.ok(mboxHeaders['x-tr-signature'], 'Moviebox headers must include x-tr-signature');
       assert.match(mboxHeaders['x-tr-signature'], /^\d+\|2\|[A-Za-z0-9+/=]+$/, 'Signature must follow ts|2|b64 format');
 
+      // Test Dynamic Moviebox Failover (dead host in pool -> failover to working mirror)
+      config.upstreams.movieboxBase = 'http://127.0.0.1:1'; // unreachable dead port
+      config.upstreams.movieboxHosts = [`${mockUpstream.url}/moviebox`];
+
       const mboxRes = await resolveMoviebox(
         { title: 'Dune: Part Two', releaseYear: 2024, type: 'movie' },
         'ta'
       );
-      assert.ok(mboxRes, 'Moviebox resolver must succeed for mocked title');
+      assert.ok(mboxRes, 'Moviebox resolver must succeed by failing over to working host in pool');
       assert.strictEqual(mboxRes.server, 'andromeda');
       assert.strictEqual(mboxRes.sourceName, 'Moviebox');
       assert.strictEqual(mboxRes.format, 'mp4');
@@ -1524,17 +1560,27 @@ async function runTests() {
       assert.ok(taMboxTrack, 'Tamil track must be present');
       assert.strictEqual(taMboxTrack.default, true, 'Preferred audio "ta" must be default');
 
-      // 11c. NetMirror Sub-resolver: OTT embed URL extraction
+      // Reset movieboxBase for downstream tests
+      config.upstreams.movieboxBase = `${mockUpstream.url}/moviebox`;
+
+      // 11c. NetMirror Dynamic Sub-resolver: Discovery checknewtv.php & rotating referer tracker
+      config.upstreams.netmirrorDiscoveryUrls = [mockUpstream.url];
+      config.upstreams.netmirrorBase = ''; // clear static netmirror base to enforce dynamic discovery
+
       const nmRes = await resolveNetmirror(
         { tmdbId: '693134', title: 'Dune: Part Two', type: 'movie' },
         'en'
       );
-      assert.ok(nmRes, 'NetMirror resolver must succeed for mocked title');
+      assert.ok(nmRes, 'NetMirror resolver must succeed via dynamic discovery');
       assert.strictEqual(nmRes.server, 'andromeda');
-      assert.strictEqual(nmRes.sourceName, 'NetMirror');
+      assert.ok(nmRes.sourceName.startsWith('NetMirror'));
       assert.strictEqual(nmRes.format, 'hls');
       assert.ok(nmRes.streamUrl.startsWith('/api/proxy?url='));
+      assert.ok(nmRes.referer.includes('net77.cc'), 'Referer must dynamically adapt to active mirror (net77.cc)');
       assert.ok(nmRes.audioTracks.length >= 1);
+
+      // Restore static netmirrorBase as fallback
+      config.upstreams.netmirrorBase = `${mockUpstream.url}/netmirror`;
 
       // 11d. Andromeda Multi-Tier Internal Cascading (Priority 1: Castle -> Priority 2: Moviebox -> Priority 3: NetMirror)
       // Tier 1: When CastleTV succeeds, Andromeda returns CastleTV
@@ -1565,7 +1611,7 @@ async function runTests() {
         type: 'movie'
       });
       assert.ok(andromedaTier3 && andromedaTier3.streamUrl, 'Andromeda must resolve Tier 3 when Tiers 1 & 2 miss');
-      assert.strictEqual(andromedaTier3.sourceName, 'NetMirror', 'Priority 3 must be NetMirror');
+      assert.ok(andromedaTier3.sourceName.startsWith('NetMirror'), 'Priority 3 must be NetMirror');
 
       // Exhaustion: When all 3 tiers fail, Andromeda returns clean failure
       const andromedaExhausted = await resolveAndromedaServer({
