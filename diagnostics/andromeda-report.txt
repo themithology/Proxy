@@ -1,0 +1,132 @@
+==========================================================
+  ANDROMEDA (Server #1) DIAGNOSTIC
+  target: movie/550
+  node:   v22.23.3
+172.214.44.149
+==========================================================
+
+--- [1] GET  TMDB API ---
+    GET https://api.themoviedb.org/3/movie/550?api_key=47a1a7df542d3d483227f758a7317dff&append_to_response=external_ids&language=en-US
+    req: origin=- referer=- cookie=[-] ct=-
+    res: HTTP 200  46ms  ct=application/json;charset=utf-8  server=openresty  set-cookie=[-]
+    body: {"adult":false,"backdrop_path":"/c6OLXfKAk5BKeR6broC8pYiCquX.jpg","belongs_to_collection":null,"budget":63000000,"genres":[{"id":18,"name":"Drama"},{"id":53,"name":"Thriller"}],"homepage":"https://www.20thcenturystudios.com/movies/fight-club","id":550,"imdb_id":"tt0137523","origin_country":["US"],"original_language":"en","original_title":"Fight Club","overview":"A ticking-time-bomb insomniac and a slippery soap salesman channel primal male aggression into a shocking new form of therapy. Their co
+
+metadata: Fight Club (1999) imdb=- runtime=139
+
+
+########## RUNNING resolveVidstuckServer(metadata, "andromeda") ##########
+
+--- [2] GET  zxcstream.icu/movie  (cookie warm-up) ---
+    GET https://zxcstream.icu/movie
+    req: origin=- referer=https://zxcstream.icu/ cookie=[-] ct=-
+
+--- [3] GET  vidstuck.xyz/embed/...  (cookie warm-up) ---
+    GET https://vidstuck.xyz/embed/movie/550
+    req: origin=- referer=https://vidstuck.xyz/ cookie=[-] ct=-
+    res: HTTP 200  173ms  ct=text/html; charset=utf-8  server=cloudflare  set-cookie=[-]
+    body: <!DOCTYPE html><html lang="en" class="geist_a71539c9-module__T19VSG__variable geist_mono_8d43a2aa-module__8Li5zG__variable h-full antialiased"><head><meta charSet="utf-8"/><meta name="viewport" content="width=device-width, initial-scale=1"/><link rel="stylesheet" href="/_next/static/chunks/233p45nuh4m5b.css" data-precedence="next"/><link rel="stylesheet" href="/_next/static/chunks/0_8a8rv5t29ht.css" data-precedence="next"/><link rel="preload" as="script" fetchPriority="low" href="/_next/static/c
+    res: HTTP 200  402ms  ct=text/html; charset=utf-8  server=cloudflare  set-cookie=[-]
+    body: <!DOCTYPE html><html lang="en" class="h-full antialiased geist_a71539c9-module__T19VSG__variable geist_mono_8d43a2aa-module__8Li5zG__variable font-sans inter_b2991b2-module__9mH_6q__variable"><head><meta charSet="utf-8"/><meta name="viewport" content="width=device-width, initial-scale=1"/><link rel="preload" href="/_next/static/media/797e433ab948586e-s.p.0r6juujl39pe6.woff2" as="font" crossorigin="" type="font/woff2"/><link rel="preload" href="/_next/static/media/83afe278b6a6bb3c-s.p.2bn3s6zvc0d
+
+--- [4] GET  /backend/tmdb/details  (title/year/imdb) ---
+    GET https://vidstuck.xyz/backend/tmdb/details/movie/550?language=en-US
+    req: origin=https://vidstuck.xyz referer=https://vidstuck.xyz/ cookie=[-] ct=-
+    res: HTTP 200  150ms  ct=application/json  server=cloudflare  set-cookie=[-]
+    body: {"id":550,"cast":[{"id":819,"name":"Edward Norton","character":"Narrator","profile_path":"/8nytsqL59SFJTVYVrN72k6qkGgJ.jpg"},{"id":287,"name":"Brad Pitt","character":"Tyler Durden","profile_path":"/ajNaPmXVVMJFg9GWmu6MJzTaXdV.jpg"},{"id":1283,"name":"Helena Bonham Carter","character":"Marla Singer","profile_path":"/hJMbNSPJ2PCahsP3rNEU39C8GWU.jpg"},{"id":7470,"name":"Meat Loaf","character":"Robert Paulson","profile_path":"/1zkohpaG3my4qQAZGVgzgPuXwZ6.jpg"},{"id":7499,"name":"Jared Leto","charact
+
+--- [5] POST /backend/meow  (session token) ---
+    POST https://vidstuck.xyz/backend/meow
+    req: origin=https://vidstuck.xyz referer=https://vidstuck.xyz/ cookie=[-] ct=application/json
+    body: {"a7f39c821d604e5b9c71f36e1547b":"550","c285f91ab306d28147a35632e816b":"movie","6b491e7253ad84d392e7561a9384c":"andromeda"}
+    res: HTTP 404  111ms  ct=text/html; charset=utf-8  server=cloudflare  set-cookie=[-]
+    body: <!DOCTYPE html><html lang="en" class="geist_a71539c9-module__T19VSG__variable geist_mono_8d43a2aa-module__8Li5zG__variable h-full antialiased"><head><meta charSet="utf-8"/><meta name="viewport" content="width=device-width, initial-scale=1"/><link rel="stylesheet" href="/_next/static/chunks/233p45nuh4m5b.css" data-precedence="next"/><link rel="stylesheet" href="/_next/static/chunks/0_8a8rv5t29ht.css" data-precedence="next"/><link rel="preload" as="script" fetchPriority="low" href="/_next/static/c
+
+########## RESULT ##########
+null
+
+=== SMOKE TEST [6] LIVE deployed worker /api/resolve?server=andromeda (local resolver failed) ===
+    URL: https://proxy.niggasoup45.workers.dev/api/resolve/movie/550?server=andromeda
+    HTTP 200  160ms  ct=application/json; charset=utf-8  bytes=11198  hls=false dash=false
+    head: {"ok":true,"metadata":{"tmdbId":550,"type":"movie","title":"Fight Club","originalTitle":"Fight Club","releaseYear":1999,"runtime":139,"genres":["Drama","Thriller"],"overview":"A ticking-time-bomb insomniac and a slippery soap salesman channel primal male aggression into a shocking new form of therapy. Their concept catches on, with underground \"fight clubs\" forming in every town, until an eccent
+
+
+===DIAG_REPORT_START===
+{
+  "target": "movie/550",
+  "node": "v22.23.3",
+  "workerOrigin": "https://proxy.niggasoup45.workers.dev",
+  "metadataOk": true,
+  "resolved": false,
+  "rawUrl": null,
+  "format": null,
+  "steps": [
+    {
+      "n": 1,
+      "label": "GET  TMDB API",
+      "status": 200,
+      "ms": 46,
+      "contentType": "application/json;charset=utf-8",
+      "server": "openresty",
+      "setCookie": "",
+      "snippet": "{\"adult\":false,\"backdrop_path\":\"/c6OLXfKAk5BKeR6broC8pYiCquX.jpg\",\"belongs_to_collection\":null,\"budget\":63000000,\"genres\":[{\"id\":18,\"name\":\"Drama\"},{\"id\":53,\"name\":\"Thriller\"}],\"ho",
+      "error": ""
+    },
+    {
+      "n": 2,
+      "label": "GET  zxcstream.icu/movie  (cookie warm-up)",
+      "status": 200,
+      "ms": 402,
+      "contentType": "text/html; charset=utf-8",
+      "server": "cloudflare",
+      "setCookie": "",
+      "snippet": "<!DOCTYPE html><html lang=\"en\" class=\"h-full antialiased geist_a71539c9-module__T19VSG__variable geist_mono_8d43a2aa-module__8Li5zG__variable font-sans inter_b2991b2-module__9mH_6q",
+      "error": ""
+    },
+    {
+      "n": 3,
+      "label": "GET  vidstuck.xyz/embed/...  (cookie warm-up)",
+      "status": 200,
+      "ms": 173,
+      "contentType": "text/html; charset=utf-8",
+      "server": "cloudflare",
+      "setCookie": "",
+      "snippet": "<!DOCTYPE html><html lang=\"en\" class=\"geist_a71539c9-module__T19VSG__variable geist_mono_8d43a2aa-module__8Li5zG__variable h-full antialiased\"><head><meta charSet=\"utf-8\"/><meta na",
+      "error": ""
+    },
+    {
+      "n": 4,
+      "label": "GET  /backend/tmdb/details  (title/year/imdb)",
+      "status": 200,
+      "ms": 150,
+      "contentType": "application/json",
+      "server": "cloudflare",
+      "setCookie": "",
+      "snippet": "{\"id\":550,\"cast\":[{\"id\":819,\"name\":\"Edward Norton\",\"character\":\"Narrator\",\"profile_path\":\"/8nytsqL59SFJTVYVrN72k6qkGgJ.jpg\"},{\"id\":287,\"name\":\"Brad Pitt\",\"character\":\"Tyler Durden\"",
+      "error": ""
+    },
+    {
+      "n": 5,
+      "label": "POST /backend/meow  (session token)",
+      "status": 404,
+      "ms": 111,
+      "contentType": "text/html; charset=utf-8",
+      "server": "cloudflare",
+      "setCookie": "",
+      "snippet": "<!DOCTYPE html><html lang=\"en\" class=\"geist_a71539c9-module__T19VSG__variable geist_mono_8d43a2aa-module__8Li5zG__variable h-full antialiased\"><head><meta charSet=\"utf-8\"/><meta na",
+      "error": ""
+    }
+  ],
+  "smoke": {
+    "workerResolve": {
+      "ok": true,
+      "status": 200,
+      "ms": 160,
+      "contentType": "application/json; charset=utf-8",
+      "bytes": 11198,
+      "hls": false,
+      "dash": false,
+      "head": "{\"ok\":true,\"metadata\":{\"tmdbId\":550,\"type\":\"movie\",\"title\":\"Fight Club\",\"originalTitle\":\"Fight Club\",\"releaseYear\":1999,\"runtime\":139,\"genres\":[\"Drama\",\"Thriller\"],\"overview\":\"A ticking-time-bomb insomniac and a slippery soap salesman channel primal male aggression into a shocking new form of therapy. Their concept catches on, with underground \\\"fight clubs\\\" forming in every town, until an eccent"
+    }
+  }
+}
+===DIAG_REPORT_END===
