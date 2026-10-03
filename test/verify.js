@@ -388,7 +388,7 @@ async function runTests() {
   console.log('==========================================================\n');
 
   // 1. Cryptographic Unit Tests (AES-256-CBC + HMAC-SHA256 + Handshake Token)
-  console.log('[1/9] Testing AES-256-CBC (ZXC OpenSSL EVP_BytesToKey) & HMAC Signing...');
+  console.log('[1/10] Testing AES-256-CBC (ZXC OpenSSL EVP_BytesToKey) & HMAC Signing...');
   const sampleStreamPath = '/pl/token123/master.m3u8?exp=1790000000';
   const encrypted = encryptZxcLink(sampleStreamPath);
   const decrypted = decryptZxcLink(encrypted);
@@ -413,7 +413,7 @@ async function runTests() {
   console.log('  ✔ Passed cryptographic verification.');
 
   // 2. ZokoAnime XOR ("otaku-embed-v1") & HiCine Link Parser Unit Tests
-  console.log('[2/9] Testing ZokoAnime XOR Decryptor & HiCine Multi-Quality Link Parser...');
+  console.log('[2/10] Testing ZokoAnime XOR Decryptor & HiCine Multi-Quality Link Parser...');
   const rawZokoJson = JSON.stringify({
     data: {
       sources: { file: 'https://cdn.zokoanime.video/hls/arcane-ep1/master.m3u8' },
@@ -670,7 +670,7 @@ async function runTests() {
   console.log('  ✔ Passed ZokoAnime, HiCine language parsing, and multi-track payload tests.');
 
   // 3. SRT -> WebVTT Converter Unit Test
-  console.log('[3/9] Testing SubRip (.srt) to WebVTT (.vtt) Converter...');
+  console.log('[3/10] Testing SubRip (.srt) to WebVTT (.vtt) Converter...');
   const sampleSrt = `1\r\n00:00:02,500 --> 00:00:05,800\r\nWelcome to Piltover.\r\n\r\n2\r\n00:00:06,100 --> 00:00:09,450\r\nThe City of Progress.\r\n`;
   const convertedVtt = srtToVtt(sampleSrt);
   assert.ok(convertedVtt.startsWith('WEBVTT'), 'Output must start with WEBVTT header');
@@ -681,7 +681,7 @@ async function runTests() {
   console.log('  ✔ Passed SRT -> VTT conversion.');
 
   // 4. M3U8 Manifest Rewriter Unit Test
-  console.log('[4/9] Testing M3U8 Master & Media Playlist Rewriter...');
+  console.log('[4/10] Testing M3U8 Master & Media Playlist Rewriter...');
   const sampleMasterM3u8 = [
     '#EXTM3U',
     '#EXT-X-VERSION:3',
@@ -721,7 +721,7 @@ async function runTests() {
   config.upstreams.vidsrcDataUrl = `${mockUpstream.url}/vidsrc/api.php`;
 
   // 4b. HubCloud generator unroller (Centaurus "All upstream servers failed" fix)
-  console.log('[4b/9] Testing HubCloud generator unroller (Centaurus)...');
+  console.log('[4b/10] Testing HubCloud generator unroller (Centaurus)...');
   assert.strictEqual(
     isHubcloudGeneratorUrl('https://gpdl2.hubcloud.ist/?id=abc::def'),
     true,
@@ -893,7 +893,7 @@ async function runTests() {
 
   try {
     // 5. Health & Handshake Endpoints
-    console.log('[5/9] Testing /api/health & /api/handshake...');
+    console.log('[5/10] Testing /api/health & /api/handshake...');
     const health = await httpRequest(baseUrl, '/api/health');
     assert.strictEqual(health.status, 200);
     assert.strictEqual(health.json.ok, true);
@@ -925,7 +925,7 @@ async function runTests() {
     console.log('  ✔ Passed /api/health & /api/handshake.');
 
     // 6. TMDB-ID Metadata & Real IntroDB Skip Segments Resolution
-    console.log('[6/9] Testing TMDB ID -> External IDs (IMDb/TVDB) & IntroDB Skip Intro Segments...');
+    console.log('[6/10] Testing TMDB ID -> External IDs (IMDb/TVDB) & IntroDB Skip Intro Segments...');
     const infoRes = await httpRequest(baseUrl, '/api/info/tv/94605?season=1&episode=1');
     assert.strictEqual(infoRes.status, 200);
     assert.strictEqual(infoRes.json.ok, true);
@@ -940,7 +940,7 @@ async function runTests() {
     console.log('  ✔ Passed TMDB -> IMDb/TVDB bridging & IntroDB segments.');
 
     // 7. Full Production Stream Resolution + OpenSubtitles .srt.gz Decompression + M3U8 Proxy
-    console.log('[7/9] Testing /api/resolve/tv/94605, OpenSubtitles .srt.gz -> .vtt, & /api/proxy...');
+    console.log('[7/10] Testing /api/resolve/tv/94605, OpenSubtitles .srt.gz -> .vtt, & /api/proxy...');
     const resolveRes = await httpRequest(
       baseUrl,
       '/api/resolve/tv/94605?season=1&episode=1&server=andromeda'
@@ -1003,7 +1003,9 @@ async function runTests() {
     console.log('  ✔ Passed end-to-end stream resolution, .srt.gz -> .vtt, and M3U8 proxy.');
 
     // 8. Backend-only public surface: service metadata + social image, no web UI.
-    console.log('[8/9] Testing LOL Embed branding, meta image, and frontend removal...');
+    // 8. Node API public surface: service metadata + social image, JSON-only.
+    // (The /embed player page ships with the Cloudflare Worker; suite 10 covers it.)
+    console.log('[8/10] Testing LOL Embed branding, meta image, and JSON-only Node surface...');
     const rootInfo = await httpRequest(baseUrl, '/');
     assert.strictEqual(rootInfo.status, 200);
     assert.strictEqual(rootInfo.json.brand, 'LOL Embed');
@@ -1018,15 +1020,15 @@ async function runTests() {
     const metaImageFile = fs.readFileSync(path.join(__dirname, '../public/lol-embed-meta.gif'));
     assert.ok(['GIF87a', 'GIF89a'].includes(metaImageFile.subarray(0, 6).toString('ascii')));
 
-    for (const removedPath of ['/index.html', '/admin', '/embed/tv/94605/1/1', '/js/embed.js']) {
+    for (const removedPath of ['/index.html', '/admin', '/embed', '/embed/tv/94605/1/1', '/js/embed.js']) {
       const response = await httpRequest(baseUrl, removedPath);
-      assert.strictEqual(response.status, 404, `${removedPath} must not serve frontend content`);
+      assert.strictEqual(response.status, 404, `${removedPath} must not be served by the JSON-only Node API`);
       assert.strictEqual(response.json && response.json.error, 'Not found');
     }
-    console.log('  ✔ Passed backend-only root, metadata image, and UI removal checks.');
+    console.log('  ✔ Passed backend-only root, metadata image, and JSON-only Node surface checks.');
 
     // 9. Owner Admin Panel (/admin, Domain Telemetry, Source Replacer, Domain Blocking, Custom Overrides)
-    console.log('[9/9] Testing JSON Admin API, Domain Telemetry, Source Replacement & Firewall...');
+    console.log('[9/10] Testing JSON Admin API, Domain Telemetry, Source Replacement & Firewall...');
 
     // Simulate API requests from an external client domain (there is no embed page).
     await httpRequest(baseUrl, '/api/resolve/tv/94605?season=1&episode=1&parent=https://partner-cinema.to', {
@@ -1090,8 +1092,146 @@ async function runTests() {
     assert.ok(resolvedOverride.json.stream.rawUrl.includes('custom-override.m3u8'));
     console.log('  ✔ Passed JSON Admin API, Domain Telemetry, Firewall & Live Source Replacement.');
 
+    // 10. Worker player page: /embed serves the player, player assets load,
+    // the API base URL is configurable for a separate API Worker, `/` stays
+    // JSON for API clients (with a browser-only rickroll easter egg), and the
+    // portal/admin UI stays removed.
+    console.log('[10/10] Testing Worker /embed player page, assets, API base config & root behavior...');
+    const workerModule = await import('../cloudflare-worker/worker.js');
+    const workerFetch = workerModule.default.fetch;
+
+    const PUBLIC_DIR = path.join(__dirname, '..', 'public');
+    const ASSET_TYPES = {
+      '.html': 'text/html; charset=utf-8',
+      '.css': 'text/css; charset=utf-8',
+      '.js': 'text/javascript; charset=utf-8',
+      '.gif': 'image/gif'
+    };
+    const mockAssets = {
+      fetch: async (req) => {
+        const assetPath = new URL(req.url).pathname.replace(/^\/+/, '');
+        const filePath = path.normalize(path.join(PUBLIC_DIR, assetPath));
+        if (!filePath.startsWith(PUBLIC_DIR + path.sep)) {
+          return new Response('Not found', { status: 404 });
+        }
+        try {
+          const body = fs.readFileSync(filePath);
+          return new Response(body, {
+            status: 200,
+            headers: { 'Content-Type': ASSET_TYPES[path.extname(filePath)] || 'application/octet-stream' }
+          });
+        } catch {
+          return new Response('Not found', { status: 404 });
+        }
+      }
+    };
+    const callWorker = (target, env = {}, headers = {}) =>
+      workerFetch(new Request(target, { headers }), { ASSETS: mockAssets, ...env }, { waitUntil() {} });
+
+    // 10a. /embed serves the player page with the separately configured API Worker URL injected.
+    const embedRes = await callWorker(
+      'http://player.test/embed?type=tv&tmdb=94605&s=1&e=1',
+      { API_BASE_URL: `${baseUrl}/` } // trailing slash must be normalized away
+    );
+    assert.strictEqual(embedRes.status, 200, '/embed must serve the player page');
+    assert.match(embedRes.headers.get('content-type') || '', /^text\/html/i);
+    assert.match(
+      embedRes.headers.get('content-security-policy') || '',
+      /frame-ancestors \*/,
+      '/embed must be iframe-embeddable by the separate main site'
+    );
+    assert.strictEqual(embedRes.headers.get('access-control-allow-origin'), '*');
+    const embedHtml = await embedRes.text();
+    assert.ok(embedHtml.includes('id="player-root"'), 'embed page must render the player root');
+    for (const assetRef of ['/css/embed.css', '/js/embed.js', '/vendor/hls.min.js', '/vendor/dash.all.min.js']) {
+      assert.ok(embedHtml.includes(assetRef), `embed page must reference ${assetRef}`);
+    }
+    assert.ok(embedHtml.includes('window.__LOL_EMBED_CONFIG__'), 'Worker must inject the player config');
+    assert.ok(
+      embedHtml.includes(JSON.stringify({ apiBaseUrl: baseUrl })),
+      'Injected config must carry the normalized API Worker URL'
+    );
+    assert.ok(!embedHtml.includes('<!--LOL_EMBED_CONFIG-->'), 'Config placeholder must be replaced');
+    assert.ok(!/vidstuck/i.test(embedHtml), 'Player page must be rebranded to LOL Embed');
+
+    // 10b. Without API_BASE_URL the player defaults to same-origin API calls.
+    const embedDefaultRes = await callWorker('http://player.test/embed?type=movie&tmdb=693134');
+    assert.strictEqual(embedDefaultRes.status, 200);
+    const embedDefaultHtml = await embedDefaultRes.text();
+    assert.ok(
+      embedDefaultHtml.includes(JSON.stringify({ apiBaseUrl: '' })),
+      'Unset API_BASE_URL must inject an empty same-origin base'
+    );
+
+    // 10c. Required player assets load with sensible content types.
+    for (const [assetPath, typePrefix] of [
+      ['/css/embed.css', 'text/css'],
+      ['/js/embed.js', 'text/javascript'],
+      ['/vendor/hls.min.js', 'text/javascript'],
+      ['/vendor/dash.all.min.js', 'text/javascript']
+    ]) {
+      const assetRes = await callWorker(`http://player.test${assetPath}`);
+      assert.strictEqual(assetRes.status, 200, `${assetPath} must be served`);
+      assert.match(assetRes.headers.get('content-type') || '', new RegExp(`^${typePrefix}`));
+      assert.strictEqual(assetRes.headers.get('access-control-allow-origin'), '*');
+      const assetBody = await assetRes.text();
+      assert.ok(assetBody.length > 500, `${assetPath} must serve real content`);
+    }
+
+    // 10d. Worker `/` stays a JSON descriptor for API clients and rickrolls browsers.
+    const workerRoot = await callWorker('http://player.test/');
+    assert.match(workerRoot.headers.get('content-type') || '', /application\/json/);
+    const workerRootJson = await workerRoot.json();
+    assert.strictEqual(workerRootJson.brand, 'LOL Embed');
+    assert.strictEqual(workerRootJson.mode, 'player-and-api');
+    assert.strictEqual(workerRootJson.embed, '/embed');
+    const browserRoot = await callWorker('http://player.test/', {}, { Accept: 'text/html' });
+    assert.match(browserRoot.headers.get('content-type') || '', /^text\/html/);
+    const browserRootHtml = await browserRoot.text();
+    assert.ok(browserRootHtml.includes('dQw4w9WgXcQ'), 'Browser visitors to / get rickrolled');
+    assert.ok(!browserRootHtml.includes('player-root'), '/ must not serve the old portal/player');
+
+    // 10e. Worker health + meta image.
+    const workerHealth = await callWorker('http://player.test/api/health');
+    assert.strictEqual(workerHealth.status, 200);
+    const workerHealthJson = await workerHealth.json();
+    assert.strictEqual(workerHealthJson.ok, true);
+    assert.strictEqual(workerHealthJson.embed, '/embed');
+    const workerMeta = await callWorker('http://player.test/meta-image.gif');
+    assert.strictEqual(workerMeta.status, 200);
+    assert.match(workerMeta.headers.get('content-type') || '', /^image\/gif/);
+
+    // 10f. Portal, admin dashboard UI, and non-/embed player routes stay removed on the Worker.
+    for (const removedPath of [
+      '/index.html',
+      '/admin.html',
+      '/admin',
+      '/css/portal.css',
+      '/css/admin.css',
+      '/js/portal.js',
+      '/js/admin.js',
+      '/embed/tv/94605/1/1',
+      '/movie/94605'
+    ]) {
+      const response = await callWorker(`http://player.test${removedPath}`);
+      assert.strictEqual(response.status, 404, `${removedPath} must stay removed on the Worker`);
+      const removedJson = await response.json();
+      assert.strictEqual(removedJson.error, 'Not found');
+    }
+
+    // 10g. Separate-API-Worker contract: the relative URLs returned by
+    // /api/resolve must work when prefixed with the configured API base —
+    // exactly what the player does with a foreign API_BASE_URL.
+    assert.ok(resolveRes.json.stream.streamUrl.startsWith('/api/proxy?url='));
+    const crossOriginStream = await httpRequest(baseUrl, resolveRes.json.stream.streamUrl);
+    assert.strictEqual(crossOriginStream.status, 200, 'Absolutized stream URL must be served by the API Worker');
+    const crossOriginSub = await httpRequest(baseUrl, resolveRes.json.subtitles[0].url);
+    assert.strictEqual(crossOriginSub.status, 200);
+    assert.ok(crossOriginSub.body.startsWith('WEBVTT'), 'Absolutized subtitle URL must return WebVTT');
+    console.log('  ✔ Passed Worker player page, asset, API-base, and root-behavior checks.');
+
     console.log('\n==========================================================');
-    console.log('  ALL 9 PRODUCTION VERIFICATION SUITES PASSED (0 TEST VIDEOS)');
+    console.log('  ALL 10 PRODUCTION VERIFICATION SUITES PASSED (0 TEST VIDEOS)');
     console.log('==========================================================');
   } finally {
     server.close();

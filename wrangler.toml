@@ -3,7 +3,8 @@ main = "cloudflare-worker/worker.js"
 compatibility_date = "2025-01-01"
 compatibility_flags = ["nodejs_compat"]
 
-# The public directory contains only the LOL Embed social/meta GIF; all UI assets were removed.
+# The public directory holds the /embed player page, its CSS/JS/vendor assets,
+# and the LOL Embed social/meta GIF. No landing page, portal, or admin UI.
 [assets]
 directory = "./public"
 binding = "ASSETS"
@@ -15,3 +16,21 @@ ADMIN_SECRET = "admin123"
 TMDB_API_KEY = "47a1a7df542d3d483227f758a7317dff"
 ZXC_AES_KEY = "7f4c9e2a81d63b05c4f7a9e8126d3b50e1a8c7f23d9465ab0c6e9f1d4a7b832c"
 PROXY_SECRET = "vidstuck-edge-hmac-secret-key-2026-9f8e7d6c5b4a"
+
+# Base URL of the API Worker/backend the /embed player should call.
+# Leave empty ("") when this Worker serves both the player and the API
+# (same origin). When the API runs on a different Worker or Node deployment,
+# set it to that deployment's absolute URL, e.g.:
+#   API_BASE_URL = "https://api.lol-embed.example"
+# The embed URL also accepts a per-request `?api=<url>` override.
+API_BASE_URL = ""
+
+# Preview-safe vars for `npx wrangler preview` (Workers Builds runs this for
+# branch builds). Values must be non-production; <REPLACE_ME> is rejected.
+# The TMDB/ZXC values below are the public sample keys committed in this repo.
+[previews.vars]
+ADMIN_SECRET = "preview-admin-secret-not-production"
+TMDB_API_KEY = "47a1a7df542d3d483227f758a7317dff"
+ZXC_AES_KEY = "7f4c9e2a81d63b05c4f7a9e8126d3b50e1a8c7f23d9465ab0c6e9f1d4a7b832c"
+PROXY_SECRET = "preview-proxy-secret-not-production"
+API_BASE_URL = ""

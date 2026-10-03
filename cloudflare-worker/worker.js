@@ -1,6 +1,14 @@
 /**
- * LOL Embed backend-only Cloudflare Worker (TMDB Resolver + Stream Extractors + Edge M3U8 Proxy)
- * No player, portal, or admin-dashboard UI is served from this repository.
+ * LOL Embed Cloudflare Worker — embedded player page (/embed) + backend API
+ * (TMDB Resolver + Stream Extractors + Edge M3U8 Proxy).
+ *
+ * This is the player Worker: it serves the embeddable player at exactly
+ * /embed plus the player's assets. The main website is built separately and
+ * embeds this Worker with an iframe. The landing/developer portal, demo page,
+ * and admin dashboard UI are not served; `/` stays a JSON endpoint.
+ *
+ * The player's API base URL is configurable (API_BASE_URL var or `?api=`
+ * query parameter) so the player and the API can run on different Workers.
  *
  * Deploy with:
  *   npx wrangler deploy
@@ -239,6 +247,65 @@ function jsonResponse(data, status = 200) {
     headers: corsHeaders({ 'Content-Type': 'application/json; charset=utf-8' })
   });
 }
+
+/**
+ * Static assets the /embed player page is allowed to load. Everything else in
+ * `public/` (notably no portal/admin UI) stays unserved.
+ */
+const PLAYER_ASSET_PATHS = new Set([
+  '/css/embed.css',
+  '/js/embed.js',
+  '/vendor/hls.min.js',
+  '/vendor/dash.all.min.js'
+]);
+
+/**
+ * Normalize the configured API Worker base URL. Accepts an absolute http(s)
+ * origin (optionally with a path prefix); returns '' to mean "same origin".
+ */
+function normalizeApiBaseUrl(raw) {
+  const value = String(raw || '').trim();
+  if (!value) return '';
+  try {
+    const parsed = new URL(value);
+    if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') return '';
+    return parsed.href.replace(/\/+$/, '');
+  } catch {
+    return '';
+  }
+}
+
+/**
+ * Easter egg for humans who open the Worker root URL in a browser: a
+ * monochrome LOL Embed interstitial that rickrolls them. API clients (no
+ * `text/html` Accept header) never see this and keep receiving the JSON
+ * service descriptor.
+ */
+const RICKROLL_HTML = `<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>LOL Embed</title>
+<meta http-equiv="refresh" content="2;url=https://www.youtube.com/watch?v=dQw4w9WgXcQ">
+<style>
+  body{margin:0;min-height:100vh;display:flex;align-items:center;justify-content:center;background:#000;color:#fff;font-family:system-ui,-apple-system,"Segoe UI",sans-serif}
+  main{text-align:center;padding:24px}
+  h1{font-size:1.35rem;letter-spacing:.14em;text-transform:uppercase;color:#a3a3a3;margin:0 0 14px;font-weight:600}
+  p{color:#f5f5f5;font-size:1.05rem;margin:8px 0}
+  a{color:#fff;text-decoration:underline;text-underline-offset:3px}
+</style>
+<script>window.setTimeout(function () { location.replace('https://www.youtube.com/watch?v=dQw4w9WgXcQ'); }, 1500);</script>
+</head>
+<body>
+<main>
+  <h1>LOL Embed</h1>
+  <p>Loading something very important&hellip;</p>
+  <p><a href="https://www.youtube.com/watch?v=dQw4w9WgXcQ">Never gonna give you up</a></p>
+</main>
+</body>
+</html>
+`;
 
 /**
  * OpenSSL EVP_BytesToKey (MD5) AES-256-CBC Decryptor (matches CryptoJS.AES.decrypt & openssl enc -d -aes-256-cbc -md md5)
@@ -2398,8 +2465,9 @@ export default {
         brand: 'LOL Embed',
         runtime: 'cloudflare-workers-edge',
         service: 'lol-embed-backend',
-        mode: 'backend-only',
-        version: '2.0.0',
+        mode: 'player-and-api',
+        version: '2.1.0',
+        embed: '/embed',
         metaImage: '/meta-image.gif',
         servers: SERVERS.map((s) => s.id)
       });
@@ -2569,7 +2637,56 @@ export default {
       }
     }
 
-    // The only browser-addressable asset retained here is the social/meta image.
+    // --- Embedded Player Page (/embed) ---
+    // The player Worker serves exactly one HTML page. The main website is a
+    // separate project and embeds this URL with an iframe, e.g.:
+    //   /embed?type=tv&tmdb=94605&s=1&e=1
+    if (pathname === '/embed' && ['GET', 'HEAD'].includes(request.method)) {
+      if (!env.ASSETS) {
+        return jsonResponse({ ok: false, error: 'Player assets are not configured' }, 503);
+      }
+      recordWorkerDomainHit(request, url, 'embed');
+      const embedReq = new Request(new URL('/embed.html', url.origin), { method: 'GET' });
+      const assetRes = await env.ASSETS.fetch(embedReq);
+      if (!assetRes.ok) {
+        return jsonResponse({ ok: false, error: 'Player page is unavailable' }, assetRes.status);
+      }
+      let html = await assetRes.text();
+      const apiBaseUrl = normalizeApiBaseUrl(env.API_BASE_URL);
+      // Inject the configured API Worker URL (may be '' for same-origin API).
+      const configScript = `<script>window.__LOL_EMBED_CONFIG__=${JSON.stringify({
+        apiBaseUrl
+      }).replace(/</g, '\\u003c')};</script>`;
+      html = html.includes('<!--LOL_EMBED_CONFIG-->')
+        ? html.replace('<!--LOL_EMBED_CONFIG-->', configScript)
+        : html.replace('</head>', `${configScript}\n</head>`);
+      const headers = new Headers({
+        'Content-Type': 'text/html; charset=utf-8',
+        'Cache-Control': 'no-cache',
+        // Must be iframe-embeddable by the (separately built) main website.
+        'Content-Security-Policy': 'frame-ancestors *;',
+        'Access-Control-Allow-Origin': '*'
+      });
+      headers.delete('X-Frame-Options');
+      return new Response(html, { status: 200, headers });
+    }
+
+    // --- Player Static Assets (only what the /embed page needs) ---
+    if (PLAYER_ASSET_PATHS.has(pathname) && ['GET', 'HEAD'].includes(request.method)) {
+      if (!env.ASSETS) {
+        return jsonResponse({ ok: false, error: 'Player assets are not configured' }, 503);
+      }
+      const assetRes = await env.ASSETS.fetch(new Request(new URL(pathname, url.origin), { method: 'GET' }));
+      if (!assetRes.ok) {
+        return jsonResponse({ ok: false, error: 'Player asset is unavailable' }, assetRes.status);
+      }
+      const headers = new Headers(assetRes.headers);
+      headers.set('Cache-Control', 'public, max-age=86400, stale-while-revalidate=604800');
+      headers.set('Access-Control-Allow-Origin', '*');
+      return new Response(assetRes.body, { status: assetRes.status, headers });
+    }
+
+    // The social/meta image stays browser-addressable.
     if (pathname === '/meta-image.gif' && ['GET', 'HEAD'].includes(request.method)) {
       if (!env.ASSETS) {
         return jsonResponse({ ok: false, error: 'Meta-image asset is not configured' }, 503);
@@ -2586,14 +2703,30 @@ export default {
       return new Response(assetRes.body, { status: assetRes.status, headers });
     }
 
+    // `/` stays a JSON service descriptor for API clients — the main website
+    // is a separate project and is not served from this Worker.
     if (pathname === '/' && request.method === 'GET') {
+      // Easter egg: a human opening the Worker URL in a browser (Accept:
+      // text/html) gets rickrolled; every non-browser client keeps the JSON.
+      const acceptHeader = request.headers.get('accept') || '';
+      if (acceptHeader.includes('text/html')) {
+        return new Response(RICKROLL_HTML, {
+          status: 200,
+          headers: {
+            'Content-Type': 'text/html; charset=utf-8',
+            'Cache-Control': 'no-cache',
+            'Access-Control-Allow-Origin': '*'
+          }
+        });
+      }
       return jsonResponse({
         ok: true,
         brand: 'LOL Embed',
         service: 'lol-embed-backend',
         runtime: 'cloudflare-workers-edge',
-        mode: 'backend-only',
-        version: '2.0.0',
+        mode: 'player-and-api',
+        version: '2.1.0',
+        embed: '/embed',
         api: '/api',
         health: '/api/health',
         metaImage: '/meta-image.gif'
