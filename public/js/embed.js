@@ -408,9 +408,15 @@
         url: q.url
       }));
 
-      if (state.audioTracks.length > 0 && !state.audioTracks.some((a) => a.id === state.activeAudioId)) {
-        const defTrack = state.audioTracks.find((a) => a.default) || state.audioTracks[0];
-        state.activeAudioId = defTrack.id;
+      if (state.audioTracks.length > 0) {
+        const activeTrack =
+          (data.stream.activeAudioTrack && state.audioTracks.find((a) => a.id === data.stream.activeAudioTrack.id)) ||
+          state.audioTracks.find((a) => a.default) ||
+          state.audioTracks.find((a) => a.id === state.activeAudioId) ||
+          state.audioTracks[0];
+        if (activeTrack) {
+          state.activeAudioId = activeTrack.id;
+        }
       }
 
       renderAudioPopover();

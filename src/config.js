@@ -72,8 +72,34 @@ const config = {
   upstashRedisUrl: process.env.UPSTASH_REDIS_REST_URL || '',
   upstashRedisToken: process.env.UPSTASH_REDIS_REST_TOKEN || '',
 
-  // Upstream Provider Endpoints (Real Production Providers)
+  // Upstream Provider Endpoints (Real Production Providers with Dynamic Discovery)
   upstreams: {
+    castletvBase: process.env.CASTLETV_BASE_URL || 'https://api.hlowb.com',
+    castletvHosts: (process.env.CASTLETV_HOSTS || 'https://api.hlowb.com')
+      .split(',')
+      .map((s) => s.trim().replace(/\/$/, ''))
+      .filter(Boolean),
+
+    // MovieBox dynamic cluster pool (replaces deprecated api3.aoneroom.com / uwu.eat-peach.sbs)
+    movieboxBase: process.env.MOVIEBOX_BASE_URL || 'https://api.inmoviebox.com',
+    movieboxHosts: (
+      process.env.MOVIEBOX_HOSTS ||
+      'https://api.inmoviebox.com,https://api6.aoneroom.com,https://h5-api.aoneroom.com,https://apii.inmoviebox.com,https://api.aoneroom.com,https://i-api.aoneroom.com,https://api5.aoneroom.com,https://h5.aoneroom.com'
+    )
+      .split(',')
+      .map((s) => s.trim().replace(/\/$/, ''))
+      .filter(Boolean),
+
+    // NetMirror dynamic discovery & rotating web mirror (replaces static net27.cc)
+    netmirrorBase: process.env.NETMIRROR_BASE_URL || 'https://net52.cc',
+    netmirrorDiscoveryUrls: (
+      process.env.NETMIRROR_DISCOVERY_URLS ||
+      'https://mobiledetect.app,https://mobiledetects.com,https://mobidetect.cc,https://mobidetects.top,https://getimgcdn.com,https://mobidetect.art,https://mobidetect.click'
+    )
+      .split(',')
+      .map((s) => s.trim().replace(/\/$/, ''))
+      .filter(Boolean),
+
     vidstuckBase: process.env.VIDSTUCK_BASE_URL || 'https://vidstuck.xyz',
     zxcBase: process.env.ZXC_BASE_URL || 'https://zxcstream.icu',
     vidsrcDataUrl: process.env.VIDSRC_DATA_URL || 'https://data.vidsrc.sh/api.php',

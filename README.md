@@ -98,7 +98,35 @@ Supported media types are `movie`, `tv`, and `series` where applicable. TV reque
 
 ## Source resolution and audio behavior
 
-The resolver has five upstream families: Andromeda/Atlas (VidStuck/ZXC), Ursa (VidSrc), Centaurus (HiCine), and Strings (HiAnime/ZokoAnime). It normalizes their stream and subtitle results for API clients and proxies supported HLS/MP4 sources.
+The resolver supports five server configurations:
+- **Server 1 (Andromeda)**: Multi-Tier Multi-Audio Cascade (CastleTV → Moviebox → NetMirror) with automatic failover to Server 2 (Ursa).
+- **Server 2 (Ursa)**: VidSrc / Fast CDN HLS.
+- **Server 3 (Centaurus)**: HiCine Direct MP4.
+- **Server 4 (Atlas)**: ZXC Backup Adaptive HLS.
+- **Server 5 (Strings)**: Anime Sub/Dub (HiAnime / ZokoAnime).
+
+### Server Andromeda Multi-Tier Architecture
+
+To replace the deprecated VidStuck upstream, Server Andromeda uses a resilient 3-tier cascade backed by automatic dynamic discovery:
+
+1. **Priority 1: CastleTV (`api.hlowb.com`)**
+   - **Coverage:** Extensive South Indian dubs (Tamil, Telugu, Malayalam, Kannada, Hindi), K-dramas, C-dramas, anime, and Hollywood multi-audio.
+   - **Protocol:** AES-128-CBC encryption (`IV == key`), dynamically derived on-the-fly from `/v0.1/system/getSecurityKey/1`. Yields language-tagged master HLS playlists per dub track via `/film-api/v2.0.1/movie/getVideo2`.
+
+2. **Priority 2: MovieBox Dynamic Cluster Pool (`api.inmoviebox.com`, `api6.aoneroom.com`, etc.)**
+   - **Coverage:** Broad global catalog with discrete multi-audio MP4 and HLS streams.
+   - **Dynamic Cluster Failover:** Automatically bypasses deprecated/unreachable endpoints (`api3.aoneroom.com`, `uwu.eat-peach.sbs`) by cascading through active cluster mirrors (`api.inmoviebox.com`, `api6.aoneroom.com`, `h5-api.aoneroom.com`, `apii.inmoviebox.com`, `api.aoneroom.com`, `i-api.aoneroom.com`, `api5.aoneroom.com`). If any cluster returns HTTP 440, 502, or connection reset, the resolver transparently retries the next candidate and caches the healthy cluster.
+   - **Protocol:** Canonical HMAC-MD5 request signing (`x-client-token`, `x-tr-signature`) with Android client emulation.
+
+3. **Priority 3: NetMirror Dynamic Discovery & Rotating Domain Tracking**
+   - **Coverage:** Official OTT platform mirrors (Netflix, Prime Video, Disney+/Hotstar) with embedded multi-audio renditions.
+   - **Dynamic Discovery Network:** Rather than hardcoding static web numbers (`net27.cc`), the resolver queries the `checknewtv.php` discovery network (`mobiledetect.app`, `mobiledetects.com`, `mobidetect.cc`, etc.) to dynamically resolve the active API backend (`https://tv.imgcdn.kim`).
+   - **Live Rotating Domain Tracker:** Automatically extracts the active web mirror domain (e.g. `net52.cc`, `net77.cc`) from API response headers (`img_referer`, `referer`), dynamically updating video chunk and subtitle proxy headers without code changes.
+
+4. **Clean Waterfall Failover: Server 2 (Ursa / VidSrc)**
+   - If all three internal Andromeda tiers return no playable streams for a given title, Andromeda cleanly cascades to Server 2 (Ursa) in the waterfall failover chain.
+
+### Audio Behavior & Remuxing
 
 Audio behavior is intentionally truthful:
 

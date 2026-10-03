@@ -1,3 +1,4 @@
+const crypto = require('crypto');
 const config = require('../config');
 const { cache, circuitBreaker } = require('../utils/cache');
 const { decryptZxcLink } = require('../utils/crypto');
@@ -45,7 +46,881 @@ const VSRC_WASM_ENVELOPE_URL = 'vidsrc://wasm-envelope';
 const VSRC_REFERER = 'https://vidsrc.sh/';
 
 /**
- * 1. VidStuck / ZXC Upstream Resolver (Andromeda / Atlas)
+ * Common Language Name -> ISO-639-1 code mapping for multi-audio tracks
+ * (Indian regional languages, Asian dramas, Hollywood dubs).
+ */
+const LANGUAGE_NAME_TO_CODE = {
+  hindi: 'hi', hin: 'hi',
+  tamil: 'ta', tam: 'ta',
+  telugu: 'te', tel: 'te',
+  malayalam: 'ml', mal: 'ml',
+  kannada: 'kn', kan: 'kn',
+  bengali: 'bn', ben: 'bn', beng: 'bn',
+  marathi: 'mr', mar: 'mr',
+  punjabi: 'pa', pan: 'pa',
+  urdu: 'ur', urd: 'ur',
+  english: 'en', eng: 'en',
+  korean: 'ko', kor: 'ko',
+  japanese: 'ja', jpn: 'ja',
+  chinese: 'zh', zho: 'zh', chi: 'zh', mandarin: 'zh', cantonese: 'zh',
+  spanish: 'es', spa: 'es',
+  french: 'fr', fra: 'fr', fre: 'fr',
+  german: 'de', deu: 'de', ger: 'de',
+  italian: 'it', ita: 'it',
+  portuguese: 'pt', por: 'pt',
+  russian: 'ru', rus: 'ru',
+  thai: 'th', tha: 'th',
+  indonesian: 'id', ind: 'id',
+  turkish: 'tr', tur: 'tr',
+  arabic: 'ar', ara: 'ar',
+  vietnamese: 'vi', vie: 'vi'
+};
+
+function mapLanguageNameToCode(name) {
+  if (!name) return 'und';
+  const clean = String(name).trim().toLowerCase().replace(/[^a-z]/g, '');
+  if (LANGUAGE_NAME_TO_CODE[clean]) return LANGUAGE_NAME_TO_CODE[clean];
+  return normalizeAudioLanguage(clean);
+}
+
+// In-memory cache for CastleTV AES security key
+let cachedCastleKey = null;
+let cachedCastleKeyExp = 0;
+
+function buildCastleKey(securityKeyB64) {
+  let km = Buffer.from(String(securityKeyB64 || ''), 'base64');
+  km = Buffer.concat([km, Buffer.from('T!BgJB', 'utf8')]);
+  if (km.length > 16) km = km.subarray(0, 16);
+  else if (km.length < 16) km = Buffer.concat([km, Buffer.alloc(16 - km.length, 0)]);
+  return km;
+}
+
+function decryptCastleAes(dataB64, key) {
+  const raw = Buffer.from(String(dataB64 || '').trim(), 'base64');
+  const decipher = crypto.createDecipheriv('aes-128-cbc', key, key);
+  decipher.setAutoPadding(true);
+  try {
+    return Buffer.concat([decipher.update(raw), decipher.final()]).toString('utf8');
+  } catch {
+    const d2 = crypto.createDecipheriv('aes-128-cbc', key, key);
+    d2.setAutoPadding(false);
+    return Buffer.concat([d2.update(raw), d2.final()]).toString('utf8');
+  }
+}
+
+async function getCastleSecurityKey(castletvBase, signal) {
+  if (cachedCastleKey && Date.now() < cachedCastleKeyExp) {
+    return cachedCastleKey;
+  }
+  const url = `${castletvBase}/v0.1/system/getSecurityKey/1?channel=IndiaA&clientType=1&lang=en`;
+  const res = await fetch(url, {
+    headers: { 'User-Agent': USER_AGENT, Accept: 'application/json' },
+    signal
+  });
+  if (!res.ok) throw new Error(`Castle security key request failed HTTP ${res.status}`);
+  const json = await res.json();
+  if (json.code !== 200 || !json.data) throw new Error('Castle security key empty');
+
+  const km = buildCastleKey(json.data);
+  cachedCastleKey = km;
+  cachedCastleKeyExp = Date.now() + 15 * 60 * 1000;
+  return km;
+}
+
+/**
+ * Sub-provider 1 for Andromeda: CastleTV API (https://api.hlowb.com)
+ * Premier source for South Indian movies (Tamil, Telugu, Malayalam, Kannada),
+ * Bollywood / Pan-Indian Hindi dubs, K-Drama/C-Drama dubs, and Hollywood multi-audio.
+ */
+async function resolveCastletv(metadata, preferredAudio = '', parentSignal = null) {
+  const castletvBase = (config.upstreams.castletvBase || 'https://api.hlowb.com').replace(/\/$/, '');
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), 3500);
+  if (parentSignal) {
+    parentSignal.addEventListener('abort', () => controller.abort(), { once: true });
+  }
+
+  try {
+    const key = await getCastleSecurityKey(castletvBase, controller.signal);
+
+    const searchTerm = `${metadata.title || ''} ${metadata.releaseYear || ''}`.trim();
+    if (!searchTerm) return null;
+
+    const searchParams = new URLSearchParams({
+      channel: 'IndiaA',
+      clientType: '1',
+      keyword: searchTerm,
+      lang: 'en',
+      mode: '1',
+      packageName: 'com.external.castle',
+      page: '1',
+      size: '30'
+    });
+
+    const searchRes = await fetch(
+      `${castletvBase}/film-api/v1.1.0/movie/searchByKeyword?${searchParams.toString()}`,
+      {
+        headers: { 'User-Agent': USER_AGENT, Accept: 'application/json' },
+        signal: controller.signal
+      }
+    );
+    if (!searchRes.ok) return null;
+    const searchCipher = await searchRes.text();
+    const searchJson = JSON.parse(decryptCastleAes(searchCipher, key));
+    const rows = (searchJson?.data?.rows) || [];
+    if (!rows.length) return null;
+
+    const targetTitleNorm = (metadata.title || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+    let matchedRow = rows.find((r) => {
+      const rowNorm = (r.title || r.name || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+      return rowNorm === targetTitleNorm || rowNorm.includes(targetTitleNorm) || targetTitleNorm.includes(rowNorm);
+    }) || rows[0];
+
+    const movieId = matchedRow.id || matchedRow.redirectId || matchedRow.redirectIdStr;
+    if (!movieId) return null;
+
+    const detRes = await fetch(
+      `${castletvBase}/film-api/v1.9.9/movie?channel=IndiaA&clientType=1&lang=en&movieId=${movieId}&packageName=com.external.castle`,
+      {
+        headers: { 'User-Agent': USER_AGENT, Accept: 'application/json' },
+        signal: controller.signal
+      }
+    );
+    if (!detRes.ok) return null;
+    const detCipher = await detRes.text();
+    const detJson = JSON.parse(decryptCastleAes(detCipher, key));
+    const episodes = (detJson?.data?.episodes) || [];
+
+    const isTv = metadata.type === 'tv';
+    let targetEpisode = null;
+    if (isTv) {
+      targetEpisode = episodes.find((e) => Number(e.number) === Number(metadata.episode || 1)) || episodes[0];
+    } else {
+      targetEpisode = episodes[0];
+    }
+    if (!targetEpisode) return null;
+
+    const episodeId = targetEpisode.id;
+    const rawTracks =
+      targetEpisode.tracks && targetEpisode.tracks.length > 0
+        ? targetEpisode.tracks
+        : [{ languageId: null, languageName: 'Original', videos: targetEpisode.videos || [] }];
+
+    const referer = `${castletvBase}/`;
+    const APK_SIGN_KEY = 'ED0955EB04E67A1D9F3305B95454FED485261475';
+
+    // Fetch stream URLs across tracks in parallel
+    const trackJobs = rawTracks.map(async (t) => {
+      const resOptions = [4, 2, 1];
+      for (const res of resOptions) {
+        try {
+          const body = {
+            mode: '1',
+            appMarket: 'GuanWang',
+            clientType: '1',
+            woolUser: 'false',
+            apkSignKey: APK_SIGN_KEY,
+            androidVersion: '13',
+            movieId: String(movieId),
+            episodeId: String(episodeId),
+            isNewUser: 'true',
+            resolution: String(res),
+            packageName: 'com.external.castle'
+          };
+          if (t.languageId != null) body.languageId = String(t.languageId);
+
+          const vRes = await fetch(
+            `${castletvBase}/film-api/v2.0.1/movie/getVideo2?clientType=1&packageName=com.external.castle&channel=IndiaA&lang=en`,
+            {
+              method: 'POST',
+              headers: { 'User-Agent': USER_AGENT, 'Content-Type': 'application/json', Accept: 'application/json' },
+              body: JSON.stringify(body),
+              signal: controller.signal
+            }
+          );
+          if (!vRes.ok) continue;
+          const vCipher = await vRes.text();
+          const vJson = JSON.parse(decryptCastleAes(vCipher, key));
+          const vUrl = vJson?.data?.videoUrl || vJson?.data?.videos?.[0]?.url;
+          if (vUrl) {
+            return {
+              languageId: t.languageId,
+              languageName: t.languageName,
+              videoUrl: vUrl,
+              resolution: res === 4 ? 1080 : res === 2 ? 720 : 480
+            };
+          }
+        } catch {}
+      }
+      return null;
+    });
+
+    const settled = await Promise.allSettled(trackJobs);
+    const validTracks = settled
+      .filter((s) => s.status === 'fulfilled' && s.value && s.value.videoUrl)
+      .map((s) => s.value);
+
+    if (!validTracks.length) return null;
+
+    const wanted = (preferredAudio || '').trim().toLowerCase();
+    const wantedCode = wanted ? normalizeAudioLanguage(wanted) : '';
+
+    const audioTracks = validTracks.map((t, idx) => {
+      const langCode = mapLanguageNameToCode(t.languageName);
+      const isDefault = wantedCode ? langCode === wantedCode : idx === 0;
+      const proxiedUrl = buildProxyStreamUrl(t.videoUrl, referer, '', { mode: 'full' });
+      return {
+        id: `castle-${t.languageId || langCode || idx}`,
+        lang: langCode,
+        label: t.languageName || 'Original Audio',
+        type: 'dub',
+        streamUrl: proxiedUrl,
+        rawUrl: t.videoUrl,
+        default: isDefault
+      };
+    });
+
+    if (!audioTracks.some((a) => a.default)) {
+      audioTracks[0].default = true;
+    }
+
+    const activeTrack = audioTracks.find((a) => a.default) || audioTracks[0];
+    const qualities = [
+      { label: 'Auto', height: 0, url: activeTrack.streamUrl },
+      { label: '1080p', height: 1080, url: activeTrack.streamUrl },
+      { label: '720p', height: 720, url: activeTrack.streamUrl }
+    ];
+
+    return {
+      server: 'andromeda',
+      sourceName: 'CastleTV',
+      format: 'hls',
+      rawUrl: activeTrack.rawUrl,
+      streamUrl: activeTrack.streamUrl,
+      referer,
+      headers: { Referer: referer },
+      backupUrls: [
+        buildProxyStreamUrl(activeTrack.rawUrl, referer, '', { mode: 'manifest' })
+      ],
+      audioTracks,
+      qualities
+    };
+  } catch {
+    return null;
+  } finally {
+    clearTimeout(timeoutId);
+  }
+}
+
+/**
+ * Sub-provider 2 for Andromeda: Moviebox API (https://api3.aoneroom.com)
+ * Comprehensive international & Hollywood catalog with discrete dubbed streams.
+ */
+const MBOX_KEY_B64 = 'NzZpUmwwN3MweFNOOWpxbUVXQXQ3OUVCSlp1bElRSXNWNjRGWnIyTw==';
+
+function getMovieboxSecret() {
+  try {
+    return Buffer.from(Buffer.from(MBOX_KEY_B64, 'base64').toString('utf8'), 'base64');
+  } catch {
+    return Buffer.from(MBOX_KEY_B64, 'base64');
+  }
+}
+
+function buildMovieboxHeaders(method, urlStr, bodyStr, secret) {
+  const ts = Date.now().toString();
+  const reversed = ts.split('').reverse().join('');
+  const token = `${ts},${crypto.createHash('md5').update(reversed).digest('hex')}`;
+
+  let path = '';
+  let query = '';
+  try {
+    const u = new URL(urlStr);
+    path = u.pathname;
+    const sortedKeys = Array.from(u.searchParams.keys()).sort();
+    if (sortedKeys.length) {
+      query = sortedKeys.map((k) => `${k}=${u.searchParams.getAll(k).join('&')}`).join('&');
+    }
+  } catch {
+    path = urlStr;
+  }
+  const canonicalUrl = query ? `${path}?${query}` : path;
+  const bodyHash = bodyStr ? crypto.createHash('md5').update(bodyStr).digest('hex') : '';
+  const bodyLen = bodyStr ? Buffer.byteLength(bodyStr, 'utf8').toString() : '';
+  const canonical = `${method.toUpperCase()}\napplication/json\napplication/json\n${bodyLen}\n${ts}\n${bodyHash}\n${canonicalUrl}`;
+  const sig = `${ts}|2|${crypto.createHmac('md5', secret).update(canonical).digest('base64')}`;
+
+  const clientInfo = JSON.stringify({
+    package_name: 'com.community.mbox.in',
+    version_name: '3.0.03.0529.03',
+    version_code: 50020042,
+    os: 'android',
+    os_version: '16',
+    device_id: '9a8b7c6d5e4f3a2b1c0d9e8f7a6b5c4d',
+    install_store: 'ps',
+    gaid: 'd7578036d13336cc',
+    brand: 'samsung',
+    model: 'SM-S918B',
+    system_language: 'en',
+    net: 'NETWORK_WIFI',
+    region: 'IN',
+    timezone: 'Asia/Calcutta',
+    sp_code: ''
+  });
+
+  return {
+    Accept: 'application/json',
+    'Content-Type': 'application/json',
+    'x-client-token': token,
+    'x-tr-signature': sig,
+    'User-Agent':
+      'com.community.mbox.in/50020042 (Linux; U; Android 16; en_IN; SM-S918B; Build/BP22.250325.006; Cronet/133.0.6876.3)',
+    'x-client-info': clientInfo,
+    'x-client-status': '0'
+  };
+}
+
+let cachedMovieboxHost = '';
+let cachedMovieboxHostExpiry = 0;
+
+function getMovieboxCandidates() {
+  const primary = (config.upstreams.movieboxBase || '').replace(/\/$/, '');
+  const hosts = Array.isArray(config.upstreams.movieboxHosts) ? config.upstreams.movieboxHosts : [];
+  const extra = process.env.MOVIEBOX_EXTRA_HOSTS
+    ? process.env.MOVIEBOX_EXTRA_HOSTS.split(',').map((s) => s.trim().replace(/\/$/, '')).filter(Boolean)
+    : [];
+
+  const rawList = [
+    primary,
+    ...hosts,
+    ...extra,
+    'https://api.inmoviebox.com',
+    'https://api6.aoneroom.com',
+    'https://h5-api.aoneroom.com',
+    'https://apii.inmoviebox.com',
+    'https://api.aoneroom.com',
+    'https://i-api.aoneroom.com',
+    'https://api5.aoneroom.com',
+    'https://h5.aoneroom.com'
+  ].filter(Boolean);
+
+  const unique = [...new Set(rawList)];
+  if (cachedMovieboxHost && Date.now() < cachedMovieboxHostExpiry && unique.includes(cachedMovieboxHost)) {
+    return [cachedMovieboxHost, ...unique.filter((h) => h !== cachedMovieboxHost)];
+  }
+  return unique;
+}
+
+async function resolveMoviebox(metadata, preferredAudio = '', parentSignal = null) {
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), 6000);
+  if (parentSignal) {
+    parentSignal.addEventListener('abort', () => controller.abort(), { once: true });
+  }
+
+  const secret = getMovieboxSecret();
+  const candidates = getMovieboxCandidates();
+
+  try {
+    const searchBody = JSON.stringify({ page: 1, perPage: 20, keyword: metadata.title || '' });
+    let activeHost = '';
+    let searchJson = null;
+
+    // Dynamically iterate through candidate hosts with failover (bypasses dead/440/unreachable clusters)
+    for (const host of candidates) {
+      try {
+        const searchUrl = `${host}/wefeed-mobile-bff/subject-api/search/v2`;
+        const searchRes = await fetch(searchUrl, {
+          method: 'POST',
+          headers: buildMovieboxHeaders('POST', searchUrl, searchBody, secret),
+          body: searchBody,
+          signal: controller.signal
+        });
+        if (!searchRes.ok) continue;
+        const json = await searchRes.json().catch(() => null);
+        if (json && (json.code === 0 || json.data)) {
+          searchJson = json;
+          activeHost = host;
+          cachedMovieboxHost = host;
+          cachedMovieboxHostExpiry = Date.now() + 15 * 60 * 1000;
+          break;
+        }
+      } catch {}
+    }
+
+    if (!activeHost || !searchJson) return null;
+
+    const subjects = [];
+    if (searchJson?.data?.results) {
+      searchJson.data.results.forEach((group) => {
+        if (group.subjects) subjects.push(...group.subjects);
+      });
+    }
+    if (!subjects.length) return null;
+
+    const targetType = metadata.type === 'tv' ? 2 : 1;
+    const normTmdb = (metadata.title || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+    const best =
+      subjects.find((s) => {
+        const norm = (s.title || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+        return s.subjectType === targetType && (norm === normTmdb || norm.includes(normTmdb) || normTmdb.includes(norm));
+      }) ||
+      subjects.find((s) => s.subjectType === targetType) ||
+      subjects[0];
+
+    if (!best || !best.subjectId) return null;
+    const subjectId = best.subjectId;
+
+    const getUrl = `${activeHost}/wefeed-mobile-bff/subject-api/get?subjectId=${subjectId}`;
+    const getRes = await fetch(getUrl, {
+      headers: buildMovieboxHeaders('GET', getUrl, null, secret),
+      signal: controller.signal
+    });
+    if (!getRes.ok) return null;
+    const getJson = await getRes.json().catch(() => null);
+    const dubs = getJson?.data?.dubs || [];
+    const dubTargets = [{ id: subjectId, lang: 'Original' }];
+    if (Array.isArray(dubs)) {
+      dubs.forEach((d) => {
+        if (d.subjectId && d.subjectId !== subjectId) {
+          dubTargets.push({ id: d.subjectId, lang: d.lanName || 'Dubbed' });
+        }
+      });
+    }
+
+    const season = metadata.type === 'tv' ? metadata.season || 1 : 0;
+    const episode = metadata.type === 'tv' ? metadata.episode || 1 : 0;
+    const referer = `${activeHost}/`;
+
+    const streamJobs = dubTargets.map(async (t) => {
+      const playUrl = `${activeHost}/wefeed-mobile-bff/subject-api/play-info?subjectId=${t.id}&se=${season}&ep=${episode}`;
+      try {
+        const pRes = await fetch(playUrl, {
+          headers: buildMovieboxHeaders('GET', playUrl, null, secret),
+          signal: controller.signal
+        });
+        if (!pRes.ok) return null;
+        const pJson = await pRes.json().catch(() => null);
+        const streams = pJson?.data?.streams || [];
+        const chosen = streams.find((s) => s.url) || null;
+        if (chosen?.url) {
+          return {
+            id: t.id,
+            lang: t.lang,
+            url: chosen.url,
+            quality: chosen.resolutions || chosen.quality || 'Auto'
+          };
+        }
+      } catch {}
+      return null;
+    });
+
+    const settled = await Promise.allSettled(streamJobs);
+    const valid = settled
+      .filter((s) => s.status === 'fulfilled' && s.value && s.value.url)
+      .map((s) => s.value);
+    if (!valid.length) return null;
+
+    const wanted = (preferredAudio || '').trim().toLowerCase();
+    const wantedCode = wanted ? normalizeAudioLanguage(wanted) : '';
+
+    const audioTracks = valid.map((v, idx) => {
+      const langCode = mapLanguageNameToCode(v.lang);
+      const isDefault = wantedCode ? langCode === wantedCode : idx === 0;
+      const proxiedUrl = buildProxyStreamUrl(v.url, referer, '', { mode: 'full' });
+      return {
+        id: `mbox-${v.id || langCode || idx}`,
+        lang: langCode,
+        label: v.lang || 'Original Audio',
+        type: 'dub',
+        streamUrl: proxiedUrl,
+        rawUrl: v.url,
+        default: isDefault
+      };
+    });
+
+    if (!audioTracks.some((a) => a.default)) {
+      audioTracks[0].default = true;
+    }
+    const active = audioTracks.find((a) => a.default) || audioTracks[0];
+
+    return {
+      server: 'andromeda',
+      sourceName: 'Moviebox',
+      format: /\.mpd(\?|$)/i.test(active.rawUrl) ? 'dash' : /\.mp4(\?|$)/i.test(active.rawUrl) ? 'mp4' : 'hls',
+      rawUrl: active.rawUrl,
+      streamUrl: active.streamUrl,
+      referer,
+      headers: { Referer: referer },
+      backupUrls: [
+        buildProxyStreamUrl(active.rawUrl, referer, '', { mode: 'manifest' })
+      ],
+      audioTracks,
+      qualities: [{ label: 'Auto', height: 0, url: active.streamUrl }]
+    };
+  } catch {
+    return null;
+  } finally {
+    clearTimeout(timeoutId);
+  }
+}
+
+let cachedNetmirrorApiUrl = '';
+let cachedNetmirrorExpiry = 0;
+let cachedNetmirrorActiveReferer = 'https://net52.cc';
+
+function getNetmirrorDiscoveryPool() {
+  const configured = Array.isArray(config.upstreams.netmirrorDiscoveryUrls)
+    ? config.upstreams.netmirrorDiscoveryUrls
+    : [];
+  const pool = [
+    ...configured,
+    'https://mobiledetect.app',
+    'https://mobiledetects.com',
+    'https://mobidetect.cc',
+    'https://mobidetects.top',
+    'https://getimgcdn.com',
+    'https://mobidetect.art',
+    'https://mobidetect.click',
+    'https://mobidetect.ink',
+    'https://mobidetect.live',
+    'https://mobidetect.pro',
+    'https://mobidetect.shop',
+    'https://mobidetect.site',
+    'https://mobidetect.space',
+    'https://mobidetect.store',
+    'https://mobidetect.vip',
+    'https://mobidetect.wiki',
+    'https://mobidetect.xyz',
+    'https://mobidetects.art',
+    'https://mobidetects.info',
+    'https://mobidetects.pro',
+    'https://mobidetects.store',
+    'https://mobidetects.xyz'
+  ]
+    .map((s) => s.trim().replace(/\/$/, ''))
+    .filter(Boolean);
+
+  return [...new Set(pool)];
+}
+
+async function getNetmirrorApiBase(signal) {
+  if (cachedNetmirrorApiUrl && Date.now() < cachedNetmirrorExpiry) {
+    return cachedNetmirrorApiUrl;
+  }
+  const checkDomains = getNetmirrorDiscoveryPool();
+  for (const base of checkDomains) {
+    try {
+      const res = await fetch(`${base}/checknewtv.php`, {
+        headers: {
+          'User-Agent': USER_AGENT,
+          Accept: 'application/json, text/plain, */*'
+        },
+        signal
+      });
+      if (res.ok) {
+        const data = await res.json().catch(() => null);
+        if (data && data.token_hash) {
+          const decoded = Buffer.from(data.token_hash, 'base64').toString('utf8').replace(/\/$/, '');
+          if (decoded.startsWith('http')) {
+            cachedNetmirrorApiUrl = decoded;
+            cachedNetmirrorExpiry = Date.now() + 3600000;
+            return decoded;
+          }
+        }
+      }
+    } catch {}
+  }
+  return cachedNetmirrorApiUrl || '';
+}
+
+/**
+ * Sub-provider 3 for Andromeda: NetMirror (Dynamic NewTV Discovery & Rotating OTT Mirrors)
+ * Dynamically discovers the active API endpoint and tracks live rotating web mirror domains (net27 -> net52 -> net77, etc.).
+ */
+async function resolveNetmirror(metadata, preferredAudio = '', parentSignal = null) {
+  const configuredBase = (config.upstreams.netmirrorBase || '').replace(/\/$/, '');
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), 4500);
+  if (parentSignal) {
+    parentSignal.addEventListener('abort', () => controller.abort(), { once: true });
+  }
+
+  try {
+    const isTv = metadata.type === 'tv';
+
+    // 1. Try NewTV dynamic OTT mirror API flow (Netflix, Prime, Hotstar)
+    try {
+      const apiBase = await getNetmirrorApiBase(controller.signal);
+      if (apiBase) {
+        const ottList = ['nf', 'pv', 'hs'];
+        for (const ott of ottList) {
+          try {
+            const searchUrl = `${apiBase}/newtv/search.php?s=${encodeURIComponent(metadata.title || '')}`;
+            const sRes = await fetch(searchUrl, {
+              headers: {
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:136.0) Gecko/20100101 Firefox/136.0 /OS.GatuNewTV v1.0',
+                Accept: 'application/json, text/plain, */*',
+                'X-Requested-With': 'NetmirrorNewTV v1.0',
+                Ott: ott
+              },
+              signal: controller.signal
+            });
+            if (!sRes.ok) continue;
+            const sJson = await sRes.json().catch(() => null);
+            if (sJson?.img_referer) {
+              cachedNetmirrorActiveReferer = sJson.img_referer.replace(/\/$/, '');
+            }
+            const results = sJson?.searchResult || [];
+            if (!results.length) continue;
+
+            const match = results[0];
+            let targetId = match.id;
+
+            if (isTv) {
+              const postUrl = `${apiBase}/newtv/post.php?id=${match.id}`;
+              const postRes = await fetch(postUrl, {
+                headers: {
+                  'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:136.0) Gecko/20100101 Firefox/136.0 /OS.GatuNewTV v1.0',
+                  Accept: 'application/json, text/plain, */*',
+                  'X-Requested-With': 'NetmirrorNewTV v1.0',
+                  Ott: ott
+                },
+                signal: controller.signal
+              });
+              if (postRes.ok) {
+                const postJson = await postRes.json().catch(() => null);
+                if (postJson?.img_referer) {
+                  cachedNetmirrorActiveReferer = postJson.img_referer.replace(/\/$/, '');
+                }
+                const eps = (postJson?.episodes || []).filter(Boolean);
+                const wantedS = metadata.season || 1;
+                const wantedE = metadata.episode || 1;
+                const found = eps.find((e) => {
+                  const epNum = e.ep ? parseInt(e.ep) : e.epNum ? parseInt(e.epNum.replace(/[^0-9]/g, '')) : null;
+                  const sNum = e.sNum ? parseInt(e.sNum.replace(/[^0-9]/g, '')) : null;
+                  return (sNum ? sNum === wantedS : true) && epNum === wantedE;
+                });
+                if (found?.id) targetId = found.id;
+              }
+            }
+
+            const playerUrl = `${apiBase}/newtv/player.php?id=${targetId}`;
+            const pRes = await fetch(playerUrl, {
+              headers: {
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:136.0) Gecko/20100101 Firefox/136.0 /OS.GatuNewTV v1.0',
+                Accept: 'application/json, text/plain, */*',
+                'X-Requested-With': 'NetmirrorNewTV v1.0',
+                Ott: ott
+              },
+              signal: controller.signal
+            });
+            if (!pRes.ok) continue;
+            const pJson = await pRes.json().catch(() => null);
+            if (pJson && pJson.video_link) {
+              const streamUrl = pJson.video_link;
+              const dynamicReferer = pJson.referer ? pJson.referer.replace(/\/$/, '') : cachedNetmirrorActiveReferer;
+              cachedNetmirrorActiveReferer = dynamicReferer;
+              const referer = `${dynamicReferer}/`;
+              const proxiedUrl = buildProxyStreamUrl(streamUrl, referer, '', { mode: 'full' });
+              return {
+                server: 'andromeda',
+                sourceName: `NetMirror (${ott.toUpperCase()})`,
+                format: 'hls',
+                rawUrl: streamUrl,
+                streamUrl: proxiedUrl,
+                referer,
+                headers: { Referer: referer },
+                backupUrls: [buildProxyStreamUrl(streamUrl, referer, '', { mode: 'manifest' })],
+                audioTracks: [
+                  {
+                    id: 'nm-default',
+                    lang: 'en',
+                    label: 'Original Audio (Multi-Track HLS)',
+                    type: 'dub',
+                    streamUrl: proxiedUrl,
+                    rawUrl: streamUrl,
+                    default: true
+                  }
+                ],
+                qualities: [{ label: 'Auto', height: 0, url: proxiedUrl }]
+              };
+            }
+          } catch {}
+        }
+      }
+    } catch {}
+
+    // 2. Direct embed-tmdb endpoint fallback (using dynamic active referer or configuredBase)
+    const effectiveWebBase = configuredBase || cachedNetmirrorActiveReferer || 'https://net52.cc';
+    const netflixUrl = isTv
+      ? `${effectiveWebBase}/api/embed-tmdb/${encodeURIComponent(metadata.tmdbId)}?type=tv&se=${metadata.season || 1}&ep=${metadata.episode || 1}`
+      : `${effectiveWebBase}/api/embed-tmdb/${encodeURIComponent(metadata.tmdbId)}`;
+
+    const res = await fetch(netflixUrl, {
+      headers: {
+        Accept: 'application/json, text/plain, */*',
+        Referer: `${effectiveWebBase}/`,
+        'User-Agent': USER_AGENT
+      },
+      redirect: 'follow',
+      signal: controller.signal
+    });
+
+    if (res.ok) {
+      if (res.url) {
+        try {
+          const finalOrigin = new URL(res.url).origin;
+          if (finalOrigin && finalOrigin.startsWith('http')) {
+            cachedNetmirrorActiveReferer = finalOrigin;
+          }
+        } catch {}
+      }
+      const data = await res.json().catch(() => null);
+      if (data && data.ok) {
+        const streamUrl = data.streams?.[0]?.url || data.mp4;
+        if (streamUrl) {
+          const referer = `${cachedNetmirrorActiveReferer}/`;
+          const proxiedUrl = buildProxyStreamUrl(streamUrl, referer, '', { mode: 'full' });
+          const qualities = (data.streams || [])
+            .filter((s) => s.url)
+            .map((s) => ({
+              label: s.resolution ? `${s.resolution}p` : 'Auto',
+              height: Number(s.resolution || 1080),
+              url: buildProxyStreamUrl(s.url, referer, '', { mode: 'full' })
+            }));
+          if (!qualities.length) {
+            qualities.push({ label: 'Auto', height: 0, url: proxiedUrl });
+          }
+
+          const audioTracks = [
+            {
+              id: 'nm-default',
+              lang: 'en',
+              label: 'Original Audio (Multi-Track HLS)',
+              type: 'dub',
+              streamUrl: proxiedUrl,
+              rawUrl: streamUrl,
+              default: true
+            }
+          ];
+
+          return {
+            server: 'andromeda',
+            sourceName: 'NetMirror',
+            format: 'hls',
+            rawUrl: streamUrl,
+            streamUrl: proxiedUrl,
+            referer,
+            headers: { Referer: referer },
+            backupUrls: [
+              buildProxyStreamUrl(streamUrl, referer, '', { mode: 'manifest' })
+            ],
+            audioTracks,
+            qualities
+          };
+        }
+      }
+    }
+    return null;
+  } catch {
+    return null;
+  } finally {
+    clearTimeout(timeoutId);
+  }
+}
+
+/**
+ * Server 1 — Andromeda Multi-Audio Orchestrator
+ * Cascades across 3 premier multi-audio sources in priority order:
+ *   1. CastleTV (Priority 1: South Indian dubs, K-Drama/C-Drama, Anime, Hollywood)
+ *   2. Moviebox (Priority 2: Broad catalog with discrete language streams)
+ *   3. NetMirror (Priority 3: Netflix/Prime/Hotstar official platform streams)
+ * If all 3 fail, fails cleanly so the waterfall immediately hands playback to Server 2 (Ursa).
+ */
+async function resolveAndromedaServer(metadata, requestedServerId = 'andromeda', preferredAudio = '') {
+  const providerKey = 'andromeda';
+  if (!circuitBreaker.isAvailable(providerKey)) {
+    return {
+      ok: false,
+      reason: 'circuit_open',
+      diag: {
+        stage: 'circuit_breaker',
+        message: 'Andromeda is temporarily paused by the upstream circuit breaker. Failing over to next server.'
+      }
+    };
+  }
+
+  const diag = { stage: 'init', steps: [] };
+  const stamp = (stage, message, extra) => {
+    diag.stage = stage;
+    diag.steps.push({ stage, message, ...(extra || {}) });
+    diag.message = message;
+  };
+
+  // 1. Priority 1: CastleTV
+  stamp('castletv_attempt', 'Querying CastleTV multi-audio upstream...');
+  try {
+    const castleRes = await resolveCastletv(metadata, preferredAudio);
+    if (castleRes && castleRes.streamUrl) {
+      circuitBreaker.recordSuccess(providerKey);
+      stamp('castletv_success', `CastleTV resolved ${castleRes.audioTracks.length} audio track(s).`);
+      return { ok: true, ...castleRes, diag };
+    }
+    stamp('castletv_miss', 'CastleTV returned no playable streams for this title.');
+  } catch (err) {
+    stamp('castletv_error', `CastleTV failed: ${err.message}`);
+  }
+
+  // 2. Priority 2: Moviebox
+  stamp('moviebox_attempt', 'Querying Moviebox multi-audio upstream...');
+  try {
+    const mboxRes = await resolveMoviebox(metadata, preferredAudio);
+    if (mboxRes && mboxRes.streamUrl) {
+      circuitBreaker.recordSuccess(providerKey);
+      stamp('moviebox_success', `Moviebox resolved ${mboxRes.audioTracks.length} audio track(s).`);
+      return { ok: true, ...mboxRes, diag };
+    }
+    stamp('moviebox_miss', 'Moviebox returned no playable streams for this title.');
+  } catch (err) {
+    stamp('moviebox_error', `Moviebox failed: ${err.message}`);
+  }
+
+  // 3. Priority 3: NetMirror
+  stamp('netmirror_attempt', 'Querying NetMirror OTT upstream...');
+  try {
+    const nmRes = await resolveNetmirror(metadata, preferredAudio);
+    if (nmRes && nmRes.streamUrl) {
+      circuitBreaker.recordSuccess(providerKey);
+      stamp('netmirror_success', 'NetMirror resolved official OTT stream.');
+      return { ok: true, ...nmRes, diag };
+    }
+    stamp('netmirror_miss', 'NetMirror returned no playable streams for this title.');
+  } catch (err) {
+    stamp('netmirror_error', `NetMirror failed: ${err.message}`);
+  }
+
+  // 4. Test/Mock Fallback: if VidStuck is explicitly pointed to a local mock (e.g. test suite)
+  if (config.upstreams.vidstuckBase && /127\.0\.0\.1|localhost/i.test(config.upstreams.vidstuckBase)) {
+    stamp('vidstuck_mock_attempt', 'Attempting local VidStuck mock fallback...');
+    const vsRes = await resolveVidstuckServer(metadata, 'andromeda');
+    if (vsRes && vsRes.streamUrl) {
+      circuitBreaker.recordSuccess(providerKey);
+      return { ok: true, ...vsRes, diag };
+    }
+  }
+
+  // All 3 sub-providers failed: record failure and hand off to Server 2 (Ursa)
+  circuitBreaker.recordFailure(providerKey);
+  stamp('andromeda_exhausted', 'All 3 Andromeda sub-providers (CastleTV, Moviebox, NetMirror) failed to resolve a stream.');
+  return {
+    ok: false,
+    reason: 'andromeda_all_sources_exhausted',
+    diag
+  };
+}
+
+/**
+ * 1. VidStuck / ZXC Upstream Resolver (Atlas / Legacy Backup)
  * Performs session warm-up, /backend/meow token generation, /backend/servers/:server lookup,
  * and OpenSSL MD5 EVP_BytesToKey AES-256-CBC decryption.
  */
@@ -1810,9 +2685,8 @@ async function resolveStreamForServer(metadata, requestedServerId = 'andromeda',
   if (cached) return applyPreferredAudio(cached, preferredAudio);
 
   // Build ordered waterfall starting with the user's selected server, then the
-  // fast edge-first priority used by the Cloudflare Worker:
-  // centaurus -> ursa -> andromeda -> atlas -> strings.
-  const WATERFALL_PRIORITY = ['centaurus', 'ursa', 'andromeda', 'atlas', 'strings'];
+  // premier multi-audio cascade: Andromeda (Server 1) -> Ursa (Server 2) -> Centaurus -> Atlas -> Strings.
+  const WATERFALL_PRIORITY = ['andromeda', 'ursa', 'centaurus', 'atlas', 'strings'];
   const enabledIds = enabledServers.map((s) => s.id);
   const prioritized = [
     ...WATERFALL_PRIORITY.filter((id) => enabledIds.includes(id)),
@@ -1824,7 +2698,9 @@ async function resolveStreamForServer(metadata, requestedServerId = 'andromeda',
   for (const srvId of serverOrder) {
     const t0 = Date.now();
     let resolved = null;
-    if (srvId === 'andromeda' || srvId === 'atlas') {
+    if (srvId === 'andromeda') {
+      resolved = await resolveAndromedaServer(metadata, srvId, preferredAudio);
+    } else if (srvId === 'atlas') {
       resolved = await resolveVidstuckServer(metadata, srvId);
     } else if (srvId === 'ursa') {
       resolved = await resolveVidsrcServer(metadata);
@@ -1840,6 +2716,7 @@ async function resolveStreamForServer(metadata, requestedServerId = 'andromeda',
       const payload = {
         ...resolved,
         requestedServer: validServer,
+        serverAttempts,
         activeAudioTrack:
           resolved.audioTracks.find((t) => t.default) || resolved.audioTracks[0] || null,
         servers: enabledServers.map((s) => ({
@@ -1874,10 +2751,18 @@ async function resolveStreamForServer(metadata, requestedServerId = 'andromeda',
 
 module.exports = {
   resolveStreamForServer,
+  resolveAndromedaServer,
+  resolveCastletv,
+  resolveMoviebox,
+  resolveNetmirror,
   resolveVidstuckServer,
   resolveVidsrcServer,
   resolveHicineServer,
   resolveHianimeServer,
+  buildCastleKey,
+  decryptCastleAes,
+  mapLanguageNameToCode,
+  buildMovieboxHeaders,
   decryptVidsrcWasmPayload,
   decodeZokoAnimeXorPayload,
   parseHicineLinks,
