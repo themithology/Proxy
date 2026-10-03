@@ -594,6 +594,399 @@ function unwrapRedirectVideoUrl(loc) {
 }
 
 /**
+ * HubCloud generator unroller (Centaurus / HiCine).
+ *
+ * Root Cause E: HiCine's `ten` tokens terminate on a HubCloud *link generator*
+ * landing page instead of a media file:
+ *
+ *   /go → https://gpdl2.hubcloud.ist/?id=…::token   (3-4s countdown HTML page)
+ *       → https://gamerxyt.com/dl.php?link=<video-downloads.googleusercontent.com/…>
+ *       → direct MKV/MP4 on a real CDN
+ *
+ * The landing page only reveals its "Download Here" target via client-side JS,
+ * which `<video src>` / `fetch()` cannot execute, so every quality and backup
+ * URL answered `text/html`, the player walked the whole ladder, and the embed
+ * toasted "All upstream servers failed to play this stream."
+ *
+ * The unroll is pure HTTP — ground truth: MNTGXO/hubcloud-bypasser performs no
+ * countdown wait at all, because the generator either 302-redirects to
+ * `dl.php?link=<direct>` (final URL rides in the query string) or embeds the
+ * final CDN link in the landing HTML (R2 / cloudflarestorage / cloudfront /
+ * workers.dev / pixeldrain / video-downloads.googleusercontent.com / direct
+ * media files). Nested generators (`hubcloud.<tld>/drive/<id>` → `<a id="download">`
+ * → another generator) are followed up to HUBCLOUD_UNROLL_MAX_DEPTH hops, and
+ * results are cached for 10 minutes because HubCloud tokens are short-lived.
+ *
+ * Mirrors cloudflare-worker/worker.js one-to-one — keep both in sync.
+ */
+const HUBCLOUD_UNROLL_TTL_MS = 600000; // 10 minutes
+const HUBCLOUD_UNROLL_MAX_DEPTH = 4;
+const HUBCLOUD_UNROLL_BUDGET_MS = 4500; // hard cap per resolve-step
+const HUBCLOUD_UNROLL_BODY_CAP = 600 * 1024;
+const HUBCLOUD_UNROLL_ALT_UA =
+  'Mozilla/5.0 (compatible; Googlebot/2.1; +http://www.google.com/bot.html)';
+const hubcloudUnrollCache = new Map(); // generatorUrl -> { direct, exp }
+
+function isHubcloudGeneratorUrl(u) {
+  if (!u || typeof u !== 'string') return false;
+  try {
+    const url = new URL(u);
+    const host = url.hostname.toLowerCase();
+    return (
+      /(^|\.)hubcloud\./.test(host) ||
+      /(^|\.)hubcdn\./.test(host) ||
+      /(^|\.)gamerxyt\.com$/.test(host) ||
+      /^gpdl\d*\./.test(host) ||
+      // third-party hosts reuse the HubCloud wrapper scripts verbatim
+      /\/(?:hubcloud|hubcdn)\.php(?:\?|$)/i.test(url.pathname)
+    );
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Extract the target of a `dl.php?link=…`-style wrapper without corrupting
+ * already-encoded targets: a value that literally starts with `http(s)://`
+ * is returned untouched (its `%xx` sequences belong to the target), only a
+ * percent-encoded value is decoded.
+ */
+function extractHttpLinkParam(u) {
+  const m = String(u || '').match(/[?&]link=([^&#\s]+)/i);
+  if (!m) return '';
+  const raw = m[1];
+  if (/^https?:\/\//i.test(raw)) return raw;
+  try {
+    const decoded = decodeURIComponent(raw);
+    if (/^https?:\/\//i.test(decoded)) return decoded;
+  } catch {
+    /* malformed encoding — keep raw */
+  }
+  return '';
+}
+
+/** File hosts that answer with an HTML page no `<video>` element can play. */
+const HUBCLOUD_UNPLAYABLE_HOST_RE =
+  /(^|\.)(mega\.nz|mediafire\.com|dropbox\.com|gofile\.io|drive\.google\.com|docs\.google\.com)$/i;
+
+/**
+ * Score a candidate as a *terminal* playable URL. -1 = not playable directly
+ * (generator page, HTML file host, or garbage). Higher = preferred source:
+ * Google's video CDN first, then Cloudflare R2/CDN, then workers.dev, then
+ * any direct media file, then pixeldrain (hotlink-gated, last resort).
+ */
+function scorePlayableUrl(u) {
+  if (!u || typeof u !== 'string') return -1;
+  let href;
+  let host;
+  let pathname;
+  try {
+    const parsed = new URL(u);
+    href = parsed.href;
+    host = parsed.hostname.toLowerCase();
+    pathname = parsed.pathname;
+  } catch {
+    return -1;
+  }
+  if (isHubcloudGeneratorUrl(href)) return -1;
+  if (HUBCLOUD_UNPLAYABLE_HOST_RE.test(host)) return -1;
+  if (/(^|\.)video-downloads\.googleusercontent\.com$/.test(host)) return 100;
+  if (/(^|\.)r2\.dev$/.test(host)) return 95;
+  if (/\.(cloudflarestorage\.com|cloudfront\.net)$/.test(host)) return 90;
+  if (/(^|\.)workers\.dev$/.test(host)) return 85;
+  if (/\.(mp4|mkv|webm|m4v|m3u8|mpd)([?#]|$)/i.test(href)) return 80;
+  if (/(^|\.)pixeldrain\.(com|dev)$/.test(host) && /^\/(u|api\/file)\/[A-Za-z0-9]+/.test(pathname)) {
+    return 70;
+  }
+  return -1;
+}
+
+/** Pixeldrain share pages `/u/ID` → direct API endpoint `/api/file/ID`. */
+function normalizePlayableUrl(u) {
+  try {
+    const url = new URL(u);
+    if (/(^|\.)pixeldrain\.(com|dev)$/.test(url.hostname.toLowerCase())) {
+      const m = url.pathname.match(/^\/u\/([A-Za-z0-9]+)/);
+      if (m) return `${url.origin}/api/file/${m[1]}`;
+    }
+    return url.href;
+  } catch {
+    return u;
+  }
+}
+
+/**
+ * Collect every URL a generator page might be hiding: `href`/`src`/`action`
+ * attributes, bare URLs in text/JS, and base64 `atob("…")` payloads. JS
+ * string escapes (`\/`, `\u002F`, `\x2F`) are normalized first so URLs built
+ * by obfuscated inline scripts become visible to the scanner.
+ */
+function collectGeneratorCandidates(html, pageUrl) {
+  const normalized = String(html || '')
+    .replace(/\\\//g, '/')
+    .replace(/\\u002[Ff]/g, '/')
+    .replace(/\\x2[Ff]/g, '/')
+    .replace(/&amp;/g, '&');
+  const out = new Set();
+  const tryAdd = (cand) => {
+    if (!cand) return;
+    try {
+      out.add(new URL(String(cand).trim(), pageUrl).href);
+    } catch {
+      /* not a URL */
+    }
+  };
+  for (const m of normalized.matchAll(/(?:href|src|action)\s*=\s*["']([^"']+)["']/gi)) {
+    tryAdd(m[1]);
+  }
+  for (const m of normalized.matchAll(/https?:\/\/[^\s"'<>)\]]+/gi)) {
+    tryAdd(m[0].replace(/[.,;:]+$/, ''));
+  }
+  for (const m of normalized.matchAll(/\batob\(\s*["']([A-Za-z0-9+/=]{16,})["']\s*\)/g)) {
+    try {
+      const decoded = atob(m[1]);
+      for (const d of decoded.matchAll(/https?:\/\/[^\s"'<>)\]]+/gi)) {
+        tryAdd(d[0].replace(/[.,;:]+$/, ''));
+      }
+    } catch {
+      /* not base64 */
+    }
+  }
+  return out;
+}
+
+/**
+ * Pick the terminal CDN URL out of a generator page, or — when the page only
+ * links to another wrapper — the next hop to recurse into. Countdown pages
+ * link to themselves; self-references are skipped so the walk always moves.
+ */
+function pickFromGeneratorHtml(html, pageUrl) {
+  let direct = null;
+  let directScore = -1;
+  let generator = null;
+  for (const cand of collectGeneratorCandidates(html, pageUrl)) {
+    if (cand === pageUrl) continue;
+    if (isHubcloudGeneratorUrl(cand) || extractHttpLinkParam(cand)) {
+      if (!generator) generator = cand;
+      continue;
+    }
+    const score = scorePlayableUrl(cand);
+    if (score > directScore) {
+      direct = cand;
+      directScore = score;
+    }
+  }
+  if (directScore >= 0) return { direct: normalizePlayableUrl(direct), generator: null };
+  return { direct: null, generator };
+}
+
+/**
+ * Fetch with a hard deadline: `deadline` (epoch ms) bounds the whole unroll,
+ * `outerSignal` (when present) aborts together with the caller's controller.
+ */
+async function fetchWithDeadline(url, userAgent, outerSignal, deadline) {
+  const remaining = deadline - Date.now();
+  if (remaining < 400 || outerSignal?.aborted) return null;
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), Math.min(3500, remaining));
+  const onAbort = () => ctrl.abort();
+  if (outerSignal) outerSignal.addEventListener?.('abort', onAbort);
+  try {
+    return await fetch(url, {
+      headers: {
+        'User-Agent': userAgent,
+        Accept: 'text/html,application/xhtml+xml,application/json;q=0.9,*/*;q=0.8'
+      },
+      redirect: 'follow',
+      signal: ctrl.signal
+    });
+  } catch {
+    return null;
+  } finally {
+    clearTimeout(timer);
+    if (outerSignal) outerSignal.removeEventListener?.('abort', onAbort);
+  }
+}
+
+/** Read at most `cap` bytes of a response body (landing pages only). */
+async function readCappedText(res, cap = HUBCLOUD_UNROLL_BODY_CAP) {
+  try {
+    const len = Number(res.headers.get('content-length')) || 0;
+    if (len > 2 * 1024 * 1024) return ''; // a binary file, not a landing page
+    const body = res.body;
+    if (!body || typeof body.getReader !== 'function') {
+      const text = await res.text();
+      return text.length > cap ? text.slice(0, cap) : text;
+    }
+    const reader = body.getReader();
+    const decoder = new TextDecoder('utf-8');
+    let out = '';
+    while (out.length < cap) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      if (value) out += decoder.decode(value, { stream: true });
+    }
+    try {
+      await reader.cancel();
+    } catch {
+      /* already consumed */
+    }
+    return out.length > cap ? out.slice(0, cap) : out;
+  } catch {
+    return '';
+  }
+}
+
+/**
+ * Cloudflare managed-challenge interstitial ("Just a moment…"). Datacenter
+ * fetchers (Workers, VPS) get this instead of the landing page on some
+ * generator zones — it never contains a download link, so scanning it is
+ * wasted work and the fetch must be treated as failed (→ UA retry below).
+ */
+function isCfChallengePage(html) {
+  const h = String(html || '').toLowerCase();
+  if (!h) return false;
+  return (
+    h.includes('cf-chl') ||
+    h.includes('_cf_chl') ||
+    h.includes('challenge-platform') ||
+    h.includes('cf-turnstile') ||
+    h.includes('verify_turnstile') ||
+    h.includes('just a moment') ||
+    h.includes('performing security verification') ||
+    h.includes('enable javascript and cookies to continue') ||
+    h.includes('attention required') ||
+    h.includes('checking your browser') ||
+    h.includes('cf_mitigation')
+  );
+}
+
+/** Follow one `?link=` hop: recurse into wrappers, accept terminal URLs. */
+async function resolveLinkInner(inner, opts) {
+  if (!inner) return null;
+  if (isHubcloudGeneratorUrl(inner)) {
+    return unrollHubcloudUrl(inner, { ...opts, depth: opts.depth + 1 });
+  }
+  if (scorePlayableUrl(inner) >= 0) return normalizePlayableUrl(inner);
+  return null;
+}
+
+/**
+ * Resolve a HubCloud generator URL to the direct, playable CDN URL.
+ * Returns the direct URL, or `null` when the generator could not be unrolled
+ * (caller keeps the previous URL — no behaviour change on failure).
+ *
+ * `options`: { signal?, depth?, deadline? } — deadline is an absolute epoch
+ * ms budget shared across every hop of one resolve step.
+ */
+async function unrollHubcloudUrl(startUrl, options = {}) {
+  if (!startUrl || typeof startUrl !== 'string') return null;
+  const depth = options.depth || 0;
+  if (depth > HUBCLOUD_UNROLL_MAX_DEPTH) return null;
+
+  const cached = hubcloudUnrollCache.get(startUrl);
+  if (cached) {
+    if (Date.now() < cached.exp) return cached.direct;
+    hubcloudUnrollCache.delete(startUrl);
+  }
+
+  const deadline = options.deadline || Date.now() + HUBCLOUD_UNROLL_BUDGET_MS;
+  const direct = await unrollHubcloudUncached(startUrl, {
+    signal: options.signal,
+    depth,
+    deadline
+  });
+  if (direct) {
+    hubcloudUnrollCache.set(startUrl, { direct, exp: Date.now() + HUBCLOUD_UNROLL_TTL_MS });
+    if (hubcloudUnrollCache.size > 256) {
+      const oldest = hubcloudUnrollCache.keys().next().value;
+      if (oldest) hubcloudUnrollCache.delete(oldest);
+    }
+  }
+  return direct;
+}
+
+async function unrollHubcloudUncached(startUrl, opts) {
+  const { signal, depth, deadline } = opts;
+  try {
+    // 1) `dl.php?link=…` wrappers carry the final URL in the query string —
+    //    no fetch needed at all when the Location itself is one.
+    const entryInner = extractHttpLinkParam(startUrl);
+    if (entryInner) {
+      const resolved = await resolveLinkInner(entryInner, opts);
+      if (resolved) return resolved;
+    }
+
+    // 2) fetch the generator page, following HTTP redirects (some generator
+    //    hosts 302 straight to `dl.php?link=<direct>` — no JS involved).
+    const res = await fetchWithDeadline(startUrl, USER_AGENT, signal, deadline);
+    if (!res) return null;
+    const finalUrl = res.url || startUrl;
+
+    if (finalUrl !== startUrl) {
+      const inner = extractHttpLinkParam(finalUrl);
+      if (inner) {
+        const resolved = await resolveLinkInner(inner, opts);
+        if (resolved) return resolved;
+      }
+    }
+
+    const contentType = (res.headers.get('content-type') || '').toLowerCase();
+    const isPage =
+      !contentType ||
+      /^(?:text\/|application\/(?:json|xhtml|xml|javascript))/i.test(contentType) ||
+      /html|xml/i.test(contentType);
+    if (!isPage) {
+      // binary body after redirect → the final URL itself is the file
+      return scorePlayableUrl(finalUrl) >= 0 ? normalizePlayableUrl(finalUrl) : null;
+    }
+
+    // 3) scan the raw landing HTML for the final CDN link — it is present in
+    //    the source even while the countdown hides it (meta-refresh target,
+    //    inline script, hidden/JS-filled anchor, atob payload).
+    let html = '';
+    if (res.ok) {
+      html = await readCappedText(res);
+      if (isCfChallengePage(html)) html = ''; // challenge interstitial — no links
+    }
+    const pick = pickFromGeneratorHtml(html, finalUrl);
+    if (pick.direct) return pick.direct;
+    if (pick.generator && pick.generator !== startUrl) {
+      const next = await unrollHubcloudUrl(pick.generator, { ...opts, depth: depth + 1 });
+      if (next) return next;
+    }
+
+    // 4) last resort: some generator hosts serve the countdown page to browser
+    //    UAs but 302 directly for crawlers — retry once with a non-browser UA.
+    if (depth === 0 && Date.now() < deadline - 1200 && !signal?.aborted) {
+      const retry = await fetchWithDeadline(startUrl, HUBCLOUD_UNROLL_ALT_UA, signal, deadline);
+      if (retry) {
+        const retryUrl = retry.url || startUrl;
+        const inner = extractHttpLinkParam(retryUrl);
+        if (inner) {
+          const resolved = await resolveLinkInner(inner, { ...opts, depth });
+          if (resolved) return resolved;
+        }
+        let rHtml = '';
+        if (retry.ok) {
+          rHtml = await readCappedText(retry);
+          if (isCfChallengePage(rHtml)) rHtml = '';
+        }
+        const rPick = pickFromGeneratorHtml(rHtml, retryUrl);
+        if (rPick.direct) return rPick.direct;
+        if (rPick.generator && rPick.generator !== startUrl) {
+          const next = await unrollHubcloudUrl(rPick.generator, { ...opts, depth: depth + 1 });
+          if (next) return next;
+        }
+      }
+    }
+    return null;
+  } catch {
+    return null;
+  }
+}
+
+/**
  * Root Cause A: token priority. `pixel` (pixeldrain) hotlink-403s
  * ({"success":false,"value":"hotlink_detected"}) and is rate-limit-captcha gated,
  * so the CDN tokens are tried first and pixeldrain is kept only as a last resort.
@@ -772,7 +1165,7 @@ function parseHicineLinks(rawText, isTv = false, episodeNum = 1) {
  * parallel; `/go` redirect wrappers (`?link=`) are unwrapped and pixeldrain
  * responses are pre-flighted for the hotlink block.
  */
-async function resolveVcloudWorkerLink(workerUrl, signal) {
+async function resolveVcloudWorkerLink(workerUrl, signal, unrollDeadline) {
   try {
     const parsed = new URL(workerUrl);
     const workerBase = parsed.origin;
@@ -806,6 +1199,24 @@ async function resolveVcloudWorkerLink(workerUrl, signal) {
           let location = goRes.headers.get('location');
           if (!location || !/^https?:\/\//i.test(location)) return null;
 
+          // Root Cause E: HubCloud link generators (`gpdl2.hubcloud.ist/?id=…`,
+          // `gamerxyt.com/dl.php?link=…`, nested `hubcloud.<tld>/drive/<id>` pages) are
+          // countdown HTML, not media — unroll them server-side to the real CDN
+          // file before anything reaches `<video src>`.
+          let unrollFailed = false;
+          if (isHubcloudGeneratorUrl(location) || extractHttpLinkParam(location)) {
+            const direct = await unrollHubcloudUrl(location, {
+              signal,
+              deadline: unrollDeadline || Date.now() + HUBCLOUD_UNROLL_BUDGET_MS
+            });
+            if (direct) location = direct;
+            // A landing page that could not be unrolled is just as unplayable as
+            // a hotlink-blocked URL: mark it dead so the attempts loop falls
+            // through to the next HiCine token (fsl/r2/DDL/…). If no other token
+            // exists it stays the last resort, as before.
+            else unrollFailed = true;
+          }
+
           // Root Cause B: unwrap `?link=` redirect wrappers to the real CDN URL
           location = unwrapRedirectVideoUrl(location);
           if (!/^https?:\/\//i.test(location)) return null;
@@ -816,8 +1227,8 @@ async function resolveVcloudWorkerLink(workerUrl, signal) {
             if (pdId) location = `https://pixeldrain.dev/api/file/${pdId}`;
           }
 
-          let isHotlinkBlocked = false;
-          if (/pixeldrain\.dev\/api\/file\//i.test(location)) {
+          let isHotlinkBlocked = unrollFailed;
+          if (/pixeldrain\.(?:dev|com)\/api\/file\//i.test(location)) {
             const probe = await probePixeldrain(location);
             isHotlinkBlocked = probe.blocked;
           }
@@ -861,6 +1272,10 @@ async function resolveHicineServer(metadata) {
   const timer = setTimeout(() => controller.abort(), 9500);
 
   try {
+    // Shared HubCloud-unroll budget: qualities resolve sequentially, so one
+    // deadline (not per-hop timeouts) keeps the whole step inside the 9.5s
+    // abort window even when a generator page stalls.
+    const unrollDeadline = Date.now() + 6000;
     const searchUrl = `${config.upstreams.hicineApiBase}/api/search/${encodeURIComponent(metadata.title)}`;
     const res = await fetch(searchUrl, {
       headers: { Accept: 'application/json', 'User-Agent': USER_AGENT },
@@ -948,7 +1363,7 @@ async function resolveHicineServer(metadata) {
       }
 
       if (entry.type === 'vcloud_worker') {
-        const resolved = await resolveVcloudWorkerLink(entry.url, controller.signal);
+        const resolved = await resolveVcloudWorkerLink(entry.url, controller.signal, unrollDeadline);
         if (!resolved?.url || seenDirect.has(resolved.url)) continue;
         seenDirect.add(resolved.url);
         if (resolved.title) releaseTitle = resolved.title;
@@ -1329,5 +1744,8 @@ module.exports = {
   resolveHianimeServer,
   decryptVidsrcWasmPayload,
   decodeZokoAnimeXorPayload,
-  parseHicineLinks
+  parseHicineLinks,
+  // HubCloud generator unroller (Centaurus fix) — exported for tests
+  isHubcloudGeneratorUrl,
+  unrollHubcloudUrl
 };

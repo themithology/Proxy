@@ -15,7 +15,10 @@ const { srtToVtt } = require('../src/utils/srtToVtt');
 const { rewriteM3u8Manifest } = require('../src/services/proxy');
 const {
   decodeZokoAnimeXorPayload,
-  parseHicineLinks
+  parseHicineLinks,
+  isHubcloudGeneratorUrl,
+  unrollHubcloudUrl,
+  resolveHicineServer
 } = require('../src/services/resolver');
 
 function httpRequest(baseUrl, path, options = {}) {
@@ -229,6 +232,113 @@ function startUpstreamMockServer() {
         return res.end(JSON.stringify({ token: 'vidsrc-short-lived-jwt' }));
       }
 
+      // 8b. HubCloud generator landing pages (Centaurus unroller fixtures).
+      //     Mirrors the live chain: gpdl2 302 → dl.php?link=<direct>, plus
+      //     countdown pages that hide the CDN URL in JS / nested wrappers.
+      if (u.pathname === '/hubcloud/gen-redirect') {
+        res.writeHead(302, {
+          Location: `/hubcloud/dl.php?link=${encodeURIComponent(`${mockOrigin}/cdn/hls/fight%20club.mkv`)}`
+        });
+        return res.end();
+      }
+
+      if (u.pathname === '/hubcloud/dl.php') {
+        const target = u.searchParams.get('link') || '';
+        res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
+        return res.end(
+          `<html><head><title>HubCloud — Link Generator</title></head><body>` +
+            `<h1>Generating Download Link</h1>` +
+            `<a id="download" href="${target}">Download Here</a>` +
+            `</body></html>`
+        );
+      }
+
+      if (u.pathname === '/hubcloud/countdown-js') {
+        // The real CDN link lives inside obfuscated inline JS (`\/` escapes),
+        // hidden behind a 3.5s setTimeout that only toggles the anchor href.
+        res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
+        return res.end(
+          `<html><body><h1>Generating Download Link</h1>` +
+            `<a id="download" href="${mockOrigin}/hubcloud/countdown-js">Download Here</a>` +
+            `<script>setTimeout(function(){document.getElementById('download').href=` +
+            `"https:\\/\\/pub-1a2b.r2.dev\\/movies\\/Fight-Club-1999.mkv";},3500);</script>` +
+            `</body></html>`
+        );
+      }
+
+      if (u.pathname === '/hubcloud/drive-page') {
+        // Page 1 of the two-hop flow: <a id="download"> → another generator wrapper
+        const nested = `/hubcloud/dl.php?link=${encodeURIComponent(`${mockOrigin}/cdn/hls/arcane-s1e1.mp4`)}`;
+        res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
+        return res.end(
+          `<html><body><a id="download" href="${nested}">Download</a></body></html>`
+        );
+      }
+
+      if (u.pathname === '/hubcloud/pixeldrain-page') {
+        res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
+        return res.end(
+          '<html><body><a href="https://pixeldrain.com/u/AbCdEf123">Download</a></body></html>'
+        );
+      }
+
+      if (u.pathname === '/hubcloud/no-links') {
+        // Countdown page that only links to itself → unroll must give up cleanly
+        res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
+        return res.end(
+          `<html><body><h1>Generating Download Link</h1>` +
+            `<a id="download" href="${mockOrigin}/hubcloud/no-links">Download Here</a>` +
+            `</body></html>`
+        );
+      }
+
+      if (u.pathname === '/hubcloud/challenge') {
+        // Cloudflare managed-challenge interstitial (what datacenter fetchers
+        // see on gpdl2.hubcloud.ist) — must be detected and treated as failed.
+        // Served with 200 on purpose so the marker-based detection runs.
+        res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
+        return res.end(
+          '<html><head><title>Just a moment...</title></head><body>' +
+            '<h1>Performing security verification</h1>' +
+            '<div id="challenge-platform"></div><div class="cf-turnstile"></div>' +
+            'Verification successful. Waiting for gpdl2.hubcloud.ist to respond' +
+            '</body></html>'
+        );
+      }
+
+      // 8c. HiCine end-to-end: /go answers with a HubCloud dl.php wrapper
+      //     (the exact live failure mode) instead of a media file.
+      if (u.pathname === '/api/links') {
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        return res.end(
+          JSON.stringify({
+            title: 'Fight Club (1999)',
+            tokens: { ten: { ts: '1700000000', sig: 'deadbeefcafe' } }
+          })
+        );
+      }
+
+      if (u.pathname === '/go') {
+        res.writeHead(302, {
+          Location: `${mockOrigin}/hubcloud/dl.php?link=${encodeURIComponent(`${mockOrigin}/cdn/hls/fight%20club.mkv`)}`
+        });
+        return res.end();
+      }
+
+      if (u.pathname.startsWith('/hicine/api/search/')) {
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        return res.end(
+          JSON.stringify([
+            {
+              title: 'Fight Club',
+              releaseYear: 1999,
+              contentType: 'movies',
+              links: `720p : ${mockOrigin}/hicine/w?vcloud=https://vcloud.fit/fightclub720`
+            }
+          ])
+        );
+      }
+
       // 8. Upstream HLS Playlist for Proxy Rewriter verification
       if (u.pathname.startsWith('/cdn/hls/')) {
         res.writeHead(200, { 'Content-Type': 'application/vnd.apple.mpegurl' });
@@ -368,6 +478,136 @@ async function runTests() {
   config.upstreams.zxcBase = `${mockUpstream.url}/zxc`;
   config.upstreams.vidstuckBase = `${mockUpstream.url}/vidstuck`;
   config.upstreams.vidsrcDataUrl = `${mockUpstream.url}/vidsrc/api.php`;
+
+  // 4b. HubCloud generator unroller (Centaurus "All upstream servers failed" fix)
+  console.log('[4b/9] Testing HubCloud generator unroller (Centaurus)...');
+  assert.strictEqual(
+    isHubcloudGeneratorUrl('https://gpdl2.hubcloud.ist/?id=abc::def'),
+    true,
+    'gpdl2.hubcloud.ist generator must be detected'
+  );
+  assert.strictEqual(
+    isHubcloudGeneratorUrl('https://gamerxyt.com/dl.php?link=x'),
+    true,
+    'gamerxyt.com dl.php wrapper must be detected'
+  );
+  assert.strictEqual(
+    isHubcloudGeneratorUrl('https://hubcdn.sbs/file'),
+    true,
+    'hubcdn.* generator must be detected'
+  );
+  assert.strictEqual(
+    isHubcloudGeneratorUrl('https://gpdl.hubcloud.cfd/x'),
+    true,
+    'gpdl.* hubcloud generator must be detected'
+  );
+  assert.strictEqual(
+    isHubcloudGeneratorUrl('https://pub-abc.r2.dev/file.mkv'),
+    false,
+    'direct R2 file must NOT be treated as a generator'
+  );
+  assert.strictEqual(
+    isHubcloudGeneratorUrl('https://pixeldrain.com/u/abc'),
+    false,
+    'pixeldrain must NOT be treated as a generator'
+  );
+  assert.strictEqual(
+    isHubcloudGeneratorUrl('https://video-downloads.googleusercontent.com/x'),
+    false,
+    'Google video CDN must NOT be treated as a generator'
+  );
+  assert.strictEqual(isHubcloudGeneratorUrl('not-a-url'), false, 'garbage input must be rejected');
+
+  // (a) 302 → dl.php?link=<direct>: percent-encoding inside the target
+  //     (e.g. `%20`) must survive exactly one decode — never be double-decoded.
+  const viaRedirect = await unrollHubcloudUrl(`${mockUpstream.url}/hubcloud/gen-redirect`);
+  assert.strictEqual(
+    viaRedirect,
+    `${mockUpstream.url}/cdn/hls/fight%20club.mkv`,
+    'generator 302 → dl.php?link= must yield the direct URL with %20 intact'
+  );
+
+  // (b) countdown page hiding the CDN URL inside obfuscated inline JS
+  const viaJs = await unrollHubcloudUrl(`${mockUpstream.url}/hubcloud/countdown-js`);
+  assert.strictEqual(
+    viaJs,
+    'https://pub-1a2b.r2.dev/movies/Fight-Club-1999.mkv',
+    'URL hidden in JS string escapes (\\/) must be extracted'
+  );
+
+  // (c) two-hop flow: drive page → <a id="download"> → dl.php?link= → direct
+  const viaDrive = await unrollHubcloudUrl(`${mockUpstream.url}/hubcloud/drive-page`);
+  assert.strictEqual(
+    viaDrive,
+    `${mockUpstream.url}/cdn/hls/arcane-s1e1.mp4`,
+    'nested <a id="download"> wrapper must be followed one hop'
+  );
+
+  // (d) pixeldrain /u/ share page → direct /api/file/ endpoint
+  const viaPixel = await unrollHubcloudUrl(`${mockUpstream.url}/hubcloud/pixeldrain-page`);
+  assert.strictEqual(
+    viaPixel,
+    'https://pixeldrain.com/api/file/AbCdEf123',
+    'pixeldrain /u/ links must be rewritten to /api/file/'
+  );
+
+  // (e) countdown page with no reachable target → null (caller keeps old URL)
+  const noLinks = await unrollHubcloudUrl(`${mockUpstream.url}/hubcloud/no-links`);
+  assert.strictEqual(
+    noLinks,
+    null,
+    'unreachable generator must return null instead of a broken URL'
+  );
+
+  // (f) Cloudflare managed-challenge interstitial → detected, treated as failure
+  const challenged = await unrollHubcloudUrl(`${mockUpstream.url}/hubcloud/challenge`);
+  assert.strictEqual(
+    challenged,
+    null,
+    'CF challenge page must be detected and never parsed for links'
+  );
+
+  // (g) End-to-end Centaurus resolve: HiCine /go hands back a HubCloud
+  //     dl.php wrapper (the live Fight Club failure mode) — the resolver must
+  //     return the unrolled direct file, never the generator HTML.
+  const prevHicineBase = config.upstreams.hicineApiBase;
+  config.upstreams.hicineApiBase = `${mockUpstream.url}/hicine`;
+  let hicineE2e = null;
+  try {
+    hicineE2e = await resolveHicineServer({
+      title: 'Fight Club',
+      releaseYear: 1999,
+      type: 'movie',
+      season: 1,
+      episode: 1
+    });
+  } finally {
+    config.upstreams.hicineApiBase = prevHicineBase;
+  }
+  assert.ok(hicineE2e, 'Centaurus must resolve the mocked HiCine title');
+  assert.strictEqual(hicineE2e.server, 'centaurus', 'server must be centaurus');
+  assert.strictEqual(
+    hicineE2e.rawUrl,
+    `${mockUpstream.url}/cdn/hls/fight%20club.mkv`,
+    'stream rawUrl must be the unrolled direct file, not the generator page'
+  );
+  assert.strictEqual(
+    hicineE2e.streamUrl,
+    `${mockUpstream.url}/cdn/hls/fight%20club.mkv`,
+    'streamUrl must point at the direct file'
+  );
+  assert.strictEqual(hicineE2e.format, 'mp4', 'format must stay progressive mp4');
+  assert.ok(
+    Array.isArray(hicineE2e.qualities) && hicineE2e.qualities.length > 0,
+    'qualities must be present'
+  );
+  for (const q of hicineE2e.qualities) {
+    assert.ok(
+      !/hubcloud|gamerxyt|gpdl/i.test(q.url),
+      'no quality URL may point at a HubCloud generator'
+    );
+  }
+  console.log('  ✔ Passed HubCloud generator unroller tests.');
 
   const server = await new Promise((resolve) => {
     const s = app.listen(0, '127.0.0.1', () => resolve(s));
