@@ -3,11 +3,10 @@ main = "cloudflare-worker/worker.js"
 compatibility_date = "2025-01-01"
 compatibility_flags = ["nodejs_compat"]
 
-# Serves /public (embed.html, index.html, css, js, hls.min.js, dash.all.min.js)
-# Static asset requests are 100% free and do NOT count toward Worker request limits!
 [assets]
 directory = "./public"
 binding = "ASSETS"
+html_handling = "none"
 run_worker_first = true
 
 [vars]
