@@ -515,20 +515,153 @@ async function resolveMoviebox(metadata, preferredAudio = '', parentSignal = nul
   }
 }
 
+let cachedNetmirrorApiUrl = '';
+let cachedNetmirrorExpiry = 0;
+
+async function getNetmirrorApiBase(signal) {
+  if (cachedNetmirrorApiUrl && Date.now() < cachedNetmirrorExpiry) {
+    return cachedNetmirrorApiUrl;
+  }
+  const checkDomains = [
+    'https://mobiledetect.app',
+    'https://mobiledetects.com',
+    'https://getimgcdn.com'
+  ];
+  for (const base of checkDomains) {
+    try {
+      const res = await fetch(`${base}/checknewtv.php`, {
+        headers: {
+          'User-Agent': USER_AGENT,
+          Accept: 'application/json, text/plain, */*'
+        },
+        signal
+      });
+      if (res.ok) {
+        const data = await res.json().catch(() => null);
+        if (data && data.token_hash) {
+          const decoded = Buffer.from(data.token_hash, 'base64').toString('utf8').replace(/\/$/, '');
+          if (decoded.startsWith('http')) {
+            cachedNetmirrorApiUrl = decoded;
+            cachedNetmirrorExpiry = Date.now() + 3600000;
+            return decoded;
+          }
+        }
+      }
+    } catch {}
+  }
+  return cachedNetmirrorApiUrl || '';
+}
+
 /**
- * Sub-provider 3 for Andromeda: NetMirror (https://net27.cc)
- * Direct streaming mirror for official Netflix/Prime/Hotstar platform releases.
+ * Sub-provider 3 for Andromeda: NetMirror (https://net27.cc / NewTV OTT Mirror)
+ * Official OTT mirror for Netflix, Prime Video, and Disney+/Hotstar releases.
  */
 async function resolveNetmirror(metadata, preferredAudio = '', parentSignal = null) {
   const netmirrorBase = (config.upstreams.netmirrorBase || 'https://net27.cc').replace(/\/$/, '');
   const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), 3500);
+  const timeoutId = setTimeout(() => controller.abort(), 4000);
   if (parentSignal) {
     parentSignal.addEventListener('abort', () => controller.abort(), { once: true });
   }
 
   try {
     const isTv = metadata.type === 'tv';
+
+    // 1. Try NewTV dynamic OTT mirror API flow (Netflix, Prime, Hotstar)
+    try {
+      const apiBase = await getNetmirrorApiBase(controller.signal);
+      if (apiBase) {
+        const ottList = ['nf', 'pv', 'hs'];
+        for (const ott of ottList) {
+          try {
+            const searchUrl = `${apiBase}/newtv/search.php?s=${encodeURIComponent(metadata.title || '')}`;
+            const sRes = await fetch(searchUrl, {
+              headers: {
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:136.0) Gecko/20100101 Firefox/136.0 /OS.GatuNewTV v1.0',
+                Accept: 'application/json, text/plain, */*',
+                'X-Requested-With': 'NetmirrorNewTV v1.0',
+                Ott: ott
+              },
+              signal: controller.signal
+            });
+            if (!sRes.ok) continue;
+            const sJson = await sRes.json().catch(() => null);
+            const results = sJson?.searchResult || [];
+            if (!results.length) continue;
+
+            const match = results[0];
+            let targetId = match.id;
+
+            if (isTv) {
+              const postUrl = `${apiBase}/newtv/post.php?id=${match.id}`;
+              const postRes = await fetch(postUrl, {
+                headers: {
+                  'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:136.0) Gecko/20100101 Firefox/136.0 /OS.GatuNewTV v1.0',
+                  Accept: 'application/json, text/plain, */*',
+                  'X-Requested-With': 'NetmirrorNewTV v1.0',
+                  Ott: ott
+                },
+                signal: controller.signal
+              });
+              if (postRes.ok) {
+                const postJson = await postRes.json().catch(() => null);
+                const eps = (postJson?.episodes || []).filter(Boolean);
+                const wantedS = metadata.season || 1;
+                const wantedE = metadata.episode || 1;
+                const found = eps.find((e) => {
+                  const epNum = e.ep ? parseInt(e.ep) : e.epNum ? parseInt(e.epNum.replace(/[^0-9]/g, '')) : null;
+                  const sNum = e.sNum ? parseInt(e.sNum.replace(/[^0-9]/g, '')) : null;
+                  return (sNum ? sNum === wantedS : true) && epNum === wantedE;
+                });
+                if (found?.id) targetId = found.id;
+              }
+            }
+
+            const playerUrl = `${apiBase}/newtv/player.php?id=${targetId}`;
+            const pRes = await fetch(playerUrl, {
+              headers: {
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:136.0) Gecko/20100101 Firefox/136.0 /OS.GatuNewTV v1.0',
+                Accept: 'application/json, text/plain, */*',
+                'X-Requested-With': 'NetmirrorNewTV v1.0',
+                Ott: ott
+              },
+              signal: controller.signal
+            });
+            if (!pRes.ok) continue;
+            const pJson = await pRes.json().catch(() => null);
+            if (pJson && pJson.video_link) {
+              const streamUrl = pJson.video_link;
+              const referer = pJson.referer || 'https://net52.cc';
+              const proxiedUrl = buildProxyStreamUrl(streamUrl, referer, '', { mode: 'full' });
+              return {
+                server: 'andromeda',
+                sourceName: `NetMirror (${ott.toUpperCase()})`,
+                format: 'hls',
+                rawUrl: streamUrl,
+                streamUrl: proxiedUrl,
+                referer,
+                headers: { Referer: referer },
+                backupUrls: [buildProxyStreamUrl(streamUrl, referer, '', { mode: 'manifest' })],
+                audioTracks: [
+                  {
+                    id: 'nm-default',
+                    lang: 'en',
+                    label: 'Original Audio (Multi-Track HLS)',
+                    type: 'dub',
+                    streamUrl: proxiedUrl,
+                    rawUrl: streamUrl,
+                    default: true
+                  }
+                ],
+                qualities: [{ label: 'Auto', height: 0, url: proxiedUrl }]
+              };
+            }
+          } catch {}
+        }
+      }
+    } catch {}
+
+    // 2. Direct embed-tmdb endpoint fallback
     const netflixUrl = isTv
       ? `${netmirrorBase}/api/embed-tmdb/${encodeURIComponent(metadata.tmdbId)}?type=tv&se=${metadata.season || 1}&ep=${metadata.episode || 1}`
       : `${netmirrorBase}/api/embed-tmdb/${encodeURIComponent(metadata.tmdbId)}`;
