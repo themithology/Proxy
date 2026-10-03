@@ -20,17 +20,82 @@ function getProxyNodeBase(reqBaseUrl = '') {
 }
 
 /**
- * Build a signed proxy URL for a target M3U8/MP4/MPD stream
+ * Build a signed proxy URL for a target M3U8/MP4/MPD stream.
+ *
+ * options:
+ *   mode  — 'manifest' (rewrite nested playlists/keys only), 'full' (rewrite every
+ *           playlist AND segment URI — required for Origin/Referer + JWT gated
+ *           hosts), or 'direct'.
+ *   token — per-host JWT (from <host>/generate.php) stamped onto every rewritten
+ *           manifest/segment URI by the proxy.
+ *   cookie — upstream session cookie forwarded by the proxy (vidstuck.xyz).
  */
-function buildProxyStreamUrl(targetUrl, referer = '', origin = '') {
+function buildProxyStreamUrl(targetUrl, referer = '', origin = '', options = {}) {
   if (!targetUrl) return '';
   if (targetUrl.startsWith('/api/proxy?')) return targetUrl;
+  const { mode = '', token = '', cookie = '' } = options || {};
   const baseUrl = getProxyNodeBase('');
-  return createSignedProxyUrl(targetUrl, {
+  const signed = createSignedProxyUrl(targetUrl, {
     referer,
     origin,
     baseUrl
   });
+  if (!mode && !token && !cookie) return signed;
+  const [path, query = ''] = signed.split('?');
+  const params = new URLSearchParams(query);
+  if (mode) params.set('mode', mode);
+  if (token) params.set('token', token);
+  if (cookie) params.set('cookie', cookie);
+  return `${path}?${params.toString()}`;
+}
+
+/**
+ * Fetch a per-host JWT from `<host>/generate.php` (VidSrc-style CDN gate).
+ * The endpoint answers either a bare text/plain JWT or `{"token": "..."}` JSON.
+ * Tokens are IP bound with a ~4h TTL, so a short process-local cache is safe.
+ */
+const jwTokenCache = new Map();
+async function fetchVidsrcHostToken(hostOrigin, referer = '') {
+  if (!hostOrigin) return '';
+  const cached = jwTokenCache.get(hostOrigin);
+  if (cached && Date.now() < cached.exp) return cached.token;
+
+  let token = '';
+  try {
+    const res = await fetch(`${hostOrigin}/generate.php`, {
+      headers: {
+        'User-Agent': DEFAULT_USER_AGENT,
+        ...(referer ? { Referer: referer } : {})
+      },
+      redirect: 'follow',
+      signal: AbortSignal.timeout(8000)
+    });
+    if (res.ok) {
+      const raw = (await res.text()).trim();
+      if (raw.startsWith('{')) {
+        token = JSON.parse(raw)?.token || '';
+      } else if (!raw.startsWith('<')) {
+        token = raw.replace(/^["']|["']$/g, '');
+      }
+    }
+  } catch {
+    token = '';
+  }
+
+  if (token) jwTokenCache.set(hostOrigin, { token, exp: Date.now() + 600000 });
+  return token;
+}
+
+/**
+ * Replace a `__TOKEN__` placeholder or append `?token=` to a target URL.
+ */
+function stampTokenOnUrl(target, token, force = false) {
+  if (!target || !token) return target;
+  const enc = encodeURIComponent(token);
+  if (target.includes('__TOKEN__')) return target.replace(/__TOKEN__/g, enc);
+  if (/[?&]token=/i.test(target)) return target;
+  if (!force && !/\.m3u8|\.key|\.ts|\.m4s|\.mp4|\.mpd/i.test(target)) return target;
+  return `${target}${target.includes('?') ? '&' : '?'}token=${enc}`;
 }
 
 /**
@@ -44,7 +109,7 @@ function rewriteM3u8Manifest(m3u8Content, baseManifestUrl, refererOrOpts = '') {
       ? { referer: refererOrOpts, origin: '', reqBaseUrl: '' }
       : refererOrOpts || {};
 
-  const { referer = '', origin = '', reqBaseUrl = '' } = opts;
+  const { referer = '', origin = '', reqBaseUrl = '', token = '', mode = 'manifest' } = opts;
   const lines = m3u8Content.split(/\r?\n/);
 
   const resolveAbsolute = (rawUri) => {
@@ -55,14 +120,23 @@ function rewriteM3u8Manifest(m3u8Content, baseManifestUrl, refererOrOpts = '') {
     }
   };
 
-  const wrapInProxy = (targetUrl) => {
-    const absoluteUrl = resolveAbsolute(targetUrl);
+  const wrapInProxy = (targetUrl, isSegmentOverride = false) => {
+    let absoluteUrl = resolveAbsolute(targetUrl);
+    // Per-host JWT gate (VidSrc-style): every rewritten playlist / key / segment
+    // must carry the token or the CDN answers 403.
+    if (token) absoluteUrl = stampTokenOnUrl(absoluteUrl, token, isSegmentOverride || true);
     const proxyBase = getProxyNodeBase(reqBaseUrl);
-    return createSignedProxyUrl(absoluteUrl, {
+    const signed = createSignedProxyUrl(absoluteUrl, {
       referer,
       origin,
       baseUrl: proxyBase
     });
+    if (!token && mode === 'manifest') return signed;
+    const [path, query = ''] = signed.split('?');
+    const params = new URLSearchParams(query);
+    if (mode) params.set('mode', mode);
+    if (token) params.set('token', token);
+    return `${path}?${params.toString()}`;
   };
 
   const rewrittenLines = lines.map((line) => {
@@ -81,7 +155,9 @@ function rewriteM3u8Manifest(m3u8Content, baseManifestUrl, refererOrOpts = '') {
       return line;
     }
 
-    return wrapInProxy(trimmed);
+    // In 'full' mode even plain .ts/.m4s segments are rewritten (JWT/Referer
+    // gated hosts reject bare segment requests).
+    return wrapInProxy(trimmed, mode === 'full');
   });
 
   return rewrittenLines.join('\n');
@@ -95,6 +171,9 @@ async function handleStreamProxy(req, res) {
   const referer = req.query.referer || '';
   const origin = req.query.origin || '';
   const cookie = req.query.cookie || '';
+  const mode = req.query.mode || 'manifest';
+  const passthroughToken = req.query.token || '';
+  const vidsrcStamp = req.query.vidsrcStamp === '1';
   const exp = req.query.exp || '';
   const sig = req.query.sig || '';
 
@@ -135,25 +214,23 @@ async function handleStreamProxy(req, res) {
     return res.status(400).json({ error: 'Malformed target URL' });
   }
 
+  // Only ever send Referer/Origin when the caller explicitly asked for them — a
+  // synthesized Referer is exactly what trips Pixeldrain's hotlink filter and the
+  // VidStuck/Pixeldrain 403s.
   const upstreamHeaders = {
     'User-Agent': DEFAULT_USER_AGENT,
     Accept: '*/*',
     'Accept-Language': 'en-US,en;q=0.9'
   };
 
-  if (referer) {
-    upstreamHeaders.Referer = referer;
-  } else {
-    upstreamHeaders.Referer = `${parsedUrl.origin}/`;
-  }
-
+  if (referer) upstreamHeaders.Referer = referer;
   if (origin) {
     upstreamHeaders.Origin = origin;
   } else if (referer) {
     try {
       upstreamHeaders.Origin = new URL(referer).origin;
     } catch {
-      upstreamHeaders.Origin = parsedUrl.origin;
+      // ignore malformed referer
     }
   }
 
@@ -161,12 +238,22 @@ async function handleStreamProxy(req, res) {
     upstreamHeaders.Cookie = cookie;
   }
 
+  // JWT gate: `vidsrcStamp=1` (or an __TOKEN__ placeholder) triggers a
+  // <host>/generate.php lookup and stamps the outgoing URL + rewritten manifest.
+  let token = passthroughToken;
+  if (vidsrcStamp || targetUrl.includes('__TOKEN__')) {
+    token = token || (await fetchVidsrcHostToken(parsedUrl.origin, referer));
+  }
+
+  let upstreamUrl = targetUrl;
+  if (token) upstreamUrl = stampTokenOnUrl(targetUrl, token, true);
+
   if (req.headers.range) {
     upstreamHeaders.Range = req.headers.range;
   }
 
   try {
-    const upstreamRes = await fetch(parsedUrl.toString(), {
+    const upstreamRes = await fetch(upstreamUrl, {
       method: req.method === 'HEAD' ? 'HEAD' : 'GET',
       headers: upstreamHeaders,
       redirect: 'follow',
@@ -190,10 +277,14 @@ async function handleStreamProxy(req, res) {
     if (isM3u8 && req.method !== 'HEAD') {
       const text = await upstreamRes.text();
       if (text.trim().startsWith('#EXTM3U')) {
+        // 'full' mode (or a JWT-stamped response) rewrites every variant AND
+        // segment URI through the proxy with the host token attached.
         const rewritten = rewriteM3u8Manifest(text, finalUrl, {
           referer,
           origin,
-          reqBaseUrl: ''
+          reqBaseUrl: '',
+          mode,
+          token
         });
         res.setHeader('Content-Type', 'application/vnd.apple.mpegurl; charset=utf-8');
         res.setHeader('Cache-Control', 'public, max-age=15');

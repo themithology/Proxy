@@ -287,11 +287,22 @@ function srtToVtt(rawText) {
 }
 
 /**
- * Build proxy URL pointing to this Worker's /api/proxy endpoint
+ * Build proxy URL pointing to this Worker's /api/proxy endpoint.
+ *
+ * `mode`:
+ *   'manifest' (default) — only nested playlists/keys are rewritten through the
+ *                          proxy, .ts/.m4s segments stream straight from the CDN.
+ *   'full'               — every playlist AND segment URI is rewritten through
+ *                          the proxy (needed for Origin/Referer-gated hosts).
+ *   'direct'             — pass through untouched.
+ *
+ * `cookie` (optional) is forwarded upstream — required by Origin/Referer-gated
+ * origins such as vidstuck.xyz which also pin a session cookie.
  */
-function buildWorkerProxyUrl(targetUrl, referer = '', mode = 'manifest') {
+function buildWorkerProxyUrl(targetUrl, referer = '', mode = 'manifest', cookie = '') {
   const params = new URLSearchParams({ url: targetUrl, mode });
   if (referer) params.set('referer', referer);
+  if (cookie) params.set('cookie', cookie);
   return `/api/proxy?${params.toString()}`;
 }
 
@@ -561,77 +572,218 @@ async function resolveSubtitles(metadata) {
 /**
  * 4. Upstream Stream Extractors (Andromeda/Atlas, Ursa/VidSrc, Centaurus/HiCine, Strings/HiAnime)
  */
+
+/**
+ * vidstuck.xyz backend "keys": the player talks to its own API with randomly
+ * obfuscated JSON-field / query-parameter names (anti-bot obfuscation baked into
+ * their bundle). These are field names, not secrets — the exact same constants
+ * are mirrored by vicine v1.5.2's zxc provider:
+ *
+ *   POST /backend/meow          { <UO>: tmdbId, <UP>: type, <UG>: server }
+ *   GET  /backend/servers/:id?  <UO>=id&<UG>=server&<UP>=type&<UL>=ts&<UU>=token
+ *                               &<UD>=title&<UC>=year&<UM>=releaseDate&<IM>=imdbId
+ *   -> links[0].link is an OpenSSL AES-256-CBC (md5 EVP_BytesToKey) base64 blob
+ *      whose plaintext is the internal stream path.
+ *
+ * The backend rejects every request that does not carry
+ * `Origin`/`Referer: https://vidstuck.xyz`.
+ */
+const ZXC_UO = 'a7f39c821d604e5b9c71f36e1547b'; // tmdb id
+const ZXC_UP = 'c285f91ab306d28147a35632e816b'; // media type (movie|tv)
+const ZXC_UG = '6b491e7253ad84d392e7561a9384c'; // server id (andromeda|atlas)
+const ZXC_UL = '61d9a5274c8e3b29afd6384c291e6'; // token timestamp from /backend/meow
+const ZXC_UU = 'c492f7a183d6502b1e7436c538a716d'; // session token from /backend/meow
+const ZXC_UD = '5e28c9147a306d1e829f3674b392a1'; // title
+const ZXC_UC = 'b731e6c94f08269d725f8341c306e'; // release year
+const ZXC_UM = 'e164932c50216a39e5814b3027'; // release date (YYYY-MM-DD)
+const ZXC_IM = 'f35a8c19d674b3265e871c4933a725f'; // imdb id
+
+const ZXC_AES_KEY_DEFAULT =
+  '7f4c9e2a81d63b05c4f7a9e8126d3b50e1a8c7f23d9465ab0c6e9f1d4a7b832c';
+
+/**
+ * Sniff the real container of a resolved stream URL (HLS vs DASH vs progressive
+ * MP4). VidStuck hands out `/backend/...` paths with no extension, so the only
+ * reliable signal is the upstream `Content-Type` + post-redirect URL.
+ */
+async function sniffStreamFormat(url, headers = {}) {
+  try {
+    const res = await fetch(url, {
+      headers: { ...headers, Range: 'bytes=0-2047' },
+      redirect: 'follow'
+    });
+    const contentType = (res.headers.get('content-type') || '').toLowerCase();
+    const finalUrl = res.url || url;
+    try {
+      if (res.body && typeof res.body.cancel === 'function') await res.body.cancel();
+    } catch {}
+    const format =
+      contentType.includes('dash') || /\.mpd(\?|$)/i.test(finalUrl)
+        ? 'dash'
+        : contentType.includes('mpegurl') ||
+            contentType.includes('m3u8') ||
+            /\.m3u8(\?|$)/i.test(finalUrl)
+          ? 'hls'
+          : /\.(mp4|mkv|m4v)(\?|$)/i.test(finalUrl)
+            ? 'mp4'
+            : '';
+    return { format, finalUrl };
+  } catch {
+    return { format: '', finalUrl: url };
+  }
+}
+
 async function resolveVidstuckUpstream(metadata, serverId, env) {
   try {
-    const warmup = await fetch('https://zxcstream.icu/movie', {
-      headers: { 'User-Agent': USER_AGENT }
-    }).catch(() => null);
-    const cookie = warmup?.headers?.get('set-cookie')?.split(';')[0] || '';
+    const isTv = metadata.type === 'tv';
+    const apiBase = 'https://vidstuck.xyz';
+    const referer = `${apiBase}/`;
+    const aesKey = env?.ZXC_AES_KEY || runtimeState.zxcAesKey || ZXC_AES_KEY_DEFAULT;
 
-    const meowRes = await fetch('https://vidstuck.xyz/backend/meow', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'User-Agent': USER_AGENT,
-        Referer: 'https://zxcstream.icu/',
-        ...(cookie ? { Cookie: cookie } : {})
-      },
-      body: JSON.stringify({
-        type: metadata.type,
-        id: String(metadata.tmdbId),
-        title: metadata.title || '',
-        season: String(metadata.season || 1),
-        episode: String(metadata.episode || 1),
-        releaseYear: String(metadata.releaseYear || '')
-      })
-    });
-    if (!meowRes.ok) return null;
-    const { token } = await meowRes.json();
-    if (!token) return null;
+    // Step 1: earn the Cloudflare/session cookies the vidstuck backend requires
+    const [zxcWarm, embedWarm] = await Promise.all([
+      fetch('https://zxcstream.icu/movie', {
+        headers: { 'User-Agent': USER_AGENT, Referer: 'https://zxcstream.icu/' }
+      }).catch(() => null),
+      fetch(`${apiBase}/embed/${isTv ? 'tv' : 'movie'}/${encodeURIComponent(metadata.tmdbId)}`, {
+        headers: { 'User-Agent': USER_AGENT, Referer: referer }
+      }).catch(() => null)
+    ]);
+    const cookieParts = [];
+    for (const res of [zxcWarm, embedWarm]) {
+      if (!res) continue;
+      const list =
+        typeof res.headers.getSetCookie === 'function'
+          ? res.headers.getSetCookie()
+          : [res.headers.get('set-cookie')].filter(Boolean);
+      for (const c of list) cookieParts.push(String(c).split(';')[0]);
+    }
+    const cookie = Array.from(new Set(cookieParts)).join('; ');
+    const baseHeaders = {
+      Accept: 'application/json',
+      'User-Agent': USER_AGENT,
+      Origin: 'https://vidstuck.xyz',
+      Referer: referer,
+      ...(cookie ? { Cookie: cookie } : {})
+    };
 
-    const qs = new URLSearchParams({
-      id: String(metadata.tmdbId),
-      type: metadata.type,
-      title: metadata.title || '',
-      token,
-      season: String(metadata.season || 1),
-      episode: String(metadata.episode || 1),
-      year: String(metadata.releaseYear || '')
-    });
-
-    const srvRes = await fetch(`https://vidstuck.xyz/backend/servers/${serverId}?${qs.toString()}`, {
-      headers: {
-        Accept: 'application/json',
-        'User-Agent': USER_AGENT,
-        Referer: 'https://zxcstream.icu/',
-        ...(cookie ? { Cookie: cookie } : {})
+    // Step 2: details (title / release date / imdb id) — feeds the servers query
+    let title = metadata.title || '';
+    let releaseDate = '';
+    let imdbId = '';
+    const detRes = await fetch(
+      `${apiBase}/backend/tmdb/details/${isTv ? 'tv' : 'movie'}/${encodeURIComponent(metadata.tmdbId)}?language=en-US`,
+      { headers: baseHeaders }
+    ).catch(() => null);
+    if (detRes?.ok) {
+      const det = await detRes.json().catch(() => null);
+      if (det) {
+        title = det.title || det.name || title;
+        releaseDate = det.release_date || det.first_air_date || '';
+        imdbId = det.imdb_id || det.external_ids?.imdb_id || '';
       }
-    });
-    if (!srvRes.ok) return null;
-    const srvJson = await srvRes.json();
-    const encLink = srvJson?.data?.link || srvJson?.link;
-    if (!encLink) return null;
+    }
+    const releaseYear = String(
+      metadata.releaseYear || (releaseDate ? releaseDate.slice(0, 4) : '') || ''
+    );
+    if (!releaseDate) releaseDate = releaseYear;
 
-    const aesKey = env.ZXC_AES_KEY || '7f4c9e2a81d63b05c4f7a9e8126d3b50e1a8c7f23d9465ab0c6e9f1d4a7b832c';
-    let rawUrl = encLink;
-    if (!/^https?:\/\//i.test(encLink) && !encLink.startsWith('/')) {
-      const dec = decryptOpenSslAes256Cbc(encLink, aesKey);
-      if (dec) rawUrl = dec.startsWith('http') ? dec : `https://vidstuck.xyz${dec}`;
-    } else if (encLink.startsWith('/')) {
-      rawUrl = `https://vidstuck.xyz${encLink}`;
+    // Step 3: /backend/meow -> { token, ts }
+    const meowBody = {
+      [ZXC_UO]: String(metadata.tmdbId),
+      [ZXC_UP]: isTv ? 'tv' : 'movie',
+      [ZXC_UG]: serverId
+    };
+    // The published client bundle only covers movies; TV keeps the plain
+    // season/episode fields the older API accepted.
+    if (isTv) {
+      meowBody.season = String(metadata.season || 1);
+      meowBody.episode = String(metadata.episode || 1);
     }
 
-    const referer = 'https://zxcstream.icu/';
-    const streamUrl = buildWorkerProxyUrl(rawUrl, referer);
+    const meowRes = await fetch(`${apiBase}/backend/meow`, {
+      method: 'POST',
+      headers: { ...baseHeaders, 'Content-Type': 'application/json' },
+      body: JSON.stringify(meowBody)
+    }).catch(() => null);
+    if (!meowRes?.ok) return null;
+    const meow = await meowRes.json().catch(() => null);
+    if (!meow?.token) return null;
+
+    // Step 4: /backend/servers/:serverId -> links[0].link
+    const qs = new URLSearchParams({
+      [ZXC_UO]: String(metadata.tmdbId),
+      [ZXC_UG]: serverId,
+      [ZXC_UP]: isTv ? 'tv' : 'movie',
+      ...(meow.ts ? { [ZXC_UL]: String(meow.ts) } : {}),
+      [ZXC_UU]: String(meow.token),
+      [ZXC_UD]: title,
+      [ZXC_UC]: releaseYear,
+      [ZXC_UM]: releaseDate
+    });
+    if (imdbId) qs.set(ZXC_IM, imdbId);
+    if (isTv) {
+      qs.set('season', String(metadata.season || 1));
+      qs.set('episode', String(metadata.episode || 1));
+    }
+
+    const srvRes = await fetch(
+      `${apiBase}/backend/servers/${encodeURIComponent(serverId)}?${qs.toString()}`,
+      { headers: baseHeaders }
+    ).catch(() => null);
+    if (!srvRes?.ok) return null;
+    const srvJson = await srvRes.json().catch(() => null);
+    const encLink = srvJson?.links?.[0]?.link || srvJson?.data?.link || srvJson?.link;
+    if (!encLink) return null;
+
+    // Step 5: AES-256-CBC decrypt the internal stream path
+    let rawUrl = String(encLink);
+    if (!/^https?:\/\//i.test(rawUrl)) {
+      const dec = decryptOpenSslAes256Cbc(rawUrl, aesKey);
+      if (dec) {
+        rawUrl = dec.startsWith('http')
+          ? dec
+          : `${apiBase}${dec.startsWith('/') ? '' : '/'}${dec}`;
+      } else if (rawUrl.startsWith('/')) {
+        rawUrl = `${apiBase}${rawUrl}`;
+      } else {
+        return null;
+      }
+    }
+
+    // Step 6: playable container? (VidStuck serves DASH/HLS from the same path)
+    let format = /\.mpd(\?|$)/i.test(rawUrl)
+      ? 'dash'
+      : /\.(mp4|mkv|m4v)(\?|$)/i.test(rawUrl)
+        ? 'mp4'
+        : '';
+    if (!format) {
+      const sniff = await sniffStreamFormat(rawUrl, baseHeaders);
+      format = sniff.format || 'hls';
+    }
+
+    // The vidstuck backend is Origin/Referer gated (and needs the session
+    // cookie), so the stream is streamed through this Worker's /api/proxy.
+    const streamUrl = buildWorkerProxyUrl(rawUrl, referer, 'full', cookie);
 
     return {
       server: serverId,
-      format: rawUrl.includes('.mp4') ? 'mp4' : 'hls',
+      format,
       rawUrl,
       streamUrl,
       referer,
+      headers: { Referer: referer, Origin: apiBase },
+      backupUrls: [buildWorkerProxyUrl(rawUrl, referer, 'manifest', cookie)],
       audioTracks: [
-        { id: 'orig', lang: 'en', label: 'Original Audio', type: 'sub', streamUrl, rawUrl, default: true }
+        {
+          id: 'orig',
+          lang: 'en',
+          label: 'Original Audio',
+          type: 'sub',
+          streamUrl,
+          rawUrl,
+          default: true
+        }
       ],
       qualities: [{ label: 'Auto', height: 0, url: streamUrl }]
     };
@@ -640,13 +792,25 @@ async function resolveVidstuckUpstream(metadata, serverId, env) {
   }
 }
 
+/**
+ * Ursa (VidSrc.sh) WASM envelope handoff marker.
+ *
+ * Cloudflare Workers V8 isolates refuse runtime `WebAssembly.compile()`
+ * ("CompileError: Wasm code generation disallowed by embedder"), while the
+ * viewer's browser happily allows it. So when the decrypt cannot happen on the
+ * edge, the raw envelope is stashed on the stream payload and the browser
+ * finishes the job (see attachStreamToVideo() in public/js/embed.js).
+ */
+const VSRC_WASM_ENVELOPE_URL = 'vidsrc://wasm-envelope';
+const VSRC_REFERER = 'https://vidsrc.sh/';
+
 async function resolveVidsrcUpstream(metadata) {
   try {
     const isTv = metadata.type === 'tv';
     const qs = isTv
       ? `type=tv&tmdb=${metadata.tmdbId}&season=${metadata.season || 1}&episode=${metadata.episode || 1}&stream_urls`
       : `type=movie&tmdb=${metadata.tmdbId}&stream_urls`;
-    const referer = 'https://vidsrc.sh/';
+    const referer = VSRC_REFERER;
     const res = await fetch(`https://data.vidsrc.sh/api.php?${qs}`, {
       headers: { Accept: 'application/json', 'User-Agent': USER_AGENT, Referer: referer }
     });
@@ -654,6 +818,8 @@ async function resolveVidsrcUpstream(metadata) {
     const json = await res.json();
 
     let urls = [];
+    let vsEnvelope = null;
+
     if (Array.isArray(json?.data?.stream_urls)) {
       urls = json.data.stream_urls;
     } else if (typeof json?.data?.stream_urls === 'string' && json?.vs) {
@@ -667,76 +833,144 @@ async function resolveVidsrcUpstream(metadata) {
         if (wRes.ok) wasmBytes = Buffer.from(await wRes.arrayBuffer());
       }
       if (wasmBytes) {
-        const mod = await WebAssembly.compile(wasmBytes);
-        const inst = await WebAssembly.instantiate(mod, {
-          env: { emscripten_notify_memory_growth() {} }
-        });
-        const ex = inst.exports;
-        const mem = ex.memory;
-        if (typeof ex.key === 'function') {
-          const kp = ex.key();
-          const kb = new Uint8Array(mem.buffer, kp, 32);
-          const kh = '91d803885852299907d44c2f92822699c62f8b0f0a5c8d208190e0f102131415';
-          for (let i = 0; i < 32; i++) kb[i] = parseInt(kh.slice(i * 2, i * 2 + 2), 16);
-        }
-        const nonceStr = isTv
-          ? `${metadata.tmdbId}_${metadata.season || 1}_${metadata.episode || 1}`
-          : `stream_urls:${metadata.tmdbId}`;
-        const nb = Buffer.from(nonceStr, 'utf8');
-        const np = ex.malloc(nb.length + 1);
-        new Uint8Array(mem.buffer).set(nb, np);
-        new Uint8Array(mem.buffer)[np + nb.length] = 0;
-        ex.nonce(np);
-        ex.free(np);
+        try {
+          const mod = await WebAssembly.compile(wasmBytes);
+          const inst = await WebAssembly.instantiate(mod, {
+            env: { emscripten_notify_memory_growth() {} }
+          });
+          const ex = inst.exports;
+          const mem = ex.memory;
+          if (typeof ex.key === 'function') {
+            const kp = ex.key();
+            const kb = new Uint8Array(mem.buffer, kp, 32);
+            const kh = '91d803885852299907d44c2f92822699c62f8b0f0a5c8d208190e0f102131415';
+            for (let i = 0; i < 32; i++) kb[i] = parseInt(kh.slice(i * 2, i * 2 + 2), 16);
+          }
+          const nonceStr = isTv
+            ? `${metadata.tmdbId}_${metadata.season || 1}_${metadata.episode || 1}`
+            : `stream_urls:${metadata.tmdbId}`;
+          const nb = Buffer.from(nonceStr, 'utf8');
+          const np = (typeof ex.alloc === 'function' ? ex.alloc : ex.malloc)(nb.length + 1);
+          new Uint8Array(mem.buffer).set(nb, np);
+          new Uint8Array(mem.buffer)[np + nb.length] = 0;
+          ex.nonce(np);
+          if (typeof ex.free === 'function') ex.free(np);
 
-        const ct = Buffer.from(json.data.stream_urls, 'base64');
-        const ptr = ex.malloc(ct.length);
-        new Uint8Array(mem.buffer).set(ct, ptr);
-        const outPtr = ex.decrypt(ptr, ct.length);
-        if (outPtr) {
-          const u8 = new Uint8Array(mem.buffer);
-          let end = outPtr;
-          while (end < u8.length && u8[end] !== 0) end++;
-          urls = JSON.parse(Buffer.from(mem.buffer, outPtr, end - outPtr).toString('utf8'));
+          // vicine v1.5.2 ABI: decrypt(ptr, len) returns the plaintext length and
+          // the UTF-8 payload starts at `ptr + 12` (v1.5.x dropped the `malloc`
+          // return-value convention and the NUL-terminated string read).
+          const raw = Buffer.from(json.data.stream_urls, 'base64');
+          const ptr = (typeof ex.alloc === 'function' ? ex.alloc : ex.malloc)(raw.length);
+          new Uint8Array(mem.buffer, ptr, raw.length).set(raw);
+          const len = ex.decrypt(ptr, raw.length);
+          const decoded = new TextDecoder().decode(
+            new Uint8Array(mem.buffer, ptr + 12, len)
+          );
+          const parsed = JSON.parse(decoded);
+          if (Array.isArray(parsed)) urls = parsed;
+        } catch {
+          // "Wasm code generation disallowed by embedder" (Workers V8 isolates)
+          // or an unexpected ABI — hand the envelope to the browser instead.
         }
+      }
+
+      if (urls.length === 0) {
+        vsEnvelope = {
+          streamUrls: json.data.stream_urls,
+          wasmUrl: json.vs.wasm_url
+            ? buildWorkerProxyUrl(json.vs.wasm_url, referer)
+            : null,
+          wasmBase64: json.vs.wasm || null
+        };
       }
     }
 
     urls = urls.filter((u) => typeof u === 'string' && /^https?:\/\//i.test(u));
+
+    // Browser-side WASM assist: the edge could not run WebAssembly.compile, so
+    // ship the sealed envelope to the player and let it decrypt + stream.
+    if (urls.length === 0 && vsEnvelope) {
+      return {
+        server: 'ursa',
+        format: 'hls',
+        rawUrl: VSRC_WASM_ENVELOPE_URL,
+        streamUrl: VSRC_WASM_ENVELOPE_URL,
+        referer,
+        headers: {},
+        transport: 'browser-wasm',
+        vsEnvelope,
+        audioTracks: [
+          {
+            id: 'vidsrc-orig',
+            lang: 'en',
+            label: 'Original Audio',
+            type: 'sub',
+            streamUrl: VSRC_WASM_ENVELOPE_URL,
+            rawUrl: VSRC_WASM_ENVELOPE_URL,
+            default: true
+          }
+        ],
+        qualities: [{ label: 'Auto', height: 0, url: VSRC_WASM_ENVELOPE_URL }]
+      };
+    }
+
     if (urls.length === 0) return null;
 
-    let rawUrl = urls[0];
+    // VidSrc stream hosts require a per-host JWT (IP bound, ~4h). Plain-text
+    // JWTs and `{"token": "..."}` JSON are both in the wild.
+    let vsToken = '';
     try {
-      const origin = new URL(rawUrl).origin;
+      const origin = new URL(urls[0]).origin;
       const genRes = await fetch(`${origin}/generate.php`, {
         headers: { 'User-Agent': USER_AGENT, Referer: referer }
       });
       if (genRes.ok) {
-        const gen = await genRes.json();
-        if (gen?.token) {
-          urls = urls.map((u) => `${u.split('?')[0]}?token=${encodeURIComponent(gen.token)}`);
-          rawUrl = urls[0];
+        const genText = (await genRes.text()).trim();
+        if (genText.startsWith('{')) {
+          vsToken = JSON.parse(genText)?.token || '';
+        } else {
+          vsToken = genText.replace(/^["']|["']$/g, '');
         }
       }
     } catch {}
 
-    const streamUrl = buildWorkerProxyUrl(rawUrl, referer);
+    const stampUrl = (u) =>
+      !vsToken
+        ? u
+        : u.includes('__TOKEN__')
+          ? u.replace(/__TOKEN__/g, encodeURIComponent(vsToken))
+          : `${u}${u.includes('?') ? '&' : '?'}token=${encodeURIComponent(vsToken)}`;
+
+    const stamped = urls.map(stampUrl);
+    const rawUrl = stamped[0];
+    // token=<JWT> makes the upstream CDN Origin/Referer + JWT gated.
+    const streamUrl = buildWorkerProxyUrl(rawUrl, referer, 'full');
+
+    const toQuality = (u, idx) => ({
+      label: idx === 0 ? '1080p' : idx === 1 ? '720p' : `Mirror ${idx + 1}`,
+      height: idx === 0 ? 1080 : 720,
+      url: buildWorkerProxyUrl(u, referer, 'full')
+    });
+
     return {
       server: 'ursa',
       format: rawUrl.includes('.mp4') || rawUrl.includes('.mkv') ? 'mp4' : 'hls',
       rawUrl,
       streamUrl,
       referer,
+      headers: {},
+      vsToken,
+      backupUrls: [
+        buildWorkerProxyUrl(rawUrl, referer, 'manifest'),
+        rawUrl,
+        ...stamped.slice(1).map((u) => buildWorkerProxyUrl(u, referer, 'manifest'))
+      ],
       audioTracks: [
         { id: 'vidsrc-orig', lang: 'en', label: 'Original Audio', type: 'sub', streamUrl, rawUrl, default: true }
       ],
       qualities: [
         { label: 'Auto', height: 0, url: streamUrl },
-        ...urls.map((u, idx) => ({
-          label: idx === 0 ? '1080p' : '720p',
-          height: idx === 0 ? 1080 : 720,
-          url: buildWorkerProxyUrl(u, referer)
-        }))
+        ...stamped.map(toQuality)
       ]
     };
   } catch {
@@ -744,125 +978,435 @@ async function resolveVidsrcUpstream(metadata) {
   }
 }
 
+/**
+ * Unwrap a `/go` redirect wrapper: `ten` links bounce through
+ * `https://gamerxyt.com/dl.php?link=https://video-downloads.googleusercontent.com/...`
+ * and the inner Google CDN URL is the real, never hotlink-blocked stream.
+ */
+function unwrapRedirectVideoUrl(loc) {
+  if (!loc || typeof loc !== 'string') return '';
+  const inner = loc.match(/[?&]link=(https?:\/\/[^\s&"']+)/i);
+  if (inner && inner[1] && !/gamerxyt\.com/i.test(inner[1])) {
+    try {
+      return decodeURIComponent(inner[1]);
+    } catch {
+      return inner[1];
+    }
+  }
+  return loc;
+}
+
+/**
+ * Centaurus (HiCine / api.hicine.sbs) candidate scoring.
+ *
+ * Mobile Chrome/Brave on Android cannot decode 10-bit HEVC, so a 720p x264
+ * stereo-AAC line must win over a "better" resolution 10Bit HEVC line; 1080p and
+ * 480p stay available in `qualities` for desktop + backup failover.
+ */
+function scoreHicineQuality(q) {
+  let score = 0;
+  if (!q.isHevc) score += 100;
+  if (q.isX264) score += 60;
+  if (q.isStereoAac) score += 40;
+  // 720p x264 starts fast on mobile; 480p even faster; 1080p is the desktop pick
+  if (q.height === 720) score += 30;
+  else if (q.height === 480) score += 25;
+  else if (q.height === 1080) score += 20;
+  else score += 10;
+  if (q.isHevc) score -= 50;
+  if (q.isMultiChannel) score -= 30;
+  return score;
+}
+
 async function resolveHicineUpstream(metadata) {
   if (!metadata.title) return null;
   try {
-    const res = await fetch(
-      `https://api.hicine.sbs/api/search/${encodeURIComponent(metadata.title)}`,
-      { headers: { Accept: 'application/json', 'User-Agent': USER_AGENT } }
-    );
+    const apiBase = 'https://api.hicine.sbs';
+    const res = await fetch(`${apiBase}/api/search/${encodeURIComponent(metadata.title)}`, {
+      headers: { Accept: 'application/json', 'User-Agent': USER_AGENT }
+    });
     if (!res.ok) return null;
     const items = await res.json();
     if (!Array.isArray(items) || items.length === 0) return null;
 
     const isTv = metadata.type === 'tv';
+    const wantedYear = Number(metadata.releaseYear) || 0;
+    const wantedTitle = String(metadata.title || '').toLowerCase().trim();
+
+    // Score candidates so `Fight Club (1999)` beats `Fight Club (2023)`.
+    const scoreItem = (item) => {
+      let score = 0;
+      const itemTitle = String(item.title || item.name || '').toLowerCase().trim();
+      if (itemTitle === wantedTitle) score += 100;
+      else if (itemTitle.startsWith(wantedTitle) || itemTitle.includes(wantedTitle)) score += 40;
+      const itemYear = Number(item.releaseYear || item.year) || 0;
+      if (wantedYear && itemYear) {
+        const delta = Math.abs(itemYear - wantedYear);
+        if (delta === 0) score += 100;
+        else if (delta <= 1) score += 70;
+        else if (delta <= 3) score += 30;
+        else score -= 25;
+      }
+      if (isTv) {
+        if (item.contentType === 'series' || item.season_1) score += 30;
+        if (item.season_1 && /episode\s+1\b/i.test(String(item.season_1))) score += 10;
+      } else if (item.contentType === 'movies' || item.links) {
+        score += 30;
+      }
+      return score;
+    };
+
     const candidates = items.filter((i) =>
       isTv ? i.contentType === 'series' || i.season_1 : i.contentType === 'movies' || i.links
     );
-    const chosen = candidates[0] || items[0];
+    const pool = candidates.length > 0 ? candidates : items;
+    const chosen = [...pool].sort((a, b) => scoreItem(b) - scoreItem(a))[0];
+    if (!chosen) return null;
+
     const rawText = isTv
       ? chosen[`season_${metadata.season || 1}`] || chosen.season_1 || ''
       : chosen.links || '';
     if (!rawText) return null;
 
-    let block = rawText;
+    // Root Cause C (TV): HiCine packs every quality of one episode onto a single
+    // line — `Episode 1 : https://.../?vcloud=...,480p : https://.../?vcloud=...,720p`
+    // — so ` : ` separated variants must be exploded before quality parsing, and
+    // `Episode N :` section matching must NOT depend on the trailing ` : `.
+    const entries = [];
+    const lines = String(rawText).split(/\r?\n/);
     if (isTv) {
-      const epRegex = new RegExp(`^\\s*Episode\\s+0*${Number(metadata.episode || 1)}(?:\\b|\\s|:)`, 'i');
+      const epNum = Number(metadata.episode || 1);
+      const epRegex = new RegExp(`^\\s*Episode\\s+0*${epNum}(?:\\b|\\s|:)`, 'i');
       const anyEp = /^\s*Episode\s+\d+/i;
-      const lines = rawText.split(/\r?\n/);
-      const matched = [];
+      const epLines = [];
       let inside = false;
       for (const l of lines) {
         if (epRegex.test(l)) {
           inside = true;
-          matched.push(l);
+          epLines.push(l);
         } else if (inside && anyEp.test(l)) {
           break;
-        } else if (inside) {
-          matched.push(l);
+        } else if (inside && l.trim()) {
+          epLines.push(l);
         }
       }
-      if (matched.length > 0) block = matched.join('\n');
-    }
-
-    const qualities = [];
-    for (const line of block.split(/\r?\n/)) {
-      const qMatch = line.match(/(2160p|1080p|720p|480p)/i);
-      const qLabel = qMatch ? qMatch[1].toLowerCase() : '720p';
-      const height = parseInt(qLabel, 10) || 720;
-
-      const workerMatch = line.match(/(https?:\/\/[^\s,"']+\/\?vcloud=[^\s,"']+)/i);
-      if (workerMatch && qualities.length < 3) {
-        try {
-          const parsed = new URL(workerMatch[1]);
-          const vcloud = parsed.searchParams.get('vcloud');
-          const lRes = await fetch(
-            `${parsed.origin}/api/links?vcloud=${encodeURIComponent(vcloud)}`,
-            { headers: { Accept: 'application/json', 'User-Agent': USER_AGENT } }
-          );
-          if (lRes.ok) {
-            const lData = await lRes.json();
-            for (const tType of ['pixel', 'ten', 'r2', 'DDL']) {
-              const tok = lData?.tokens?.[tType];
-              if (!tok?.ts || !tok?.sig) continue;
-              const goRes = await fetch(
-                `${parsed.origin}/go?type=${tType}&vcloud=${encodeURIComponent(vcloud)}&ts=${tok.ts}&sig=${tok.sig}`,
-                { headers: { 'User-Agent': USER_AGENT }, redirect: 'manual' }
-              );
-              const loc = goRes.headers.get('location');
-              if (loc && /^https?:\/\//i.test(loc)) {
-                const directUrl = loc.includes('pixeldrain.') && loc.includes('/u/')
-                  ? `https://pixeldrain.dev/api/file/${loc.split('/u/')[1].split(/[?#]/)[0]}`
-                  : loc;
-                qualities.push({
-                  label: qLabel,
-                  height,
-                  rawUrl: directUrl,
-                  url: buildWorkerProxyUrl(directUrl, '')
-                });
-                break;
-              }
-            }
-          }
-        } catch {}
+      const poolLines = epLines.length > 0 ? epLines : lines.filter((l) => epRegex.test(l));
+      for (const line of poolLines) {
+        const body = line.replace(/^\s*Episode\s+\d+\s*:?\s*/i, '');
+        for (const part of body.split(/\s+:\s+/)) {
+          if (part.trim()) entries.push({ text: part.trim(), line });
+        }
+      }
+    } else {
+      for (const line of lines) {
+        if (!line.trim()) continue;
+        for (const part of line.split(/\s+:\s+/)) {
+          if (part.trim()) entries.push({ text: part.trim(), line });
+        }
       }
     }
 
-    if (qualities.length === 0) return null;
-    qualities.sort((a, b) => b.height - a.height);
-    const primary = qualities[0];
+    // Pull every (quality, URL) pair out of the exploded entries. A single entry
+    // can still carry a trailing quality label (",480p") — matchAll + the local
+    // quality scan handle both orders.
+    const parsedEntries = [];
+    const seenUrls = new Set();
+    for (const { text: entryText, line } of entries) {
+      // the line-level label ("720p x264 : <url>") is the last-resort label when
+      // the URL sits in its own ` : ` segment
+      const lineQuality = ((line.match(/(2160p|4k|1080p|720p|480p)/i) || [])[1] || '').toLowerCase();
+      const workerMatches = [...entryText.matchAll(/(https?:\/\/[^\s,"']+vcloud=[^\s,"']+)/gi)].map(
+        (m) => m[1]
+      );
+      const directMatches = [
+        ...entryText.matchAll(
+          /(https?:\/\/[^\s,"']+\.(?:mp4|mkv|webm)(?:[?#][^\s,"']*)?|https?:\/\/[^\s,"']*pixeldrain\.[^\s,"']+)/gi
+        )
+      ].map((m) => m[1]);
+      const found = workerMatches.length > 0 ? workerMatches : directMatches;
+      if (found.length === 0) continue;
+
+      // every quality token found on the entry, in order, so `480p : <url>,720p`
+      // can label the URL with the token that immediately precedes it
+      const qualityTokens = [
+        ...entryText.matchAll(/(2160p|4k|1080p|720p|480p)/gi)
+      ].map((m) => m[1].toLowerCase());
+
+      for (const rawUrlMatch of found) {
+        if (seenUrls.has(rawUrlMatch)) continue;
+        seenUrls.add(rawUrlMatch);
+        const idx = entryText.indexOf(rawUrlMatch);
+        const before = idx < 0 ? entryText : entryText.slice(0, idx);
+        const trailingToken = [
+          ...before.matchAll(/(2160p|4k|1080p|720p|480p)/gi)
+        ].pop();
+        const qLabel =
+          trailingToken?.[1]?.toLowerCase() ||
+          qualityTokens[0] ||
+          (rawUrlMatch.match(/(2160p|4k|1080p|720p|480p)/i) || [])[1]?.toLowerCase() ||
+          lineQuality ||
+          '720p';
+        const height = qLabel === '2160p' || qLabel === '4k' ? 2160 : parseInt(qLabel, 10) || 720;
+        // `line` keeps the HEVC / 5.1 metadata that lives on the sibling segment
+        parsedEntries.push({ qLabel, height, rawUrlMatch, entry: line });
+      }
+    }
+
+    if (parsedEntries.length === 0) return null;
+
+    // Root Cause A: token priority. `pixel` (pixeldrain) hotlink-403s
+    // ("hotlink_detected") and is rate-limit-captcha gated, so the CDN tokens are
+    // tried first and pixeldrain is kept only as a last resort. Every present
+    // token is resolved in parallel instead of short-circuiting on the first.
+    const TOKEN_PRIORITY = ['ten', 'fsl2', 'fsl', 'r2', 'DDL', 'server1'];
+
+    const resolveEntry = async (parsed) => {
+      try {
+        const url = new URL(parsed.rawUrlMatch);
+        const vcloud = url.searchParams.get('vcloud');
+        if (!vcloud) return null;
+
+        const lRes = await fetch(`${url.origin}/api/links?vcloud=${encodeURIComponent(vcloud)}`, {
+          headers: { Accept: 'application/json', 'User-Agent': USER_AGENT }
+        });
+        if (!lRes.ok) return null;
+        const lData = await lRes.json();
+        const tokens = lData?.tokens || {};
+        const tokenTypes = [
+          ...TOKEN_PRIORITY.filter((t) => tokens[t]),
+          ...Object.keys(tokens).filter((t) => !TOKEN_PRIORITY.includes(t) && t !== 'pixel'),
+          ...(tokens.pixel ? ['pixel'] : [])
+        ];
+        if (tokenTypes.length === 0) return null;
+
+        const attempts = await Promise.all(
+          tokenTypes.map(async (tType) => {
+            const tok = tokens[tType];
+            if (!tok?.ts || !tok?.sig) return null;
+            try {
+              const goRes = await fetch(
+                `${url.origin}/go?type=${tType}&vcloud=${encodeURIComponent(vcloud)}&ts=${encodeURIComponent(tok.ts)}&sig=${encodeURIComponent(tok.sig)}`,
+                { headers: { 'User-Agent': USER_AGENT }, redirect: 'manual' }
+              );
+              let loc = goRes.headers.get('location');
+              if (!loc || !/^https?:\/\//i.test(loc)) return null;
+
+              // Root Cause B: unwrap ?link= redirect wrappers down to the real CDN
+              loc = unwrapRedirectVideoUrl(loc);
+              if (!/^https?:\/\//i.test(loc)) return null;
+
+              // pixeldrain `/u/ID` share pages -> direct API stream endpoint
+              if (/pixeldrain\.(dev|com)/i.test(loc) && loc.includes('/u/')) {
+                const pdId = loc.split('/u/')[1].split(/[?#]/)[0];
+                if (pdId) loc = `https://pixeldrain.dev/api/file/${pdId}`;
+              }
+
+              let isHotlinkBlocked = false;
+              if (/pixeldrain\.dev\/api\/file\//i.test(loc)) {
+                // Probe first: Pixeldrain answers 200
+                // {"success":false,"value":"hotlink_detected"} for foreign referers.
+                try {
+                  const probe = await fetch(loc, {
+                    headers: {
+                      Accept: '*/*',
+                      'User-Agent': USER_AGENT,
+                      Range: 'bytes=0-64'
+                    }
+                  });
+                  const probeText = (await probe.text()).slice(0, 400).toLowerCase();
+                  if (
+                    !probe.ok ||
+                    probeText.includes('hotlink_detected') ||
+                    probeText.includes('"success":false') ||
+                    probeText.includes('captcha')
+                  ) {
+                    isHotlinkBlocked = true;
+                  }
+                } catch {
+                  isHotlinkBlocked = true;
+                }
+              }
+
+              return {
+                url: loc,
+                tokenType: tType,
+                format: /\.mpd(\?|$)/i.test(loc)
+                  ? 'dash'
+                  : /\.m3u8(\?|$)/i.test(loc)
+                    ? 'hls'
+                    : 'mp4',
+                isHotlinkBlocked
+              };
+            } catch {
+              return null;
+            }
+          })
+        );
+
+        const viable = attempts.find((a) => a && !a.isHotlinkBlocked);
+        if (viable) return viable;
+        const blocked = attempts.find((a) => a);
+        if (blocked) return blocked; // last-resort token URL
+        return null;
+      } catch {
+        return null;
+      }
+    };
+
+    const hasHevc = (label, entry) =>
+      /hevc|x265|10\s*bit/i.test(String(label)) || /hevc|x265|10\s*bit/i.test(String(entry));
+    const hasX264 = (label, entry) => /x264|h\.?264/i.test(`${label} ${entry}`);
+    const hasMultiChannel = (entry) => /dd\s*5\.1|ac3|eac3|5\.1|7\.1/i.test(String(entry));
+    const hasStereoAac = (entry) => /aac|stereo|2\.0/i.test(String(entry));
+
+    const resolvedQualities = [];
+    const seenDirect = new Set();
+    for (const parsed of parsedEntries) {
+      if (resolvedQualities.length >= 4) break;
+      const resolved = await resolveEntry(parsed);
+      if (!resolved?.url || seenDirect.has(resolved.url)) continue;
+      seenDirect.add(resolved.url);
+      resolvedQualities.push({
+        label: parsed.qLabel,
+        height: parsed.height,
+        rawUrl: resolved.url,
+        tokenType: resolved.tokenType,
+        isHotlinkBlocked: !!resolved.isHotlinkBlocked,
+        streamFormat: resolved.format,
+        isHevc: hasHevc(parsed.qLabel, parsed.entry),
+        isX264: hasX264(parsed.qLabel, parsed.entry),
+        isMultiChannel: hasMultiChannel(parsed.entry),
+        isStereoAac: hasStereoAac(parsed.entry),
+        // Root Cause D: resolved direct CDN URLs play natively in <video> (no
+        // CORS mode, no Range re-encoding on the edge). /api/proxy stays as the
+        // backup ladder for ISP-blocked regions / hotlink-filtered hosts.
+        url: resolved.url,
+        proxyUrl: buildWorkerProxyUrl(resolved.url, '', 'manifest')
+      });
+    }
+
+    if (resolvedQualities.length === 0) return null;
+
+    const isDeadQuality = (q) => q.isHotlinkBlocked;
+
+    // Score + sort: strongly prefer !isHevc (x264) + stereo AAC, then the 720p
+    // mobile-friendly start, keeping 1080p/480p in `qualities`.
+    const sorted = [...resolvedQualities].sort((a, b) => {
+      const deadDelta = Number(isDeadQuality(a)) - Number(isDeadQuality(b));
+      if (deadDelta !== 0) return deadDelta;
+      return scoreHicineQuality(b) - scoreHicineQuality(a);
+    });
+    // Drop a 10-bit HEVC entry when an x264 line of the same resolution exists:
+    // the duplicate label is useless on mobile and keeping it in `qualities`
+    // invites a manual pick that cannot decode.
+    const x264Heights = new Set(
+      sorted.filter((q) => !q.isHevc && !q.isHotlinkBlocked).map((q) => q.height)
+    );
+    const playable = sorted.filter(
+      (q) => !x264Heights.has(q.height) || (!q.isHevc && !q.isHotlinkBlocked)
+    );
+    if (playable.length === 0) playable.push(...sorted);
+    const primary = playable[0];
+    const ordered = [primary, ...playable.slice(1).sort((a, b) => b.height - a.height)];
+
+    const backupUrls = [];
+    for (const q of ordered.slice(1)) backupUrls.push(q.proxyUrl);
+    if (primary.proxyUrl) backupUrls.push(primary.proxyUrl);
+    // last resort: the raw CDN URL straight from the browser (no proxy at all),
+    // for regions where the Worker itself is the bottleneck
+    if (primary.rawUrl) backupUrls.push(primary.rawUrl);
+    const uniqueBackups = Array.from(new Set(backupUrls.filter(Boolean)));
 
     return {
       server: 'centaurus',
-      format: 'mp4',
+      format: primary.streamFormat || 'mp4',
       rawUrl: primary.rawUrl,
-      streamUrl: primary.url,
+      // Root Cause D: direct CDN playback, NOT wrapped in /api/proxy
+      streamUrl: primary.rawUrl,
       referer: '',
+      headers: {},
+      tokenType: primary.tokenType,
+      isHevc: primary.isHevc,
+      backupUrls: uniqueBackups,
       audioTracks: [
-        { id: 'hicine-orig', lang: 'en', label: 'Original Audio', type: 'dub', streamUrl: primary.url, rawUrl: primary.rawUrl, default: true }
+        {
+          id: 'hicine-orig',
+          lang: 'en',
+          label: 'Original Audio',
+          type: 'dub',
+          streamUrl: primary.rawUrl,
+          rawUrl: primary.rawUrl,
+          default: true
+        }
       ],
-      qualities: qualities.map((q) => ({ label: q.label, height: q.height, url: q.url }))
+      qualities: ordered.map((q) => ({
+        label: q.label,
+        height: q.height,
+        url: q.rawUrl,
+        tokenType: q.tokenType
+      }))
     };
   } catch {
     return null;
   }
 }
 
+/**
+ * Server priority for the automatic waterfall on Cloudflare Workers.
+ * Centaurus first (single CDN request, direct MP4, sub-400ms), then Ursa, then
+ * the heavier VidStuck/ZXC session dance (Andromeda/Atlas), Strings last.
+ */
+const WATERFALL_PRIORITY = ['centaurus', 'ursa', 'andromeda', 'atlas', 'strings'];
+/** Hard per-upstream budget: the waterfall must stay fast and deterministic. */
+const WATERFALL_UPSTREAM_TIMEOUT_MS = 9000;
+
+async function withTimeout(promise, ms, fallback = null) {
+  let timer;
+  try {
+    return await Promise.race([
+      promise,
+      new Promise((resolve) => {
+        timer = setTimeout(() => resolve(fallback), ms);
+      })
+    ]);
+  } finally {
+    if (timer) clearTimeout(timer);
+  }
+}
+
 async function resolveStreamWaterfall(metadata, requestedServer, preferredAudio, env) {
-  const validServer = SERVERS.find((s) => s.id === requestedServer)?.id || 'andromeda';
+  const validServer = SERVERS.find((s) => s.id === requestedServer)?.id || 'centaurus';
   const cacheKey = `cf:resolve:${metadata.type}:${metadata.tmdbId}:s${metadata.season}:e${metadata.episode}:${validServer}`;
   const cached = await edgeCacheGet(cacheKey);
   if (cached) return cached;
 
-  const order = [validServer, ...SERVERS.map((s) => s.id).filter((id) => id !== validServer)];
+  const enabledIds = SERVERS.filter((s) => s.enabled).map((s) => s.id);
+  // Default (and fallback) order: centaurus -> ursa -> andromeda -> atlas -> strings.
+  // An explicitly requested server is still attempted first, so the player's
+  // "switch server" action stays authoritative.
+  const prioritized = [
+    ...WATERFALL_PRIORITY.filter((id) => enabledIds.includes(id)),
+    ...enabledIds.filter((id) => !WATERFALL_PRIORITY.includes(id))
+  ];
+  const order = [validServer, ...prioritized.filter((id) => id !== validServer)];
+
   for (const srvId of order) {
     let resolved = null;
     if (srvId === 'andromeda' || srvId === 'atlas') {
-      resolved = await resolveVidstuckUpstream(metadata, srvId, env);
+      resolved = await withTimeout(
+        resolveVidstuckUpstream(metadata, srvId, env),
+        WATERFALL_UPSTREAM_TIMEOUT_MS
+      );
     } else if (srvId === 'ursa') {
-      resolved = await resolveVidsrcUpstream(metadata);
+      resolved = await withTimeout(
+        resolveVidsrcUpstream(metadata),
+        WATERFALL_UPSTREAM_TIMEOUT_MS
+      );
     } else if (srvId === 'centaurus') {
-      resolved = await resolveHicineUpstream(metadata);
+      resolved = await withTimeout(
+        resolveHicineUpstream(metadata),
+        WATERFALL_UPSTREAM_TIMEOUT_MS
+      );
     }
     if (resolved && resolved.streamUrl) {
       const payload = {
@@ -880,7 +1424,68 @@ async function resolveStreamWaterfall(metadata, requestedServer, preferredAudio,
 /**
  * 5. M3U8 Manifest Rewriter & Edge Stream Proxy
  */
-function rewriteManifest(m3u8, baseUrl, workerProxyBase, referer, origin, mode) {
+/**
+ * Per-host JWT cache for VidSrc-style stream hosts (`<host>/generate.php`).
+ * Tokens are IP bound with a ~4h TTL, so a 10 minute edge cache is safe and
+ * keeps the waterfall within the sub-400ms budget.
+ */
+const jwTokenCache = new Map();
+
+async function fetchVidsrcHostToken(hostOrigin, referer = VSRC_REFERER) {
+  if (!hostOrigin) return '';
+  const cached = jwTokenCache.get(hostOrigin);
+  if (cached && Date.now() < cached.exp) return cached.token;
+  let token = '';
+  try {
+    const res = await fetch(`${hostOrigin}/generate.php`, {
+      headers: {
+        'User-Agent': USER_AGENT,
+        ...(referer ? { Referer: referer } : {})
+      },
+      redirect: 'follow'
+    });
+    if (res.ok) {
+      const raw = (await res.text()).trim();
+      if (raw) {
+        if (raw.startsWith('{')) {
+          token = JSON.parse(raw)?.token || '';
+        } else if (raw.startsWith('<')) {
+          token = '';
+        } else {
+          token = raw.replace(/^["']|["']$/g, '');
+        }
+      }
+    }
+  } catch {
+    token = '';
+  }
+  if (token) jwTokenCache.set(hostOrigin, { token, exp: Date.now() + 600000 });
+  return token;
+}
+
+/**
+ * Stamp a URL with an __TOKEN__ placeholder or a `?token=` query parameter.
+ */
+function stampTokenOnUrl(target, token, forUriAttribute = false) {
+  if (!target) return target;
+  const enc = encodeURIComponent(token);
+  let out = target;
+  if (out.includes('__TOKEN__')) {
+    out = out.replace(/__TOKEN__/g, enc);
+  } else if (!/[?&]token=/i.test(out)) {
+    if (forUriAttribute || /\.m3u8|\.key|\.ts|\.m4s|\.mp4/i.test(out)) {
+      out = `${out}${out.includes('?') ? '&' : '?'}token=${enc}`;
+    }
+  }
+  return out;
+}
+
+/**
+ * Rewrite an HLS manifest so every nested playlist / key / segment is routed
+ * through this Worker (never leaking a bare segment URL that would 403 on
+ * Origin/Referer + JWT gated hosts).
+ */
+function rewriteManifest(m3u8, baseUrl, workerProxyBase, referer, origin, mode, token = '') {
   const resolveAbs = (u) => {
     try {
       return new URL(u.trim(), baseUrl).toString();
@@ -890,13 +1495,17 @@ function rewriteManifest(m3u8, baseUrl, workerProxyBase, referer, origin, mode) 
   };
 
   const proxyUri = (target, isPlaylistOrKey) => {
-    const abs = resolveAbs(target);
+    let abs = resolveAbs(target);
+    if (token && !abs.includes('__TOKEN__') && !/[?&]token=/i.test(abs)) {
+      abs = stampTokenOnUrl(abs, token, true);
+    }
     // In 'manifest' mode (default on Cloudflare), only proxy nested .m3u8 playlists & keys;
     // let heavy .ts/.m4s video segments stream directly from upstream CDN to save Worker request quota!
     if (mode === 'manifest' && !isPlaylistOrKey) return abs;
     const p = new URLSearchParams({ url: abs, mode });
     if (referer) p.set('referer', referer);
     if (origin) p.set('origin', origin);
+    if (token) p.set('token', token);
     return `${workerProxyBase}?${p.toString()}`;
   };
 
@@ -921,6 +1530,9 @@ async function handleProxyRequest(request, url) {
   const referer = url.searchParams.get('referer') || '';
   const origin = url.searchParams.get('origin') || '';
   const mode = url.searchParams.get('mode') || 'manifest';
+  const cookie = url.searchParams.get('cookie') || '';
+  const passthroughToken = url.searchParams.get('token') || '';
+  const vidsrcStamp = url.searchParams.get('vidsrcStamp') === '1';
 
   if (!targetUrl) {
     return jsonResponse({
@@ -937,24 +1549,45 @@ async function handleProxyRequest(request, url) {
     return jsonResponse({ ok: false, error: 'Invalid ?url= parameter' }, 400);
   }
 
+  // Only ever send Referer/Origin when the caller explicitly asked for them —
+  // a synthesized Referer is what triggered Pixeldrain's hotlink filter and the
+  // vidstuck/Pixeldrain 403s.
   const upstreamHeaders = new Headers({
     'User-Agent': request.headers.get('User-Agent') || USER_AGENT,
-    Accept: '*/*',
-    Referer: referer || `${parsed.origin}/`,
-    Origin: origin || (referer ? new URL(referer).origin : parsed.origin)
+    Accept: '*/*'
   });
+  if (referer) upstreamHeaders.set('Referer', referer);
+  if (origin) {
+    upstreamHeaders.set('Origin', origin);
+  } else if (referer) {
+    try {
+      upstreamHeaders.set('Origin', new URL(referer).origin);
+    } catch {}
+  }
+  if (cookie) upstreamHeaders.set('Cookie', cookie);
+
+  // JWT stamping for X-frame/Origin gated hosts: `vidsrcStamp=1` (or an
+  // __TOKEN__ placeholder in the URL) triggers a <host>/generate.php lookup.
+  let token = passthroughToken;
+  if (vidsrcStamp || targetUrl.includes('__TOKEN__')) {
+    token = token || (await fetchVidsrcHostToken(parsed.origin, referer));
+  }
+
+  let upstreamTarget = targetUrl;
+  if (token) upstreamTarget = stampTokenOnUrl(targetUrl, token, true);
+  const upstreamUrl = new URL(upstreamTarget);
 
   const range = request.headers.get('Range');
   if (range) upstreamHeaders.set('Range', range);
 
-  const upstreamResp = await fetch(parsed.toString(), {
+  const upstreamResp = await fetch(upstreamUrl.toString(), {
     method: request.method === 'HEAD' ? 'HEAD' : 'GET',
     headers: upstreamHeaders,
     redirect: 'follow'
   });
 
   const contentType = (upstreamResp.headers.get('content-type') || '').toLowerCase();
-  const finalUrl = upstreamResp.url || parsed.toString();
+  const finalUrl = upstreamResp.url || upstreamUrl.toString();
   const isM3u8 =
     contentType.includes('mpegurl') ||
     contentType.includes('m3u8') ||
@@ -964,7 +1597,18 @@ async function handleProxyRequest(request, url) {
     const text = await upstreamResp.text();
     if (text.trim().startsWith('#EXTM3U')) {
       const workerProxyBase = `${url.origin}/api/proxy`;
-      const rewritten = rewriteManifest(text, finalUrl, workerProxyBase, referer, origin, mode);
+      // `mode=full` (or a JWT-stamped response) rewrites every variant AND
+      // segment URI through the Worker with the token attached.
+      const effectiveMode = mode === 'full' ? 'full' : mode;
+      const rewritten = rewriteManifest(
+        text,
+        finalUrl,
+        workerProxyBase,
+        referer,
+        origin,
+        effectiveMode,
+        token
+      );
       return new Response(rewritten, {
         status: 200,
         headers: corsHeaders({
@@ -975,11 +1619,18 @@ async function handleProxyRequest(request, url) {
     }
   }
 
+  if (mode === 'full' && isM3u8 && request.method !== 'HEAD') {
+    // Upstream answered with something other than an #EXTM3U playlist
+    return jsonResponse(
+      { ok: false, error: 'Upstream did not return an HLS manifest', target: parsed.hostname },
+      502
+    );
+  }
+
   const respHeaders = new Headers(corsHeaders());
   respHeaders.set('Accept-Ranges', 'bytes');
   respHeaders.set(
-    'Content-Type',
-    contentType.includes('octet-stream') ? 'video/mp4' : contentType || 'video/mp4'
+    'Content-Type', contentType.includes('octet-stream') ? 'video/mp4' : contentType || 'video/mp4'
   );
 
   const cl = upstreamResp.headers.get('content-length');
