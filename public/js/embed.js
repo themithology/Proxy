@@ -353,9 +353,20 @@
 
       emitHostEvent('ready', { title: state.media ? state.media.displayTitle : '' });
     } catch (err) {
-      loadingStatusText.textContent = err.message || 'Stream unavailable — select another server from the Cloud menu.';
-      showToast(err.message || 'Upstream server unreachable — try another server', 4000);
-      emitHostEvent('error', { error: err.message });
+      // The backend now tells us exactly which server failed and why.
+      // Surface that as a secondary line so the user is not staring at a
+      // generic "All upstream servers failed" message with no next step.
+      const apiData = (data && data.explanation) ? data : null;
+      const baseMsg = err.message || 'Stream unavailable — select another server from the Cloud menu.';
+      loadingStatusText.textContent = apiData && apiData.serverExplanation
+        ? `${baseMsg} — ${apiData.serverExplanation}`
+        : baseMsg;
+      if (apiData && apiData.explanation) {
+        showToast(`${apiData.explanation} (${apiData.requestedServer})`, 5000);
+      } else {
+        showToast(baseMsg, 4000);
+      }
+      emitHostEvent('error', { error: err.message, serverExplanation: apiData ? apiData.serverExplanation : null });
     }
   }
 

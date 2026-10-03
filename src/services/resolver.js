@@ -50,15 +50,34 @@ const VSRC_REFERER = 'https://vidsrc.sh/';
  */
 async function resolveVidstuckServer(metadata, serverId) {
   const providerKey = `vidstuck:${serverId}`;
-  if (!circuitBreaker.isAvailable(providerKey)) return null;
+  if (!circuitBreaker.isAvailable(providerKey)) {
+    return {
+      ok: false,
+      reason: 'circuit_open',
+      diag: {
+        stage: 'circuit_breaker',
+        message: `${serverId} is temporarily paused by the upstream circuit breaker (too many recent failures). Try again in ~30s or pick another server.`
+      }
+    };
+  }
 
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), 8500);
+
+  // Internal diagnostic — every failure branch stamps a reason the embed UI
+  // can show to the user instead of the generic "All upstream servers failed".
+  const diag = { stage: 'init', steps: [] };
+  const stamp = (stage, message, extra) => {
+    diag.stage = stage;
+    diag.steps.push({ stage, message, ...(extra || {}) });
+    diag.message = message;
+  };
 
   try {
     // Step 1: Warm up session cookies on ZXC + the vidstuck embed page
     const isTv = metadata.type === 'tv';
     const vidstuckBase = config.upstreams.vidstuckBase || VIDSTUCK_ORIGIN;
+    stamp('warmup', `Warming session cookies via ${vidstuckBase} / ${config.upstreams.zxcBase}`);
     const [zxcWarm, embedWarm] = await Promise.all([
       fetch(`${config.upstreams.zxcBase}/movie`, {
         headers: { 'User-Agent': USER_AGENT, Referer: `${config.upstreams.zxcBase}/` },
@@ -129,14 +148,16 @@ async function resolveVidstuckServer(metadata, serverId) {
 
     if (!meowRes.ok) {
       circuitBreaker.recordFailure(providerKey);
-      return null;
+      stamp('meow', `VidStuck /backend/meow returned HTTP ${meowRes.status}. Upstream is blocking the request (often a stale Origin/Referer or dead session).`);
+      return { ok: false, reason: `meow_${meowRes.status}`, diag };
     }
 
     const meowJson = await meowRes.json().catch(() => null);
     const token = meowJson?.token;
     if (!token) {
       circuitBreaker.recordFailure(providerKey);
-      return null;
+      stamp('meow_token', 'VidStuck /backend/meow responded 200 but no session token was returned (upstream contract changed or key is stale).');
+      return { ok: false, reason: 'meow_no_token', diag };
     }
 
     // Step 3: Query /backend/servers/:serverId (obfuscated query params)
@@ -166,14 +187,16 @@ async function resolveVidstuckServer(metadata, serverId) {
 
     if (!srvRes.ok) {
       circuitBreaker.recordFailure(providerKey);
-      return null;
+      stamp('servers_lookup', `VidStuck /backend/servers/${serverId} returned HTTP ${srvRes.status}. Token probably expired or this server is not provisioned for this title.`);
+      return { ok: false, reason: `servers_${srvRes.status}`, diag };
     }
 
     const srvJson = await srvRes.json();
     const encLink = srvJson?.links?.[0]?.link || srvJson?.data?.link || srvJson?.link;
     if (!encLink) {
       circuitBreaker.recordFailure(providerKey);
-      return null;
+      stamp('servers_empty', `VidStuck has no stream link for this title on server "${serverId}" (it may be missing in their catalog or restricted by region).`);
+      return { ok: false, reason: 'servers_no_link', diag };
     }
 
     // Step 4: Decrypt AES-256-CBC link if encrypted
@@ -184,6 +207,10 @@ async function resolveVidstuckServer(metadata, serverId) {
         streamUrl = decrypted.startsWith('http')
           ? decrypted
           : `${config.upstreams.vidstuckBase}${decrypted}`;
+      } else {
+        circuitBreaker.recordFailure(providerKey);
+        stamp('aes_decrypt', 'AES-256-CBC decryption of the stream link failed. The ZXC_AES_KEY has likely been rotated by the upstream.');
+        return { ok: false, reason: 'aes_decrypt_failed', diag };
       }
     } else if (encLink.startsWith('/')) {
       streamUrl = `${config.upstreams.vidstuckBase}${encLink}`;
@@ -251,9 +278,16 @@ async function resolveVidstuckServer(metadata, serverId) {
       audioTracks,
       qualities
     };
-  } catch {
+  } catch (err) {
     circuitBreaker.recordFailure(providerKey);
-    return null;
+    const isAbort = err && (err.name === 'AbortError' || /aborted/i.test(String(err.message)));
+    stamp(
+      isAbort ? 'timeout' : 'exception',
+      isAbort
+        ? `Timed out talking to VidStuck upstream after 8.5s. The host may be unreachable from this region.`
+        : `Unhandled error talking to VidStuck upstream: ${err && err.message ? err.message : 'unknown'}`
+    );
+    return { ok: false, reason: isAbort ? 'upstream_timeout' : 'upstream_exception', diag };
   } finally {
     clearTimeout(timer);
   }
@@ -1221,6 +1255,7 @@ async function resolveStreamForServer(metadata, requestedServerId = 'andromeda',
     ...enabledIds.filter((id) => !WATERFALL_PRIORITY.includes(id))
   ];
   const serverOrder = [validServer, ...prioritized.filter((id) => id !== validServer)];
+  const serverAttempts = [];
 
   for (const srvId of serverOrder) {
     const t0 = Date.now();
@@ -1267,11 +1302,23 @@ async function resolveStreamForServer(metadata, requestedServerId = 'andromeda',
       await cache.set(cacheKey, payload, 900);
       return payload;
     } else {
-      telemetry.recordServerAttempt(srvId, false, latencyMs, `No stream returned by ${srvId}`);
+      const reason =
+        resolved && resolved.reason ? resolved.reason : 'no_stream';
+      const diag = resolved && resolved.diag ? resolved.diag : null;
+      telemetry.recordServerAttempt(srvId, false, latencyMs, reason);
+      // Capture so the embed UI can tell the user *why* this server failed
+      // instead of "All upstream servers failed" with zero context.
+      serverAttempts.push({ server: srvId, latencyMs, reason, diag });
     }
   }
 
-  return null;
+  return {
+    server: null,
+    streamUrl: null,
+    reason: 'all_servers_failed',
+    serverAttempts,
+    servers: enabledServers.map((s) => ({ ...s, active: false }))
+  };
 }
 
 module.exports = {
