@@ -1,4 +1,6 @@
 const http = require('http');
+const fs = require('fs');
+const path = require('path');
 const zlib = require('zlib');
 const assert = require('assert');
 const config = require('../src/config');
@@ -16,10 +18,25 @@ const { rewriteM3u8Manifest } = require('../src/services/proxy');
 const {
   decodeZokoAnimeXorPayload,
   parseHicineLinks,
+  parseHicineAudioHints,
   isHubcloudGeneratorUrl,
   unrollHubcloudUrl,
   resolveHicineServer
 } = require('../src/services/resolver');
+const {
+  parseProbeJson,
+  mapAudioStreams,
+  initializeMultitrack,
+  isAllowedSourceUrl,
+  sourceCacheKey,
+  buildFfmpegArgs,
+  buildMasterPlaylist,
+  rewriteGeneratedPlaylist,
+  createMultiTrackPayload,
+  prepareMultiTrackStream,
+  verifySignedMaster,
+  verifySignedAsset
+} = require('../src/services/multitrack');
 
 function httpRequest(baseUrl, path, options = {}) {
   return new Promise((resolve, reject) => {
@@ -203,7 +220,7 @@ function startUpstreamMockServer() {
                 { id: 'en-sub', lang: 'en', label: 'English sub', type: 'sub', url: `${mockOrigin}/cdn/hls/master.m3u8` },
                 { id: 'en-dub', lang: 'en', label: 'English dub', type: 'dub', url: `${mockOrigin}/cdn/hls/master-dub.m3u8` },
                 { id: 'hi-dub', lang: 'hi', label: 'Hindi dub', type: 'dub', url: `${mockOrigin}/cdn/hls/master-hi.m3u8` },
-                { id: 'fr-dub', lang: 'fr', label: 'French dub', type: 'dub', url: `${mockOrigin}/cdn/hls/master-fr.m3u8` }
+                { id: 'fr-dub', lang: 'fr', label: 'French dub', type: 'dub', url: `${mockOrigin}/cdn/hls/master-fr.m3u8`, default: true }
               ],
               qualities: [
                 { label: 'Auto', height: 0, url: `${mockOrigin}/cdn/hls/master.m3u8` },
@@ -326,14 +343,18 @@ function startUpstreamMockServer() {
       }
 
       if (u.pathname.startsWith('/hicine/api/search/')) {
+        const searchTitle = decodeURIComponent(u.pathname.split('/').pop() || '');
+        const isRrr = /\brrr\b/i.test(searchTitle);
         res.writeHead(200, { 'Content-Type': 'application/json' });
         return res.end(
           JSON.stringify([
             {
-              title: 'Fight Club',
-              releaseYear: 1999,
+              title: isRrr ? 'RRR' : 'Fight Club',
+              releaseYear: isRrr ? 2022 : 1999,
               contentType: 'movies',
-              links: `720p : ${mockOrigin}/hicine/w?vcloud=https://vcloud.fit/fightclub720`
+              links: isRrr
+                ? `RRR (2022) Hindi+Telugu Dual Audio 720p : ${mockOrigin}/hicine/w?vcloud=https://vcloud.fit/rrr720`
+                : `720p : ${mockOrigin}/hicine/w?vcloud=https://vcloud.fit/fightclub720`
             }
           ])
         );
@@ -363,11 +384,11 @@ function startUpstreamMockServer() {
 
 async function runTests() {
   console.log('==========================================================');
-  console.log('  VidStuck Production Stream Engine — Verification Suite');
+  console.log('  LOL Embed Backend — Verification Suite');
   console.log('==========================================================\n');
 
   // 1. Cryptographic Unit Tests (AES-256-CBC + HMAC-SHA256 + Handshake Token)
-  console.log('[1/8] Testing AES-256-CBC (ZXC OpenSSL EVP_BytesToKey) & HMAC Signing...');
+  console.log('[1/9] Testing AES-256-CBC (ZXC OpenSSL EVP_BytesToKey) & HMAC Signing...');
   const sampleStreamPath = '/pl/token123/master.m3u8?exp=1790000000';
   const encrypted = encryptZxcLink(sampleStreamPath);
   const decrypted = decryptZxcLink(encrypted);
@@ -392,7 +413,7 @@ async function runTests() {
   console.log('  ✔ Passed cryptographic verification.');
 
   // 2. ZokoAnime XOR ("otaku-embed-v1") & HiCine Link Parser Unit Tests
-  console.log('[2/8] Testing ZokoAnime XOR Decryptor & HiCine Multi-Quality Link Parser...');
+  console.log('[2/9] Testing ZokoAnime XOR Decryptor & HiCine Multi-Quality Link Parser...');
   const rawZokoJson = JSON.stringify({
     data: {
       sources: { file: 'https://cdn.zokoanime.video/hls/arcane-ep1/master.m3u8' },
@@ -426,10 +447,230 @@ async function runTests() {
     parsedEp1.some((l) => l.type === 'pixeldrain' && l.url === 'https://pixeldrain.dev/api/file/AbCdEf123'),
     'HiCine parser must convert pixeldrain /u/ links to direct /api/file/ streams'
   );
-  console.log('  ✔ Passed ZokoAnime XOR & HiCine link parser tests.');
+  assert.ok(
+    parsedEp1.some(
+      (link) => link.type === 'vcloud_worker' &&
+        link.url.includes('vcloud=https://vcloud.fit/ep1_480')
+    ),
+    'HiCine parser must preserve vCloud worker links as a separate resolvable source type'
+  );
+  const hintedVcloudLink = parseHicineLinks(
+    'RRR Hindi+Telugu Dual Audio : https://frosty-snowflake.workers.dev/?vcloud=https://vcloud.fit/rrr'
+  )[0];
+  assert.ok(hintedVcloudLink && hintedVcloudLink.type === 'vcloud_worker');
+  assert.deepStrictEqual(
+    hintedVcloudLink.audioHints.languages.map((language) => language.code),
+    ['hi', 'te'],
+    'Filename language hints must flow through vCloud candidate parsing, not just Pixeldrain'
+  );
+  const urlOnlyLanguageWords = parseHicineLinks(
+    '720p : https://english.workers.dev/?vcloud=https://vcloud.fit/eng/rrr'
+  )[0];
+  assert.deepStrictEqual(
+    urlOnlyLanguageWords.audioHints.languages,
+    [],
+    'CDN host names and token paths must not be mistaken for filename language hints'
+  );
+
+  const dualAudioHints = parseHicineAudioHints(
+    'RRR (2022) Hindi+Telugu [DD 5.1] 2160p 4K WEB-DL'
+  );
+  assert.deepStrictEqual(
+    dualAudioHints.languages.map((language) => language.code),
+    ['hi', 'te'],
+    'HiCine filename hints must preserve Hindi+Telugu order as ISO language codes'
+  );
+  assert.strictEqual(dualAudioHints.multi, true, 'Two detected languages imply a multi-audio release');
+  const originalEnglishHints = parseHicineAudioHints('1080p ORG. Audio Eng WEB-DL');
+  assert.deepStrictEqual(
+    originalEnglishHints.languages.map((language) => language.code),
+    ['en'],
+    'HiCine Eng token must map to English'
+  );
+  assert.strictEqual(originalEnglishHints.original, true, 'ORG. Audio is an original-audio hint');
+  const bengaliDualHints = parseHicineAudioHints('Original Audio Beng Dual Audio WEB-DL');
+  assert.deepStrictEqual(
+    bengaliDualHints.languages.map((language) => language.code),
+    ['bn'],
+    'HiCine Beng alias must map to Bengali'
+  );
+  assert.strictEqual(bengaliDualHints.original, true, 'Original Audio must be detected as an original-track hint');
+  assert.strictEqual(bengaliDualHints.multi, true, 'Dual Audio text must be retained as a multi-audio hint');
+
+  const probeFixture = parseProbeJson({
+    streams: [
+      { index: 0, codec_type: 'video', codec_name: 'mjpeg', disposition: { attached_pic: 1 } },
+      { index: 1, codec_type: 'video', codec_name: 'hevc', disposition: { attached_pic: 0 } },
+      {
+        index: 2,
+        codec_type: 'audio',
+        codec_name: 'eac3',
+        channels: 6,
+        channel_layout: '5.1',
+        tags: { language: 'hin', title: 'Hindi 5.1' },
+        disposition: { default: 1 }
+      },
+      {
+        index: 3,
+        codec_type: 'audio',
+        codec_name: 'aac',
+        channels: 2,
+        tags: { language: 'und' },
+        disposition: { default: 0 }
+      }
+    ]
+  });
+  assert.deepStrictEqual(
+    probeFixture.videoStreams.map((stream) => stream.index),
+    [1],
+    'Attached cover art must not be mistaken for the video stream'
+  );
+  const mappedProbeTracks = mapAudioStreams(probeFixture.streams, dualAudioHints.languages);
+  assert.deepStrictEqual(
+    mappedProbeTracks.map((track) => track.lang),
+    ['hi', 'te'],
+    'ffprobe ISO-639-2 language tags and filename fallbacks must map to ISO-639-1'
+  );
+  const packagingArgs = buildFfmpegArgs(
+    'https://pub-abc.r2.dev/movies/RRR.mkv',
+    probeFixture,
+    mappedProbeTracks,
+    '/tmp/proxy-multitrack-test'
+  );
+  const outputMaps = packagingArgs.reduce((maps, argument, index) => {
+    if (argument === '-map') maps.push(packagingArgs[index + 1]);
+    return maps;
+  }, []);
+  assert.deepStrictEqual(outputMaps, ['0:1', '0:2', '0:3']);
+  assert.strictEqual(
+    isAllowedSourceUrl('https://pub-abc.r2.dev/movies/RRR.mkv?token=rotating'),
+    true,
+    'Public HTTPS media from an allowlisted R2 CDN must be eligible for remuxing'
+  );
+  assert.strictEqual(isAllowedSourceUrl('http://pub-abc.r2.dev/movies/RRR.mkv'), false);
+  assert.strictEqual(isAllowedSourceUrl('https://r2.dev.attacker.example/RRR.mkv'), false);
+  assert.strictEqual(isAllowedSourceUrl('https://pub-abc.r2.dev/movies/master.m3u8'), false);
+
+  const multiTrackPayload = createMultiTrackPayload(
+    'https://pub-abc.r2.dev/movies/RRR.mkv?token=rotating',
+    probeFixture,
+    dualAudioHints.languages
+  );
+  assert.ok(multiTrackPayload, 'Two ffprobe audio streams must create an HLS payload');
+  assert.strictEqual(multiTrackPayload.format, 'hls');
+  assert.strictEqual(multiTrackPayload.audioTracks.length, 2);
+  assert.ok(multiTrackPayload.audioTracks.every((track) => track.streamUrl === multiTrackPayload.streamUrl));
+  assert.strictEqual(
+    sourceCacheKey('https://pub-abc.r2.dev/movies/RRR.mkv?token=old'),
+    sourceCacheKey('https://pub-abc.r2.dev/movies/RRR.mkv?token=new'),
+    'Rotating auth tokens must not duplicate cached packages'
+  );
+  assert.notStrictEqual(
+    sourceCacheKey('https://download.googleusercontent.com/get?id=file-one&token=x'),
+    sourceCacheKey('https://download.googleusercontent.com/get?id=file-two&token=x'),
+    'Stable query parameters that identify another media object must remain in the cache key'
+  );
+  const masterParams = new URL(multiTrackPayload.streamUrl, 'https://proxy.example.test').searchParams;
+  assert.strictEqual(
+    verifySignedMaster(
+      masterParams.get('url'),
+      masterParams.get('lang'),
+      masterParams.get('exp'),
+      masterParams.get('sig')
+    ),
+    true,
+    'Multi-track master URL must be protected by the existing HMAC signature'
+  );
+  const generatedMaster = buildMasterPlaylist(mappedProbeTracks);
+  assert.ok(generatedMaster.includes('LANGUAGE="hi"'));
+  assert.ok(generatedMaster.includes('URI="track_1.m3u8"'));
+  const rewrittenMaster = rewriteGeneratedPlaylist(
+    generatedMaster,
+    'a'.repeat(64),
+    masterParams.get('exp')
+  );
+  assert.ok(
+    rewrittenMaster.includes(`/api/multitrack/file/${'a'.repeat(64)}/track_0.m3u8?`) &&
+      rewrittenMaster.includes(`/api/multitrack/file/${'a'.repeat(64)}/track_1.m3u8?`),
+    'Master and rendition playlist paths must be rewritten to signed asset URLs'
+  );
+  const rewrittenMediaPlaylist = rewriteGeneratedPlaylist(
+    '#EXTM3U\n#EXT-X-MAP:URI="init_2.mp4"\n#EXTINF:6,\nvariant_2_00001.m4s',
+    'a'.repeat(64),
+    masterParams.get('exp')
+  );
+  const signedSegmentUrl = new URL(
+    rewrittenMediaPlaylist.split('\n').at(-1),
+    'https://proxy.example.test'
+  );
+  assert.ok(signedSegmentUrl.pathname.includes('/api/multitrack/file/'));
+  assert.strictEqual(
+    verifySignedAsset(
+      'a'.repeat(64),
+      'variant_2_00001.m4s',
+      signedSegmentUrl.searchParams.get('exp'),
+      signedSegmentUrl.searchParams.get('sig')
+    ),
+    true,
+    'Every generated HLS segment reference must be independently signed'
+  );
+  const assetUrl = new URL(
+    require('../src/services/multitrack').createSignedAssetUrl(
+      'a'.repeat(64),
+      'variant_0_00001.m4s',
+      masterParams.get('exp')
+    ),
+    'https://proxy.example.test'
+  );
+  assert.strictEqual(
+    verifySignedAsset(
+      'a'.repeat(64),
+      'variant_0_00001.m4s',
+      assetUrl.searchParams.get('exp'),
+      assetUrl.searchParams.get('sig')
+    ),
+    true,
+    'Generated media segments must have their own HMAC signature'
+  );
+  const savedMultitrackConfig = {
+    enabled: config.multitrack.enabled,
+    requested: config.multitrack.requested,
+    ffmpegPath: config.multitrack.ffmpegPath,
+    ffprobePath: config.multitrack.ffprobePath
+  };
+  config.multitrack.requested = true;
+  config.multitrack.ffmpegPath = 'missing-ffmpeg-for-multitrack-test';
+  config.multitrack.ffprobePath = 'missing-ffprobe-for-multitrack-test';
+  assert.strictEqual(initializeMultitrack(), false, 'Missing ffmpeg binaries must disable remuxing at startup');
+  assert.strictEqual(
+    await prepareMultiTrackStream(
+      'https://pub-abc.r2.dev/movies/RRR.mkv',
+      dualAudioHints.languages
+    ),
+    null,
+    'Multi-track resolution must gracefully fall back when ffmpeg is unavailable'
+  );
+  Object.assign(config.multitrack, savedMultitrackConfig);
+  initializeMultitrack();
+
+  const singleTrackResult = await prepareMultiTrackStream(
+    'https://pub-abc.r2.dev/movies/RRR.mkv',
+    dualAudioHints.languages,
+    {
+      enabled: true,
+      probe: async () => ({
+        streams: [
+          { index: 0, codec_type: 'video', codec_name: 'h264' },
+          { index: 1, codec_type: 'audio', codec_name: 'aac', tags: { language: 'eng' } }
+        ]
+      })
+    }
+  );
+  assert.strictEqual(singleTrackResult, null, 'Single audio stream must remain progressive');
+  console.log('  ✔ Passed ZokoAnime, HiCine language parsing, and multi-track payload tests.');
 
   // 3. SRT -> WebVTT Converter Unit Test
-  console.log('[3/8] Testing SubRip (.srt) to WebVTT (.vtt) Converter...');
+  console.log('[3/9] Testing SubRip (.srt) to WebVTT (.vtt) Converter...');
   const sampleSrt = `1\r\n00:00:02,500 --> 00:00:05,800\r\nWelcome to Piltover.\r\n\r\n2\r\n00:00:06,100 --> 00:00:09,450\r\nThe City of Progress.\r\n`;
   const convertedVtt = srtToVtt(sampleSrt);
   assert.ok(convertedVtt.startsWith('WEBVTT'), 'Output must start with WEBVTT header');
@@ -440,7 +681,7 @@ async function runTests() {
   console.log('  ✔ Passed SRT -> VTT conversion.');
 
   // 4. M3U8 Manifest Rewriter Unit Test
-  console.log('[4/8] Testing M3U8 Master & Media Playlist Rewriter...');
+  console.log('[4/9] Testing M3U8 Master & Media Playlist Rewriter...');
   const sampleMasterM3u8 = [
     '#EXTM3U',
     '#EXT-X-VERSION:3',
@@ -596,7 +837,16 @@ async function runTests() {
     `${mockUpstream.url}/cdn/hls/fight%20club.mkv`,
     'streamUrl must point at the direct file'
   );
-  assert.strictEqual(hicineE2e.format, 'mp4', 'format must stay progressive mp4');
+  assert.strictEqual(hicineE2e.format, 'mp4', 'unrecognized single-track fallback must stay progressive mp4');
+  assert.strictEqual(hicineE2e.audioTracks.length, 1, 'Progressive MKV must not invent switchable audio rows');
+  assert.ok(
+    !/English|Dual Audio/.test(hicineE2e.audioTracks[0].label),
+    'HiCine audio label must not guess English when the filename has no English hint'
+  );
+  assert.ok(
+    hicineE2e.audioTracks[0].label.includes('Default Audio'),
+    'Unknown HiCine track must be labeled as the default progressive audio'
+  );
   assert.ok(
     Array.isArray(hicineE2e.qualities) && hicineE2e.qualities.length > 0,
     'qualities must be present'
@@ -607,6 +857,32 @@ async function runTests() {
       'no quality URL may point at a HubCloud generator'
     );
   }
+
+  config.upstreams.hicineApiBase = `${mockUpstream.url}/hicine`;
+  let hintedHicineE2e = null;
+  try {
+    hintedHicineE2e = await resolveHicineServer({
+      title: 'RRR',
+      releaseYear: 2022,
+      type: 'movie',
+      season: 1,
+      episode: 1
+    });
+  } finally {
+    config.upstreams.hicineApiBase = prevHicineBase;
+  }
+  assert.ok(hintedHicineE2e, 'Centaurus must resolve the separate vCloud Hindi+Telugu fixture');
+  assert.strictEqual(hintedHicineE2e.audioTracks.length, 1);
+  assert.strictEqual(
+    hintedHicineE2e.audioTracks[0].lang,
+    'und',
+    'Progressive dual-audio hints must not claim which language the default track uses'
+  );
+  assert.strictEqual(
+    hintedHicineE2e.audioTracks[0].label,
+    'Hindi + Telugu — plays default track',
+    'Progressive vCloud playback must show one honest row for filename-only dual-audio hints'
+  );
   console.log('  ✔ Passed HubCloud generator unroller tests.');
 
   const server = await new Promise((resolve) => {
@@ -617,11 +893,27 @@ async function runTests() {
 
   try {
     // 5. Health & Handshake Endpoints
-    console.log('[5/8] Testing /api/health & /api/handshake...');
+    console.log('[5/9] Testing /api/health & /api/handshake...');
     const health = await httpRequest(baseUrl, '/api/health');
     assert.strictEqual(health.status, 200);
     assert.strictEqual(health.json.ok, true);
+    assert.strictEqual(health.json.brand, 'LOL Embed');
+    assert.strictEqual(health.json.service, 'lol-embed-backend');
     assert.ok(Array.isArray(health.json.servers) && health.json.servers.length === 5);
+    const unsignedMultiTrack = await httpRequest(
+      baseUrl,
+      '/api/multitrack/master.m3u8?url=https%3A%2F%2Fpub-abc.r2.dev%2Fmovies%2FRRR.mkv'
+    );
+    assert.strictEqual(unsignedMultiTrack.status, 403, 'Multi-track master endpoint must reject unsigned URLs');
+    const unsignedMultiTrackAsset = await httpRequest(
+      baseUrl,
+      `/api/multitrack/file/${'a'.repeat(64)}/track_0.m3u8`
+    );
+    assert.strictEqual(
+      unsignedMultiTrackAsset.status,
+      403,
+      'Generated multi-track assets must reject unsigned requests'
+    );
 
     const hs = await httpRequest(baseUrl, '/api/handshake', {
       method: 'POST',
@@ -633,7 +925,7 @@ async function runTests() {
     console.log('  ✔ Passed /api/health & /api/handshake.');
 
     // 6. TMDB-ID Metadata & Real IntroDB Skip Segments Resolution
-    console.log('[6/8] Testing TMDB ID -> External IDs (IMDb/TVDB) & IntroDB Skip Intro Segments...');
+    console.log('[6/9] Testing TMDB ID -> External IDs (IMDb/TVDB) & IntroDB Skip Intro Segments...');
     const infoRes = await httpRequest(baseUrl, '/api/info/tv/94605?season=1&episode=1');
     assert.strictEqual(infoRes.status, 200);
     assert.strictEqual(infoRes.json.ok, true);
@@ -648,7 +940,7 @@ async function runTests() {
     console.log('  ✔ Passed TMDB -> IMDb/TVDB bridging & IntroDB segments.');
 
     // 7. Full Production Stream Resolution + OpenSubtitles .srt.gz Decompression + M3U8 Proxy
-    console.log('[7/8] Testing /api/resolve/tv/94605, OpenSubtitles .srt.gz -> .vtt, & /api/proxy...');
+    console.log('[7/9] Testing /api/resolve/tv/94605, OpenSubtitles .srt.gz -> .vtt, & /api/proxy...');
     const resolveRes = await httpRequest(
       baseUrl,
       '/api/resolve/tv/94605?season=1&episode=1&server=andromeda'
@@ -663,6 +955,23 @@ async function runTests() {
       'Zero test/demo videos allowed in stream output'
     );
     assert.ok(resolveRes.json.stream.audioTracks.length >= 4, 'Multi-language audio tracks must be returned');
+    const upstreamDefaultTracks = resolveRes.json.stream.audioTracks.filter((track) => track.default);
+    assert.strictEqual(upstreamDefaultTracks.length, 1, 'VidStuck must map exactly one upstream default track');
+    assert.strictEqual(upstreamDefaultTracks[0].lang, 'fr', 'Node must preserve the upstream default audio track');
+    assert.ok(
+      resolveRes.json.stream.audioTracks.some((track) => track.lang === 'hi' && /Hindi/.test(track.label)),
+      'VidStuck Hindi audio metadata must survive Node resolution'
+    );
+    const preferredAudioRes = await httpRequest(
+      baseUrl,
+      '/api/resolve/tv/94605?season=1&episode=1&server=andromeda&audio=hi'
+    );
+    assert.strictEqual(preferredAudioRes.status, 200);
+    assert.strictEqual(preferredAudioRes.json.stream.activeAudioTrack.lang, 'hi');
+    assert.ok(
+      preferredAudioRes.json.stream.audioTracks.every((track) => track.default === (track.lang === 'hi')),
+      'Cached resolver responses must still apply each caller’s audio preference'
+    );
     assert.ok(resolveRes.json.subtitles.length >= 2, 'OpenSubtitles tracks must be returned');
 
     // Test /api/subtitles/proxy decompressing .srt.gz and converting to WebVTT
@@ -693,29 +1002,33 @@ async function runTests() {
     );
     console.log('  ✔ Passed end-to-end stream resolution, .srt.gz -> .vtt, and M3U8 proxy.');
 
-    // 8. Embed Player Routes & Developer Portal HTML
-    console.log('[8/8] Testing TMDB-ID Embed Routes (/embed/tv/94605/1/1, /embed/movie/693134)...');
-    const embedTv = await httpRequest(baseUrl, '/embed/tv/94605/1/1');
-    assert.strictEqual(embedTv.status, 200);
-    assert.ok(embedTv.body.includes('PLAYER SETTINGS'), 'Embed HTML must include PLAYER SETTINGS modal');
-    assert.ok(embedTv.body.includes('Skip Intro'), 'Embed HTML must include Skip Intro button');
-    assert.ok(embedTv.body.includes('Upload subtitle'), 'Embed JS/HTML must support Upload subtitle');
+    // 8. Backend-only public surface: service metadata + social image, no web UI.
+    console.log('[8/9] Testing LOL Embed branding, meta image, and frontend removal...');
+    const rootInfo = await httpRequest(baseUrl, '/');
+    assert.strictEqual(rootInfo.status, 200);
+    assert.strictEqual(rootInfo.json.brand, 'LOL Embed');
+    assert.strictEqual(rootInfo.json.service, 'lol-embed-backend');
+    assert.strictEqual(rootInfo.json.mode, 'backend-only');
+    assert.strictEqual(rootInfo.json.metaImage, '/meta-image.gif');
 
-    const portalRes = await httpRequest(baseUrl, '/');
-    assert.strictEqual(portalRes.status, 200);
-    assert.ok(portalRes.body.includes('Configure Embed'), 'Developer Portal must render');
-    console.log('  ✔ Passed Embed Player & Developer Portal verification.');
+    const metaImage = await httpRequest(baseUrl, '/meta-image.gif');
+    assert.strictEqual(metaImage.status, 200);
+    assert.match(metaImage.headers['content-type'], /^image\/gif(?:;|$)/i);
+    assert.ok(Number(metaImage.headers['content-length']) > 1000, 'GIF meta image should be served as a real asset');
+    const metaImageFile = fs.readFileSync(path.join(__dirname, '../public/lol-embed-meta.gif'));
+    assert.ok(['GIF87a', 'GIF89a'].includes(metaImageFile.subarray(0, 6).toString('ascii')));
+
+    for (const removedPath of ['/index.html', '/admin', '/embed/tv/94605/1/1', '/js/embed.js']) {
+      const response = await httpRequest(baseUrl, removedPath);
+      assert.strictEqual(response.status, 404, `${removedPath} must not serve frontend content`);
+      assert.strictEqual(response.json && response.json.error, 'Not found');
+    }
+    console.log('  ✔ Passed backend-only root, metadata image, and UI removal checks.');
 
     // 9. Owner Admin Panel (/admin, Domain Telemetry, Source Replacer, Domain Blocking, Custom Overrides)
-    console.log('[9/9] Testing Owner Admin Panel (/admin, Domain Telemetry, Live Source Replacer & Firewall)...');
-    const adminPage = await httpRequest(baseUrl, '/admin');
-    assert.strictEqual(adminPage.status, 200);
-    assert.ok(adminPage.body.includes('OWNER ADMIN CONSOLE'), '/admin HTML page must render');
+    console.log('[9/9] Testing JSON Admin API, Domain Telemetry, Source Replacement & Firewall...');
 
-    // Simulate external domain embedding the player
-    await httpRequest(baseUrl, '/embed/tv/94605/1/1?parent=https://partner-cinema.to/watch/arcane', {
-      headers: { Referer: 'https://partner-cinema.to/watch/arcane' }
-    });
+    // Simulate API requests from an external client domain (there is no embed page).
     await httpRequest(baseUrl, '/api/resolve/tv/94605?season=1&episode=1&parent=https://partner-cinema.to', {
       headers: { Referer: 'https://partner-cinema.to/' }
     });
@@ -730,8 +1043,8 @@ async function runTests() {
     assert.strictEqual(overview.status, 200);
     assert.strictEqual(overview.json.ok, true);
     assert.ok(
-      overview.json.domains.some((d) => d.domain === 'partner-cinema.to' && d.embeds >= 1 && d.resolves >= 1),
-      'Admin overview must track external embedding domain stats'
+      overview.json.domains.some((d) => d.domain === 'partner-cinema.to' && d.resolves >= 1),
+      'Admin API must track external API client domain stats'
     );
 
     // Test Blocking & Unblocking a domain
@@ -775,7 +1088,7 @@ async function runTests() {
     assert.strictEqual(resolvedOverride.status, 200);
     assert.strictEqual(resolvedOverride.json.stream.server, 'custom');
     assert.ok(resolvedOverride.json.stream.rawUrl.includes('custom-override.m3u8'));
-    console.log('  ✔ Passed Owner Admin Console, Domain Telemetry, Firewall & Live Source Replacement.');
+    console.log('  ✔ Passed JSON Admin API, Domain Telemetry, Firewall & Live Source Replacement.');
 
     console.log('\n==========================================================');
     console.log('  ALL 9 PRODUCTION VERIFICATION SUITES PASSED (0 TEST VIDEOS)');

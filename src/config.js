@@ -1,8 +1,20 @@
+const os = require('os');
+const path = require('path');
+
 try {
   require('dotenv').config();
 } catch {
   // dotenv is optional when environment variables are provided by the host/container
 }
+
+const parseBoolean = (value, fallback = true) => {
+  if (value == null || value === '') return fallback;
+  return !/^(0|false|no|off)$/i.test(String(value).trim());
+};
+const parsePositiveInteger = (value, fallback) => {
+  const parsed = Number.parseInt(value, 10);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
+};
 
 const config = {
   port: parseInt(process.env.PORT || '3000', 10),
@@ -28,6 +40,26 @@ const config = {
   proxySecret: process.env.PROXY_SECRET || 'vidstuck-edge-hmac-secret-key-2026-9f8e7d6c5b4a',
   zxcAesKey: process.env.ZXC_AES_KEY || '7f4c9e2a81d63b05c4f7a9e8126d3b50e1a8c7f23d9465ab0c6e9f1d4a7b832c',
   tokenTtlSeconds: parseInt(process.env.TOKEN_TTL_SECONDS || '14400', 10), // 4 hours
+
+  // Node-only MKV/MP4 audio remuxing. `enabled` is finalized by the multitrack
+  // service after it detects both ffmpeg and ffprobe at startup.
+  multitrack: {
+    enabled: false,
+    requested: parseBoolean(process.env.MULTITRACK_ENABLED, true),
+    ffmpegPath: process.env.FFMPEG_PATH || 'ffmpeg',
+    ffprobePath: process.env.FFPROBE_PATH || 'ffprobe',
+    cacheDir: process.env.MULTITRACK_CACHE_DIR || path.join(os.tmpdir(), 'proxy-multitrack'),
+    probeCacheTtlMs: parsePositiveInteger(process.env.MULTITRACK_PROBE_CACHE_TTL_MS, 10 * 60 * 1000),
+    cacheTtlMs: parsePositiveInteger(process.env.MULTITRACK_CACHE_TTL_MS, 2 * 60 * 60 * 1000),
+    probeTimeoutMs: parsePositiveInteger(process.env.MULTITRACK_PROBE_TIMEOUT_MS, 8000),
+    startupTimeoutMs: parsePositiveInteger(process.env.MULTITRACK_STARTUP_TIMEOUT_MS, 30 * 1000),
+    jobTimeoutMs: parsePositiveInteger(process.env.MULTITRACK_JOB_TIMEOUT_MS, 20 * 60 * 1000),
+    maxJobs: Math.min(2, parsePositiveInteger(process.env.MULTITRACK_MAX_JOBS, 1)),
+    allowedHosts: (process.env.MULTITRACK_ALLOWED_HOSTS || '')
+      .split(',')
+      .map((host) => host.trim().toLowerCase().replace(/^\.|\.$/g, ''))
+      .filter(Boolean)
+  },
 
   // External Cloudflare Worker M3U8 Proxy Pool (Comma-separated URLs for load balancing)
   // Example: https://proxy-1.yourname.workers.dev,https://proxy-2.yourname.workers.dev

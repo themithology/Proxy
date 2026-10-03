@@ -1,79 +1,84 @@
-# @VIDSTUCK — TMDB Video Embed API, Multi-Server Scraper & Edge Stream Proxy
+# LOL Embed — Backend & Workers
 
-A complete, production-ready **VidStuck-style Video Embed Player + Multi-Server Upstream Resolver + Owner Admin Console + Edge M3U8/MP4 Reverse Proxy** built around **TMDB IDs only**.
+LOL Embed is a **backend-only** TMDB metadata, source-resolution, and stream-proxy service. This repository contains the Node.js API and Cloudflare Worker; it no longer ships a player, developer portal, admin dashboard, CSS, or browser JavaScript. A separate frontend can be added later and consume the JSON API.
 
-Pass any **TMDB Movie or Series ID** in the `<iframe>` URL—the backend automatically resolves external IDs (`imdb_id`, `tvdb_id`, `mal_id`), episode thumbnails & runtimes, **Skip Intro / Recap / Next Episode** timestamps, **OpenSubtitles / Wyzie WebVTT tracks** (with local `.srt` upload, style & delay controls), and **multi-language audio dubs/subs**.
+## Brand
 
----
+- **Name:** LOL Embed
+- **Visual direction for a future client:** monochrome
+- **Palette:** black `#000000`, charcoal `#171717`, graphite `#404040`, gray `#A3A3A3`, and white `#FFFFFF`
+- **Social/meta image:** `GET /meta-image.gif` serves the supplied GIF. Use its absolute deployment URL for `og:image` and `twitter:image` when a frontend is introduced. The root JSON response also advertises it as `metaImage`.
 
-## ✨ Key Production Features
+Example metadata for a future frontend:
 
-- **TMDB ID Only for Developers:**
-  - Movies: `/embed/movie/{tmdb_id}` (e.g. `/embed/movie/693134`)
-  - TV & Anime: `/embed/tv/{tmdb_id}/{season}/{episode}` (e.g. `/embed/tv/94605/1/1`)
-  - Also supports VidBolt (`/movie/{id}`, `/tv/{id}/{s}/{e}`) and ScreenScape (`/embed?tmdb={id}&type=movie`) URL patterns out of the box.
-- **5 Real Production Upstream Providers (Zero Test/Demo Streams):**
-  1. **Andromeda (`vidstuck.xyz` / `zxcstream.icu`)** — Session warm-up + `/backend/meow` handshake + OpenSSL MD5 `EVP_BytesToKey` **AES-256-CBC** stream decryption.
-  2. **Ursa (`data.vidsrc.sh`)** — Compiles `.wasm` in Node/Workers to decrypt ChaCha20 `stream_urls` and stamps `.m3u8` URLs with `<origin>/generate.php` JWT tokens.
-  3. **Centaurus (`api.hicine.sbs`)** — Resolves `vcloud` Cloudflare Worker signed tokens (`pixel` / `ten` / `r2`) and `pixeldrain` links into direct `1080p` / `720p` / `480p` `.mp4`/`.mkv` streams.
-  4. **Atlas (`vidstuck.xyz` Backup)** — Secondary multi-audio HLS mirror.
-  5. **Strings (`hianime.at` + `zokoanime.video`)** — Extracts both **Japanese Original Sub** and **English Dub** `.m3u8` streams by decoding `window.__P` (Base64 + XOR key `"otaku-embed-v1"`).
-- **Owner Admin Console (`/admin`):**
-  - **Embedding Domains Analytics & Firewall:** See every external website/domain embedding your player (`Referer`, `Origin`, and `window.location.ancestorOrigins`), total embed views, stream resolutions, proxy hits, top watched TMDB titles, and **Block / Unblock** any domain in one click.
-  - **Stale / Dead Source Monitor & Live Replacer:** Run active health probes (`⚡ Run Live Health Probe`) against all 5 upstream providers, view real-time success rates & latency (`ms`), reorder failover priority (`#1`–`#5`), disable broken servers, or **hot-swap upstream base URLs & AES keys live at runtime without redeploying**.
-  - **Custom TMDB Stream Overrides:** Pin a direct `.m3u8` or `.mp4` URL to any specific TMDB movie or TV episode right from `/admin`.
-- **Peak QoL Player UI:**
-  - **Skip Intro / Skip Recap / Next Episode** floating button powered by IntroDB (`api.introdb.app`) + AniSkip v2 (`api.aniskip.com`).
-  - **Segmented Timeline** with visual chapter markers and hover timestamp tooltips.
-  - **`[A文]` Multi-Language Audio Switcher** & **`[==]` Subtitles Popover** (`Upload subtitle`, `Style` font/color/background customizer, and `Delay` `-0.5s` / `+0.5s` sync).
-  - **Episodes Drawer (`[▷]`)** with Season dropdown and 3-column TMDB episode cards.
-  - **Player Settings Modal (`⚙️`)** with **Quality**, **Audio**, **Subtitles**, **Aspect Ratio (`Fit`, `Fill`, `Stretch`)**, **Brightness (`50%`–`150%`)**, **Mirror (Horizontal Flip)**, **Picture-in-Picture**, and **Playback Speed (`0.5x`–`2x`)**.
+```html
+<meta property="og:title" content="LOL Embed">
+<meta property="og:image" content="https://YOUR_API_HOST/meta-image.gif">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:image" content="https://YOUR_API_HOST/meta-image.gif">
+<meta name="theme-color" content="#000000">
+```
 
----
+## Backend surface
 
-## 🛡️ Owner Admin Console (`/admin`)
+- `GET /` — JSON service information; no HTML landing page.
+- `GET /meta-image.gif` — the LOL Embed social/meta image.
+- `GET /api/health` — service, runtime, and upstream health summary.
+- `GET /api/catalog` — small sample catalog for API clients and smoke tests.
+- `POST /api/handshake` — short-lived request token.
+- `GET /api/info/:type/:tmdbId` — TMDB metadata and skip segments.
+- `GET /api/segments/:type/:tmdbId` — intro, recap, and outro timestamps.
+- `GET /api/subtitles/:type/:tmdbId` — external subtitle tracks.
+- `GET /api/resolve/:type/:tmdbId` — resolves a source and returns stream, audio, subtitle, and segment metadata.
+- `GET /api/proxy?url=...` — HLS/MP4 stream proxy.
+- `GET /api/multitrack/master.m3u8` and `/api/multitrack/file/:jobId/:filename` — signed Node-side audio-remux output.
+- `/api/admin/*` — JSON-only owner operations for health probes, domain blocks, upstream configuration, and source overrides; requires `X-Admin-Key`.
 
-Open **`/admin`** in your browser (default key: `admin123`, configurable via `ADMIN_SECRET` in `.env` or `wrangler.toml`):
+Supported media types are `movie`, `tv`, and `series` where applicable. TV requests accept `season` and `episode` query parameters.
 
-| Admin Endpoint | Method | Description |
-| :--- | :--- | :--- |
-| `/admin` | `GET` | Interactive Owner Admin Dashboard UI |
-| `/api/admin/overview` | `GET` | Full JSON snapshot of domain stats, upstream health, blocked domains, and overrides (`X-Admin-Key` required) |
-| `/api/admin/probe` | `POST` | Actively probes all 5 upstream providers and updates live latency & status (`ONLINE` / `DEGRADED` / `DEAD`) |
-| `/api/admin/upstreams` | `POST` | Hot-swaps upstream domain URLs (`vidstuckBase`, `vidsrcDataUrl`, `hicineApiBase`, `hianimeBase`), AES keys, proxy pools, and server priority/enabled state |
-| `/api/admin/domains/block` | `POST` | Blocks or unblocks an external website domain (`{ "domain": "example.com", "blocked": true }`) |
-| `/api/admin/overrides` | `POST` | Pins a custom `.m3u8`/`.mp4` stream URL to a specific TMDB ID (`{ "type": "tv", "tmdbId": "94605", "season": 1, "episode": 1, "streamUrl": "https://..." }`) |
+## Source resolution and audio behavior
 
----
+The resolver has five upstream families: Andromeda/Atlas (VidStuck/ZXC), Ursa (VidSrc), Centaurus (HiCine), and Strings (HiAnime/ZokoAnime). It normalizes their stream and subtitle results for API clients and proxies supported HLS/MP4 sources.
 
-## ☁️ Deploying on Cloudflare Free Tier (No Credit Card Required)
+Audio behavior is intentionally truthful:
 
-`cloudflare-worker/worker.js` + `wrangler.toml` run the **entire platform** (Static UI Assets + TMDB Resolver + 5 Stream Extractors + OpenSubtitles Gzip/VTT Converter + Owner Admin Console + Edge M3U8 Proxy) on Cloudflare Workers Free Tier.
+- Upstream HLS audio renditions are exposed when they are actually switchable.
+- HiCine has filename-only language hints, not structured language URLs; progressive sources remain one honest default row rather than duplicate entries for the same file.
+- Node deployments can use FFmpeg/FFprobe to remux embedded MKV/MP4 audio tracks into HLS. The video stream is copied; supported audio is copied and other audio is converted to AAC.
+- Cloudflare Workers do not run FFmpeg. They retain upstream HLS rendition switching and use progressive fallback for embedded MKV tracks; the browser cannot select embedded tracks from progressive MKV.
+- If remuxing is unavailable, unsafe for the source host, or fails, the resolver keeps the source's default audio and progressive fallback rather than claiming unsupported switching.
 
-### Option 1: Deploy via Cloudflare Dashboard (GitHub Integration)
-1. Log into **[dash.cloudflare.com](https://dash.cloudflare.com)** (no credit card needed for Workers Free).
-2. Go to **Compute (Workers)** $\rightarrow$ **Workers & Pages** $\rightarrow$ **Create** $\rightarrow$ **Import a repository**.
-3. Select this repository (`themithology/Proxy`).
-4. Cloudflare automatically detects `wrangler.toml`, binds `./public` as free static `ASSETS`, and deploys `cloudflare-worker/worker.js`.
-5. *(Optional)* In Worker **Settings $\rightarrow$ Variables and Secrets**, set your custom `ADMIN_SECRET` password for `/admin`.
+The generated Node multitrack package is cached locally (default two hours), starts serving once initial segments are ready, and is protected by HMAC-signed playlist and asset URLs. The built-in HTTPS source allowlist includes `r2.dev`, `cloudflarestorage.com`, `cloudfront.net`, `googleusercontent.com`, `workers.dev`, and Pixeldrain. Add trusted suffixes with `MULTITRACK_ALLOWED_HOSTS`; do not allow untrusted hosts. Tune job count and cache limits with the `MULTITRACK_*` settings in `.env.example`.
 
-### Option 2: Deploy via Wrangler CLI
+Codec/device combinations such as HEVC/AV1 profiles, HDR/Dolby Vision, AC-3/E-AC-3, and progressive MKV may not work in every browser. Use a compatible source/server when necessary; the backend does not transcode video to conceal these limitations.
+
+## Run the Node backend
+
+```bash
+npm ci
+npm test
+npm start
+```
+
+The server listens on `0.0.0.0:3000` by default. Copy `.env.example` to `.env` and configure deployment-specific values. The Docker image installs FFmpeg (including FFprobe); for non-Docker hosts, install both binaries on `PATH`, or set `FFMPEG_PATH` and `FFPROBE_PATH`. Multitrack remuxing can be disabled with `MULTITRACK_ENABLED=false`.
+
+With Docker Compose:
+
+```bash
+docker compose up -d --build
+```
+
+## Deploy the Cloudflare Worker
+
+`cloudflare-worker/worker.js` runs the backend API and edge proxy. The `public/` directory contains only the social/meta GIF; no HTML, CSS, or frontend JavaScript is published.
+
 ```bash
 npx wrangler login
 npx wrangler deploy
 ```
 
----
+Configure production secrets and variables in Cloudflare Worker settings. Set a strong `ADMIN_SECRET` and `PROXY_SECRET` before deployment; do not use the sample values in `wrangler.toml` for a public service.
 
-## 🖥️ Running on Node.js / Docker / VPS
+## Security status
 
-```bash
-npm install
-npm test
-npm start
-```
-
-Or with Docker Compose:
-```bash
-docker compose up -d --build
-```
+Removing the bundled frontend does **not** make source responses private or scraper-proof. The resolver API can still return source/proxy data, and permissive CORS is not authentication. This repository is now the backend foundation; before attaching a public frontend, add an explicit client-auth/session design, short-lived signed access, rate limits, and a policy for avoiding raw upstream URLs in client responses. Do not treat CORS, iframe controls, or obscurity as source protection.

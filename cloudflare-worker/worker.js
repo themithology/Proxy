@@ -1,6 +1,6 @@
 /**
- * VidStuck Full-Stack Cloudflare Worker (Embed UI + TMDB Resolver + 5 Stream Extractors + Edge M3U8 Proxy)
- * 100% Free Tier Compatible — Zero Credit Card Required.
+ * LOL Embed backend-only Cloudflare Worker (TMDB Resolver + Stream Extractors + Edge M3U8 Proxy)
+ * No player, portal, or admin-dashboard UI is served from this repository.
  *
  * Deploy with:
  *   npx wrangler deploy
@@ -792,6 +792,47 @@ async function resolveVidstuckUpstream(metadata, serverId, env) {
     // The vidstuck backend is Origin/Referer gated (and needs the session
     // cookie), so the stream is streamed through this Worker's /api/proxy.
     const streamUrl = buildWorkerProxyUrl(rawUrl, referer, 'full', cookie);
+    const upstreamAudioTracks = Array.isArray(srvJson?.data?.audioTracks)
+      ? srvJson.data.audioTracks
+      : [];
+    const upstreamDefaultAudioIndex = upstreamAudioTracks.findIndex(
+      (track) => track.default === true || track.default === 1 || track.default === '1'
+    );
+    const audioTracks = upstreamAudioTracks.length
+      ? upstreamAudioTracks.map((track, index) => {
+          let trackRawUrl = rawUrl;
+          if (track.url) {
+            try {
+              trackRawUrl = new URL(track.url, apiBase).toString();
+            } catch {
+              trackRawUrl = rawUrl;
+            }
+          }
+          return {
+            id: track.id || `audio-${index}`,
+            lang: track.lang || 'en',
+            label: track.label || track.name || `Audio ${index + 1}`,
+            type: track.type || 'sub',
+            streamUrl: track.url
+              ? buildWorkerProxyUrl(trackRawUrl, referer, 'full', cookie)
+              : streamUrl,
+            rawUrl: trackRawUrl,
+            default: upstreamDefaultAudioIndex === -1
+              ? index === 0
+              : index === upstreamDefaultAudioIndex
+          };
+        })
+      : [
+          {
+            id: 'orig',
+            lang: 'en',
+            label: 'Original Audio',
+            type: 'sub',
+            streamUrl,
+            rawUrl,
+            default: true
+          }
+        ];
 
     return {
       server: serverId,
@@ -801,17 +842,7 @@ async function resolveVidstuckUpstream(metadata, serverId, env) {
       referer,
       headers: { Referer: referer, Origin: apiBase },
       backupUrls: [buildWorkerProxyUrl(rawUrl, referer, 'manifest', cookie)],
-      audioTracks: [
-        {
-          id: 'orig',
-          lang: 'en',
-          label: 'Original Audio',
-          type: 'sub',
-          streamUrl,
-          rawUrl,
-          default: true
-        }
-      ],
+      audioTracks,
       qualities: [{ label: 'Auto', height: 0, url: streamUrl }]
     };
   } catch (err) {
@@ -830,10 +861,9 @@ async function resolveVidstuckUpstream(metadata, serverId, env) {
  * Ursa (VidSrc.sh) WASM envelope handoff marker.
  *
  * Cloudflare Workers V8 isolates refuse runtime `WebAssembly.compile()`
- * ("CompileError: Wasm code generation disallowed by embedder"), while the
- * viewer's browser happily allows it. So when the decrypt cannot happen on the
- * edge, the raw envelope is stashed on the stream payload and the browser
- * finishes the job (see attachStreamToVideo() in public/js/embed.js).
+ * ("CompileError: Wasm code generation disallowed by embedder"), while a
+ * browser client may allow it. When decryption cannot happen on the edge, the
+ * raw envelope is returned in the stream payload for a trusted client to handle.
  */
 const VSRC_WASM_ENVELOPE_URL = 'vidsrc://wasm-envelope';
 const VSRC_REFERER = 'https://vidsrc.sh/';
@@ -1443,6 +1473,97 @@ function scoreHicineQuality(q) {
   return score;
 }
 
+const HICINE_AUDIO_LANGUAGE_ALIASES = [
+  { code: 'en', label: 'English', aliases: ['English', 'Eng'] },
+  { code: 'hi', label: 'Hindi', aliases: ['Hindi'] },
+  { code: 'te', label: 'Telugu', aliases: ['Telugu'] },
+  { code: 'bn', label: 'Bengali', aliases: ['Bengali', 'Bangla', 'Beng'] },
+  { code: 'ta', label: 'Tamil', aliases: ['Tamil'] },
+  { code: 'ml', label: 'Malayalam', aliases: ['Malayalam'] },
+  { code: 'kn', label: 'Kannada', aliases: ['Kannada'] },
+  { code: 'ja', label: 'Japanese', aliases: ['Japanese'] },
+  { code: 'ko', label: 'Korean', aliases: ['Korean'] },
+  { code: 'zh', label: 'Chinese', aliases: ['Chinese', 'Mandarin'] },
+  { code: 'es', label: 'Spanish', aliases: ['Spanish'] },
+  { code: 'fr', label: 'French', aliases: ['French'] },
+  { code: 'ar', label: 'Arabic', aliases: ['Arabic'] },
+  { code: 'ur', label: 'Urdu', aliases: ['Urdu'] },
+  { code: 'mr', label: 'Marathi', aliases: ['Marathi'] },
+  { code: 'pa', label: 'Punjabi', aliases: ['Punjabi'] },
+  { code: 'pt', label: 'Portuguese', aliases: ['Portuguese'] },
+  { code: 'ru', label: 'Russian', aliases: ['Russian'] },
+  { code: 'de', label: 'German', aliases: ['German'] },
+  { code: 'it', label: 'Italian', aliases: ['Italian'] },
+  { code: 'id', label: 'Indonesian', aliases: ['Indonesian'] },
+  { code: 'tr', label: 'Turkish', aliases: ['Turkish'] },
+  { code: 'th', label: 'Thai', aliases: ['Thai'] },
+  { code: 'fa', label: 'Persian', aliases: ['Persian', 'Farsi'] }
+];
+
+function parseHicineAudioHints(text) {
+  const value = String(text || '');
+  const aliases = HICINE_AUDIO_LANGUAGE_ALIASES.flatMap((language) =>
+    language.aliases.map((alias) => ({ ...language, alias }))
+  ).sort((a, b) => b.alias.length - a.alias.length);
+  const matcher = new RegExp(
+    `(^|[^A-Za-z])(${aliases.map((item) => item.alias).join('|')})(?=$|[^A-Za-z])`,
+    'gi'
+  );
+  const languages = [];
+  const seen = new Set();
+  let match;
+  while ((match = matcher.exec(value))) {
+    const alias = match[2].toLowerCase();
+    const language = aliases.find((item) => item.alias.toLowerCase() === alias);
+    if (language && !seen.has(language.code)) {
+      seen.add(language.code);
+      languages.push({ code: language.code, label: language.label });
+    }
+  }
+  const multi = /\b(?:dual[\s._-]*audio|multi(?:ple)?[\s._-]*(?:audio|language|lang|track|dub))\b/i.test(value) || languages.length > 1;
+  const original = /\b(?:org\.?|original)[\s._-]*(?:audio|track)\b/i.test(value);
+  return { languages, multi, original };
+}
+
+function hicineAudioHintText(text) {
+  const filenames = [];
+  const textWithoutUrls = String(text || '').replace(/https?:\/\/[^\s,"']+/gi, (rawUrl) => {
+    try {
+      const parsed = new URL(rawUrl.replace(/[),;]+$/, ''));
+      const filename = decodeURIComponent(parsed.pathname.split('/').pop() || '');
+      if (/\.(?:mkv|mp4|m4v|webm|mov|avi)$/i.test(filename)) {
+        filenames.push(filename.replace(/\.[^.]+$/, ''));
+      }
+    } catch {}
+    return ' ';
+  });
+  return `${textWithoutUrls} ${filenames.join(' ')}`;
+}
+
+function buildHicineDefaultAudioTrack(audioHints, streamUrl) {
+  const hints = audioHints || { languages: [], multi: false, original: false };
+  const languages = Array.isArray(hints.languages) ? hints.languages : [];
+  const language = languages.length === 1 && !hints.multi ? languages[0] : null;
+  const label = languages.length > 1
+    ? `${languages.map((item) => item.label).join(' + ')} — plays default track`
+    : languages.length === 1
+      ? `${languages[0].label}${hints.multi ? ' — plays default track' : ' — filename hint; plays default track'}`
+      : hints.multi
+        ? 'Dual Audio — plays default track'
+        : hints.original
+          ? 'Original Audio (default track)'
+          : 'Default Audio (track selection unavailable)';
+  return {
+    id: 'hicine-default',
+    lang: language ? language.code : 'und',
+    label,
+    type: 'dub',
+    streamUrl,
+    rawUrl: streamUrl,
+    default: true
+  };
+}
+
 async function resolveHicineUpstream(metadata) {
   if (!metadata.title) return null;
   try {
@@ -1577,7 +1698,13 @@ async function resolveHicineUpstream(metadata) {
           '720p';
         const height = qLabel === '2160p' || qLabel === '4k' ? 2160 : parseInt(qLabel, 10) || 720;
         // `line` keeps the HEVC / 5.1 metadata that lives on the sibling segment
-        parsedEntries.push({ qLabel, height, rawUrlMatch, entry: line });
+        parsedEntries.push({
+          qLabel,
+          height,
+          rawUrlMatch,
+          entry: line,
+          audioHints: parseHicineAudioHints(hicineAudioHintText(line))
+        });
       }
     }
 
@@ -1717,6 +1844,7 @@ async function resolveHicineUpstream(metadata) {
         tokenType: resolved.tokenType,
         isHotlinkBlocked: !!resolved.isHotlinkBlocked,
         streamFormat: resolved.format,
+        audioHints: parsed.audioHints,
         isHevc: hasHevc(parsed.qLabel, parsed.entry),
         isX264: hasX264(parsed.qLabel, parsed.entry),
         isMultiChannel: hasMultiChannel(parsed.entry),
@@ -1772,17 +1900,9 @@ async function resolveHicineUpstream(metadata) {
       tokenType: primary.tokenType,
       isHevc: primary.isHevc,
       backupUrls: uniqueBackups,
-      audioTracks: [
-        {
-          id: 'hicine-orig',
-          lang: 'en',
-          label: 'Original Audio',
-          type: 'dub',
-          streamUrl: primary.rawUrl,
-          rawUrl: primary.rawUrl,
-          default: true
-        }
-      ],
+      // Workers cannot inspect/remux embedded MKV streams, so keep one honest
+      // default row and use only the language hints present in HiCine text.
+      audioTracks: [buildHicineDefaultAudioTrack(primary.audioHints, primary.rawUrl)],
       qualities: ordered.map((q) => ({
         label: q.label,
         height: q.height,
@@ -1826,17 +1946,14 @@ async function resolveStreamWaterfall(metadata, requestedServer, preferredAudio,
 
   const enabledIds = SERVERS.filter((s) => s.enabled).map((s) => s.id);
   // Default (and fallback) order: centaurus -> ursa -> andromeda -> atlas -> strings.
-  // An explicitly requested server is still attempted first, so the player's
-  // "switch server" action stays authoritative.
+  // An explicitly requested server is still attempted first and remains authoritative.
   const prioritized = [
     ...WATERFALL_PRIORITY.filter((id) => enabledIds.includes(id)),
     ...enabledIds.filter((id) => !WATERFALL_PRIORITY.includes(id))
   ];
   const order = [validServer, ...prioritized.filter((id) => id !== validServer)];
 
-  // Per-server diagnostic aggregation so the embed UI / admin debug endpoint
-  // can tell the user exactly which stage each server died on, instead of
-  // the useless generic "All upstream servers failed" toast.
+  // Per-server diagnostic aggregation for API responses and the owner debug endpoint.
   const serverAttempts = [];
 
   for (const srvId of order) {
@@ -2002,7 +2119,8 @@ async function handleProxyRequest(request, url) {
   if (!targetUrl) {
     return jsonResponse({
       ok: true,
-      worker: 'VidStuck Cloudflare Edge Proxy',
+      brand: 'LOL Embed',
+      worker: 'LOL Embed Cloudflare Worker',
       usage: '/api/proxy?url=https://example.com/master.m3u8&referer=https://upstream.site/'
     });
   }
@@ -2277,9 +2395,12 @@ export default {
     if (pathname === '/api/health') {
       return jsonResponse({
         ok: true,
+        brand: 'LOL Embed',
         runtime: 'cloudflare-workers-edge',
-        service: 'vidstuck-proxy-engine',
+        service: 'lol-embed-backend',
+        mode: 'backend-only',
         version: '2.0.0',
+        metaImage: '/meta-image.gif',
         servers: SERVERS.map((s) => s.id)
       });
     }
@@ -2398,8 +2519,7 @@ export default {
         ]);
 
         if (!streamData || !streamData.streamUrl) {
-          // Build a human-readable per-server explanation so the embed UI
-          // doesn't have to show the useless generic toast.
+          // Include a useful per-server explanation in this API error response.
           const attempts = (streamData && streamData.serverAttempts) || [];
           const firstFailed = attempts.find((a) => a.server === server) || attempts[0];
           const reasonMap = {
@@ -2449,40 +2569,37 @@ export default {
       }
     }
 
-    // --- Owner Admin Dashboard Page (/admin) ---
-    if (pathname === '/admin' && env.ASSETS) {
-      const adminReq = new Request(new URL('/admin.html', url.origin), request);
-      return env.ASSETS.fetch(adminReq);
-    }
-
-    // --- Embed Player Routes (/embed/tv/:id/:s/:e, /embed/movie/:id, /tv/:id/:s/:e, /movie/:id) ---
-    const isEmbedRoute =
-      pathname === '/embed' ||
-      /^\/(?:embed\/)?(movie|tv)\/[^/]+/i.test(pathname);
-
-    if (isEmbedRoute && env.ASSETS) {
-      recordWorkerDomainHit(request, url, 'embed');
-      const embedReq = new Request(new URL('/embed.html', url.origin), request);
-      const assetRes = await env.ASSETS.fetch(embedReq);
+    // The only browser-addressable asset retained here is the social/meta image.
+    if (pathname === '/meta-image.gif' && ['GET', 'HEAD'].includes(request.method)) {
+      if (!env.ASSETS) {
+        return jsonResponse({ ok: false, error: 'Meta-image asset is not configured' }, 503);
+      }
+      const assetReq = new Request(new URL('/lol-embed-meta.gif', url.origin), request);
+      const assetRes = await env.ASSETS.fetch(assetReq);
+      if (!assetRes.ok) {
+        return jsonResponse({ ok: false, error: 'Meta-image asset is unavailable' }, assetRes.status);
+      }
       const headers = new Headers(assetRes.headers);
-      headers.set('Content-Security-Policy', 'frame-ancestors *;');
-      headers.set('Access-Control-Allow-Origin', '*');
-      headers.delete('X-Frame-Options');
-      return new Response(assetRes.body, { status: assetRes.status, headers });
-    }
-
-    // --- Static Assets (/index.html, /css/*, /js/*, /vendor/*) ---
-    if (env.ASSETS) {
-      const assetRes = await env.ASSETS.fetch(request);
-      const headers = new Headers(assetRes.headers);
-      headers.set('Content-Security-Policy', 'frame-ancestors *;');
+      headers.set('Content-Type', 'image/gif');
+      headers.set('Cache-Control', 'public, max-age=86400, stale-while-revalidate=604800');
       headers.set('Access-Control-Allow-Origin', '*');
       return new Response(assetRes.body, { status: assetRes.status, headers });
     }
 
-    return jsonResponse({
-      ok: true,
-      message: 'VidStuck Cloudflare Edge Worker is active. Bind [assets] in wrangler.toml to serve the UI.'
-    });
+    if (pathname === '/' && request.method === 'GET') {
+      return jsonResponse({
+        ok: true,
+        brand: 'LOL Embed',
+        service: 'lol-embed-backend',
+        runtime: 'cloudflare-workers-edge',
+        mode: 'backend-only',
+        version: '2.0.0',
+        api: '/api',
+        health: '/api/health',
+        metaImage: '/meta-image.gif'
+      });
+    }
+
+    return jsonResponse({ ok: false, error: 'Not found' }, 404);
   }
 };

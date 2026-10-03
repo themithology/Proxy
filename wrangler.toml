@@ -1,8 +1,9 @@
-name = "vidstuck-embed-proxy"
+name = "lol-embed-backend"
 main = "cloudflare-worker/worker.js"
 compatibility_date = "2025-01-01"
 compatibility_flags = ["nodejs_compat"]
 
+# The public directory contains only the LOL Embed social/meta GIF; all UI assets were removed.
 [assets]
 directory = "./public"
 binding = "ASSETS"

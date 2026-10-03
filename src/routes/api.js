@@ -5,6 +5,7 @@ const { resolveSkipSegments } = require('../services/segments');
 const { resolveSubtitles, fetchAndConvertSubtitleToVtt } = require('../services/subtitles');
 const { resolveStreamForServer } = require('../services/resolver');
 const { handleStreamProxy } = require('../services/proxy');
+const { serveMasterPlaylist, serveGeneratedFile } = require('../services/multitrack');
 const { generateHandshakeToken } = require('../utils/crypto');
 const { srtToVtt } = require('../utils/srtToVtt');
 const { circuitBreaker } = require('../utils/cache');
@@ -37,18 +38,25 @@ function requireAdminAuth(req, res, next) {
 router.get('/health', (req, res) => {
   res.json({
     ok: true,
-    service: 'vidstuck-proxy-engine',
+    brand: 'LOL Embed',
+    service: 'lol-embed-backend',
+    runtime: 'node',
     version: '2.0.0',
+    metaImage: '/meta-image.gif',
     timestamp: new Date().toISOString(),
     servers: config.servers.map((s) => s.id),
     proxyPoolCount: config.externalProxyPool.length,
+    multitrack: {
+      enabled: config.multitrack.enabled,
+      maxConcurrentJobs: config.multitrack.maxJobs
+    },
     circuitBreaker: circuitBreaker.status()
   });
 });
 
 /**
  * GET /api/catalog
- * Returns popular TMDB titles for the Developer Portal playground selector
+ * Returns a small list of popular TMDB titles for API clients and smoke tests
  */
 router.get('/catalog', async (req, res) => {
   const defaultCatalog = [
@@ -265,8 +273,8 @@ router.get('/resolve/:type/:tmdbId', async (req, res) => {
     ]);
 
     if (!streamData || !streamData.streamUrl) {
-      // Build a human-readable per-server explanation so the embed UI doesn't
-      // have to show the useless generic "All upstream servers failed" toast.
+      // Return structured failure detail so an API client can explain which
+      // upstream failed instead of showing a generic error.
       const attempts = (streamData && streamData.serverAttempts) || [];
       const firstFailed = attempts.find((a) => a.server === server) || attempts[0];
       const reasonMap = {
@@ -314,6 +322,18 @@ router.get('/resolve/:type/:tmdbId', async (req, res) => {
     return res.status(500).json({ ok: false, error: err.message });
   }
 });
+
+/**
+ * GET /api/multitrack/master.m3u8
+ * Lazily remuxes a signed, allowlisted direct media URL to fMP4 HLS audio renditions.
+ */
+router.get('/multitrack/master.m3u8', (req, res) => serveMasterPlaylist(req, res));
+
+/**
+ * GET /api/multitrack/file/:jobId/:filename
+ * Serves generated playlists/segments only when their per-resource HMAC is valid.
+ */
+router.get('/multitrack/file/:jobId/:filename', (req, res) => serveGeneratedFile(req, res));
 
 /**
  * GET /api/proxy
@@ -427,8 +447,8 @@ router.delete('/admin/overrides/:key', requireAdminAuth, (req, res) => {
 
 /**
  * GET /api/debug/andromeda/:type/:tmdbId
- * Owner-only diagnostic: walks the EXACT same code path the player uses for
- * server 1 (Andromeda / VidStuck) and returns the structured failure reason
+ * Owner-only diagnostic: walks the same Andromeda resolution path as /api/resolve
+ * and returns structured failure details
  * instead of a generic 502. Hit this on the live worker to know whether the
  * upstream is dead, the AES key rotated, the catalog is missing this title, etc.
  */

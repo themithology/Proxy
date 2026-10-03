@@ -2,6 +2,7 @@ const config = require('../config');
 const { cache, circuitBreaker } = require('../utils/cache');
 const { decryptZxcLink } = require('../utils/crypto');
 const { buildProxyStreamUrl } = require('./proxy');
+const { prepareMultiTrackStream, normalizeAudioLanguage } = require('./multitrack');
 const { telemetry } = require('./telemetry');
 
 const USER_AGENT =
@@ -64,8 +65,7 @@ async function resolveVidstuckServer(metadata, serverId) {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), 8500);
 
-  // Internal diagnostic — every failure branch stamps a reason the embed UI
-  // can show to the user instead of the generic "All upstream servers failed".
+  // Internal diagnostic — stamp structured failure details for API consumers.
   const diag = { stage: 'init', steps: [] };
   const stamp = (stage, message, extra) => {
     diag.stage = stage;
@@ -228,16 +228,37 @@ async function resolveVidstuckServer(metadata, serverId) {
     });
 
     // Parse any multi-audio tracks or quality variants returned by the server
-    const audioTracks = Array.isArray(srvJson?.data?.audioTracks)
-      ? srvJson.data.audioTracks.map((t, idx) => ({
-          id: t.id || `audio-${idx}`,
-          lang: t.lang || 'en',
-          label: t.label || t.name || `Audio ${idx + 1}`,
-          type: t.type || 'sub',
-          streamUrl: t.url ? buildProxyStreamUrl(t.url, referer) : proxiedUrl,
-          rawUrl: t.url || streamUrl,
-          default: idx === 0
-        }))
+    const upstreamAudioTracks = Array.isArray(srvJson?.data?.audioTracks)
+      ? srvJson.data.audioTracks
+      : [];
+    const defaultAudioIndex = upstreamAudioTracks.findIndex(
+      (track) => track.default === true || track.default === 1 || track.default === '1'
+    );
+    const audioTracks = upstreamAudioTracks.length
+      ? upstreamAudioTracks.map((t, idx) => {
+          let trackRawUrl = streamUrl;
+          if (t.url) {
+            try {
+              trackRawUrl = new URL(t.url, vidstuckBase).toString();
+            } catch {
+              trackRawUrl = streamUrl;
+            }
+          }
+          return {
+            id: t.id || `audio-${idx}`,
+            lang: t.lang || 'en',
+            label: t.label || t.name || `Audio ${idx + 1}`,
+            type: t.type || 'sub',
+            streamUrl: t.url
+              ? buildProxyStreamUrl(trackRawUrl, referer, '', {
+                  mode: 'full',
+                  cookie: cookieHeader
+                })
+              : proxiedUrl,
+            rawUrl: trackRawUrl,
+            default: defaultAudioIndex === -1 ? idx === 0 : idx === defaultAudioIndex
+          };
+        })
       : [
           {
             id: 'orig-audio',
@@ -453,9 +474,9 @@ async function resolveVidsrcServer(metadata) {
     urls = urls.filter((u) => typeof u === 'string' && /^https?:\/\//i.test(u));
 
     // Browser-side WASM assist: never dead-end a title just because this runtime
-    // cannot compile wasm. Hand the sealed envelope to public/js/embed.js, which
-    // runs WebAssembly.compile in the viewer's browser and streams the result
-    // back through /api/proxy with vidsrcStamp=1 + mode=full.
+    // cannot compile wasm. Return the sealed envelope for a trusted API client
+    // to process in its browser and relay through /api/proxy with vidsrcStamp=1
+    // and mode=full.
     if (urls.length === 0 && vsEnvelope) {
       circuitBreaker.recordSuccess(providerKey);
       return {
@@ -1063,6 +1084,71 @@ function scoreHicineQuality(q) {
   return score;
 }
 
+const HICINE_LANGUAGE_ALIASES = [
+  { code: 'en', label: 'English', aliases: ['English', 'Eng'] },
+  { code: 'hi', label: 'Hindi', aliases: ['Hindi'] },
+  { code: 'te', label: 'Telugu', aliases: ['Telugu'] },
+  { code: 'bn', label: 'Bengali', aliases: ['Bengali', 'Bangla', 'Beng'] },
+  { code: 'ta', label: 'Tamil', aliases: ['Tamil'] },
+  { code: 'ml', label: 'Malayalam', aliases: ['Malayalam'] },
+  { code: 'kn', label: 'Kannada', aliases: ['Kannada'] },
+  { code: 'ja', label: 'Japanese', aliases: ['Japanese'] },
+  { code: 'ko', label: 'Korean', aliases: ['Korean'] },
+  { code: 'zh', label: 'Chinese', aliases: ['Chinese', 'Mandarin'] },
+  { code: 'es', label: 'Spanish', aliases: ['Spanish'] },
+  { code: 'fr', label: 'French', aliases: ['French'] },
+  { code: 'ar', label: 'Arabic', aliases: ['Arabic'] },
+  { code: 'ur', label: 'Urdu', aliases: ['Urdu'] },
+  { code: 'mr', label: 'Marathi', aliases: ['Marathi'] },
+  { code: 'pa', label: 'Punjabi', aliases: ['Punjabi'] },
+  { code: 'pt', label: 'Portuguese', aliases: ['Portuguese'] },
+  { code: 'ru', label: 'Russian', aliases: ['Russian'] },
+  { code: 'de', label: 'German', aliases: ['German'] },
+  { code: 'it', label: 'Italian', aliases: ['Italian'] },
+  { code: 'id', label: 'Indonesian', aliases: ['Indonesian'] },
+  { code: 'tr', label: 'Turkish', aliases: ['Turkish'] },
+  { code: 'th', label: 'Thai', aliases: ['Thai'] },
+  { code: 'fa', label: 'Persian', aliases: ['Persian', 'Farsi'] }
+];
+
+function parseHicineAudioHints(text) {
+  const value = String(text || '');
+  const aliases = HICINE_LANGUAGE_ALIASES.flatMap((language) =>
+    language.aliases.map((alias) => ({ ...language, alias }))
+  ).sort((a, b) => b.alias.length - a.alias.length);
+  const aliasPattern = aliases.map((item) => item.alias).join('|');
+  const matcher = new RegExp(`(^|[^A-Za-z])(${aliasPattern})(?=$|[^A-Za-z])`, 'gi');
+  const languages = [];
+  const seen = new Set();
+  let match;
+  while ((match = matcher.exec(value))) {
+    const alias = match[2].toLowerCase();
+    const language = aliases.find((item) => item.alias.toLowerCase() === alias);
+    if (language && !seen.has(language.code)) {
+      seen.add(language.code);
+      languages.push({ code: language.code, label: language.label });
+    }
+  }
+  const explicitMulti = /\b(?:dual[\s._-]*audio|multi(?:ple)?[\s._-]*(?:audio|language|lang|track|dub))\b/i.test(value);
+  const original = /\b(?:org\.?|original)[\s._-]*(?:audio|track)\b/i.test(value);
+  return { languages, multi: explicitMulti || languages.length > 1, original };
+}
+
+function hicineAudioHintText(text) {
+  const filenames = [];
+  const textWithoutUrls = String(text || '').replace(/https?:\/\/[^\s,"']+/gi, (rawUrl) => {
+    try {
+      const parsed = new URL(rawUrl.replace(/[),;]+$/, ''));
+      const filename = decodeURIComponent(parsed.pathname.split('/').pop() || '');
+      if (/\.(?:mkv|mp4|m4v|webm|mov|avi)$/i.test(filename)) {
+        filenames.push(filename.replace(/\.[^.]+$/, ''));
+      }
+    } catch {}
+    return ' ';
+  });
+  return `${textWithoutUrls} ${filenames.join(' ')}`;
+}
+
 /**
  * Split a HiCine quality block into (quality, url) candidates.
  * Handles `480p : <url>` lines, ` : ` packed multi-quality single lines
@@ -1126,6 +1212,9 @@ function parseHicineLinks(rawText, isTv = false, episodeNum = 1) {
       const toHeight = (label) =>
         label === '2160p' || label === '4k' ? 2160 : parseInt(label, 10) || 720;
 
+      const description = `${line} ${segment}`;
+      const audioHints = parseHicineAudioHints(hicineAudioHintText(description));
+
       // vcloud worker URLs (`https://...workers.dev/?vcloud=https://vcloud.fit/...`)
       for (const match of segment.matchAll(/(https?:\/\/[^\s,"']+\/?vcloud=[^\s,"']+)/gi)) {
         const label = labelFor(match.index);
@@ -1134,7 +1223,8 @@ function parseHicineLinks(rawText, isTv = false, episodeNum = 1) {
           quality: label,
           height: toHeight(label),
           url: match[1],
-          description: `${line} ${segment}`
+          description,
+          audioHints
         });
       }
 
@@ -1148,7 +1238,8 @@ function parseHicineLinks(rawText, isTv = false, episodeNum = 1) {
           quality: label,
           height: toHeight(label),
           url: `https://pixeldrain.dev/api/file/${match[1]}`,
-          description: `${line} ${segment}`
+          description,
+          audioHints
         });
       }
     }
@@ -1356,6 +1447,7 @@ async function resolveHicineServer(metadata) {
             isHotlinkBlocked: probe.blocked,
             streamFormat: 'mp4',
             description: entry.description || '',
+            audioHints: entry.audioHints || parseHicineAudioHints(entry.description || ''),
             ...describeHicineMedia(entry.quality, entry.description || '', entry.url)
           });
         }
@@ -1375,6 +1467,7 @@ async function resolveHicineServer(metadata) {
           isHotlinkBlocked: !!resolved.isHotlinkBlocked,
           streamFormat: resolved.format,
           description: entry.description || '',
+          audioHints: entry.audioHints || parseHicineAudioHints(entry.description || ''),
           ...describeHicineMedia(entry.quality, entry.description || '', entry.url)
         });
       }
@@ -1412,32 +1505,65 @@ async function resolveHicineServer(metadata) {
     }
     backupUrls.push(buildProxyStreamUrl(primary.rawUrl, '', '', { mode: 'manifest' }));
     backupUrls.push(buildProxyStreamUrl(primary.rawUrl, '', '', { mode: 'full' }));
+    // This is also the graceful fallback if the Node HLS remux is unavailable
+    // to the browser (or the generated fMP4/HEVC combination cannot be decoded).
+    backupUrls.push(primary.rawUrl);
     const uniqueBackups = Array.from(new Set(backupUrls.filter(Boolean)));
 
-    const hasMultiAudio = /multi|dual|hin|eng/i.test(releaseTitle);
-    const audioTracks = [
+    const audioHints =
+      primary.audioHints ||
+      parseHicineAudioHints(`${primary.description || ''} ${releaseTitle}`);
+    const hintedLanguages = audioHints.languages || [];
+    const fallbackTrackLabel = hintedLanguages.length > 1
+      ? `${hintedLanguages.map((language) => language.label).join(' + ')} — plays default track`
+      : hintedLanguages.length === 1
+        ? `${hintedLanguages[0].label}${audioHints.multi ? ' — plays default track' : ' — filename hint; plays default track'}`
+        : audioHints.multi
+          ? 'Dual Audio — plays default track'
+          : audioHints.original
+            ? 'Original Audio (default track)'
+            : 'Default Audio (track selection unavailable)';
+
+    // HiCine exposes audio languages only in the filename. Never manufacture
+    // multiple rows for one progressive MKV: browsers can only play its default.
+    const defaultTrackLanguage =
+      hintedLanguages.length === 1 && !audioHints.multi ? hintedLanguages[0].code : 'und';
+    const defaultAudioTracks = [
       {
-        id: 'hicine-en',
-        lang: 'en',
-        label: hasMultiAudio ? 'English (Dual Audio)' : 'Original Audio',
+        id: 'hicine-default',
+        lang: defaultTrackLanguage,
+        label: fallbackTrackLabel,
         type: 'dub',
         streamUrl: primary.rawUrl,
         rawUrl: primary.rawUrl,
         default: true
       }
     ];
+    const multiTrackStream =
+      primary.streamFormat === 'mp4'
+        ? await prepareMultiTrackStream(primary.rawUrl, hintedLanguages)
+        : null;
+    const streamUrl = multiTrackStream?.streamUrl || primary.rawUrl;
 
     return {
       server: 'centaurus',
-      format: primary.streamFormat || 'mp4',
+      format: multiTrackStream?.format || primary.streamFormat || 'mp4',
       rawUrl: primary.rawUrl,
-      // Root Cause D: direct CDN playback, NOT wrapped in /api/proxy
-      streamUrl: primary.rawUrl,
+      // Progressive by default; Node switches to the signed HLS remux only when
+      // ffprobe confirms multiple tracks and both ffmpeg tools are available.
+      streamUrl,
+      progressiveFormat: multiTrackStream ? (primary.streamFormat || 'mp4') : undefined,
+      progressiveFallbackUrls: multiTrackStream
+        ? Array.from(new Set([...uniqueBackups, ...ordered.map((quality) => quality.rawUrl)]))
+        : undefined,
+      progressiveAudioTrack: multiTrackStream
+        ? multiTrackStream.audioTracks.find((track) => track.default) || defaultAudioTracks[0]
+        : defaultAudioTracks[0],
       referer: '',
       headers: {},
       tokenType: primary.tokenType,
       backupUrls: uniqueBackups,
-      audioTracks,
+      audioTracks: multiTrackStream?.audioTracks || defaultAudioTracks,
       qualities: ordered.map((q) => ({
         label: q.label,
         height: q.height,
@@ -1612,12 +1738,35 @@ async function resolveHianimeServer(metadata) {
   }
 }
 
+function applyPreferredAudio(resolved, preferredAudio) {
+  if (!resolved || !preferredAudio || !Array.isArray(resolved.audioTracks)) return resolved;
+  const wanted = String(preferredAudio).trim().toLowerCase();
+  const wantedLanguage = normalizeAudioLanguage(wanted);
+  const matchTrack = resolved.audioTracks.find((track) =>
+    String(track.id || '').toLowerCase() === wanted ||
+    (wantedLanguage !== 'und' && normalizeAudioLanguage(track.lang) === wantedLanguage)
+  );
+  if (!matchTrack) return resolved;
+
+  const audioTracks = resolved.audioTracks.map((track) => ({
+    ...track,
+    default: track.id === matchTrack.id
+  }));
+  return {
+    ...resolved,
+    audioTracks,
+    streamUrl: matchTrack.streamUrl || resolved.streamUrl,
+    rawUrl: matchTrack.rawUrl || resolved.rawUrl,
+    activeAudioTrack: audioTracks.find((track) => track.id === matchTrack.id) || null
+  };
+}
+
 /**
  * Resolve stream for a specific server ID, or waterfall across all production servers
  * until a working stream is found. Zero test/demo videos.
  */
 async function resolveStreamForServer(metadata, requestedServerId = 'andromeda', preferredAudio = '') {
-  // 1. Check if the owner configured a custom stream override for this TMDB ID in /admin
+  // 1. Check whether the owner configured a custom stream override for this TMDB ID via /api/admin
   const customOverride = telemetry.getCustomOverride(
     metadata.type,
     metadata.tmdbId,
@@ -1658,7 +1807,7 @@ async function resolveStreamForServer(metadata, requestedServerId = 'andromeda',
 
   const cacheKey = `resolve:v2:${metadata.type}:${metadata.tmdbId}:s${metadata.season || 1}:e${metadata.episode || 1}:${validServer}`;
   const cached = await cache.get(cacheKey);
-  if (cached) return cached;
+  if (cached) return applyPreferredAudio(cached, preferredAudio);
 
   // Build ordered waterfall starting with the user's selected server, then the
   // fast edge-first priority used by the Cloudflare Worker:
@@ -1688,21 +1837,6 @@ async function resolveStreamForServer(metadata, requestedServerId = 'andromeda',
 
     if (resolved && resolved.streamUrl) {
       telemetry.recordServerAttempt(srvId, true, latencyMs);
-      // Honor preferredAudio if matching track exists
-      if (preferredAudio && Array.isArray(resolved.audioTracks)) {
-        const matchTrack = resolved.audioTracks.find(
-          (t) => t.id === preferredAudio || t.lang === preferredAudio
-        );
-        if (matchTrack) {
-          resolved.audioTracks = resolved.audioTracks.map((t) => ({
-            ...t,
-            default: t.id === matchTrack.id
-          }));
-          resolved.streamUrl = matchTrack.streamUrl;
-          resolved.rawUrl = matchTrack.rawUrl;
-        }
-      }
-
       const payload = {
         ...resolved,
         requestedServer: validServer,
@@ -1714,15 +1848,17 @@ async function resolveStreamForServer(metadata, requestedServerId = 'andromeda',
         }))
       };
 
+      // Cache the canonical source selection; apply each caller's audio preference
+      // on a clone so one viewer cannot change the next viewer's cached default.
       await cache.set(cacheKey, payload, 900);
-      return payload;
+      return applyPreferredAudio(payload, preferredAudio);
     } else {
       const reason =
         resolved && resolved.reason ? resolved.reason : 'no_stream';
       const diag = resolved && resolved.diag ? resolved.diag : null;
       telemetry.recordServerAttempt(srvId, false, latencyMs, reason);
-      // Capture so the embed UI can tell the user *why* this server failed
-      // instead of "All upstream servers failed" with zero context.
+      // Preserve the reason so API consumers can report why this server failed
+      // instead of returning "All upstream servers failed" with no context.
       serverAttempts.push({ server: srvId, latencyMs, reason, diag });
     }
   }
@@ -1745,6 +1881,7 @@ module.exports = {
   decryptVidsrcWasmPayload,
   decodeZokoAnimeXorPayload,
   parseHicineLinks,
+  parseHicineAudioHints,
   // HubCloud generator unroller (Centaurus fix) — exported for tests
   isHubcloudGeneratorUrl,
   unrollHubcloudUrl
