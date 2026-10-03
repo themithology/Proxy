@@ -2639,9 +2639,13 @@ export default {
 
     // --- Embedded Player Page (/embed) ---
     // The player Worker serves exactly one HTML page. The main website is a
-    // separate project and embeds this URL with an iframe, e.g.:
-    //   /embed?type=tv&tmdb=94605&s=1&e=1
-    if (pathname === '/embed' && ['GET', 'HEAD'].includes(request.method)) {
+    // separate project and embeds this URL with an iframe. Both the canonical
+    // query form and the path/legacy forms route here:
+    //   /embed?type=tv&tmdb=94605&s=1&e=1   /embed/movie/693134
+    //   /embed/tv/94605/2/1                 /movie/693134
+    //   /tv/94605/2/1
+    const isEmbedRoute = pathname === '/embed' || /^\/(?:embed\/)?(?:movie|tv)\/[^/]+(?:\/\d+(?:\/\d+)?)?\/?$/i.test(pathname);
+    if (isEmbedRoute && ['GET', 'HEAD'].includes(request.method)) {
       if (!env.ASSETS) {
         return jsonResponse({ ok: false, error: 'Player assets are not configured' }, 503);
       }

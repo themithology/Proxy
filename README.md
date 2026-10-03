@@ -21,11 +21,17 @@ Example metadata for the future main site:
 
 ## Embedding the player
 
-The main website embeds the player with an iframe pointing at this Worker:
+The main website embeds the player with an iframe pointing at this Worker. The player accepts several equivalent URL forms — a canonical query form plus path-style and legacy path forms:
 
-```
-https://YOUR_PLAYER_HOST/embed?type=tv&tmdb=94605&s=1&e=1
-```
+| Form                     | Example                                      |
+| ------------------------ | -------------------------------------------- |
+| Canonical query          | `/embed?type=tv&tmdb=94605&s=1&e=1`          |
+| Path (TV)                | `/embed/tv/:tmdbId/:s/:e` → `/embed/tv/94605/2/1` |
+| Path (movie)             | `/embed/movie/:tmdbId` → `/embed/movie/693134` |
+| Legacy path (TV)         | `/tv/:tmdbId/:s/:e` → `/tv/94605/2/1`        |
+| Legacy path (movie)      | `/movie/:tmdbId` → `/movie/693134`           |
+
+The path forms also accept the query parameters listed below (e.g. `?api=`, `?lang=`, `?server=`) and a trailing slash. Every form serves the same player page.
 
 For example, once the player Worker is deployed to `https://lol-embed.example.workers.dev`:
 
@@ -38,7 +44,7 @@ For example, once the player Worker is deployed to `https://lol-embed.example.wo
 ></iframe>
 ```
 
-The page is served with `Content-Security-Policy: frame-ancestors *` so any site can embed it. Supported query parameters on `/embed`:
+The page is served with `Content-Security-Policy: frame-ancestors *` so any site can embed it. Supported query parameters on every player URL form:
 
 | Parameter  | Meaning                                                                 |
 | ---------- | ----------------------------------------------------------------------- |
@@ -53,7 +59,7 @@ The page is served with `Content-Security-Policy: frame-ancestors *` so any site
 | `branding` | Player branding text (defaults to `LOL Embed`)                           |
 | `back`     | `false`/`0` hides the back button                                        |
 
-The player stays on the `/embed` route at all times (episode changes rewrite only the query string), so no extra routes are needed on the player Worker.
+All of these routes serve the same player page; once loaded, the player rewrites only the query string when the episode changes, so no additional routes are needed on the player Worker.
 
 > Easter egg: a human opening the Worker **root URL** in a browser gets rickrolled. API clients keep receiving the JSON service descriptor at `/` unchanged (the redirect is only served when the request advertises `Accept: text/html`).
 

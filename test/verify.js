@@ -1201,7 +1201,31 @@ async function runTests() {
     assert.strictEqual(workerMeta.status, 200);
     assert.match(workerMeta.headers.get('content-type') || '', /^image\/gif/);
 
-    // 10f. Portal, admin dashboard UI, and non-/embed player routes stay removed on the Worker.
+    // 10f. Path-style and legacy player URLs serve the same player page as /embed.
+    for (const playerPath of [
+      '/embed/tv/94605/2/1',
+      '/embed/movie/693134',
+      '/tv/94605/2/1',
+      '/movie/693134'
+    ]) {
+      const pathRes = await callWorker(`http://player.test${playerPath}`);
+      assert.strictEqual(pathRes.status, 200, `${playerPath} must serve the player page`);
+      assert.match(pathRes.headers.get('content-type') || '', /^text\/html/i, `${playerPath} must be HTML`);
+      assert.match(
+        pathRes.headers.get('content-security-policy') || '',
+        /frame-ancestors \*/,
+        `${playerPath} must be iframe-embeddable`
+      );
+      const pathHtml = await pathRes.text();
+      assert.ok(pathHtml.includes('id="player-root"'), `${playerPath} must render the player root`);
+      assert.ok(
+        pathHtml.includes('window.__LOL_EMBED_CONFIG__'),
+        `${playerPath} must carry the injected player config`
+      );
+      assert.ok(!pathHtml.includes('<!--LOL_EMBED_CONFIG-->'), `${playerPath} config placeholder must be replaced`);
+    }
+
+    // 10g. Portal, admin dashboard UI, and non-player routes stay removed on the Worker.
     for (const removedPath of [
       '/index.html',
       '/admin.html',
@@ -1209,9 +1233,7 @@ async function runTests() {
       '/css/portal.css',
       '/css/admin.css',
       '/js/portal.js',
-      '/js/admin.js',
-      '/embed/tv/94605/1/1',
-      '/movie/94605'
+      '/js/admin.js'
     ]) {
       const response = await callWorker(`http://player.test${removedPath}`);
       assert.strictEqual(response.status, 404, `${removedPath} must stay removed on the Worker`);
@@ -1219,7 +1241,7 @@ async function runTests() {
       assert.strictEqual(removedJson.error, 'Not found');
     }
 
-    // 10g. Separate-API-Worker contract: the relative URLs returned by
+    // 10h. Separate-API-Worker contract: the relative URLs returned by
     // /api/resolve must work when prefixed with the configured API base —
     // exactly what the player does with a foreign API_BASE_URL.
     assert.ok(resolveRes.json.stream.streamUrl.startsWith('/api/proxy?url='));
