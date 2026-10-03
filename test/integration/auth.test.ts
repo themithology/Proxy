@@ -95,6 +95,15 @@ test('the static player page stays reachable', async () => {
   assert.ok(res.body.includes('Proxy'));
 });
 
+test('client-side routes serve the app shell with a 200', async () => {
+  for (const url of ['/title/movie/tt0111161', '/watch/series/tt0903747']) {
+    const res = await app.inject({ method: 'GET', url });
+    assert.equal(res.statusCode, 200, `${url} should serve the app shell`);
+    assert.match(res.headers['content-type']!, /text\/html/);
+    assert.ok(res.body.includes('id="app"'), `${url} should return index.html`);
+  }
+});
+
 test('player engines are served locally', async () => {
   const res = await app.inject({ method: 'GET', url: '/vendor/hls.min.js' });
   assert.equal(res.statusCode, 200);

@@ -2,24 +2,33 @@ import type { FastifyInstance, FastifyRequest, FastifyReply } from 'fastify';
 import { config } from '../config.js';
 import { AppError } from '../util/errors.js';
 
-/** Paths that stay open even when an API key is configured. */
-const PUBLIC_PREFIXES = [
+/**
+ * Paths that stay open even when an API key is configured: health, docs, the
+ * static app shell, its client-side routes, and its assets. Everything else
+ * under /api and /proxy serves data and is gated.
+ */
+const PUBLIC_EXACT = new Set([
+  '/',
+  '',
+  '/index.html',
+  '/search',
   '/api/health',
   '/api/docs',
   '/openapi.json',
-  '/',
-  '/watch/',
-  '/embed/',
+]);
+
+const PUBLIC_PREFIXES = [
+  '/title/', // client-side route
+  '/watch/', // client-side route
+  '/embed/', // client-side route
   '/assets/',
   // Static player engines (hls.js / dash.js) — assets, not data.
   '/vendor/',
 ];
 
 function isPublic(pathname: string): boolean {
-  if (pathname === '/' || pathname === '') return true;
-  return PUBLIC_PREFIXES.some(
-    (p) => p !== '/' && (pathname === p.slice(0, -1) || pathname.startsWith(p)),
-  );
+  if (PUBLIC_EXACT.has(pathname)) return true;
+  return PUBLIC_PREFIXES.some((p) => pathname.startsWith(p));
 }
 
 function extractKey(req: FastifyRequest): string | null {

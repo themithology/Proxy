@@ -70,7 +70,9 @@ export async function buildServer(): Promise<FastifyInstance> {
         code: 'not_found',
       });
     }
-    return reply.code(404).sendFile('index.html');
+    // Client-side routes (/title/…, /watch/…) are served the app shell with a
+    // 200 — a 404 here makes browsers and some proxies refuse to render it.
+    return reply.code(200).sendFile('index.html');
   });
 
   // --- plugins -------------------------------------------------------------
