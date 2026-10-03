@@ -100,6 +100,28 @@ const config = {
       .map((s) => s.trim().replace(/\/$/, ''))
       .filter(Boolean),
 
+    // Ursa (4K UHD Multi-Audio Server) 4-Tier Cascade Upstreams
+    fourkhdhubBase: process.env.FOURKHDHUB_BASE_URL || 'https://4khdhub.one',
+    fourkhdhubHosts: (
+      process.env.FOURKHDHUB_HOSTS ||
+      'https://4khdhub.one,https://4khdhub.link,https://4khdhub.fans,https://4khdhub.ink,https://4khdhub.click'
+    )
+      .split(',')
+      .map((s) => s.trim().replace(/\/$/, ''))
+      .filter(Boolean),
+    moviesdriveBase: process.env.MOVIESDRIVE_BASE_URL || 'https://new5.moviesdrive.christmas',
+    moviesdriveHosts: (
+      process.env.MOVIESDRIVE_HOSTS ||
+      'https://new5.moviesdrive.christmas,https://new4.moviesdrive.christmas,https://moviesdrives.cfd,https://moviesdrive.world,https://moviesdrive.design'
+    )
+      .split(',')
+      .map((s) => s.trim().replace(/\/$/, ''))
+      .filter(Boolean),
+    dahmerBase: process.env.DAHMER_BASE_URL || 'https://a.111477.xyz',
+    domainDiscoveryUrl:
+      process.env.DOMAIN_DISCOVERY_URL ||
+      'https://raw.githubusercontent.com/SaurabhKaperwan/Utils/refs/heads/main/urls.json',
+
     vidstuckBase: process.env.VIDSTUCK_BASE_URL || 'https://vidstuck.xyz',
     zxcBase: process.env.ZXC_BASE_URL || 'https://zxcstream.icu',
     vidsrcDataUrl: process.env.VIDSRC_DATA_URL || 'https://data.vidsrc.sh/api.php',
@@ -125,9 +147,9 @@ const config = {
     {
       id: 'ursa',
       name: 'Ursa',
-      badge: 'VidSrc • Fast CDN HLS',
+      badge: '4K UHD • Multi-Audio',
       priority: 2,
-      supportsMultiAudio: false
+      supportsMultiAudio: true
     },
     {
       id: 'centaurus',

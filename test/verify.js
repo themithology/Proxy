@@ -15,6 +15,7 @@ const {
   verifyHandshakeToken
 } = require('../src/utils/crypto');
 const { srtToVtt } = require('../src/utils/srtToVtt');
+const { cache } = require('../src/utils/cache');
 const { rewriteM3u8Manifest } = require('../src/services/proxy');
 const {
   decodeZokoAnimeXorPayload,
@@ -28,6 +29,13 @@ const {
   resolveCastletv,
   resolveMoviebox,
   resolveNetmirror,
+  resolveUrsaServer,
+  resolve4khdhub,
+  resolveMoviesdrive4k,
+  resolveHicine4k,
+  resolveDahmer4k,
+  decode4khdhubRedirectHtml,
+  rot13Cipher,
   buildCastleKey,
   decryptCastleAes,
   mapLanguageNameToCode,
@@ -352,8 +360,12 @@ function startUpstreamMockServer() {
       }
 
       if (u.pathname === '/go') {
+        const vcloudParam = u.searchParams.get('vcloud') || '';
+        const mediaPath = vcloudParam.includes('dune2160p')
+          ? '/cdn/4k/hicine-dune-2160p-4k.mkv'
+          : '/cdn/hls/fight%20club.mkv';
         res.writeHead(302, {
-          Location: `${mockOrigin}/hubcloud/dl.php?link=${encodeURIComponent(`${mockOrigin}/cdn/hls/fight%20club.mkv`)}`
+          Location: `${mockOrigin}/hubcloud/dl.php?link=${encodeURIComponent(`${mockOrigin}${mediaPath}`)}`
         });
         return res.end();
       }
@@ -608,6 +620,151 @@ function startUpstreamMockServer() {
             ]
           })
         );
+      }
+
+      // 12a. 4KHDHub Mock Upstream (/4khdhub/...)
+      if (u.pathname === '/4khdhub/' || u.pathname === '/4khdhub') {
+        const sQuery = (u.searchParams.get('s') || '').toLowerCase();
+        if (sQuery.includes('fail-4khdhub') || sQuery.includes('4k-cascade-fail-all') || sQuery.includes('cascade-test-fail-all')) {
+          res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
+          return res.end('<html><body><div class="card-grid"></div></body></html>');
+        }
+        res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
+        return res.end(
+          `<html><body><div class="card-grid">` +
+            `<a href="${mockOrigin}/4khdhub/dune-part-two-movie-199/" class="movie-card">` +
+            `<div class="movie-card-content"><h3 class="movie-card-title">Dune: Part Two</h3>` +
+            `<p class="movie-card-meta">2024 • 167 min</p></div></a>` +
+            `</div></body></html>`
+        );
+      }
+
+      if (u.pathname === '/4khdhub/dune-part-two-movie-199/') {
+        res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
+        return res.end(
+          `<html><body>` +
+            `<div class="download-item">` +
+            `<div class="file-title">Dune.Part.Two.2024.2160p.4K.UHD.BluRay.REMUX.DV.HDR.[Hindi.DDP5.1+English.TrueHD.Atmos.7.1].H.265.mkv <span class="badge">61.6 GB</span></div>` +
+            `<div class="grid"><a href="${mockOrigin}/4khdhub/redirect?id=chain4k">Download HubCloud</a></div>` +
+            `</div>` +
+            `<div class="download-item">` +
+            `<div class="file-title">Dune.Part.Two.2024.1080p.BluRay.[Hindi+English].x264.mkv <span class="badge">4.2 GB</span></div>` +
+            `<div class="grid"><a href="${mockOrigin}/4khdhub/redirect?id=chain1080">Download HubCloud</a></div>` +
+            `</div>` +
+            `</body></html>`
+        );
+      }
+
+      if (u.pathname === '/4khdhub/redirect') {
+        const id = u.searchParams.get('id') || 'chain4k';
+        const targetHub =
+          id === 'chain1080'
+            ? `${mockOrigin}/hubcloud/dl.php?link=${encodeURIComponent(`${mockOrigin}/cdn/4k/dune-1080p-dual.mkv`)}`
+            : `${mockOrigin}/hubcloud/dl.php?link=${encodeURIComponent(`${mockOrigin}/cdn/4k/dune-2160p-4k-dual.mkv`)}`;
+        const innerJson = JSON.stringify({ o: Buffer.from(targetHub, 'utf8').toString('base64') });
+        const stepB64 = Buffer.from(innerJson, 'utf8').toString('base64');
+        const stepRot = rot13Cipher(stepB64);
+        const step2 = Buffer.from(stepRot, 'utf8').toString('base64');
+        const encoded = Buffer.from(step2, 'utf8').toString('base64');
+        res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
+        return res.end(`<html><body><script>s('o','${encoded}',1800);</script></body></html>`);
+      }
+
+      // 12b. MoviesDrive 4K Mock Upstream (/moviesdrive/... & /mdrive/archive/...)
+      if (u.pathname === '/moviesdrive/search.php') {
+        const q = (u.searchParams.get('q') || '').toLowerCase();
+        if (q.includes('fail-moviesdrive') || q.includes('4k-cascade-fail-all') || q.includes('cascade-test-fail-all')) {
+          res.writeHead(200, { 'Content-Type': 'application/json' });
+          return res.end(JSON.stringify({ found: 0, hits: [] }));
+        }
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        return res.end(
+          JSON.stringify({
+            found: 1,
+            hits: [
+              {
+                document: {
+                  imdb_id: 'tt15239678',
+                  post_title: 'Dune: Part Two (2024) Dual Audio [Hindi + English] 4K 2160p BluRay',
+                  permalink: '/moviesdrive/dune-part-two-2024/'
+                }
+              }
+            ]
+          })
+        );
+      }
+
+      if (u.pathname === '/moviesdrive/dune-part-two-2024/') {
+        res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
+        return res.end(
+          `<html><body>` +
+            `<h5>Dune: Part Two (2024) [Hindi.DDP5.1 + English.DDPA5.1] 2160p 4K AMZN WEB-DL SDR H.265 [19GB]</h5>` +
+            `<p><a href="${mockOrigin}/mdrive/archive/20906">2160p SDR [19GB]</a></p>` +
+            `<h5>Dune: Part Two (2024) [Hindi + English] 1080p BluRay x264 [3.4GB]</h5>` +
+            `<p><a href="${mockOrigin}/hubcloud/dl.php?link=${encodeURIComponent(`${mockOrigin}/cdn/4k/mdrive-1080p.mkv`)}">1080p HubCloud</a></p>` +
+            `</body></html>`
+        );
+      }
+
+      if (u.pathname === '/mdrive/archive/20906') {
+        res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
+        return res.end(
+          `<html><body>` +
+            `<a href="${mockOrigin}/hubcloud/dl.php?link=${encodeURIComponent(`${mockOrigin}/cdn/4k/mdrive-dune-2160p-4k.mkv`)}">HubCloud [Fast DL]</a>` +
+            `</body></html>`
+        );
+      }
+
+      // 12c. HiCine 4K Mock Upstream (/hicine4k/...)
+      if (u.pathname.startsWith('/hicine4k/api/search/')) {
+        const searchTitle = decodeURIComponent(u.pathname.split('/').pop() || '').toLowerCase();
+        if (searchTitle.includes('fail-hicine4k') || searchTitle.includes('4k-cascade-fail-all') || searchTitle.includes('cascade-test-fail-all')) {
+          res.writeHead(200, { 'Content-Type': 'application/json' });
+          return res.end(JSON.stringify([]));
+        }
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        return res.end(
+          JSON.stringify([
+            {
+              title: 'Dune: Part Two',
+              releaseYear: 2024,
+              contentType: 'movies',
+              links: [
+                `Dune: Part Two (2024) [Hindi + English] 720p, ${mockOrigin}/hicine/w?vcloud=https://vcloud.fit/dune720`,
+                `Dune: Part Two (2024) [Hindi + English] 1080p, ${mockOrigin}/hicine/w?vcloud=https://vcloud.fit/dune1080`,
+                `Dune: Part Two (2024) [Hindi.DDP5.1 + English.DDPA5.1] [2160P] SDR 2160p [19GB], ${mockOrigin}/hicine4k/w?vcloud=https://vcloud.fit/dune2160p`
+              ].join('\n')
+            }
+          ])
+        );
+      }
+
+      if (u.pathname === '/hicine4k/go' || (u.pathname === '/go' && (u.searchParams.get('vcloud') || '').includes('dune2160p'))) {
+        res.writeHead(302, {
+          Location: `${mockOrigin}/hubcloud/dl.php?link=${encodeURIComponent(`${mockOrigin}/cdn/4k/hicine-dune-2160p-4k.mkv`)}`
+        });
+        return res.end();
+      }
+
+      // 12d. DahmerMovies 4K Open Directory Mock Upstream (/dahmer/...)
+      if (u.pathname.startsWith('/dahmer/movies/')) {
+        const decodedPath = decodeURIComponent(u.pathname).toLowerCase();
+        if (decodedPath.includes('fail-dahmer') || decodedPath.includes('4k-cascade-fail-all') || decodedPath.includes('cascade-test-fail-all')) {
+          res.writeHead(404);
+          return res.end('Not found');
+        }
+        res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
+        return res.end(
+          `<html><body><table>` +
+            `<tr><td><a href="${mockOrigin}/cdn/4k/Dune.Part.Two.2024.HDR.2160p.Multi.Audio.Hindi.English.mkv">Dune.Part.Two.2024.HDR.2160p.Multi.Audio.Hindi.English.mkv</a></td><td data-sort="31366263767">29.21 GB</td></tr>` +
+            `<tr><td><a href="${mockOrigin}/cdn/4k/Dune.Part.Two.2024.1080p.BluRay.REMUX.Multi.Audio.mkv">Dune.Part.Two.2024.1080p.BluRay.REMUX.Multi.Audio.mkv</a></td><td data-sort="15000000000">14.0 GB</td></tr>` +
+            `</table></body></html>`
+        );
+      }
+
+      if (u.pathname.startsWith('/cdn/4k/')) {
+        res.writeHead(200, { 'Content-Type': 'video/mp4' });
+        return res.end('fake-4k-2160p-video-stream');
       }
 
       res.writeHead(404);
@@ -1706,8 +1863,188 @@ async function runTests() {
     }
     console.log('  ✔ Passed CastleTV, Moviebox, NetMirror & Server 2 Ursa failover waterfall tests.');
 
+    // 12. Server 2 (Ursa / 4K UHD • Multi-Audio) 4-Tier Architecture & Waterfall Failover
+    console.log('[12/12] Testing Server Ursa (4K UHD • Multi-Audio) 4-Tier Architecture & Waterfall Failover...');
+    const origFourkhdhubBase = config.upstreams.fourkhdhubBase;
+    const origMoviesdriveBase = config.upstreams.moviesdriveBase;
+    const origHicineBase = config.upstreams.hicineApiBase;
+    const origDahmerBase = config.upstreams.dahmerBase;
+    const origVidsrcUrl = config.upstreams.vidsrcDataUrl;
+
+    try {
+      config.upstreams.fourkhdhubBase = `${mockUpstream.url}/4khdhub`;
+      config.upstreams.moviesdriveBase = `${mockUpstream.url}/moviesdrive`;
+      config.upstreams.hicineApiBase = `${mockUpstream.url}/hicine4k`;
+      config.upstreams.dahmerBase = `${mockUpstream.url}/dahmer`;
+      config.upstreams.vidsrcDataUrl = ''; // Disable VidSrc mock so pure 4-tier 4K cascade is exercised
+      cache.store.clear();
+
+      // 12a. Unit Test: 4KHDHub Redirector Decoder (b64 -> b64 -> rot13 -> b64 -> JSON.o -> b64)
+      const targetUrl = 'https://hubcloud.ist/drive/dune4ktest';
+      const innerPayload = JSON.stringify({ o: Buffer.from(targetUrl, 'utf8').toString('base64') });
+      const rotEncoded = Buffer.from(
+        Buffer.from(rot13Cipher(Buffer.from(innerPayload, 'utf8').toString('base64')), 'utf8').toString('base64'),
+        'utf8'
+      ).toString('base64');
+      const decodedRedirect = decode4khdhubRedirectHtml(`<script>s('o','${rotEncoded}',1800);</script>`);
+      assert.ok(decodedRedirect, 'decode4khdhubRedirectHtml must decode 4KHDHub redirector HTML');
+      assert.strictEqual(decodedRedirect.url, targetUrl, 'Decoded 4KHDHub redirect URL must match original HubCloud target');
+
+      // 12b. Tier 1: 4KHDHub Sub-resolver (2160p BluRay REMUX Dual-Audio + 1080p backup)
+      const hub4kRes = await resolve4khdhub(
+        { title: 'Dune: Part Two', releaseYear: 2024, type: 'movie' },
+        'hi'
+      );
+      assert.ok(hub4kRes && hub4kRes.ok, '4KHDHub resolver must succeed');
+      assert.strictEqual(hub4kRes.server, 'ursa');
+      assert.strictEqual(hub4kRes.tier, '4khdhub');
+      assert.ok(hub4kRes.rawUrl.endsWith('/cdn/4k/dune-2160p-4k-dual.mkv'), 'Primary stream must be 2160p 4K');
+      assert.strictEqual(hub4kRes.qualities[0].height, 2160, 'Top quality must be 2160p');
+      assert.strictEqual(hub4kRes.qualities[0].label, '2160p (4K)');
+      assert.ok(hub4kRes.qualities.some((q) => q.height === 1080), '1080p backup quality must be present in qualities ladder');
+      assert.ok(
+        hub4kRes.audioTracks[0].label.includes('Hindi') && hub4kRes.audioTracks[0].label.includes('English'),
+        'Audio track label must reflect Hindi + English Multi-Audio'
+      );
+
+      // 12c. Tier 2: MoviesDrive 4K Sub-resolver (Typesense IMDb API + mdrive archive + HubCloud unroll)
+      const md4kRes = await resolveMoviesdrive4k(
+        {
+          title: 'Dune: Part Two',
+          releaseYear: 2024,
+          type: 'movie',
+          externalIds: { imdb_id: 'tt15239678' }
+        },
+        'en'
+      );
+      assert.ok(md4kRes && md4kRes.ok, 'MoviesDrive 4K resolver must succeed via Typesense IMDb lookup');
+      assert.strictEqual(md4kRes.server, 'ursa');
+      assert.strictEqual(md4kRes.tier, 'moviesdrive4k');
+      assert.ok(md4kRes.rawUrl.endsWith('/cdn/4k/mdrive-dune-2160p-4k.mkv'), 'Primary stream must be unrolled 2160p MKV');
+      assert.strictEqual(md4kRes.qualities[0].height, 2160);
+
+      // 12d. Tier 3: HiCine 4K UHD Sub-resolver (prioritizes [2160P] entry at bottom of links)
+      const hc4kRes = await resolveHicine4k(
+        { title: 'Dune: Part Two', releaseYear: 2024, type: 'movie' },
+        'hi'
+      );
+      assert.ok(hc4kRes && hc4kRes.ok, 'HiCine 4K resolver must succeed');
+      assert.strictEqual(hc4kRes.server, 'ursa');
+      assert.strictEqual(hc4kRes.tier, 'hicine4k');
+      assert.ok(hc4kRes.rawUrl.endsWith('/cdn/4k/hicine-dune-2160p-4k.mkv'), 'HiCine 4K must select 2160p stream as primary');
+      assert.strictEqual(hc4kRes.qualities[0].height, 2160);
+
+      // 12e. Tier 4: DahmerMovies 4K Sub-resolver (open directory 2160p Multi-Audio MKV)
+      const dahmerRes = await resolveDahmer4k(
+        { title: 'Dune: Part Two', releaseYear: 2024, type: 'movie' },
+        'en'
+      );
+      assert.ok(dahmerRes && dahmerRes.ok, 'DahmerMovies 4K resolver must succeed');
+      assert.strictEqual(dahmerRes.server, 'ursa');
+      assert.strictEqual(dahmerRes.tier, 'dahmer4k');
+      assert.strictEqual(dahmerRes.qualities[0].height, 2160);
+      assert.ok(dahmerRes.referer.includes('/dahmer/'), 'DahmerMovies must preserve Referer');
+
+      // 12f. Ursa Multi-Tier Internal Cascading (Tier 1 -> Tier 2 -> Tier 3 -> Tier 4 -> Exhaustion)
+      const ursaT1 = await resolveUrsaServer({
+        title: 'Dune: Part Two',
+        releaseYear: 2024,
+        type: 'movie',
+        externalIds: { imdb_id: 'tt15239678' }
+      });
+      assert.strictEqual(ursaT1.tier, '4khdhub', 'Tier 1 must be 4KHDHub');
+
+      const ursaT2 = await resolveUrsaServer({
+        title: 'fail-4khdhub Dune: Part Two',
+        releaseYear: 2024,
+        type: 'movie',
+        externalIds: { imdb_id: 'tt15239678' }
+      });
+      assert.strictEqual(ursaT2.tier, 'moviesdrive4k', 'Tier 2 must be MoviesDrive 4K when Tier 1 misses');
+
+      const ursaT3 = await resolveUrsaServer({
+        title: 'fail-4khdhub fail-moviesdrive Dune: Part Two',
+        releaseYear: 2024,
+        type: 'movie',
+        externalIds: { imdb_id: 'fail-moviesdrive' }
+      });
+      assert.strictEqual(ursaT3.tier, 'hicine4k', 'Tier 3 must be HiCine 4K when Tiers 1 & 2 miss');
+
+      const ursaT4 = await resolveUrsaServer({
+        title: 'fail-4khdhub fail-moviesdrive fail-hicine4k Dune: Part Two',
+        releaseYear: 2024,
+        type: 'movie',
+        externalIds: { imdb_id: 'fail-moviesdrive' }
+      });
+      assert.strictEqual(ursaT4.tier, 'dahmer4k', 'Tier 4 must be DahmerMovies 4K when Tiers 1–3 miss');
+
+      const ursaExhausted = await resolveUrsaServer({
+        title: '4k-cascade-fail-all',
+        releaseYear: 2024,
+        type: 'movie',
+        externalIds: { imdb_id: '4k-cascade-fail-all' }
+      });
+      assert.strictEqual(ursaExhausted.ok, false);
+      assert.strictEqual(ursaExhausted.reason, 'ursa_all_4k_sources_exhausted');
+
+      // 12g. Express HTTP API: ?server=4k alias & /api/debug/4k/:type/:tmdbId diagnostic route
+      const http4kRes = await httpRequest(baseUrl, '/api/resolve/movie/693134?server=4k');
+      assert.strictEqual(http4kRes.status, 200);
+      assert.strictEqual(http4kRes.json.ok, true);
+      assert.strictEqual(http4kRes.json.stream.server, 'ursa', '?server=4k must resolve Ursa 4K server');
+      assert.strictEqual(http4kRes.json.stream.tier, '4khdhub');
+      assert.strictEqual(http4kRes.json.stream.qualities[0].height, 2160);
+
+      const dbg4kRes = await httpRequest(
+        baseUrl,
+        `/api/debug/4k/movie/693134?key=${encodeURIComponent(config.adminSecret)}`
+      );
+      assert.strictEqual(dbg4kRes.status, 200);
+      assert.strictEqual(dbg4kRes.json.ok, true);
+      assert.strictEqual(dbg4kRes.json.result.tier, '4khdhub');
+      assert.strictEqual(dbg4kRes.json.upstream.fourkhdhubBase, `${mockUpstream.url}/4khdhub`);
+
+      // 12h. Cloudflare Worker: ?server=4k & ?server=ursa 4-Tier Resolution + Debug Endpoint
+      const worker4kEnv = {
+        FOURKHDHUB_BASE_URL: `${mockUpstream.url}/4khdhub`,
+        MOVIESDRIVE_BASE_URL: `${mockUpstream.url}/moviesdrive`,
+        HICINE_API_BASE: `${mockUpstream.url}/hicine4k`,
+        DAHMER_BASE_URL: `${mockUpstream.url}/dahmer`,
+        VIDSRC_DATA_URL: '',
+        TMDB_BASE_URL: `${mockUpstream.url}/tmdb`
+      };
+
+      const cf4kRes = await callWorker(
+        'http://player.test/api/resolve/movie/693134?server=4k',
+        worker4kEnv
+      );
+      assert.strictEqual(cf4kRes.status, 200);
+      const cf4kJson = await cf4kRes.json();
+      assert.strictEqual(cf4kJson.ok, true);
+      assert.strictEqual(cf4kJson.stream.server, 'ursa');
+      assert.strictEqual(cf4kJson.stream.tier, '4khdhub');
+      assert.strictEqual(cf4kJson.stream.qualities[0].height, 2160);
+
+      const cf4kDebug = await callWorker(
+        'http://player.test/api/debug/4k/movie/693134',
+        worker4kEnv
+      );
+      assert.strictEqual(cf4kDebug.status, 200);
+      const cf4kDebugJson = await cf4kDebug.json();
+      assert.strictEqual(cf4kDebugJson.ok, true);
+      assert.strictEqual(cf4kDebugJson.result.tier, '4khdhub');
+      assert.strictEqual(cf4kDebugJson.upstream.fourkhdhubBase, `${mockUpstream.url}/4khdhub`);
+    } finally {
+      config.upstreams.fourkhdhubBase = origFourkhdhubBase;
+      config.upstreams.moviesdriveBase = origMoviesdriveBase;
+      config.upstreams.hicineApiBase = origHicineBase;
+      config.upstreams.dahmerBase = origDahmerBase;
+      config.upstreams.vidsrcDataUrl = origVidsrcUrl;
+    }
+    console.log('  ✔ Passed 4KHDHub, MoviesDrive 4K, HiCine 4K, DahmerMovies 4K & ?server=4k tests.');
+
     console.log('\n==========================================================');
-    console.log('  ALL 11 PRODUCTION VERIFICATION SUITES PASSED (0 TEST VIDEOS)');
+    console.log('  ALL 12 PRODUCTION VERIFICATION SUITES PASSED (0 TEST VIDEOS)');
     console.log('==========================================================');
   } finally {
     server.close();

@@ -19,6 +19,9 @@ PROXY_SECRET = "vidstuck-edge-hmac-secret-key-2026-9f8e7d6c5b4a"
 CASTLETV_BASE_URL = "https://api.hlowb.com"
 MOVIEBOX_BASE_URL = "https://api.inmoviebox.com"
 NETMIRROR_BASE_URL = "https://net52.cc"
+FOURKHDHUB_BASE_URL = "https://4khdhub.one"
+MOVIESDRIVE_BASE_URL = "https://new5.moviesdrive.christmas"
+DAHMER_BASE_URL = "https://a.111477.xyz"
 
 # Base URL of the API Worker/backend the /embed player should call.
 # Leave empty ("") when this Worker serves both the player and the API
@@ -40,3 +43,6 @@ API_BASE_URL = ""
 CASTLETV_BASE_URL = "https://api.hlowb.com"
 MOVIEBOX_BASE_URL = "https://api.inmoviebox.com"
 NETMIRROR_BASE_URL = "https://net52.cc"
+FOURKHDHUB_BASE_URL = "https://4khdhub.one"
+MOVIESDRIVE_BASE_URL = "https://new5.moviesdrive.christmas"
+DAHMER_BASE_URL = "https://a.111477.xyz"

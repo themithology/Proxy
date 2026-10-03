@@ -3,7 +3,7 @@ const config = require('../config');
 const { resolveTmdbMetadata } = require('../services/tmdb');
 const { resolveSkipSegments } = require('../services/segments');
 const { resolveSubtitles, fetchAndConvertSubtitleToVtt } = require('../services/subtitles');
-const { resolveStreamForServer, resolveAndromedaServer } = require('../services/resolver');
+const { resolveStreamForServer, resolveAndromedaServer, resolveUrsaServer } = require('../services/resolver');
 const { handleStreamProxy } = require('../services/proxy');
 const { serveMasterPlaylist, serveGeneratedFile } = require('../services/multitrack');
 const { generateHandshakeToken } = require('../utils/crypto');
@@ -475,6 +475,40 @@ router.get('/debug/andromeda/:type/:tmdbId', requireAdminAuth, async (req, res) 
         zxcBase: config.upstreams.zxcBase,
         aesKeySet: !!config.zxcAesKey,
         tmdbKeySet: !!config.tmdbApiKey
+      },
+      result
+    });
+  } catch (err) {
+    return res.status(500).json({ ok: false, error: err.message });
+  }
+});
+
+/**
+ * GET /api/debug/ursa/:type/:tmdbId (and /api/debug/4k/:type/:tmdbId)
+ * Owner-only diagnostic for Server 2 (Ursa 4K UHD Multi-Audio cascade:
+ * 4KHDHub -> MoviesDrive 4K -> HiCine 4K -> DahmerMovies 4K).
+ */
+router.get(['/debug/ursa/:type/:tmdbId', '/debug/4k/:type/:tmdbId'], requireAdminAuth, async (req, res) => {
+  const { type, tmdbId } = req.params;
+  const season = parseInt(req.query.season || '1', 10);
+  const episode = parseInt(req.query.episode || '1', 10);
+  try {
+    const metadata = await resolveTmdbMetadata(type, tmdbId, season, episode);
+    const result = await resolveUrsaServer(metadata, 'ursa', '');
+    return res.json({
+      ok: !!(result && result.streamUrl),
+      metadata: {
+        title: metadata.title,
+        releaseYear: metadata.releaseYear,
+        unresolvedTmdb: !!metadata.unresolvedTmdb,
+        externalIds: metadata.externalIds
+      },
+      upstream: {
+        fourkhdhubBase: config.upstreams.fourkhdhubBase,
+        moviesdriveBase: config.upstreams.moviesdriveBase,
+        hicineApiBase: config.upstreams.hicineApiBase,
+        dahmerBase: config.upstreams.dahmerBase,
+        vidsrcDataUrl: config.upstreams.vidsrcDataUrl
       },
       result
     });
