@@ -1,0 +1,36 @@
+{
+  "name": "vidstuck-embed-proxy",
+  "version": "1.0.0",
+  "description": "VidStuck-style TMDB Video Embed API Player + Multi-Language Audio + Skip Intro + Edge M3U8/MP4 Stream Proxy",
+  "main": "src/server.js",
+  "scripts": {
+    "start": "node src/server.js",
+    "dev": "node src/server.js",
+    "test": "node test/verify.js"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/themithology/Proxy.git"
+  },
+  "keywords": [
+    "tmdb",
+    "embed-player",
+    "m3u8-proxy",
+    "hls",
+    "dash",
+    "vidstuck",
+    "stream-proxy"
+  ],
+  "license": "MIT",
+  "dependencies": {
+    "cheerio": "^1.0.0",
+    "compression": "^1.7.5",
+    "cors": "^2.8.5",
+    "crypto-js": "^4.2.0",
+    "dashjs": "^4.7.4",
+    "dotenv": "^16.4.7",
+    "express": "^4.21.2",
+    "helmet": "^8.0.0",
+    "hls.js": "^1.5.18"
+  }
+}

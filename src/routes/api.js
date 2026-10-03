@@ -1,0 +1,401 @@
+const express = require('express');
+const config = require('../config');
+const { resolveTmdbMetadata } = require('../services/tmdb');
+const { resolveSkipSegments } = require('../services/segments');
+const { resolveSubtitles, fetchAndConvertSubtitleToVtt } = require('../services/subtitles');
+const { resolveStreamForServer } = require('../services/resolver');
+const { handleStreamProxy } = require('../services/proxy');
+const { generateHandshakeToken } = require('../utils/crypto');
+const { srtToVtt } = require('../utils/srtToVtt');
+const { circuitBreaker } = require('../utils/cache');
+const { telemetry } = require('../services/telemetry');
+
+const router = express.Router();
+
+/**
+ * Middleware: Authenticate Owner Admin Requests via `X-Admin-Key` header or `?key=` query
+ */
+function requireAdminAuth(req, res, next) {
+  const provided =
+    req.headers['x-admin-key'] ||
+    req.query.key ||
+    (req.headers.authorization || '').replace(/^Bearer\s+/i, '');
+
+  if (!provided || provided !== config.adminSecret) {
+    return res.status(401).json({
+      ok: false,
+      error: 'Unauthorized: Invalid or missing Admin Key (X-Admin-Key)'
+    });
+  }
+  return next();
+}
+
+/**
+ * GET /api/health
+ * Health check & upstream circuit-breaker status
+ */
+router.get('/health', (req, res) => {
+  res.json({
+    ok: true,
+    service: 'vidstuck-proxy-engine',
+    version: '2.0.0',
+    timestamp: new Date().toISOString(),
+    servers: config.servers.map((s) => s.id),
+    proxyPoolCount: config.externalProxyPool.length,
+    circuitBreaker: circuitBreaker.status()
+  });
+});
+
+/**
+ * GET /api/catalog
+ * Returns popular TMDB titles for the Developer Portal playground selector
+ */
+router.get('/catalog', async (req, res) => {
+  const defaultCatalog = [
+    {
+      tmdbId: 94605,
+      type: 'tv',
+      title: 'Arcane',
+      releaseYear: 2021,
+      genres: ['Animation', 'Sci-Fi & Fantasy', 'Action & Adventure'],
+      imdbId: 'tt11126994',
+      seasonsCount: 2
+    },
+    {
+      tmdbId: 1396,
+      type: 'tv',
+      title: 'Breaking Bad',
+      releaseYear: 2008,
+      genres: ['Drama', 'Crime'],
+      imdbId: 'tt0903747',
+      seasonsCount: 5
+    },
+    {
+      tmdbId: 95479,
+      type: 'tv',
+      title: 'Jujutsu Kaisen',
+      releaseYear: 2020,
+      genres: ['Animation', 'Action & Adventure', 'Sci-Fi & Fantasy'],
+      imdbId: 'tt12343534',
+      seasonsCount: 2
+    },
+    {
+      tmdbId: 693134,
+      type: 'movie',
+      title: 'Dune: Part Two',
+      releaseYear: 2024,
+      genres: ['Science Fiction', 'Adventure'],
+      imdbId: 'tt15239678',
+      seasonsCount: 0
+    },
+    {
+      tmdbId: 872585,
+      type: 'movie',
+      title: 'Oppenheimer',
+      releaseYear: 2023,
+      genres: ['Drama', 'History'],
+      imdbId: 'tt15398776',
+      seasonsCount: 0
+    },
+    {
+      tmdbId: 157336,
+      type: 'movie',
+      title: 'Interstellar',
+      releaseYear: 2014,
+      genres: ['Adventure', 'Drama', 'Science Fiction'],
+      imdbId: 'tt0816692',
+      seasonsCount: 0
+    }
+  ];
+
+  res.json({
+    ok: true,
+    items: defaultCatalog
+  });
+});
+
+/**
+ * POST /api/handshake
+ * Generates short-lived session token (like VidStuck's /backend/meow)
+ */
+router.post('/handshake', express.json(), (req, res) => {
+  const { type = 'movie', id = '', season = 1, episode = 1 } = req.body || {};
+  if (!id) {
+    return res.status(400).json({ ok: false, error: 'Missing TMDB id' });
+  }
+  const token = generateHandshakeToken({
+    type,
+    id: String(id),
+    season: Number(season),
+    episode: Number(episode)
+  });
+  return res.json({
+    ok: true,
+    token,
+    expiresIn: config.tokenTtlSeconds
+  });
+});
+
+/**
+ * GET /api/info/:type/:tmdbId
+ * Resolves TMDB ID -> Unified Metadata + External IDs (IMDb, TVDB, MAL) + Episodes
+ */
+router.get('/info/:type/:tmdbId', async (req, res) => {
+  try {
+    const { type, tmdbId } = req.params;
+    const season = parseInt(req.query.season || '1', 10);
+    const episode = parseInt(req.query.episode || '1', 10);
+
+    const metadata = await resolveTmdbMetadata(type, tmdbId, season, episode);
+    const segmentsData = await resolveSkipSegments(metadata);
+
+    return res.json({
+      ok: true,
+      metadata,
+      segments: segmentsData.segments,
+      servers: config.servers
+    });
+  } catch (err) {
+    return res.status(500).json({ ok: false, error: err.message });
+  }
+});
+
+/**
+ * GET /api/segments/:type/:tmdbId
+ * Returns Skip Intro / Recap / Next Episode timestamps using only TMDB ID
+ */
+router.get('/segments/:type/:tmdbId', async (req, res) => {
+  try {
+    const { type, tmdbId } = req.params;
+    const season = parseInt(req.query.season || '1', 10);
+    const episode = parseInt(req.query.episode || '1', 10);
+
+    const metadata = await resolveTmdbMetadata(type, tmdbId, season, episode);
+    const segments = await resolveSkipSegments(metadata);
+    return res.json({ ok: true, ...segments });
+  } catch (err) {
+    return res.status(500).json({ ok: false, error: err.message });
+  }
+});
+
+/**
+ * GET /api/subtitles/proxy
+ * Proxies remote .srt.gz / .srt / .vtt subtitles (OpenSubtitles / Wyzie) and converts to WebVTT on the fly
+ */
+router.get('/subtitles/proxy', async (req, res) => {
+  const targetUrl = req.query.url;
+  if (!targetUrl) {
+    return res.status(400).send('Missing subtitle url');
+  }
+  try {
+    const vtt = await fetchAndConvertSubtitleToVtt(targetUrl);
+    res.setHeader('Content-Type', 'text/vtt; charset=utf-8');
+    res.setHeader('Access-Control-Allow-Origin', '*');
+    res.setHeader('Cache-Control', 'public, max-age=7200');
+    return res.send(vtt);
+  } catch (err) {
+    return res.status(502).send(`Subtitle proxy error: ${err.message}`);
+  }
+});
+
+/**
+ * POST /api/subtitles/convert
+ * Converts uploaded .srt or .vtt text into normalized WebVTT (for local subtitle upload)
+ */
+router.post('/subtitles/convert', express.text({ type: '*/*', limit: '5mb' }), (req, res) => {
+  const raw = typeof req.body === 'string' ? req.body : '';
+  const vtt = srtToVtt(raw);
+  res.setHeader('Content-Type', 'text/vtt; charset=utf-8');
+  res.setHeader('Access-Control-Allow-Origin', '*');
+  return res.send(vtt);
+});
+
+/**
+ * GET /api/subtitles/:type/:tmdbId
+ * Returns multi-language subtitle tracks using only TMDB ID
+ */
+router.get('/subtitles/:type/:tmdbId', async (req, res) => {
+  try {
+    const { type, tmdbId } = req.params;
+    const season = parseInt(req.query.season || '1', 10);
+    const episode = parseInt(req.query.episode || '1', 10);
+
+    const metadata = await resolveTmdbMetadata(type, tmdbId, season, episode);
+    const tracks = await resolveSubtitles(metadata);
+    return res.json({
+      ok: true,
+      tmdbId: metadata.tmdbId,
+      imdbId: metadata.externalIds?.imdb_id || null,
+      tracks
+    });
+  } catch (err) {
+    return res.status(500).json({ ok: false, error: err.message });
+  }
+});
+
+/**
+ * GET /api/resolve/:type/:tmdbId
+ * Full unified resolver endpoint:
+ * Input: TMDB ID (+ season & episode for TV, + optional server & audio track)
+ * Output: Metadata, External IDs, Stream URL (proxied M3U8/MP4), Audio Tracks, Qualities, Subtitles, Skip Segments
+ */
+router.get('/resolve/:type/:tmdbId', async (req, res) => {
+  try {
+    const { type, tmdbId } = req.params;
+    const season = parseInt(req.query.season || '1', 10);
+    const episode = parseInt(req.query.episode || '1', 10);
+    const server = String(req.query.server || 'andromeda').toLowerCase();
+    const audio = String(req.query.audio || '');
+
+    const callerDomain = telemetry.extractDomain(req);
+    if (telemetry.isDomainBlocked(callerDomain)) {
+      return res.status(403).json({
+        ok: false,
+        error: `Domain "${callerDomain}" has been blocked by the embed owner.`
+      });
+    }
+
+    const metadata = await resolveTmdbMetadata(type, tmdbId, season, episode);
+    telemetry.recordDomainActivity(req, 'resolve', metadata);
+
+    const [streamData, subtitles, segmentsData] = await Promise.all([
+      resolveStreamForServer(metadata, server, audio),
+      resolveSubtitles(metadata),
+      resolveSkipSegments(metadata)
+    ]);
+
+    if (!streamData || !streamData.streamUrl) {
+      return res.status(502).json({
+        ok: false,
+        error: 'Unable to resolve stream from upstream providers for this title.',
+        metadata,
+        subtitles,
+        segments: segmentsData.segments,
+        servers: config.servers
+      });
+    }
+
+    return res.json({
+      ok: true,
+      metadata,
+      stream: streamData,
+      subtitles,
+      segments: segmentsData.segments,
+      servers: streamData.servers
+    });
+  } catch (err) {
+    return res.status(500).json({ ok: false, error: err.message });
+  }
+});
+
+/**
+ * GET /api/proxy
+ * M3U8 Manifest Rewriter & TS/MP4/MPD Segment Stream Proxy with CORS & Range support
+ */
+router.get('/proxy', (req, res, next) => {
+  telemetry.recordDomainActivity(req, 'proxy');
+  return handleStreamProxy(req, res, next);
+});
+
+// ============================================================================
+// OWNER ADMIN PANEL API ROUTES (Protected by X-Admin-Key / ADMIN_SECRET)
+// ============================================================================
+
+/**
+ * GET /api/admin/overview
+ * Returns domain statistics, upstream health & staleness status, and active overrides
+ */
+router.get('/admin/overview', requireAdminAuth, (req, res) => {
+  res.json({
+    ok: true,
+    ...telemetry.getDashboardSnapshot()
+  });
+});
+
+/**
+ * POST /api/admin/probe
+ * Actively probes all 5 upstream stream providers to detect stale or dead domains
+ */
+router.post('/admin/probe', requireAdminAuth, async (req, res) => {
+  try {
+    const probeResults = await telemetry.runLiveHealthProbes();
+    return res.json({
+      ok: true,
+      probeResults,
+      snapshot: telemetry.getDashboardSnapshot()
+    });
+  } catch (err) {
+    return res.status(500).json({ ok: false, error: err.message });
+  }
+});
+
+/**
+ * POST /api/admin/upstreams
+ * Hot-swaps upstream provider base URLs, AES keys, proxy pools, and server priority/enabled state
+ */
+router.post('/admin/upstreams', requireAdminAuth, express.json(), (req, res) => {
+  telemetry.updateUpstreamsAndServers(req.body || {});
+  return res.json({
+    ok: true,
+    message: 'Upstream URLs and server configuration updated live.',
+    snapshot: telemetry.getDashboardSnapshot()
+  });
+});
+
+/**
+ * POST /api/admin/domains/block
+ * Blocks or unblocks an external website domain from embedding the player
+ */
+router.post('/admin/domains/block', requireAdminAuth, express.json(), (req, res) => {
+  const { domain, blocked = true } = req.body || {};
+  if (!domain) {
+    return res.status(400).json({ ok: false, error: 'Missing domain' });
+  }
+  telemetry.setDomainBlocked(domain, Boolean(blocked));
+  return res.json({
+    ok: true,
+    domain,
+    blocked: Boolean(blocked),
+    snapshot: telemetry.getDashboardSnapshot()
+  });
+});
+
+/**
+ * POST /api/admin/overrides
+ * Adds or updates a custom direct stream URL override for any TMDB movie or TV episode
+ */
+router.post('/admin/overrides', requireAdminAuth, express.json(), (req, res) => {
+  const { type = 'movie', tmdbId, season = 1, episode = 1, streamUrl, format = 'hls', label } =
+    req.body || {};
+  if (!tmdbId || !streamUrl) {
+    return res.status(400).json({ ok: false, error: 'tmdbId and streamUrl are required' });
+  }
+  const entry = telemetry.setCustomOverride({
+    type,
+    tmdbId,
+    season,
+    episode,
+    streamUrl,
+    format,
+    label
+  });
+  return res.json({
+    ok: true,
+    override: entry,
+    snapshot: telemetry.getDashboardSnapshot()
+  });
+});
+
+/**
+ * DELETE /api/admin/overrides/:key
+ * Removes a custom TMDB stream override
+ */
+router.delete('/admin/overrides/:key', requireAdminAuth, (req, res) => {
+  telemetry.removeCustomOverride(req.params.key);
+  return res.json({
+    ok: true,
+    snapshot: telemetry.getDashboardSnapshot()
+  });
+});
+
+module.exports = router;

@@ -1,0 +1,186 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>VidStuck — TMDB Video Embed API & Stream Proxy</title>
+  <link rel="stylesheet" href="/css/portal.css" />
+</head>
+<body>
+  <header class="navbar">
+    <div class="container nav-inner">
+      <div class="brand">
+        <span class="brand-dot"></span>
+        <span class="brand-name">@VIDSTUCK</span>
+        <span class="brand-badge">TMDB Embed + Proxy Engine</span>
+      </div>
+      <nav class="nav-links">
+        <a href="#playground">Live Playground</a>
+        <a href="#api-docs">Embed Docs</a>
+        <a href="#proxy-docs">Stream Proxy</a>
+        <a href="/admin">Owner Admin ⚙</a>
+        <a id="open-standalone-link" href="/embed/tv/94605/1/1" target="_blank" class="btn-outline-sm">Open Standalone Player ↗</a>
+      </nav>
+    </div>
+  </header>
+
+  <main class="container">
+    <!-- Hero Section -->
+    <section class="hero">
+      <div class="hero-pill">Zero SDK • TMDB ID Only • Multi-Audio & Skip Intro Built-In</div>
+      <h1>Your movies, shows & anime —<br /><span>wrapped in one clean iframe.</span></h1>
+      <p class="hero-sub">
+        Pass any <strong>TMDB ID</strong> and our backend automatically resolves external IDs (IMDb, TVDB, MAL),
+        Skip Intro timestamps, 40+ subtitle tracks, multi-language audio dubs, and M3U8/MP4 CORS stream proxying.
+      </p>
+    </section>
+
+    <!-- Live Interactive Playground -->
+    <section id="playground" class="playground-section">
+      <div class="playground-grid">
+        <!-- Left Column: Live Iframe Player Preview -->
+        <div class="player-preview-col">
+          <div class="preview-header-bar">
+            <div class="window-dots">
+              <span></span><span></span><span></span>
+            </div>
+            <div id="preview-url-display" class="preview-url-bar">/embed/tv/94605/1/1</div>
+            <button id="btn-copy-url" class="btn-copy-chip">Copy URL</button>
+          </div>
+
+          <div class="iframe-stage">
+            <iframe
+              id="demo-iframe"
+              src="/embed/tv/94605/1/1"
+              allow="autoplay; fullscreen; picture-in-picture; encrypted-media"
+              allowfullscreen
+            ></iframe>
+          </div>
+
+          <!-- Quick Presets Bar -->
+          <div class="presets-bar">
+            <span class="presets-label">Quick Presets:</span>
+            <button class="preset-chip active" data-type="tv" data-id="94605" data-s="1" data-e="1">Arcane S1E1 (94605)</button>
+            <button class="preset-chip" data-type="tv" data-id="60625" data-s="1" data-e="2">Rick & Morty S1E2 (60625)</button>
+            <button class="preset-chip" data-type="tv" data-id="1429" data-s="1" data-e="1">Attack on Titan (1429)</button>
+            <button class="preset-chip" data-type="tv" data-id="209867" data-s="1" data-e="1">Frieren (209867)</button>
+            <button class="preset-chip" data-type="movie" data-id="550">Fight Club (550)</button>
+            <button class="preset-chip" data-type="movie" data-id="533535">Deadpool & Wolverine (533535)</button>
+            <button class="preset-chip" data-type="movie" data-id="1007757">Swapped (1007757)</button>
+          </div>
+        </div>
+
+        <!-- Right Column: Configuration Controls & Embed Code -->
+        <div class="config-col">
+          <div class="panel-card">
+            <h2 class="panel-title">Configure Embed</h2>
+            <p class="panel-subtitle">Use TMDB ID only — backend converts everything automatically.</p>
+
+            <div class="form-group">
+              <label>Media Type</label>
+              <div class="segmented-toggle">
+                <button id="type-tv-btn" class="seg-btn active" data-type="tv">TV Series / Anime</button>
+                <button id="type-movie-btn" class="seg-btn" data-type="movie">Movie</button>
+              </div>
+            </div>
+
+            <div class="form-row">
+              <div class="form-group flex-2">
+                <label for="input-tmdb">TMDB ID</label>
+                <input id="input-tmdb" type="text" value="94605" placeholder="e.g. 94605" />
+              </div>
+              <div id="season-group" class="form-group flex-1">
+                <label for="input-season">Season</label>
+                <input id="input-season" type="number" min="1" value="1" />
+              </div>
+              <div id="episode-group" class="form-group flex-1">
+                <label for="input-episode">Episode</label>
+                <input id="input-episode" type="number" min="1" value="1" />
+              </div>
+            </div>
+
+            <div class="form-row">
+              <div class="form-group flex-1">
+                <label for="select-server">Default Server</label>
+                <select id="select-server">
+                  <option value="andromeda">Andromeda (ZXC AES Primary)</option>
+                  <option value="ursa">Ursa (VidSrc WASM HLS)</option>
+                  <option value="centaurus">Centaurus (HiCine 1080p/720p MP4)</option>
+                  <option value="atlas">Atlas (ZXC Backup HLS)</option>
+                  <option value="strings">Strings (HiAnime Sub & Dub)</option>
+                </select>
+              </div>
+
+              <div class="form-group flex-1">
+                <label for="select-color">Player Accent</label>
+                <select id="select-color">
+                  <option value="">Crimson Red (#e50914)</option>
+                  <option value="yellow">Cinema Gold (#eab308)</option>
+                  <option value="blue">Electric Blue (#3b82f6)</option>
+                  <option value="purple">Arcane Purple (#a855f7)</option>
+                  <option value="green">Emerald (#22c55e)</option>
+                </select>
+              </div>
+            </div>
+
+            <button id="btn-load-player" class="btn-primary-full">Load Player in Preview</button>
+
+            <div class="code-box-wrap">
+              <div class="code-box-header">
+                <span>HTML Iframe Code</span>
+                <button id="btn-copy-iframe" class="btn-copy-chip">Copy Code</button>
+              </div>
+              <pre id="iframe-code-output" class="code-pre"></pre>
+            </div>
+
+            <!-- Live PostMessage Telemetry -->
+            <div class="telemetry-box">
+              <div class="code-box-header">
+                <span>Live postMessage Event Bridge</span>
+                <div class="remote-btns">
+                  <button id="btn-remote-play" class="btn-copy-chip">Play</button>
+                  <button id="btn-remote-pause" class="btn-copy-chip">Pause</button>
+                  <button id="btn-remote-seek" class="btn-copy-chip">+30s</button>
+                </div>
+              </div>
+              <div id="event-log" class="event-log">Waiting for player events...</div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- API & Proxy Documentation -->
+    <section id="api-docs" class="docs-section">
+      <h2>Developer Embed Routes (TMDB ID Only)</h2>
+      <div class="docs-grid">
+        <div class="doc-card">
+          <span class="doc-badge">MOVIE EMBED</span>
+          <h3>Embed Any Movie</h3>
+          <code>/embed/movie/{tmdb_id}</code>
+          <p>Pass the TMDB Movie ID. Automatically resolves IMDb ID, multi-audio tracks, subtitles, and chapter segments.</p>
+          <div class="doc-example">Example: <code>/embed/movie/550</code></div>
+        </div>
+
+        <div class="doc-card">
+          <span class="doc-badge">TV & ANIME EMBED</span>
+          <h3>Embed Any Series or Anime</h3>
+          <code>/embed/tv/{tmdb_id}/{season}/{episode}</code>
+          <p>Pass TMDB Series ID, season, and episode. Automatically enables the Episodes Drawer, Skip Intro button, and Auto-Next.</p>
+          <div class="doc-example">Example: <code>/embed/tv/94605/1/1</code></div>
+        </div>
+
+        <div class="doc-card" id="proxy-docs">
+          <span class="doc-badge">M3U8 & MP4 STREAM PROXY</span>
+          <h3>CORS & Referer Stream Proxy</h3>
+          <code>/api/proxy?url={encoded_url}&amp;referer={upstream}</code>
+          <p>Rewrites <code>.m3u8</code> master/media playlists, audio tracks, and keys, or streams <code>.mp4</code> with HTTP 206 Range support.</p>
+          <div class="doc-example">Mode: <code>?mode=manifest</code> (Free-Tier 99% BW Saver) or <code>?mode=full</code></div>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <script src="/js/portal.js"></script>
+</body>
+</html>
