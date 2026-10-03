@@ -74,6 +74,9 @@ const config = {
 
   // Upstream Provider Endpoints (Real Production Providers)
   upstreams: {
+    castletvBase: process.env.CASTLETV_BASE_URL || 'https://api.hlowb.com',
+    movieboxBase: process.env.MOVIEBOX_BASE_URL || 'https://api3.aoneroom.com',
+    netmirrorBase: process.env.NETMIRROR_BASE_URL || 'https://net27.cc',
     vidstuckBase: process.env.VIDSTUCK_BASE_URL || 'https://vidstuck.xyz',
     zxcBase: process.env.ZXC_BASE_URL || 'https://zxcstream.icu',
     vidsrcDataUrl: process.env.VIDSRC_DATA_URL || 'https://data.vidsrc.sh/api.php',

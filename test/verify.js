@@ -3,6 +3,7 @@ const fs = require('fs');
 const path = require('path');
 const zlib = require('zlib');
 const assert = require('assert');
+const crypto = require('crypto');
 const config = require('../src/config');
 const { app } = require('../src/server');
 const {
@@ -21,7 +22,16 @@ const {
   parseHicineAudioHints,
   isHubcloudGeneratorUrl,
   unrollHubcloudUrl,
-  resolveHicineServer
+  resolveHicineServer,
+  resolveStreamForServer,
+  resolveAndromedaServer,
+  resolveCastletv,
+  resolveMoviebox,
+  resolveNetmirror,
+  buildCastleKey,
+  decryptCastleAes,
+  mapLanguageNameToCode,
+  buildMovieboxHeaders
 } = require('../src/services/resolver');
 const {
   parseProbeJson,
@@ -37,6 +47,12 @@ const {
   verifySignedMaster,
   verifySignedAsset
 } = require('../src/services/multitrack');
+
+function encryptCastleAes(plaintext, key) {
+  const cipher = crypto.createCipheriv('aes-128-cbc', key, key);
+  cipher.setAutoPadding(true);
+  return Buffer.concat([cipher.update(Buffer.from(plaintext, 'utf8')), cipher.final()]).toString('base64');
+}
 
 function httpRequest(baseUrl, path, options = {}) {
   return new Promise((resolve, reject) => {
@@ -365,6 +381,200 @@ function startUpstreamMockServer() {
         res.writeHead(200, { 'Content-Type': 'application/vnd.apple.mpegurl' });
         return res.end(
           `#EXTM3U\n#EXT-X-VERSION:3\n#EXT-X-STREAM-INF:BANDWIDTH=4500000,RESOLUTION=1920x1080\n1080p/index.m3u8\n`
+        );
+      }
+
+      // 8d. Upstream MP4 Stream for Moviebox verification
+      if (u.pathname.startsWith('/cdn/mbox/')) {
+        res.writeHead(200, { 'Content-Type': 'video/mp4' });
+        return res.end('fake-mp4-data-stream');
+      }
+
+      // 8e. TMDB failover fixture
+      if (u.pathname === '/tmdb/movie/cascade-test-fail-all') {
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        return res.end(
+          JSON.stringify({
+            id: 'cascade-test-fail-all',
+            title: 'cascade-test-fail-all',
+            release_date: '2024-01-01',
+            runtime: 120,
+            imdb_id: 'tt9999999',
+            external_ids: { imdb_id: 'tt9999999' }
+          })
+        );
+      }
+
+      // 9. CastleTV Mock Upstream (/castletv/...)
+      if (u.pathname === '/castletv/v0.1/system/getSecurityKey/1') {
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        return res.end(JSON.stringify({ code: 200, data: 'MTIzNDU2Nzg5MA==' }));
+      }
+
+      if (u.pathname === '/castletv/film-api/v1.1.0/movie/searchByKeyword') {
+        const keyword = (u.searchParams.get('keyword') || '').toLowerCase();
+        const mockKey = buildCastleKey('MTIzNDU2Nzg5MA==');
+        if (keyword.includes('fail-castle') || keyword.includes('cascade-test-fail-all')) {
+          res.writeHead(200, { 'Content-Type': 'text/plain' });
+          return res.end(encryptCastleAes(JSON.stringify({ code: 200, data: { rows: [] } }), mockKey));
+        }
+        const cipher = encryptCastleAes(
+          JSON.stringify({
+            code: 200,
+            data: {
+              rows: [
+                {
+                  id: 'castle-m-101',
+                  title: 'Dune: Part Two',
+                  name: 'Dune: Part Two'
+                }
+              ]
+            }
+          }),
+          mockKey
+        );
+        res.writeHead(200, { 'Content-Type': 'text/plain' });
+        return res.end(cipher);
+      }
+
+      if (u.pathname === '/castletv/film-api/v1.9.9/movie') {
+        const mockKey = buildCastleKey('MTIzNDU2Nzg5MA==');
+        const cipher = encryptCastleAes(
+          JSON.stringify({
+            code: 200,
+            data: {
+              episodes: [
+                {
+                  id: 'castle-ep-1',
+                  number: 1,
+                  tracks: [
+                    { languageId: 'en', languageName: 'English' },
+                    { languageId: 'hi', languageName: 'Hindi' },
+                    { languageId: 'ta', languageName: 'Tamil' },
+                    { languageId: 'te', languageName: 'Telugu' }
+                  ]
+                }
+              ]
+            }
+          }),
+          mockKey
+        );
+        res.writeHead(200, { 'Content-Type': 'text/plain' });
+        return res.end(cipher);
+      }
+
+      if (u.pathname === '/castletv/film-api/v2.0.1/movie/getVideo2') {
+        let rawBody = '';
+        req.on('data', (c) => { rawBody += c; });
+        req.on('end', () => {
+          let bodyObj = {};
+          try { bodyObj = JSON.parse(rawBody); } catch {}
+          const lang = bodyObj.languageId || 'en';
+          const mockKey = buildCastleKey('MTIzNDU2Nzg5MA==');
+          const cipher = encryptCastleAes(
+            JSON.stringify({
+              code: 200,
+              data: {
+                videoUrl: `${mockOrigin}/cdn/hls/castle-${lang}.m3u8`
+              }
+            }),
+            mockKey
+          );
+          res.writeHead(200, { 'Content-Type': 'text/plain' });
+          res.end(cipher);
+        });
+        return;
+      }
+
+      // 10. Moviebox Mock Upstream (/moviebox/...)
+      if (u.pathname === '/moviebox/wefeed-mobile-bff/subject-api/search/v2') {
+        let rawBody = '';
+        req.on('data', (c) => { rawBody += c; });
+        req.on('end', () => {
+          let bodyObj = {};
+          try { bodyObj = JSON.parse(rawBody); } catch {}
+          const kw = (bodyObj.keyword || '').toLowerCase();
+          if (kw.includes('fail-moviebox') || kw.includes('cascade-test-fail-all')) {
+            res.writeHead(200, { 'Content-Type': 'application/json' });
+            return res.end(JSON.stringify({ code: 0, data: { results: [] } }));
+          }
+          res.writeHead(200, { 'Content-Type': 'application/json' });
+          res.end(
+            JSON.stringify({
+              code: 0,
+              data: {
+                results: [
+                  {
+                    subjects: [
+                      {
+                        subjectId: 'mbox-101',
+                        title: 'Dune: Part Two',
+                        subjectType: 1
+                      }
+                    ]
+                  }
+                ]
+              }
+            })
+          );
+        });
+        return;
+      }
+
+      if (u.pathname === '/moviebox/wefeed-mobile-bff/subject-api/get') {
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        return res.end(
+          JSON.stringify({
+            code: 0,
+            data: {
+              dubs: [
+                { subjectId: 'mbox-101', lanName: 'English' },
+                { subjectId: 'mbox-102', lanName: 'Hindi' },
+                { subjectId: 'mbox-103', lanName: 'Tamil' }
+              ]
+            }
+          })
+        );
+      }
+
+      if (u.pathname === '/moviebox/wefeed-mobile-bff/subject-api/play-info') {
+        const subId = u.searchParams.get('subjectId');
+        const lang = subId === 'mbox-102' ? 'hi' : subId === 'mbox-103' ? 'ta' : 'en';
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        return res.end(
+          JSON.stringify({
+            code: 0,
+            data: {
+              streams: [
+                {
+                  url: `${mockOrigin}/cdn/mbox/mbox-${lang}.mp4`,
+                  resolutions: '1080p'
+                }
+              ]
+            }
+          })
+        );
+      }
+
+      // 11. NetMirror Mock Upstream (/netmirror/...)
+      if (u.pathname.startsWith('/netmirror/api/embed-tmdb/')) {
+        const pathParts = u.pathname.split('/');
+        const tmdbParam = pathParts[pathParts.length - 1];
+        if (tmdbParam.includes('fail-netmirror') || tmdbParam.includes('cascade-test-fail-all')) {
+          res.writeHead(200, { 'Content-Type': 'application/json' });
+          return res.end(JSON.stringify({ ok: false }));
+        }
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        return res.end(
+          JSON.stringify({
+            ok: true,
+            streams: [
+              {
+                resolution: 1080,
+                url: `${mockOrigin}/cdn/hls/netmirror-master.m3u8`
+              }
+            ]
+          })
         );
       }
 
@@ -1252,8 +1462,206 @@ async function runTests() {
     assert.ok(crossOriginSub.body.startsWith('WEBVTT'), 'Absolutized subtitle URL must return WebVTT');
     console.log('  ✔ Passed Worker player page, asset, API-base, and root-behavior checks.');
 
+    // 11. Server Andromeda Multi-Tier Architecture & Waterfall Failover
+    // Priority 1: CastleTV (South Indian, Asian, Hollywood dubs)
+    // Priority 2: Moviebox (Broad catalog, multi-language MP4/HLS)
+    // Priority 3: NetMirror (Official OTT platform mirrors)
+    // Waterfall Failover: When all 3 tiers miss, cleanly hand off to Server 2 (Ursa / VidSrc)
+    console.log('[11/11] Testing Server Andromeda Multi-Tier Architecture & Waterfall Failover...');
+
+    // 11a. CastleTV Unit & Sub-resolver: Security key handshake, AES-128-CBC encryption, multi-audio tracks
+    const castleKey = buildCastleKey('MTIzNDU2Nzg5MA==');
+    assert.strictEqual(castleKey.length, 16, 'Castle key must be 16 bytes (AES-128)');
+    const testPlain = JSON.stringify({ test: 'castle-crypto-verify' });
+    const testEnc = encryptCastleAes(testPlain, castleKey);
+    const testDec = decryptCastleAes(testEnc, castleKey);
+    assert.strictEqual(testDec, testPlain, 'Castle AES encryption and decryption must roundtrip');
+
+    const origCastleBase = config.upstreams.castletvBase;
+    const origMovieboxBase = config.upstreams.movieboxBase;
+    const origNetmirrorBase = config.upstreams.netmirrorBase;
+    const origVidstuckBase = config.upstreams.vidstuckBase;
+
+    try {
+      config.upstreams.castletvBase = `${mockUpstream.url}/castletv`;
+      config.upstreams.movieboxBase = `${mockUpstream.url}/moviebox`;
+      config.upstreams.netmirrorBase = `${mockUpstream.url}/netmirror`;
+      // Clear VidStuck base to verify the pure 3-tier cascade and Ursa failover without old fallback
+      config.upstreams.vidstuckBase = '';
+
+      // Test Direct CastleTV Resolver
+      const castleRes = await resolveCastletv(
+        { title: 'Dune: Part Two', releaseYear: 2024, type: 'movie' },
+        'hi'
+      );
+      assert.ok(castleRes, 'CastleTV resolver must succeed for mocked title');
+      assert.strictEqual(castleRes.server, 'andromeda');
+      assert.strictEqual(castleRes.sourceName, 'CastleTV');
+      assert.strictEqual(castleRes.format, 'hls');
+      assert.ok(castleRes.streamUrl.startsWith('/api/proxy?url='));
+      assert.strictEqual(castleRes.audioTracks.length, 4, 'CastleTV must yield 4 discrete audio tracks');
+      const hiCastleTrack = castleRes.audioTracks.find((t) => t.lang === 'hi');
+      assert.ok(hiCastleTrack, 'Hindi track must be present in CastleTV tracks');
+      assert.strictEqual(hiCastleTrack.default, true, 'Preferred audio "hi" must be marked default');
+
+      // 11b. Moviebox Unit & Sub-resolver: HMAC-MD5 signing, search, detail & play-info
+      const mboxSecret = Buffer.from('test-mbox-secret-key-12345');
+      const mboxHeaders = buildMovieboxHeaders('POST', `${mockUpstream.url}/test`, JSON.stringify({ a: 1 }), mboxSecret);
+      assert.ok(mboxHeaders['x-client-token'], 'Moviebox headers must include x-client-token');
+      assert.ok(mboxHeaders['x-tr-signature'], 'Moviebox headers must include x-tr-signature');
+      assert.match(mboxHeaders['x-tr-signature'], /^\d+\|2\|[A-Za-z0-9+/=]+$/, 'Signature must follow ts|2|b64 format');
+
+      const mboxRes = await resolveMoviebox(
+        { title: 'Dune: Part Two', releaseYear: 2024, type: 'movie' },
+        'ta'
+      );
+      assert.ok(mboxRes, 'Moviebox resolver must succeed for mocked title');
+      assert.strictEqual(mboxRes.server, 'andromeda');
+      assert.strictEqual(mboxRes.sourceName, 'Moviebox');
+      assert.strictEqual(mboxRes.format, 'mp4');
+      assert.strictEqual(mboxRes.audioTracks.length, 3, 'Moviebox must yield 3 audio tracks');
+      const taMboxTrack = mboxRes.audioTracks.find((t) => t.lang === 'ta');
+      assert.ok(taMboxTrack, 'Tamil track must be present');
+      assert.strictEqual(taMboxTrack.default, true, 'Preferred audio "ta" must be default');
+
+      // 11c. NetMirror Sub-resolver: OTT embed URL extraction
+      const nmRes = await resolveNetmirror(
+        { tmdbId: '693134', title: 'Dune: Part Two', type: 'movie' },
+        'en'
+      );
+      assert.ok(nmRes, 'NetMirror resolver must succeed for mocked title');
+      assert.strictEqual(nmRes.server, 'andromeda');
+      assert.strictEqual(nmRes.sourceName, 'NetMirror');
+      assert.strictEqual(nmRes.format, 'hls');
+      assert.ok(nmRes.streamUrl.startsWith('/api/proxy?url='));
+      assert.ok(nmRes.audioTracks.length >= 1);
+
+      // 11d. Andromeda Multi-Tier Internal Cascading (Priority 1: Castle -> Priority 2: Moviebox -> Priority 3: NetMirror)
+      // Tier 1: When CastleTV succeeds, Andromeda returns CastleTV
+      const andromedaTier1 = await resolveAndromedaServer({
+        title: 'Dune: Part Two',
+        releaseYear: 2024,
+        tmdbId: '693134',
+        type: 'movie'
+      });
+      assert.ok(andromedaTier1 && andromedaTier1.streamUrl, 'Andromeda must resolve Tier 1');
+      assert.strictEqual(andromedaTier1.sourceName, 'CastleTV', 'Priority 1 must be CastleTV');
+
+      // Tier 2: When CastleTV fails, Andromeda cascades to Moviebox
+      const andromedaTier2 = await resolveAndromedaServer({
+        title: 'fail-castle Dune',
+        releaseYear: 2024,
+        tmdbId: '693134',
+        type: 'movie'
+      });
+      assert.ok(andromedaTier2 && andromedaTier2.streamUrl, 'Andromeda must resolve Tier 2 when Tier 1 misses');
+      assert.strictEqual(andromedaTier2.sourceName, 'Moviebox', 'Priority 2 must be Moviebox');
+
+      // Tier 3: When CastleTV and Moviebox both fail, Andromeda cascades to NetMirror
+      const andromedaTier3 = await resolveAndromedaServer({
+        title: 'fail-castle fail-moviebox Dune',
+        releaseYear: 2024,
+        tmdbId: '693134',
+        type: 'movie'
+      });
+      assert.ok(andromedaTier3 && andromedaTier3.streamUrl, 'Andromeda must resolve Tier 3 when Tiers 1 & 2 miss');
+      assert.strictEqual(andromedaTier3.sourceName, 'NetMirror', 'Priority 3 must be NetMirror');
+
+      // Exhaustion: When all 3 tiers fail, Andromeda returns clean failure
+      const andromedaExhausted = await resolveAndromedaServer({
+        title: 'cascade-test-fail-all',
+        releaseYear: 2024,
+        tmdbId: 'cascade-test-fail-all',
+        type: 'movie'
+      });
+      assert.strictEqual(andromedaExhausted.ok, false);
+      assert.strictEqual(andromedaExhausted.reason, 'andromeda_all_sources_exhausted');
+
+      // 11e. End-to-End Waterfall Failover to Server 2 (Ursa / VidSrc)
+      // The client explicitly requests Server 1 (Andromeda).
+      // Since all 3 Andromeda tiers fail, the waterfall must fall back cleanly to Server 2 (Ursa).
+      const waterfallFailoverRes = await resolveStreamForServer(
+        {
+          tmdbId: 'cascade-test-fail-all',
+          title: 'cascade-test-fail-all',
+          releaseYear: 2024,
+          type: 'movie',
+          season: 1,
+          episode: 1
+        },
+        'andromeda',
+        'en'
+      );
+      assert.strictEqual(waterfallFailoverRes.requestedServer, 'andromeda', 'Client requested server must be preserved');
+      assert.strictEqual(waterfallFailoverRes.server, 'ursa', 'Waterfall must fall back to Server 2 (Ursa)');
+      assert.ok(waterfallFailoverRes.streamUrl, 'Fallback to Server 2 must produce playable streamUrl');
+      assert.ok(
+        waterfallFailoverRes.serverAttempts.some(
+          (a) => a.server === 'andromeda' && a.reason === 'andromeda_all_sources_exhausted'
+        ),
+        'serverAttempts must document Andromeda exhaustion'
+      );
+      const ursaServerObj = waterfallFailoverRes.servers.find((s) => s.id === 'ursa');
+      assert.ok(ursaServerObj && ursaServerObj.active, 'Ursa must be marked active in servers list');
+
+      // 11f. Cloudflare Worker: Multi-Tier Andromeda Resolution, Debug Telemetry & Waterfall Failover
+      const workerEnv = {
+        CASTLETV_BASE_URL: `${mockUpstream.url}/castletv`,
+        MOVIEBOX_BASE_URL: `${mockUpstream.url}/moviebox`,
+        NETMIRROR_BASE_URL: `${mockUpstream.url}/netmirror`,
+        VIDSTUCK_BASE_URL: '',
+        TMDB_BASE_URL: `${mockUpstream.url}/tmdb`,
+        VIDSRC_DATA_URL: `${mockUpstream.url}/vidsrc/api.php`
+      };
+
+      // Worker resolves Andromeda directly with CastleTV
+      const cfAndromedaRes = await callWorker(
+        'http://player.test/api/resolve/movie/693134?server=andromeda&audio=hi',
+        workerEnv
+      );
+      assert.strictEqual(cfAndromedaRes.status, 200);
+      const cfAndromedaJson = await cfAndromedaRes.json();
+      assert.strictEqual(cfAndromedaJson.ok, true);
+      assert.strictEqual(cfAndromedaJson.stream.server, 'andromeda');
+      assert.strictEqual(cfAndromedaJson.stream.sourceName, 'CastleTV');
+      assert.ok(cfAndromedaJson.stream.audioTracks.length >= 4);
+      assert.strictEqual(cfAndromedaJson.stream.activeAudioTrack.lang, 'hi');
+
+      // Worker /api/debug/andromeda/:type/:tmdbId inspects Andromeda upstreams
+      const cfDebugRes = await callWorker(
+        'http://player.test/api/debug/andromeda/movie/693134',
+        workerEnv
+      );
+      assert.strictEqual(cfDebugRes.status, 200);
+      const cfDebugJson = await cfDebugRes.json();
+      assert.strictEqual(cfDebugJson.ok, true);
+      assert.strictEqual(cfDebugJson.upstream.castletvBase, `${mockUpstream.url}/castletv`);
+      assert.strictEqual(cfDebugJson.upstream.movieboxBase, `${mockUpstream.url}/moviebox`);
+      assert.strictEqual(cfDebugJson.upstream.netmirrorBase, `${mockUpstream.url}/netmirror`);
+      assert.strictEqual(cfDebugJson.result.sourceName, 'CastleTV');
+
+      // Worker Waterfall: When Andromeda tiers fail, worker automatically falls back to Server 2 (Ursa)
+      const cfWaterfallRes = await callWorker(
+        'http://player.test/api/resolve/movie/cascade-test-fail-all?server=andromeda',
+        workerEnv
+      );
+      assert.strictEqual(cfWaterfallRes.status, 200);
+      const cfWaterfallJson = await cfWaterfallRes.json();
+      assert.strictEqual(cfWaterfallJson.ok, true);
+      assert.strictEqual(cfWaterfallJson.stream.requestedServer, 'andromeda');
+      assert.strictEqual(cfWaterfallJson.stream.server, 'ursa', 'Worker waterfall must fall back to Server 2 (Ursa)');
+      assert.ok(cfWaterfallJson.stream.rawUrl.includes('token=vidsrc-short-lived-jwt'));
+
+    } finally {
+      config.upstreams.castletvBase = origCastleBase;
+      config.upstreams.movieboxBase = origMovieboxBase;
+      config.upstreams.netmirrorBase = origNetmirrorBase;
+      config.upstreams.vidstuckBase = origVidstuckBase;
+    }
+    console.log('  ✔ Passed CastleTV, Moviebox, NetMirror & Server 2 Ursa failover waterfall tests.');
+
     console.log('\n==========================================================');
-    console.log('  ALL 10 PRODUCTION VERIFICATION SUITES PASSED (0 TEST VIDEOS)');
+    console.log('  ALL 11 PRODUCTION VERIFICATION SUITES PASSED (0 TEST VIDEOS)');
     console.log('==========================================================');
   } finally {
     server.close();

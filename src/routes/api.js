@@ -3,7 +3,7 @@ const config = require('../config');
 const { resolveTmdbMetadata } = require('../services/tmdb');
 const { resolveSkipSegments } = require('../services/segments');
 const { resolveSubtitles, fetchAndConvertSubtitleToVtt } = require('../services/subtitles');
-const { resolveStreamForServer } = require('../services/resolver');
+const { resolveStreamForServer, resolveAndromedaServer } = require('../services/resolver');
 const { handleStreamProxy } = require('../services/proxy');
 const { serveMasterPlaylist, serveGeneratedFile } = require('../services/multitrack');
 const { generateHandshakeToken } = require('../utils/crypto');
@@ -458,7 +458,7 @@ router.get('/debug/andromeda/:type/:tmdbId', requireAdminAuth, async (req, res) 
   const episode = parseInt(req.query.episode || '1', 10);
   try {
     const metadata = await resolveTmdbMetadata(type, tmdbId, season, episode);
-    const result = await resolveStreamForServer(metadata, 'andromeda', '');
+    const result = await resolveAndromedaServer(metadata, 'andromeda', '');
     return res.json({
       ok: !!(result && result.streamUrl),
       metadata: {
@@ -468,6 +468,9 @@ router.get('/debug/andromeda/:type/:tmdbId', requireAdminAuth, async (req, res) 
         externalIds: metadata.externalIds
       },
       upstream: {
+        castletvBase: config.upstreams.castletvBase,
+        movieboxBase: config.upstreams.movieboxBase,
+        netmirrorBase: config.upstreams.netmirrorBase,
         vidstuckBase: config.upstreams.vidstuckBase,
         zxcBase: config.upstreams.zxcBase,
         aesKeySet: !!config.zxcAesKey,
