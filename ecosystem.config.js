@@ -1,7 +1,7 @@
 module.exports = {
   apps: [
     {
-      name: 'vidstuck-proxy',
+      name: 'lol-embed-backend',
       script: 'src/server.js',
       instances: 'max',
       exec_mode: 'cluster',

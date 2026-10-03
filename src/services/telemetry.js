@@ -321,7 +321,7 @@ class TelemetryAndAdminEngine {
   }
 
   /**
-   * Build full snapshot for the /admin dashboard
+   * Build the JSON snapshot returned by /api/admin/overview
    */
   getDashboardSnapshot() {
     const domainList = Array.from(this.domains.values())
