@@ -1,0 +1,513 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+  <title>LOL Embed Player</title>
+  <meta name="theme-color" content="#000000" />
+  <link rel="icon" type="image/gif" href="/meta-image.gif" />
+  <link rel="stylesheet" href="/css/embed.css" />
+  <script src="/vendor/hls.min.js"></script>
+  <script src="/vendor/dash.all.min.js"></script>
+</head>
+<body>
+  <div id="player-root" class="player-root">
+    <!-- HTML5 Video Element -->
+    <video id="video-element" class="video-element" playsinline referrerpolicy="no-referrer"></video>
+
+    <!-- CustomRendered Subtitle Overlay (Supports RTL, Style, Delay & Uploaded .srt/.vtt) -->
+    <div id="custom-subtitle-overlay" class="custom-subtitle-overlay">
+      <span id="custom-subtitle-text" class="custom-subtitle-text"></span>
+    </div>
+
+    <!-- Double-Tap Seek Ripple Feedback -->
+    <div id="seek-feedback-left" class="seek-feedback left">-15s</div>
+    <div id="seek-feedback-right" class="seek-feedback right">+15s</div>
+
+    <!-- Loading Spinner Overlay -->
+    <div id="loading-overlay" class="loading-overlay">
+      <div class="spinner-ring"></div>
+      <div id="loading-status-text" class="loading-status-text">Connecting to Atlas_</div>
+    </div>
+
+    <!-- Fullscreen / Status Toast Notification (Screenshot 5) -->
+    <div id="player-toast" class="player-toast hidden">
+      <span id="player-toast-text">LOL Embed – to exit full screen, drag from the top and touch the back button</span>
+    </div>
+
+    <!-- Main Interactive Controls HUD -->
+    <div id="controls-hud" class="controls-hud">
+      <!-- Top Bar: Back Button (Left), Episodes & Server Cloud (Right) -->
+      <div class="top-bar">
+        <button id="btn-back" class="icon-btn top-icon-btn" title="Back" aria-label="Back">
+          <svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+            <polyline points="15 18 9 12 15 6"></polyline>
+          </svg>
+        </button>
+
+        <div class="top-right-actions">
+          <!-- Episodes Drawer Button (Screenshot 1, 2, 3, 4, 5) -->
+          <button id="btn-episodes" class="icon-btn top-icon-btn" title="Episodes" aria-label="Episodes">
+            <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <rect x="6" y="3" width="15" height="13" rx="2"></rect>
+              <path d="M3 7v11a2 2 0 0 0 2 2h12"></path>
+              <polygon points="12 7 16 9.5 12 12 12 7" fill="currentColor" stroke="none"></polygon>
+            </svg>
+          </button>
+
+          <!-- Servers Cloud Button (Screenshot 1, 2, 3, 4, 5) -->
+          <button id="btn-servers" class="icon-btn top-icon-btn" title="Servers & Sources" aria-label="Servers">
+            <svg viewBox="0 0 24 24" width="22" height="22" fill="currentColor">
+              <path d="M18.5 10A5.5 5.5 0 0 0 7.6 8.6 4.5 4.5 0 0 0 6.5 17.5h12a3.75 3.75 0 0 0 0-7.5z"/>
+            </svg>
+          </button>
+        </div>
+      </div>
+
+      <!-- Spacer / Click-to-Play Area -->
+      <div id="center-click-zone" class="center-click-zone"></div>
+
+      <!-- Bottom Area: Info + Skip Intro + Segmented Timeline + Control Bar -->
+      <div class="bottom-section">
+        <div class="above-timeline-row">
+          <!-- Bottom-Left Media Metadata (Screenshot 1, 2, 3, 5) -->
+          <div class="media-meta-block">
+            <div class="watching-eyebrow">
+              <span class="watching-accent-bar"></span>
+              <span class="watching-label">You're Watching</span>
+            </div>
+            <h1 id="media-title" class="media-title">Arcane S1E1</h1>
+            <div id="media-tags" class="media-tags">
+              <span class="media-tag-pill">Series</span>
+              <span class="media-tag-pill">Animation</span>
+              <span class="media-tag-pill">2021</span>
+            </div>
+          </div>
+
+          <!-- Bottom-Right Skip Intro / Recap / Next Episode Button (Screenshot 1, 2, 3, 5) -->
+          <div class="skip-btn-wrapper">
+            <button id="btn-skip-intro" class="btn-skip-intro" aria-label="Skip Intro">
+              <span id="skip-intro-label">Skip Intro</span>
+              <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+                <line x1="5" y1="12" x2="19" y2="12"></line>
+                <polyline points="13 6 19 12 13 18"></polyline>
+              </svg>
+            </button>
+          </div>
+        </div>
+
+        <!-- Timeline Row with Segmented Chapters & Hover Timestamp (Screenshot 1 & 5) -->
+        <div class="timeline-row">
+          <span id="time-current" class="time-label">0:00</span>
+
+          <div id="timeline-slider" class="timeline-slider">
+            <!-- Hover Timestamp Tooltip (Screenshot 5: "3:22") -->
+            <div id="timeline-hover-tooltip" class="timeline-hover-tooltip hidden">0:00</div>
+
+            <!-- Segmented Track Bars -->
+            <div id="timeline-segments-bg" class="timeline-segments-bg"></div>
+
+            <!-- Buffered Fill -->
+            <div id="timeline-buffered" class="timeline-buffered"></div>
+
+            <!-- Watched Progress Fill -->
+            <div id="timeline-progress" class="timeline-progress"></div>
+
+            <!-- Vertical White Thumb (Screenshot 1, 2, 3, 5) -->
+            <div id="timeline-thumb" class="timeline-thumb"></div>
+          </div>
+
+          <span id="time-duration" class="time-label">43:23</span>
+        </div>
+
+        <!-- Bottom Controls Row -->
+        <div class="bottom-controls-row">
+          <!-- Left Controls: Play/Pause, -15s, +15s, Next Episode, Volume -->
+          <div class="controls-left">
+            <button id="btn-play" class="icon-btn control-btn" title="Play / Pause (Space)" aria-label="Play or Pause">
+              <!-- Play Icon -->
+              <svg id="icon-play" viewBox="0 0 24 24" width="24" height="24" fill="currentColor">
+                <polygon points="6 4 20 12 6 20 6 4"></polygon>
+              </svg>
+              <!-- Pause Icon -->
+              <svg id="icon-pause" class="hidden" viewBox="0 0 24 24" width="24" height="24" fill="currentColor">
+                <rect x="5" y="4" width="4.5" height="16" rx="1"></rect>
+                <rect x="14.5" y="4" width="4.5" height="16" rx="1"></rect>
+              </svg>
+            </button>
+
+            <!-- Rewind 15s (Screenshot 1, 2, 3, 5) -->
+            <button id="btn-rewind" class="icon-btn control-btn seek-15-btn" title="Rewind 15 seconds (←)" aria-label="Rewind 15 seconds">
+              <svg viewBox="0 0 24 24" width="25" height="25" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"></path>
+                <path d="M3 3v5h5"></path>
+                <text x="12" y="15.3" text-anchor="middle" fill="currentColor" stroke="none" font-size="7.5" font-weight="800" font-family="Inter, system-ui, sans-serif">15</text>
+              </svg>
+            </button>
+
+            <!-- Forward 15s (Screenshot 1, 2, 3, 5) -->
+            <button id="btn-forward" class="icon-btn control-btn seek-15-btn" title="Forward 15 seconds (→)" aria-label="Forward 15 seconds">
+              <svg viewBox="0 0 24 24" width="25" height="25" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M21 12a9 9 0 1 1-9-9c2.52 0 4.93 1 6.74 2.74L21 8"></path>
+                <path d="M21 3v5h-5"></path>
+                <text x="12" y="15.3" text-anchor="middle" fill="currentColor" stroke="none" font-size="7.5" font-weight="800" font-family="Inter, system-ui, sans-serif">15</text>
+              </svg>
+            </button>
+
+            <!-- Next Episode Button (Screenshot 1, 2, 3, 5) -->
+            <button id="btn-next-episode" class="icon-btn control-btn" title="Next Episode" aria-label="Next Episode">
+              <svg viewBox="0 0 24 24" width="22" height="22" fill="currentColor">
+                <polygon points="5 4 15 12 5 20 5 4"></polygon>
+                <rect x="17" y="5" width="2.5" height="14" rx="1"></rect>
+              </svg>
+            </button>
+
+            <!-- Volume Button & Expandable Slider -->
+            <div class="volume-group">
+              <button id="btn-mute" class="icon-btn control-btn" title="Mute / Unmute (M)" aria-label="Mute">
+                <svg id="icon-vol-high" viewBox="0 0 24 24" width="23" height="23" fill="currentColor">
+                  <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"></polygon>
+                  <path d="M15.54 8.46a5 5 0 0 1 0 7.07" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"></path>
+                  <path d="M19.07 4.93a10 10 0 0 1 0 14.14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"></path>
+                </svg>
+                <svg id="icon-vol-muted" class="hidden" viewBox="0 0 24 24" width="23" height="23" fill="currentColor">
+                  <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"></polygon>
+                  <line x1="23" y1="9" x2="17" y2="15" stroke="currentColor" stroke-width="2" stroke-linecap="round"></line>
+                  <line x1="17" y1="9" x2="23" y2="15" stroke="currentColor" stroke-width="2" stroke-linecap="round"></line>
+                </svg>
+              </button>
+              <input id="volume-range" class="volume-range" type="range" min="0" max="1" step="0.05" value="1" aria-label="Volume" />
+            </div>
+          </div>
+
+          <!-- Right Controls: [A文] Audio, [==] Subtitles, [⚙] Settings, [⤢] Fullscreen -->
+          <div class="controls-right">
+            <!-- [A文] Audio Track Button (Screenshot 1 & 2) -->
+            <button id="btn-audio-menu" class="icon-btn control-btn" title="Audio Tracks" aria-label="Audio Tracks">
+              <svg viewBox="0 0 28 22" width="26" height="21" fill="none">
+                <rect x="1" y="1" width="26" height="20" rx="3.5" stroke="currentColor" stroke-width="1.8" fill="rgba(255,255,255,0.08)"/>
+                <text x="8" y="15" text-anchor="middle" fill="currentColor" font-size="10.5" font-weight="800" font-family="Inter, sans-serif">A</text>
+                <line x1="13.8" y1="4.5" x2="13.8" y2="17.5" stroke="currentColor" stroke-width="1.4" stroke-opacity="0.5"/>
+                <text x="20" y="15" text-anchor="middle" fill="currentColor" font-size="10" font-weight="700" font-family="sans-serif">文</text>
+              </svg>
+            </button>
+
+            <!-- [==] Subtitles Button (Screenshot 1, 2, 3, 5) -->
+            <button id="btn-subtitles-menu" class="icon-btn control-btn" title="Subtitles & Captions (C)" aria-label="Subtitles">
+              <svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <rect x="2" y="4" width="20" height="16" rx="3"></rect>
+                <line x1="6" y1="12" x2="11" y2="12"></line>
+                <line x1="14" y1="12" x2="18" y2="12"></line>
+                <line x1="6" y1="16" x2="14" y2="16"></line>
+                <line x1="17" y1="16" x2="18" y2="16"></line>
+              </svg>
+            </button>
+
+            <!-- [⚙] Settings Button (Screenshot 1, 2, 3, 5) -->
+            <button id="btn-settings-modal" class="icon-btn control-btn" title="Player Settings" aria-label="Player Settings">
+              <svg viewBox="0 0 24 24" width="23" height="23" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <circle cx="12" cy="12" r="3"></circle>
+                <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path>
+              </svg>
+            </button>
+
+            <!-- [⤢] Fullscreen Button (Screenshot 1, 2, 3, 5) -->
+            <button id="btn-fullscreen" class="icon-btn control-btn" title="Fullscreen (F)" aria-label="Fullscreen">
+              <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round">
+                <polyline points="15 3 21 3 21 9"></polyline>
+                <polyline points="9 21 3 21 3 15"></polyline>
+                <line x1="21" y1="3" x2="14" y2="10"></line>
+                <line x1="3" y1="21" x2="10" y2="14"></line>
+              </svg>
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- =================================================================== -->
+    <!-- POPOVER 1: AUDIO TRACK SWITCHER (Matches Screenshot 2)              -->
+    <!-- =================================================================== -->
+    <div id="popover-audio" class="floating-popover hidden" role="dialog" aria-label="Audio Tracks">
+      <div class="popover-header">
+        <span class="popover-header-icon">文A</span>
+        <span class="popover-header-title">AUDIO</span>
+      </div>
+      <div id="audio-track-list" class="popover-scroll-list"></div>
+    </div>
+
+    <!-- =================================================================== -->
+    <!-- POPOVER 2: SUBTITLES SWITCHER + UPLOAD / STYLE / DELAY (Screenshot 3)-->
+    <!-- =================================================================== -->
+    <div id="popover-subtitles" class="floating-popover hidden" role="dialog" aria-label="Subtitles">
+      <div class="popover-header">
+        <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2">
+          <rect x="2" y="4" width="20" height="16" rx="2"></rect>
+          <line x1="6" y1="12" x2="11" y2="12"></line>
+          <line x1="14" y1="12" x2="18" y2="12"></line>
+          <line x1="6" y1="16" x2="15" y2="16"></line>
+        </svg>
+        <span class="popover-header-title">SUBTITLES</span>
+      </div>
+
+      <!-- Main Subtitle Track List -->
+      <div id="subtitle-main-view">
+        <div id="subtitle-track-list" class="popover-scroll-list"></div>
+
+        <!-- Hidden file input for "Upload subtitle" -->
+        <input id="subtitle-file-input" type="file" accept=".srt,.vtt" class="hidden" />
+
+        <div class="popover-footer-split">
+          <button id="btn-sub-style" class="popover-footer-btn">
+            <span class="footer-btn-icon">A=</span>
+            <span>Style</span>
+          </button>
+          <div class="popover-footer-divider"></div>
+          <button id="btn-sub-delay" class="popover-footer-btn">
+            <span class="footer-btn-icon">⇄</span>
+            <span id="sub-delay-badge">Delay</span>
+          </button>
+        </div>
+      </div>
+
+      <!-- Subtitle Style Sub-View -->
+      <div id="subtitle-style-view" class="popover-subview hidden">
+        <div class="subview-top">
+          <button id="btn-sub-style-back" class="subview-back-btn">← Back</button>
+          <span>Subtitle Style</span>
+        </div>
+        <div class="subview-body">
+          <div class="style-row">
+            <label>Font Size</label>
+            <div class="pill-choice-group" id="sub-size-group">
+              <button data-size="16px" class="pill-choice">S</button>
+              <button data-size="22px" class="pill-choice active">M</button>
+              <button data-size="28px" class="pill-choice">L</button>
+              <button data-size="34px" class="pill-choice">XL</button>
+            </div>
+          </div>
+          <div class="style-row">
+            <label>Text Color</label>
+            <div class="pill-choice-group" id="sub-color-group">
+              <button data-color="#ffffff" class="pill-choice active">White</button>
+              <button data-color="#facc15" class="pill-choice">Yellow</button>
+              <button data-color="#38bdf8" class="pill-choice">Cyan</button>
+            </div>
+          </div>
+          <div class="style-row">
+            <label>Background</label>
+            <div class="pill-choice-group" id="sub-bg-group">
+              <button data-bg="rgba(0,0,0,0)" class="pill-choice">None</button>
+              <button data-bg="rgba(0,0,0,0.65)" class="pill-choice active">Semi</button>
+              <button data-bg="rgba(0,0,0,0.92)" class="pill-choice">Solid</button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Subtitle Delay Sub-View -->
+      <div id="subtitle-delay-view" class="popover-subview hidden">
+        <div class="subview-top">
+          <button id="btn-sub-delay-back" class="subview-back-btn">← Back</button>
+          <span>Subtitle Delay</span>
+        </div>
+        <div class="subview-body">
+          <div class="delay-display" id="delay-current-value">0.0s</div>
+          <div class="delay-btn-row">
+            <button data-delta="-0.5" class="delay-step-btn">-0.5s</button>
+            <button data-delta="-0.1" class="delay-step-btn">-0.1s</button>
+            <button data-delta="0" class="delay-step-btn">Reset</button>
+            <button data-delta="0.1" class="delay-step-btn">+0.1s</button>
+            <button data-delta="0.5" class="delay-step-btn">+0.5s</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- =================================================================== -->
+    <!-- MODAL 1: PLAYER SETTINGS (Matches Screenshot 1)                     -->
+    <!-- =================================================================== -->
+    <div id="modal-settings-backdrop" class="modal-backdrop hidden">
+      <div class="settings-modal-card" role="dialog" aria-label="Player Settings">
+        <div class="modal-drag-handle"></div>
+
+        <!-- Main Settings View -->
+        <div id="settings-main-panel">
+          <div class="settings-header">
+            <div class="settings-title">PLAYER SETTINGS</div>
+            <div class="settings-subtitle">Customize your playback experience.</div>
+          </div>
+
+          <div class="settings-sections-scroll">
+            <div class="settings-section-label">SOURCE</div>
+
+            <button class="settings-row-btn" data-panel="quality">
+              <div class="settings-row-left">
+                <span class="settings-icon-box">HD</span>
+                <span class="settings-row-title">Quality</span>
+              </div>
+              <div class="settings-row-right">
+                <span id="val-quality">Auto</span>
+                <span class="chevron">›</span>
+              </div>
+            </button>
+
+            <button class="settings-row-btn" data-panel="audio">
+              <div class="settings-row-left">
+                <span class="settings-icon-box">文A</span>
+                <span class="settings-row-title">Audio</span>
+              </div>
+              <div class="settings-row-right">
+                <span id="val-audio">Original Audio</span>
+                <span class="chevron">›</span>
+              </div>
+            </button>
+
+            <button class="settings-row-btn" data-panel="subtitles">
+              <div class="settings-row-left">
+                <span class="settings-icon-box">CC</span>
+                <span class="settings-row-title">Subtitles</span>
+              </div>
+              <div class="settings-row-right">
+                <span id="val-subtitles">Off</span>
+                <span class="chevron">›</span>
+              </div>
+            </button>
+
+            <div class="settings-divider"></div>
+            <div class="settings-section-label">MEDIA</div>
+
+            <button class="settings-row-btn" data-panel="aspect">
+              <div class="settings-row-left">
+                <span class="settings-icon-box">⛶</span>
+                <span class="settings-row-title">Aspect Ratio</span>
+              </div>
+              <div class="settings-row-right">
+                <span id="val-aspect">Fit</span>
+                <span class="chevron">›</span>
+              </div>
+            </button>
+
+            <button class="settings-row-btn" data-panel="brightness">
+              <div class="settings-row-left">
+                <span class="settings-icon-box">☀</span>
+                <span class="settings-row-title">Brightness</span>
+              </div>
+              <div class="settings-row-right">
+                <span id="val-brightness">100%</span>
+                <span class="chevron">›</span>
+              </div>
+            </button>
+
+            <button class="settings-row-btn" data-action="toggle-mirror">
+              <div class="settings-row-left">
+                <span class="settings-icon-box">⇄</span>
+                <span class="settings-row-title">Mirror</span>
+              </div>
+              <div class="settings-row-right">
+                <span id="val-mirror">Off</span>
+                <span class="chevron">›</span>
+              </div>
+            </button>
+
+            <button class="settings-row-btn" data-action="toggle-pip">
+              <div class="settings-row-left">
+                <span class="settings-icon-box">⧉</span>
+                <span class="settings-row-title">Picture-in-Picture</span>
+              </div>
+              <div class="settings-row-right">
+                <span id="val-pip">Off</span>
+                <span class="chevron">›</span>
+              </div>
+            </button>
+
+            <div class="settings-divider"></div>
+            <div class="settings-section-label">PLAYBACK</div>
+
+            <button class="settings-row-btn" data-panel="speed">
+              <div class="settings-row-left">
+                <span class="settings-icon-box">◔</span>
+                <span class="settings-row-title">Playback Speed</span>
+              </div>
+              <div class="settings-row-right">
+                <span id="val-speed">1x</span>
+                <span class="chevron">›</span>
+              </div>
+            </button>
+          </div>
+        </div>
+
+        <!-- Drill-Down Sub-Panel inside Settings Modal -->
+        <div id="settings-drill-panel" class="hidden">
+          <div class="settings-drill-header">
+            <button id="btn-settings-drill-back" class="drill-back-btn">‹ Back</button>
+            <span id="settings-drill-title" class="settings-drill-title">Select Option</span>
+          </div>
+          <div id="settings-drill-list" class="settings-sections-scroll"></div>
+        </div>
+
+        <div class="settings-footer">
+          <button id="btn-close-settings" class="modal-close-full-btn">Close</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- =================================================================== -->
+    <!-- MODAL 2: EPISODES DRAWER (Matches Screenshot 4)                     -->
+    <!-- =================================================================== -->
+    <div id="modal-episodes-backdrop" class="modal-backdrop hidden">
+      <div class="episodes-modal-card" role="dialog" aria-label="Episodes">
+        <div class="modal-drag-handle"></div>
+
+        <div class="episodes-modal-header">
+          <div class="episodes-header-left">
+            <div class="episodes-header-icon">
+              <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2">
+                <rect x="3" y="7" width="18" height="13" rx="2"></rect>
+                <path d="M6 4h12"></path>
+              </svg>
+            </div>
+            <div>
+              <div class="episodes-header-title">Episodes</div>
+              <div class="episodes-header-subtitle">Select an episode to watch.</div>
+            </div>
+          </div>
+
+          <div class="episodes-header-right">
+            <select id="season-select" class="season-select-dropdown" aria-label="Select Season">
+              <option value="1">Season 1</option>
+              <option value="2">Season 2</option>
+            </select>
+          </div>
+        </div>
+
+        <div id="episodes-grid" class="episodes-grid"></div>
+
+        <div class="episodes-modal-footer">
+          <button id="btn-close-episodes" class="modal-close-full-btn">Close</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- =================================================================== -->
+    <!-- MODAL 3: SERVERS / CLOUD SOURCES MODAL                              -->
+    <!-- =================================================================== -->
+    <div id="modal-servers-backdrop" class="modal-backdrop hidden">
+      <div class="settings-modal-card servers-modal-card" role="dialog" aria-label="Servers">
+        <div class="modal-drag-handle"></div>
+        <div class="settings-header">
+          <div class="settings-title">STREAMING SERVERS</div>
+          <div class="settings-subtitle">Multi-server automatic failover & regional audio routing.</div>
+        </div>
+        <div id="servers-list-container" class="settings-sections-scroll"></div>
+        <div class="settings-footer">
+          <button id="btn-close-servers" class="modal-close-full-btn">Close</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!--LOL_EMBED_CONFIG-->
+  <script src="/js/embed.js"></script>
+</body>
+</html>
