@@ -1,0 +1,78 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<title>Proxy · Stream</title>
+<meta name="description" content="Multi-provider streaming API and player" />
+<link rel="stylesheet" href="/style.css" />
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>▶</text></svg>" />
+</head>
+<body>
+<header class="topbar">
+  <a class="brand" href="/">
+    <span class="logo">▶</span>
+    <span class="brandname">Proxy</span>
+  </a>
+
+  <form class="searchform" id="searchform" autocomplete="off">
+    <input
+      id="search"
+      type="search"
+      placeholder="Search movies, shows, anime…"
+      aria-label="Search"
+    />
+    <button type="submit" aria-label="Search">Search</button>
+  </form>
+
+  <div class="topright">
+    <select id="langfilter" class="mini" title="Preferred audio language" aria-label="Language">
+      <option value="">Any language</option>
+      <option value="en">English</option>
+      <option value="hi">Hindi</option>
+      <option value="ta">Tamil</option>
+      <option value="te">Telugu</option>
+      <option value="ml">Malayalam</option>
+      <option value="kn">Kannada</option>
+      <option value="mr">Marathi</option>
+      <option value="bn">Bengali</option>
+      <option value="pa">Punjabi</option>
+      <option value="ur">Urdu</option>
+      <option value="es">Spanish</option>
+      <option value="fr">French</option>
+      <option value="ja">Japanese</option>
+      <option value="ko">Korean</option>
+      <option value="ar">Arabic</option>
+    </select>
+    <a class="ghost" href="/api/docs" target="_blank" rel="noopener">API</a>
+    <button class="ghost" id="settingsbtn" title="Connection settings">⚙</button>
+  </div>
+</header>
+
+<div id="settings" class="settings hidden">
+  <label>
+    API key
+    <input id="apikey" type="password" placeholder="Only needed if the server requires one" />
+  </label>
+  <p class="hint">Stored in this browser only (localStorage). Sent as <code>x-api-key</code>.</p>
+  <div class="row">
+    <button id="savesettings">Save</button>
+    <button class="ghost" id="closesettings">Close</button>
+  </div>
+</div>
+
+<main id="app">
+  <div class="loading">Loading…</div>
+</main>
+
+<footer class="footer">
+  <span id="providerstatus">—</span>
+  <a href="/openapi.json" target="_blank" rel="noopener">openapi.json</a>
+  <a href="/api/health" target="_blank" rel="noopener">health</a>
+</footer>
+
+<script src="/vendor/hls.min.js"></script>
+<script src="/vendor/dash.min.js"></script>
+<script src="/app.js"></script>
+</body>
+</html>

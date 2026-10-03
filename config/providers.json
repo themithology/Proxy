@@ -1,0 +1,102 @@
+{
+  "version": 1,
+  "providers": [
+    {
+      "id": "archive",
+      "kind": "archive",
+      "name": "Internet Archive",
+      "enabled": true,
+      "priority": 55,
+      "languages": ["en"],
+      "types": ["movie"],
+      "description": "Public-domain and openly licensed film from archive.org. No key required.",
+      "website": "https://archive.org",
+      "options": {
+        "collection": "feature_films",
+        "maxFiles": 3,
+        "rows": 25
+      }
+    },
+    {
+      "id": "youtube",
+      "kind": "youtube",
+      "name": "YouTube",
+      "enabled": true,
+      "priority": 40,
+      "languages": ["*"],
+      "types": ["movie", "series", "anime"],
+      "description": "Official YouTube embeds (trailers, clips, full uploads). Set apiKey or invidiousUrl to enable search.",
+      "website": "https://youtube.com",
+      "options": {
+        "apiKey": "",
+        "invidiousUrl": "",
+        "querySuffix": "trailer",
+        "maxResults": 5
+      }
+    },
+    {
+      "id": "stremio-addon",
+      "kind": "stremio",
+      "name": "Stremio Addon",
+      "enabled": false,
+      "priority": 70,
+      "languages": ["*"],
+      "types": ["movie", "series", "anime"],
+      "description": "Any addon that speaks the Stremio protocol. Set options.manifestUrl to your addon's manifest and enable this provider.",
+      "website": "https://github.com/Stremio/stremio-addon-sdk",
+      "options": {
+        "manifestUrl": "https://your-addon.example.com/manifest.json",
+        "headers": {},
+        "expandMagnet": true
+      }
+    },
+    {
+      "id": "self-hosted",
+      "kind": "direct",
+      "name": "Self-Hosted Library",
+      "enabled": false,
+      "priority": 100,
+      "languages": ["*"],
+      "types": ["movie", "series", "anime"],
+      "description": "Your own CDN / object storage. Use options.sources (array or file) or options.urlTemplate with {imdbId} {tmdbId} {season} {episode} placeholders.",
+      "website": "",
+      "options": {
+        "urlTemplate": "",
+        "sources": [],
+        "file": ""
+      }
+    },
+    {
+      "id": "custom-webextract",
+      "kind": "webextract",
+      "name": "Custom Extractor",
+      "enabled": false,
+      "priority": 60,
+      "languages": ["*"],
+      "types": ["movie", "series"],
+      "description": "Rule-driven extractor for any HTTP source you operate or are authorised to access. See README for the step syntax.",
+      "website": "",
+      "options": {
+        "baseUrl": "",
+        "language": "en",
+        "headers": {},
+        "steps": [
+          {
+            "op": "fetch",
+            "url": "https://example.com/watch/{imdbId}",
+            "as": "body"
+          },
+          {
+            "op": "findUrls",
+            "source": "body",
+            "as": "found"
+          },
+          {
+            "op": "emitFound",
+            "source": "found"
+          }
+        ]
+      }
+    }
+  ]
+}

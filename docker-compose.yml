@@ -1,0 +1,41 @@
+services:
+  proxy:
+    build: .
+    image: proxy:latest
+    container_name: proxy
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    environment:
+      # Point this at the URL clients will actually use. Manifest URLs are
+      # built from it, so getting it wrong breaks playback.
+      PUBLIC_URL: http://localhost:3000
+      NODE_ENV: production
+      LOG_LEVEL: info
+
+      # CHANGE THIS: openssl rand -hex 32
+      PROXY_SECRET: change-me-in-production
+
+      # Leave blank to disable auth. Strongly recommended in production.
+      API_KEY:
+
+      # Optional but recommended: https://www.themoviedb.org/settings/api
+      TMDB_API_KEY:
+
+      CACHE_DRIVER: sqlite
+      CACHE_DIR: /app/data
+      PROVIDERS_CONFIG: /app/config/providers.json
+      RATE_LIMIT_MAX: "600"
+      RATE_LIMIT_WINDOW: "60000"
+    volumes:
+      - ./config:/app/config:ro
+      - proxy-data:/app/data
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:3000/api/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
+
+volumes:
+  proxy-data:
