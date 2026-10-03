@@ -384,6 +384,27 @@ npm run build        # → dist/
 npm start            # run the build
 ```
 
+### Running against a synthetic upstream
+
+With no external network (or no provider credentials) the UI has nothing to
+show. Two commands fix that:
+
+```bash
+npm run fixture                                    # local upstream on :4599
+PROVIDERS_CONFIG=./config/providers.dev.json npm run dev
+```
+
+`config/providers.dev.json` points a `direct` provider and a `webextract`
+provider at that fixture, so you get a populated catalogue, a ranked source
+list, quality/language badges and subtitle tracks — the whole pipeline, no
+internet required. The payloads are synthetic, so the player won't decode
+video, but every request is real: manifests are rewritten, segments are
+proxied and subtitles are transcoded exactly as they are in production.
+
+Switch back to `config/providers.json` (the default) for real sources.
+
+### Tests
+
 The test suite exercises the real pipeline against a fixture upstream
 (`test/fixtures/upstream.ts`) that serves genuine HLS (master + media + AES key
 + fMP4 init), DASH (SegmentTemplate + SegmentList + BaseURL), subtitles in

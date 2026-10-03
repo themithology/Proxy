@@ -1,0 +1,121 @@
+{
+  "version": 1,
+  "_comment": "Development config: points at the local fixture upstream (`npm run fixture`, port 4599) so the whole pipeline can be exercised with no external network. The shipped default is config/providers.json.",
+  "providers": [
+    {
+      "id": "fixture-hls",
+      "kind": "direct",
+      "name": "Fixture HLS",
+      "enabled": true,
+      "priority": 100,
+      "languages": ["en", "hi"],
+      "types": ["movie"],
+      "description": "Local fixture: HLS master + DASH manifest + subtitles.",
+      "options": {
+        "sources": [
+          {
+            "imdbId": "tt9999999",
+            "type": "movie",
+            "title": "The Fixture Protocol",
+            "year": 2026,
+            "url": "http://127.0.0.1:4599/master.m3u8",
+            "quality": "1080p",
+            "language": "en",
+            "subtitles": [
+              { "url": "http://127.0.0.1:4599/subs/hi.srt", "lang": "hi", "label": "Hindi" },
+              { "url": "http://127.0.0.1:4599/subs/en.vtt", "lang": "en", "label": "English" }
+            ]
+          },
+          {
+            "imdbId": "tt9999999",
+            "type": "movie",
+            "title": "The Fixture Protocol",
+            "year": 2026,
+            "url": "http://127.0.0.1:4599/dash/manifest.mpd",
+            "quality": "1080p",
+            "language": "hi"
+          },
+          {
+            "imdbId": "tt9999998",
+            "type": "movie",
+            "title": "Signal Lost",
+            "year": 2025,
+            "url": "http://127.0.0.1:4599/480/index.m3u8",
+            "quality": "480p",
+            "language": "ta"
+          },
+          {
+            "imdbId": "tt9999997",
+            "type": "movie",
+            "title": "Manifest Rewritten",
+            "year": 2024,
+            "url": "http://127.0.0.1:4599/embed.html",
+            "kind": "embed",
+            "quality": "1080p",
+            "language": "en"
+          },
+          {
+            "imdbId": "tt9999996",
+            "type": "movie",
+            "title": "Proxy Lane",
+            "year": 2023,
+            "url": "http://127.0.0.1:4599/movie.mp4",
+            "quality": "720p",
+            "language": "en"
+          },
+          {
+            "imdbId": "tt9999995",
+            "type": "movie",
+            "title": "Base64 Blues",
+            "year": 2022,
+            "url": "http://127.0.0.1:4599/b64.html",
+            "kind": "embed",
+            "language": "en"
+          }
+        ]
+      }
+    },
+    {
+      "id": "fixture-webextract",
+      "kind": "webextract",
+      "name": "Fixture Extractor",
+      "enabled": true,
+      "priority": 50,
+      "languages": ["*"],
+      "types": ["movie"],
+      "description": "Local fixture: rule-driven extraction from a page that hides its media URL.",
+      "options": {
+        "baseUrl": "http://127.0.0.1:4599",
+        "steps": [
+          { "op": "fetch", "url": "http://127.0.0.1:4599/frame.html", "as": "body" },
+          { "op": "findUrls", "source": "body", "as": "found" },
+          { "op": "emitFound", "source": "found" }
+        ]
+      }
+    },
+    {
+      "id": "archive",
+      "kind": "archive",
+      "name": "Internet Archive",
+      "enabled": true,
+      "priority": 55,
+      "languages": ["en"],
+      "types": ["movie"],
+      "description": "Public-domain film. Needs outbound internet (unavailable in some sandboxes).",
+      "website": "https://archive.org",
+      "options": { "collection": "feature_films", "maxFiles": 3, "rows": 25 }
+    },
+    {
+      "id": "youtube",
+      "kind": "youtube",
+      "name": "YouTube",
+      "enabled": true,
+      "priority": 40,
+      "languages": ["*"],
+      "types": ["movie", "series", "anime"],
+      "description": "Official embeds. Set apiKey or invidiousUrl to enable search.",
+      "website": "https://youtube.com",
+      "options": { "apiKey": "", "invidiousUrl": "", "querySuffix": "trailer", "maxResults": 5 }
+    }
+  ]
+}

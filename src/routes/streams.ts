@@ -2,8 +2,10 @@ import type { FastifyInstance } from 'fastify';
 import { registry, type RankOptions } from '../providers/registry.js';
 import { tmdb } from '../metadata/tmdb.js';
 import { parseId, parseLanguages, parseType } from '../util/ids.js';
+import { config } from '../config.js';
 import { AppError } from '../util/errors.js';
 import { buildResolved } from '../stream/playback.js';
+import { currentOrigin } from '../util/origin.js';
 import { cache, ck } from '../store/cache.js';
 import type { MediaType, ResolveQuery, StreamCandidate } from '../providers/types.js';
 
@@ -135,6 +137,9 @@ export async function streamRoutes(app: FastifyInstance): Promise<void> {
         q.resolveEmbeds !== 'false' ? 1 : 0,
         title,
         year ?? '',
+        // Playback URLs bake in the origin, so a response cached under one
+        // hostname must never be replayed to another.
+        config.PUBLIC_URL ? '' : currentOrigin(),
       ].join('|'),
     );
 
