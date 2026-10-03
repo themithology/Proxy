@@ -282,6 +282,22 @@ function startUpstreamMockServer() {
         );
       }
 
+      // Items published without a `year` field only match the unconstrained query.
+      if (u.pathname === '/archive/search-yearless') {
+        const q = u.searchParams.get('q') || '';
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        return res.end(
+          JSON.stringify({
+            response: {
+              numFound: q.includes('year:') ? 0 : 1,
+              docs: q.includes('year:')
+                ? []
+                : [{ identifier: 'the-general-1926', title: 'The General', collection: ['publicmovies'] }]
+            }
+          })
+        );
+      }
+
       if (u.pathname === '/archive/metadata/the-general-1926') {
         res.writeHead(200, { 'Content-Type': 'application/json' });
         return res.end(
@@ -603,6 +619,16 @@ async function runTests() {
     assert.ok(
       archiveRes.json.stream.provenance.sourcePage.includes('the-general-1926'),
       'Provenance must expose the archive.org source page for attribution'
+    );
+
+    // Year-less fallback: items missing `year` metadata must still be discoverable.
+    const searchUrlBackup = config.upstreams.archiveSearchUrl;
+    config.upstreams.archiveSearchUrl = `${mockUpstream.url}/archive/search-yearless`;
+    const yearless = await resolveArchiveServer({ type: 'movie', title: 'The General', releaseYear: 1926 });
+    config.upstreams.archiveSearchUrl = searchUrlBackup;
+    assert.ok(
+      yearless && yearless.server === 'archive',
+      'Items with no year metadata must be found via the unconstrained fallback query'
     );
 
     // Licence gating: a copyrighted title must NOT resolve through the archive source.

@@ -185,11 +185,12 @@ function pickBestItem(docs = [], wanted = {}) {
   return best;
 }
 
-function buildSearchQuery(wanted = {}) {
+function buildSearchQuery(wanted = {}, options = {}) {
+  const { includeYear = true } = options;
   const clauses = ['mediatype:movies'];
   const title = String(wanted.title || '').replace(/["\\]/g, ' ').trim();
   if (title) clauses.push(`title:(${title.split(/\s+/).slice(0, 8).join(' ')})`);
-  if (wanted.year) clauses.push(`year:[${wanted.year - 2} TO ${wanted.year + 3}]`);
+  if (includeYear && wanted.year) clauses.push(`year:[${wanted.year - 2} TO ${wanted.year + 3}]`);
   return clauses.join(' AND ');
 }
 
@@ -213,17 +214,27 @@ async function safeJson(url, headers = {}, timeoutMs = 8000) {
 
 async function searchItems(wanted) {
   const base = (config.upstreams.archiveSearchUrl || 'https://archive.org/advancedsearch.php').replace(/\/$/, '');
-  const params = new URLSearchParams();
-  params.set('q', buildSearchQuery(wanted));
-  for (const field of ['identifier', 'title', 'year', 'date', 'collection', 'licenseurl', 'mediatype']) {
-    params.append('fl[]', field);
-  }
-  params.set('rows', '12');
-  params.set('page', '1');
-  params.set('output', 'json');
 
-  const json = await safeJson(`${base}?${params.toString()}`);
-  const docs = json && json.response && Array.isArray(json.response.docs) ? json.response.docs : [];
+  const runQuery = async (query) => {
+    const params = new URLSearchParams();
+    params.set('q', query);
+    for (const field of ['identifier', 'title', 'year', 'date', 'collection', 'licenseurl', 'mediatype']) {
+      params.append('fl[]', field);
+    }
+    params.set('rows', '12');
+    params.set('page', '1');
+    params.set('output', 'json');
+
+    const json = await safeJson(`${base}?${params.toString()}`);
+    return json && json.response && Array.isArray(json.response.docs) ? json.response.docs : [];
+  };
+
+  // Plenty of public-domain items carry no `year` field, so the year window is
+  // a preference, not a hard filter: retry unconstrained when it matches nothing.
+  let docs = await runQuery(buildSearchQuery(wanted));
+  if (docs.length === 0 && wanted.year) {
+    docs = await runQuery(buildSearchQuery(wanted, { includeYear: false }));
+  }
   return docs;
 }
 

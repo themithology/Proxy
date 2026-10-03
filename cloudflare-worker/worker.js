@@ -1462,24 +1462,34 @@ async function resolveArchiveUpstream(metadata = {}) {
     if (!title) return null;
 
     const searchBase = (runtimeState.upstreams.archiveSearchUrl || 'https://archive.org/advancedsearch.php').replace(/\/$/, '');
-    const params = new URLSearchParams();
-    const clauses = ['mediatype:movies'];
     const safeTitle = String(title).replace(/["\\]/g, ' ').trim();
-    if (safeTitle) clauses.push(`title:(${safeTitle.split(/\s+/).slice(0, 8).join(' ')})`);
-    if (metadata.releaseYear) clauses.push(`year:[${metadata.releaseYear - 2} TO ${metadata.releaseYear + 3}]`);
-    params.set('q', clauses.join(' AND '));
-    for (const field of ['identifier', 'title', 'year', 'date', 'collection', 'licenseurl']) {
-      params.append('fl[]', field);
-    }
-    params.set('rows', '12');
-    params.set('output', 'json');
 
-    const searchRes = await fetch(`${searchBase}?${params.toString()}`, {
-      headers: { Accept: 'application/json', 'User-Agent': USER_AGENT }
-    });
-    if (!searchRes.ok) return null;
-    const searchJson = await searchRes.json().catch(() => null);
-    const docs = searchJson?.response?.docs || [];
+    const runArchiveQuery = async (includeYear) => {
+      const params = new URLSearchParams();
+      const clauses = ['mediatype:movies'];
+      if (safeTitle) clauses.push(`title:(${safeTitle.split(/\s+/).slice(0, 8).join(' ')})`);
+      if (includeYear && metadata.releaseYear) {
+        clauses.push(`year:[${metadata.releaseYear - 2} TO ${metadata.releaseYear + 3}]`);
+      }
+      params.set('q', clauses.join(' AND '));
+      for (const field of ['identifier', 'title', 'year', 'date', 'collection', 'licenseurl']) {
+        params.append('fl[]', field);
+      }
+      params.set('rows', '12');
+      params.set('output', 'json');
+
+      const res = await fetch(`${searchBase}?${params.toString()}`, {
+        headers: { Accept: 'application/json', 'User-Agent': USER_AGENT }
+      });
+      if (!res.ok) return [];
+      const json = await res.json().catch(() => null);
+      return json?.response?.docs || [];
+    };
+
+    // The year window is a preference, not a filter: many public-domain items
+    // carry no `year` field at all, so fall back to an unconstrained query.
+    let docs = await runArchiveQuery(true);
+    if (docs.length === 0 && metadata.releaseYear) docs = await runArchiveQuery(false);
 
     let best = null;
     for (const doc of docs) {
