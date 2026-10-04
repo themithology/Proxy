@@ -19,6 +19,7 @@
 
 const fs = require('fs');
 const path = require('path');
+const crypto = require('crypto');
 
 const outIdx = process.argv.indexOf('--out');
 const OUT = outIdx !== -1 && process.argv[outIdx + 1] ? process.argv[outIdx + 1] : null;
@@ -96,6 +97,117 @@ function summarizeResolve(resolved) {
   };
 }
 
+/**
+ * Direct CastleTV probe used when the resolver reports a miss, so the report
+ * answers "did the provider not have it, or did the identity gate reject it?".
+ * Mirrors the resolver's crypto (AES-128-CBC, key = b64(seed)+"T!BgJB").
+ */
+const CASTLE_BASE = (process.env.CASTLETV_BASE_URL || 'https://api.hlowb.com').replace(/\/$/, '');
+
+function castleKeyFromSeed(seedB64) {
+  let km = Buffer.from(String(seedB64 || ''), 'base64');
+  km = Buffer.concat([km, Buffer.from('T!BgJB', 'utf8')]);
+  if (km.length > 16) km = km.subarray(0, 16);
+  else if (km.length < 16) km = Buffer.concat([km, Buffer.alloc(16 - km.length, 0)]);
+  return km;
+}
+
+function castleDecrypt(dataB64, key) {
+  const raw = Buffer.from(String(dataB64 || '').trim(), 'base64');
+  const d = crypto.createDecipheriv('aes-128-cbc', key, key);
+  try {
+    return Buffer.concat([d.update(raw), d.final()]).toString('utf8');
+  } catch {
+    const d2 = crypto.createDecipheriv('aes-128-cbc', key, key);
+    d2.setAutoPadding(false);
+    return Buffer.concat([d2.update(raw), d2.final()]).toString('utf8');
+  }
+}
+
+async function castleKey() {
+  const res = await fetch(`${CASTLE_BASE}/v0.1/system/getSecurityKey/1?channel=IndiaA&clientType=1&lang=en`, {
+    headers: { 'User-Agent': 'Mozilla/5.0', Accept: 'application/json' }
+  });
+  if (!res.ok) throw new Error(`castle key HTTP ${res.status}`);
+  const json = await res.json();
+  return castleKeyFromSeed(json.data);
+}
+
+async function castleSearch(keyword, key) {
+  const params = new URLSearchParams({
+    channel: 'IndiaA',
+    clientType: '1',
+    keyword,
+    lang: 'en',
+    mode: '1',
+    packageName: 'com.external.castle',
+    page: '1',
+    size: '30'
+  });
+  const res = await fetch(`${CASTLE_BASE}/film-api/v1.1.0/movie/searchByKeyword?${params}`, {
+    headers: { 'User-Agent': 'Mozilla/5.0', Accept: 'application/json', Referer: `${CASTLE_BASE}/` }
+  });
+  if (!res.ok) return { error: `HTTP ${res.status}` };
+  try {
+    const json = JSON.parse(castleDecrypt(await res.text(), key));
+    return { rows: json?.data?.rows || [] };
+  } catch (error) {
+    return { error: `decrypt/parse: ${error.message}` };
+  }
+}
+
+async function castleDiag(metadata, identity) {
+  const out = { base: CASTLE_BASE, keywords: [], verdicts: [] };
+  let key;
+  try {
+    key = await castleKey();
+  } catch (error) {
+    out.error = `security key: ${error.message}`;
+    return out;
+  }
+  const keywords = [];
+  const push = (v) => {
+    const t = String(v || '').trim();
+    if (t && !keywords.includes(t)) keywords.push(t);
+  };
+  push(metadata.releaseYear ? `${metadata.title} ${metadata.releaseYear}` : metadata.title);
+  push(metadata.title);
+  push(metadata.originalTitle);
+  (metadata.alternativeTitles || []).slice(0, 2).forEach((t) => push(t));
+
+  const seen = new Set();
+  for (const keyword of keywords.slice(0, 4)) {
+    const { rows, error } = await castleSearch(keyword, key);
+    out.keywords.push({ keyword, rows: rows ? rows.length : 0, error: error || null });
+    (rows || []).forEach((row) => {
+      const id = String(row.id || row.redirectId || '');
+      if (!id || seen.has(id)) return;
+      seen.add(id);
+      out.verdicts.push({
+        id,
+        title: row.title || row.name,
+        year: row.publishTime || row.releaseDate || null,
+        movieType: row.movieType,
+        movieTypeName: row.movieTypeName,
+        seasonDescription: row.seasonDescription || null,
+        lastEpisodeCount: row.lastEpisodeCount != null ? row.lastEpisodeCount : null,
+        languages: row.languages || [],
+        tags: row.tags || [],
+        rating: row.rating
+      });
+    });
+  }
+
+  // Score every collected row with the production identity gate so the report
+  // shows exactly why each candidate was accepted or rejected.
+  const { pickIdentityMatch } = identity;
+  const picked = pickIdentityMatch(out.verdicts, metadata, { preferredAudio: 'hi' });
+  out.picked = picked.winner ? picked.winner.id : null;
+  out.ranked = (picked.ranked || []).slice(0, 8);
+  out.rejected = (picked.rejected || []).slice(0, 8);
+  return out;
+}
+
 async function main() {
   for (const entry of TITLES) {
     const key = `${entry.type}/${entry.id}`;
@@ -134,6 +246,15 @@ async function main() {
       record.hindiServer = summarizeResolve(resolved);
     } catch (err) {
       record.hindiServer = { error: err.message };
+    }
+
+    const castletvFailed = !record.catalog || !(record.catalog.providers || []).some((p) => p.id === 'castletv' && p.ok);
+    if (castletvFailed) {
+      try {
+        record.castletvDiagnostics = await castleDiag(metadata, require('../src/services/identity'));
+      } catch (err) {
+        record.castletvDiagnostics = { error: err.message };
+      }
     }
   }
 
