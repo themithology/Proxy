@@ -292,7 +292,12 @@ router.get('/resolve/:type/:tmdbId', async (req, res) => {
         servers_no_link: 'Upstream has no stream link for this title on this server.',
         aes_decrypt_failed: 'Stream link decryption failed (ZXC_AES_KEY rotated).',
         upstream_timeout: 'Timed out talking to the upstream provider.',
-        upstream_exception: 'Unhandled error contacting the upstream provider.'
+        upstream_exception: 'Unhandled error contacting the upstream provider.',
+        ursa_metadata_missing:
+          'TMDB metadata could not be resolved, so the 4K sources had no title to search — no source was probed.',
+        ursa_all_4k_sources_exhausted:
+          'Neither 4KHDHub nor MoviesDrive 4K returned a verified playable stream; the player can continue to the next server.',
+        ursa_upstream_timeout: 'The 4K source lookups exceeded their resolve budget before producing a verified stream.'
       };
       const humanReason = firstFailed
         ? reasonMap[firstFailed.reason] || firstFailed.reason
@@ -532,8 +537,7 @@ router.get('/debug/andromeda/:type/:tmdbId', requireAdminAuth, async (req, res) 
 
 /**
  * GET /api/debug/ursa/:type/:tmdbId (and /api/debug/4k/:type/:tmdbId)
- * Owner-only diagnostic for Server 2 (Ursa 4K UHD Multi-Audio cascade:
- * 4KHDHub -> MoviesDrive 4K -> HiCine 4K -> DahmerMovies 4K).
+ * Owner-only diagnostic for Server 3 (Ursa: 4KHDHub + MoviesDrive 4K fallback).
  */
 router.get(['/debug/ursa/:type/:tmdbId', '/debug/4k/:type/:tmdbId'], requireAdminAuth, async (req, res) => {
   const { type, tmdbId } = req.params;
@@ -553,8 +557,6 @@ router.get(['/debug/ursa/:type/:tmdbId', '/debug/4k/:type/:tmdbId'], requireAdmi
       upstream: {
         fourkhdhubBase: config.upstreams.fourkhdhubBase,
         moviesdriveBase: config.upstreams.moviesdriveBase,
-        hicineApiBase: config.upstreams.hicineApiBase,
-        dahmerBase: config.upstreams.dahmerBase,
         vidsrcDataUrl: config.upstreams.vidsrcDataUrl
       },
       result

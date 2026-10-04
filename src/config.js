@@ -103,7 +103,7 @@ const config = {
       .map((s) => s.trim().replace(/\/$/, ''))
       .filter(Boolean),
 
-    // Ursa (4K UHD Multi-Audio Server) 4-Tier Cascade Upstreams
+    // Ursa uses MoviesDrive + 4KHDHub; remaining 4K hosts serve optional dub lookups.
     fourkhdhubBase: process.env.FOURKHDHUB_BASE_URL || 'https://4khdhub.one',
     fourkhdhubHosts: (
       process.env.FOURKHDHUB_HOSTS ||

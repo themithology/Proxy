@@ -186,24 +186,26 @@ To replace the deprecated VidStuck upstream, Server Andromeda uses a resilient c
 3. **Clean Waterfall Failover: Server 3 (Ursa / 4K UHD)**
    - If both internal Andromeda tiers return no playable streams for a given title, Andromeda cleanly cascades to the next server in the shared priority waterfall.
 
-### Server 3 — Ursa (`?server=ursa` / `?server=4k`) 4-Tier 4K UHD Multi-Audio Architecture
+### Server 3 — Ursa (`?server=ursa` / `?server=4k`) 4K UHD
 
-Server 3 (`ursa`, also accessible via `?server=4k`) delivers true **2160p (4K UHD)** streams with **Multi-Audio / Dual-Audio** prioritized (and Original Audio supported) across a 4-tier cascade:
+Server 3 uses a small sequential resolver with **two sources, not four**:
+MoviesDrive 4K first for movies (the live-probed Dune link was responsive),
+and 4KHDHub first for TV. Each has the other as its single fallback. A source
+must unroll to a direct media URL and pass the playability check; if both miss,
+the normal server waterfall takes over. Lower-resolution quality links remain
+available for playback fallback.
 
-1. **Priority 1: 4KHDHub (`4khdhub.one` + Dynamic Domain Discovery)**
-   - **Coverage:** Dedicated 2160p UHD BluRay REMUX, DV/HDR10, and 4K WEB-DL releases with Dual/Multi-Audio (`[Hindi DDP 5.1 + English TrueHD Atmos 7.1]`, Tamil/Telugu/Multi-Audio) plus 1080p backup qualities.
-   - **Protocol:** Dynamic domain discovery (`urls.json` + mirror pool), `.download-item` / `.episode-download-item` extraction, 3-chain Base64 + ROT13 redirector decoding (`b64 -> b64 -> rot13 -> b64 -> JSON.o -> b64`), HubDrive hop, and HubCloud unrolling to direct R2 / FSL / workers.dev CDN URLs.
+The latest live probe confirmed direct 206 media for Dune via MoviesDrive and
+for Fight Club and Arcane via 4KHDHub. Dune's 4KHDHub Google mirror timed out
+in the independent range probe, which is why movie resolution prefers
+MoviesDrive. The Worker does not transcode, so MKV/HEVC playback still depends
+on the browser/device.
 
-2. **Priority 2: MoviesDrive 4K (`new5.moviesdrive.christmas` + Typesense IMDb API)**
-   - **Coverage:** Fast Typesense JSON search (`/search.php?q=<imdbId>&page=1`) indexing 2160p 4K SDR/HDR Dual-Audio (`[Hindi + English]`) and Multi-Audio releases.
-   - **Protocol:** Exact `imdb_id` / title matching, `<h5>` quality block parsing, `mdrive.lol/archive/...` unpacking, and HubCloud generator unrolling to direct 2160p CDN streams.
-
-3. **Priority 3: HiCine 4K UHD (`api.hicine.sbs`)**
-   - **Coverage:** Extracts `[2160P]` / `4K` SDR & DV HDR Dual-Audio streams from HiCine's catalog (which Server 2 Centaurus skips in favor of mobile-first 720p x264) while retaining 1080p/720p backup rungs in `qualities`.
-   - **Protocol:** Parallel `vcloud` worker token resolution (`ten`, `fsl2`, `fsl`, `r2`) and HubCloud unrolling.
-
-4. **Priority 4: DahmerMovies 4K (`a.111477.xyz`)**
-   - **Coverage:** Direct open-directory 2160p HDR/SDR `.mkv`/`.mp4` streams (`/movies/<Title> (<Year>)/` and `/tvs/<Title>/Season <NN>/`) with Original and Multi-Audio tracks.
+**Honest metadata failure (`ursa_metadata_missing`).** Both sources search by
+title. If TMDB metadata has no title, Ursa returns
+`reason: ursa_metadata_missing` with a `metadata_missing` diagnostic step
+instead of claiming a provider was probed. The Worker retries TMDB once and
+uses the VidStuck TMDB proxy as a fallback.
 
 ### Server 4 — Hamster Wheel (`?server=hamster`) Multi-Language OMSS Cascade
 

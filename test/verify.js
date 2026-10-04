@@ -139,17 +139,6 @@ async function verifyPayloadLinksOneByOne(label, payload, requestLink) {
  */
 function startUpstreamMockServer() {
   return new Promise((resolve) => {
-    const metrics = { activeUrsaTierRequests: 0, peakUrsaTierRequests: 0 };
-    const delayParallelUrsaTier = (marker, response, respond) => {
-      if (!/ursa-parallel-test/i.test(String(marker || ''))) return false;
-      metrics.activeUrsaTierRequests += 1;
-      metrics.peakUrsaTierRequests = Math.max(metrics.peakUrsaTierRequests, metrics.activeUrsaTierRequests);
-      setTimeout(() => {
-        metrics.activeUrsaTierRequests -= 1;
-        if (!response.destroyed && !response.writableEnded) respond();
-      }, 180);
-      return true;
-    };
     const mockSrv = http.createServer((req, res) => {
       const u = new URL(req.url, `http://${req.headers.host}`);
       const mockOrigin = `http://${req.headers.host}`;
@@ -222,36 +211,23 @@ function startUpstreamMockServer() {
         );
       }
 
-      if (u.pathname === '/tmdb/movie/555555') {
-        res.writeHead(200, { 'Content-Type': 'application/json' });
-        return res.end(JSON.stringify({
-          id: 555555,
-          title: 'ursa-parallel-test',
-          release_date: '2024-01-01',
-          runtime: 100,
-          genres: [],
-          external_ids: {}
-        }));
-      }
-
-      // Worker-side fixture metadata forces the 4K resolver through Ursa tiers 2–4.
-      const workerTierMovieFixtures = {
-        '/tmdb/movie/555551': { title: 'fail-4khdhub Dune: Part Two', imdbId: 'tt15239678' },
-        '/tmdb/movie/555552': { title: 'fail-4khdhub fail-moviesdrive Dune: Part Two', imdbId: 'fail-moviesdrive' },
-        '/tmdb/movie/555553': { title: 'fail-4khdhub fail-moviesdrive fail-hicine4k Dune: Part Two', imdbId: 'fail-moviesdrive' }
+      // Worker-side fixture metadata forces a 4KHDHub miss for the fallback test.
+      const workerUrsaFixtures = {
+        '/tmdb/movie/555554': { title: 'fail-moviesdrive Dune: Part Two', imdbId: 'fail-moviesdrive' },
+        '/tmdb/movie/555555': { title: '4k-cascade-fail-all', imdbId: '4k-cascade-fail-all' }
       };
-      const workerTierFixture = workerTierMovieFixtures[u.pathname];
-      if (workerTierFixture) {
+      const workerUrsaFixture = workerUrsaFixtures[u.pathname];
+      if (workerUrsaFixture) {
         const id = Number(u.pathname.split('/').pop());
         res.writeHead(200, { 'Content-Type': 'application/json' });
         return res.end(JSON.stringify({
           id,
-          title: workerTierFixture.title,
+          title: workerUrsaFixture.title,
           release_date: '2024-02-27',
           runtime: 167,
           genres: [{ id: 878, name: 'Science Fiction' }],
-          imdb_id: workerTierFixture.imdbId,
-          external_ids: { imdb_id: workerTierFixture.imdbId }
+          imdb_id: workerUrsaFixture.imdbId,
+          external_ids: { imdb_id: workerUrsaFixture.imdbId }
         }));
       }
 
@@ -760,10 +736,6 @@ function startUpstreamMockServer() {
       // 12a. 4KHDHub Mock Upstream (/4khdhub/...)
       if (u.pathname === '/4khdhub/' || u.pathname === '/4khdhub') {
         const sQuery = (u.searchParams.get('s') || '').toLowerCase();
-        if (delayParallelUrsaTier(sQuery, res, () => {
-          res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
-          res.end('<html><body><div class="card-grid"></div></body></html>');
-        })) return;
         if (sQuery.includes('fail-4khdhub') || sQuery.includes('4k-cascade-fail-all') || sQuery.includes('cascade-test-fail-all')) {
           res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
           return res.end('<html><body><div class="card-grid"></div></body></html>');
@@ -853,10 +825,6 @@ function startUpstreamMockServer() {
       // 12b. MoviesDrive 4K Mock Upstream (/moviesdrive/... & /mdrive/archive/...)
       if (u.pathname === '/moviesdrive/search.php') {
         const q = (u.searchParams.get('q') || '').toLowerCase();
-        if (delayParallelUrsaTier(q, res, () => {
-          res.writeHead(200, { 'Content-Type': 'application/json' });
-          res.end(JSON.stringify({ found: 0, hits: [] }));
-        })) return;
         if (q.includes('fail-moviesdrive') || q.includes('4k-cascade-fail-all') || q.includes('cascade-test-fail-all')) {
           res.writeHead(200, { 'Content-Type': 'application/json' });
           return res.end(JSON.stringify({ found: 0, hits: [] }));
@@ -902,10 +870,6 @@ function startUpstreamMockServer() {
       // 12c. HiCine 4K Mock Upstream (/hicine4k/...)
       if (u.pathname.startsWith('/hicine4k/api/search/')) {
         const searchTitle = decodeURIComponent(u.pathname.split('/').pop() || '').toLowerCase();
-        if (delayParallelUrsaTier(searchTitle, res, () => {
-          res.writeHead(200, { 'Content-Type': 'application/json' });
-          res.end(JSON.stringify([]));
-        })) return;
         if (searchTitle.includes('fail-hicine4k') || searchTitle.includes('4k-cascade-fail-all') || searchTitle.includes('cascade-test-fail-all')) {
           res.writeHead(200, { 'Content-Type': 'application/json' });
           return res.end(JSON.stringify([]));
@@ -937,10 +901,6 @@ function startUpstreamMockServer() {
       // 12d. DahmerMovies 4K Open Directory Mock Upstream (/dahmer/...)
       if (u.pathname.startsWith('/dahmer/movies/')) {
         const decodedPath = decodeURIComponent(u.pathname).toLowerCase();
-        if (delayParallelUrsaTier(decodedPath, res, () => {
-          res.writeHead(404);
-          res.end('Not found');
-        })) return;
         if (decodedPath.includes('fail-dahmer') || decodedPath.includes('4k-cascade-fail-all') || decodedPath.includes('cascade-test-fail-all')) {
           res.writeHead(404);
           return res.end('Not found');
@@ -967,8 +927,7 @@ function startUpstreamMockServer() {
       const addr = mockSrv.address();
       resolve({
         server: mockSrv,
-        url: `http://127.0.0.1:${addr.port}`,
-        metrics
+        url: `http://127.0.0.1:${addr.port}`
       });
     });
   });
@@ -2394,8 +2353,8 @@ async function runTests() {
     }
     console.log('  ✔ Passed CastleTV, NetMirror & Server 2 Ursa failover waterfall tests.');
 
-    // 12. Server 2 (Ursa / 4K UHD • Multi-Audio) 4-Tier Architecture & Waterfall Failover
-    console.log('[12/12] Testing Server Ursa (4K UHD • Multi-Audio) 4-Tier Architecture & Waterfall Failover...');
+    // 12. Server 3 (Ursa / 4K UHD • Multi-Audio) 4KHDHub + one MoviesDrive fallback
+    console.log('[12/12] Testing Server Ursa (4K UHD • Multi-Audio) two-source resolution...');
     const origFourkhdhubBase = config.upstreams.fourkhdhubBase;
     const origMoviesdriveBase = config.upstreams.moviesdriveBase;
     const origHicineBase = config.upstreams.hicineApiBase;
@@ -2407,7 +2366,7 @@ async function runTests() {
       config.upstreams.moviesdriveBase = `${mockUpstream.url}/moviesdrive`;
       config.upstreams.hicineApiBase = `${mockUpstream.url}/hicine4k`;
       config.upstreams.dahmerBase = `${mockUpstream.url}/dahmer`;
-      config.upstreams.vidsrcDataUrl = ''; // Disable VidSrc mock so pure 4-tier 4K cascade is exercised
+      config.upstreams.vidsrcDataUrl = ''; // Disable the local test-only VidSrc fallback.
       cache.store.clear();
 
       // 12a. Unit Test: 4KHDHub Redirector Decoder (b64 -> b64 -> rot13 -> b64 -> JSON.o -> b64)
@@ -2421,7 +2380,7 @@ async function runTests() {
       assert.ok(decodedRedirect, 'decode4khdhubRedirectHtml must decode 4KHDHub redirector HTML');
       assert.strictEqual(decodedRedirect.url, targetUrl, 'Decoded 4KHDHub redirect URL must match original HubCloud target');
 
-      // 12b. Tier 1: 4KHDHub Sub-resolver (2160p BluRay REMUX Dual-Audio + 1080p backup)
+      // 12b. Server 3's 4KHDHub resolver (2160p + lower-quality fallbacks)
       const hub4kRes = await resolve4khdhub(
         { title: 'Dune: Part Two', releaseYear: 2024, type: 'movie' },
         'hi'
@@ -2458,7 +2417,8 @@ async function runTests() {
         return httpRequest(parsed.origin, `${parsed.pathname}${parsed.search}`, { headers: { Range: 'bytes=0-64' } });
       });
 
-      // 12c. Tier 2: MoviesDrive 4K Sub-resolver (Typesense IMDb API + mdrive archive + HubCloud unroll)
+      // 12c. MoviesDrive 4K provider resolver (retained for the Hindi dub deep
+      // probe in /api/dubs?deep=1; no longer part of the Server 3 cascade)
       const md4kRes = await resolveMoviesdrive4k(
         {
           title: 'Dune: Part Two',
@@ -2478,7 +2438,7 @@ async function runTests() {
         return httpRequest(parsed.origin, `${parsed.pathname}${parsed.search}`, { headers: { Range: 'bytes=0-64' } });
       });
 
-      // 12d. Tier 3: HiCine 4K UHD Sub-resolver (prioritizes [2160P] entry at bottom of links)
+      // 12d. HiCine provider resolver (retained for Node's optional Hindi dub inventory)
       const hc4kRes = await resolveHicine4k(
         { title: 'Dune: Part Two', releaseYear: 2024, type: 'movie' },
         'hi'
@@ -2493,7 +2453,7 @@ async function runTests() {
         return httpRequest(parsed.origin, `${parsed.pathname}${parsed.search}`, { headers: { Range: 'bytes=0-64' } });
       });
 
-      // 12e. Tier 4: DahmerMovies 4K Sub-resolver (open directory 2160p Multi-Audio MKV)
+      // 12e. DahmerMovies provider resolver (retained for Node's optional Hindi dub inventory)
       const dahmerRes = await resolveDahmer4k(
         { title: 'Dune: Part Two', releaseYear: 2024, type: 'movie' },
         'en'
@@ -2508,39 +2468,43 @@ async function runTests() {
         return httpRequest(parsed.origin, `${parsed.pathname}${parsed.search}`, { headers: { Range: 'bytes=0-64' } });
       });
 
-      // 12f. Ursa Multi-Tier Internal Cascading (Tier 1 -> Tier 2 -> Tier 3 -> Tier 4 -> Exhaustion)
+      // 12f. Ursa's short sequential path chooses a responsive source first.
       const ursaT1 = await resolveUrsaServer({
         title: 'Dune: Part Two',
         releaseYear: 2024,
         type: 'movie',
         externalIds: { imdb_id: 'tt15239678' }
       });
-      assert.strictEqual(ursaT1.tier, '4khdhub', 'Tier 1 must be 4KHDHub');
-      assert.strictEqual(ursaT1.diag.selectedTier, '4khdhub');
+      assert.strictEqual(ursaT1.tier, 'moviesdrive4k', 'Movies should try the responsive MoviesDrive source first');
+      assert.strictEqual(ursaT1.diag.selectedTier, 'moviesdrive4k');
+      assert.ok(
+        ursaT1.diag.steps.some((s) => s.step === 'moviesdrive4k_attempt'),
+        'diag must record the moviesdrive4k_attempt step'
+      );
 
-      const ursaT2 = await resolveUrsaServer({
-        title: 'fail-4khdhub Dune: Part Two',
-        releaseYear: 2024,
-        type: 'movie',
-        externalIds: { imdb_id: 'tt15239678' }
-      });
-      assert.strictEqual(ursaT2.tier, 'moviesdrive4k', 'Tier 2 must be MoviesDrive 4K when Tier 1 misses');
-
-      const ursaT3 = await resolveUrsaServer({
-        title: 'fail-4khdhub fail-moviesdrive Dune: Part Two',
+      // When MoviesDrive misses for a movie, 4KHDHub supplies the one fallback.
+      const ursaMiss = await resolveUrsaServer({
+        title: 'fail-moviesdrive Dune: Part Two',
         releaseYear: 2024,
         type: 'movie',
         externalIds: { imdb_id: 'fail-moviesdrive' }
       });
-      assert.strictEqual(ursaT3.tier, 'hicine4k', 'Tier 3 must be HiCine 4K when Tiers 1 & 2 miss');
-
-      const ursaT4 = await resolveUrsaServer({
-        title: 'fail-4khdhub fail-moviesdrive fail-hicine4k Dune: Part Two',
-        releaseYear: 2024,
-        type: 'movie',
-        externalIds: { imdb_id: 'fail-moviesdrive' }
-      });
-      assert.strictEqual(ursaT4.tier, 'dahmer4k', 'Tier 4 must be DahmerMovies 4K when Tiers 1–3 miss');
+      assert.strictEqual(ursaMiss.ok, true, '4KHDHub must recover a MoviesDrive miss');
+      assert.strictEqual(ursaMiss.tier, '4khdhub');
+      assert.strictEqual(ursaMiss.diag.selectedTier, '4khdhub');
+      assert.ok(
+        ursaMiss.diag.steps.some((s) => s.step === 'moviesdrive4k_failed'),
+        'diag must record the MoviesDrive miss'
+      );
+      assert.ok(
+        ursaMiss.diag.steps.some((s) => s.step === '4khdhub_success'),
+        'diag must record the 4KHDHub fallback success'
+      );
+      assert.deepStrictEqual(
+        ursaMiss.diag.steps.filter((s) => /_attempt$/.test(s.step)).map((s) => s.step),
+        ['moviesdrive4k_attempt', '4khdhub_attempt'],
+        'Server 3 must try only the primary and its one fallback'
+      );
 
       const ursaExhausted = await resolveUrsaServer({
         title: '4k-cascade-fail-all',
@@ -2550,14 +2514,30 @@ async function runTests() {
       });
       assert.strictEqual(ursaExhausted.ok, false);
       assert.strictEqual(ursaExhausted.reason, 'ursa_all_4k_sources_exhausted');
+      assert.deepStrictEqual(
+        ursaExhausted.diag.steps.filter((s) => /_attempt$/.test(s.step)).map((s) => s.step),
+        ['moviesdrive4k_attempt', '4khdhub_attempt'],
+        'Total exhaustion must represent both source attempts accurately'
+      );
 
-      // All four independent Ursa tiers should be in flight together rather
-      // than adding their provider latencies serially.
-      mockUpstream.metrics.peakUrsaTierRequests = 0;
-      await resolveUrsaServer({ title: 'ursa-parallel-test', type: 'movie' });
+      // 12f-meta. Missing metadata must fail fast and honestly.
+      // When TMDB resolution produced no title, neither search-by-title
+      // source can run. Report ursa_metadata_missing and probe nothing rather
+      // than pretending both providers ran and found nothing.
+      const ursaNoMeta = await resolveUrsaServer({ title: null, type: 'movie', tmdbId: 999999 }, 'ursa', '');
+      assert.strictEqual(ursaNoMeta.ok, false, 'Ursa must fail when metadata has no title');
+      assert.strictEqual(
+        ursaNoMeta.reason,
+        'ursa_metadata_missing',
+        'Missing title must surface as ursa_metadata_missing, not a fake exhaustion'
+      );
       assert.ok(
-        mockUpstream.metrics.peakUrsaTierRequests >= 3,
-        `Ursa provider requests must overlap (observed peak ${mockUpstream.metrics.peakUrsaTierRequests})`
+        ursaNoMeta.diag && ursaNoMeta.diag.steps.some((s) => s.step === 'metadata_missing'),
+        'diag must record the metadata_missing step'
+      );
+      assert.ok(
+        !ursaNoMeta.diag.steps.some((s) => /_attempt$/.test(s.step)),
+        'No 4K provider may be attempted when the title is missing'
       );
 
       // 12g. Express HTTP API: ?server=4k alias & /api/debug/4k/:type/:tmdbId diagnostic route
@@ -2565,7 +2545,7 @@ async function runTests() {
       assert.strictEqual(http4kRes.status, 200);
       assert.strictEqual(http4kRes.json.ok, true);
       assert.strictEqual(http4kRes.json.stream.server, 'ursa', '?server=4k must resolve Ursa 4K server');
-      assert.strictEqual(http4kRes.json.stream.tier, '4khdhub');
+      assert.strictEqual(http4kRes.json.stream.tier, 'moviesdrive4k');
       assert.strictEqual(http4kRes.json.stream.qualities[0].height, 2160);
 
       const dbg4kRes = await httpRequest(
@@ -2574,15 +2554,14 @@ async function runTests() {
       );
       assert.strictEqual(dbg4kRes.status, 200);
       assert.strictEqual(dbg4kRes.json.ok, true);
-      assert.strictEqual(dbg4kRes.json.result.tier, '4khdhub');
+      assert.strictEqual(dbg4kRes.json.result.tier, 'moviesdrive4k');
       assert.strictEqual(dbg4kRes.json.upstream.fourkhdhubBase, `${mockUpstream.url}/4khdhub`);
+      assert.strictEqual(dbg4kRes.json.upstream.moviesdriveBase, `${mockUpstream.url}/moviesdrive`);
 
-      // 12h. Cloudflare Worker: ?server=4k & ?server=ursa 4-Tier Resolution + Debug Endpoint
+      // 12h. Cloudflare Worker: ?server=4k / ?server=ursa two-source path + debug endpoint.
       const worker4kEnv = {
         FOURKHDHUB_BASE_URL: `${mockUpstream.url}/4khdhub`,
         MOVIESDRIVE_BASE_URL: `${mockUpstream.url}/moviesdrive`,
-        HICINE_API_BASE: `${mockUpstream.url}/hicine4k`,
-        DAHMER_BASE_URL: `${mockUpstream.url}/dahmer`,
         VIDSRC_DATA_URL: '',
         TMDB_BASE_URL: `${mockUpstream.url}/tmdb`
       };
@@ -2595,10 +2574,14 @@ async function runTests() {
       const cf4kJson = await cf4kRes.json();
       assert.strictEqual(cf4kJson.ok, true);
       assert.strictEqual(cf4kJson.stream.server, 'ursa');
-      assert.strictEqual(cf4kJson.stream.tier, '4khdhub');
-      assert.strictEqual(cf4kJson.stream.diag.selectedTier, '4khdhub');
+      assert.strictEqual(cf4kJson.stream.tier, 'moviesdrive4k');
+      assert.strictEqual(cf4kJson.stream.diag.selectedTier, 'moviesdrive4k');
       assert.strictEqual(cf4kJson.stream.qualities[0].height, 2160);
-      assert.ok(cf4kJson.stream.rawUrl.endsWith('/cdn/4k/dune-2160p-webdl.mkv'), 'Worker 4K parsing must follow base64 pages.dev wrappers and score the WEB-DL above REMUX');
+      assert.ok(
+        cf4kJson.stream.qualities.some((quality) => quality.height === 1080),
+        'Worker Server 3 must expose the lower-resolution fallback when available'
+      );
+      assert.ok(cf4kJson.stream.rawUrl.endsWith('/cdn/4k/mdrive-dune-2160p-4k.mkv'), 'Worker movie resolution must select the responsive MoviesDrive 2160p file');
       await verifyPayloadLinksOneByOne('Worker Ursa', cf4kJson.stream, async (link) => {
         const parsed = new URL(link, 'http://player.test');
         if (parsed.origin === 'http://player.test') {
@@ -2607,44 +2590,42 @@ async function runTests() {
         return httpRequest(parsed.origin, `${parsed.pathname}${parsed.search}`, { headers: { Range: 'bytes=0-64' } });
       });
 
-      // Exercise each Worker-side backup provider independently, then request
-      // every selected stream, quality, and mirror URL one at a time.
-      const workerFallbackTiers = [
-        { id: 555551, tier: 'moviesdrive4k', label: 'Worker MoviesDrive' },
-        { id: 555552, tier: 'hicine4k', label: 'Worker HiCine' },
-        { id: 555553, tier: 'dahmer4k', label: 'Worker DahmerMovies' }
-      ];
-      for (const fixture of workerFallbackTiers) {
-        const fallbackResponse = await callWorker(
-          `http://player.test/api/debug/4k/movie/${fixture.id}`,
-          worker4kEnv
-        );
-        assert.strictEqual(fallbackResponse.status, 200, `${fixture.label} debug request must succeed`);
-        const fallbackJson = await fallbackResponse.json();
-        assert.strictEqual(fallbackJson.ok, true, `${fixture.label} must produce a stream`);
-        assert.strictEqual(
-          fallbackJson.result.tier,
-          fixture.tier,
-          `${fixture.label} must be selected at its tier: ${JSON.stringify(fallbackJson.result.diag?.steps || [])}`
-        );
-        await verifyPayloadLinksOneByOne(fixture.label, fallbackJson.result, async (link) => {
-          const parsed = new URL(link, 'http://player.test');
-          if (parsed.origin === 'http://player.test') {
-            return callWorker(parsed.href, worker4kEnv, { Range: 'bytes=0-64' });
-          }
-          return httpRequest(parsed.origin, `${parsed.pathname}${parsed.search}`, { headers: { Range: 'bytes=0-64' } });
-        });
-      }
+      // Worker fallback: a MoviesDrive miss must be recovered by 4KHDHub.
+      const cf4kFallback = await callWorker(
+        'http://player.test/api/debug/4k/movie/555554',
+        worker4kEnv
+      );
+      assert.strictEqual(cf4kFallback.status, 200);
+      const cf4kFallbackJson = await cf4kFallback.json();
+      assert.strictEqual(cf4kFallbackJson.ok, true, 'Worker 4KHDHub fallback must resolve a MoviesDrive miss');
+      assert.strictEqual(cf4kFallbackJson.result.tier, '4khdhub');
+      assert.deepStrictEqual(
+        cf4kFallbackJson.result.diag.steps.filter((s) => /_attempt$/.test(s.step)).map((s) => s.step),
+        ['moviesdrive4k_attempt', '4khdhub_attempt'],
+        'Worker Server 3 must try the media-type primary and one fallback'
+      );
+      await verifyPayloadLinksOneByOne('Worker 4KHDHub fallback', cf4kFallbackJson.result, async (link) => {
+        const parsed = new URL(link, 'http://player.test');
+        if (parsed.origin === 'http://player.test') {
+          return callWorker(parsed.href, worker4kEnv, { Range: 'bytes=0-64' });
+        }
+        return httpRequest(parsed.origin, `${parsed.pathname}${parsed.search}`, { headers: { Range: 'bytes=0-64' } });
+      });
 
-      mockUpstream.metrics.peakUrsaTierRequests = 0;
-      const cfParallelUrsa = await callWorker(
+      // If both sources miss, diagnostics should say exactly that and let the
+      // outer server waterfall choose the next server.
+      const cf4kExhausted = await callWorker(
         'http://player.test/api/debug/4k/movie/555555',
         worker4kEnv
       );
-      assert.strictEqual(cfParallelUrsa.status, 200);
-      assert.ok(
-        mockUpstream.metrics.peakUrsaTierRequests >= 3,
-        `Worker Ursa provider requests must overlap (observed peak ${mockUpstream.metrics.peakUrsaTierRequests})`
+      assert.strictEqual(cf4kExhausted.status, 200);
+      const cf4kExhaustedJson = await cf4kExhausted.json();
+      assert.strictEqual(cf4kExhaustedJson.ok, false);
+      assert.strictEqual(cf4kExhaustedJson.result.reason, 'ursa_all_4k_sources_exhausted');
+      assert.deepStrictEqual(
+        cf4kExhaustedJson.result.diag.steps.filter((s) => /_attempt$/.test(s.step)).map((s) => s.step),
+        ['moviesdrive4k_attempt', '4khdhub_attempt'],
+        'Worker exhaustion must include both source attempts'
       );
 
       const cf4kTvDebug = await callWorker(
@@ -2671,8 +2652,9 @@ async function runTests() {
       assert.strictEqual(cf4kDebug.status, 200);
       const cf4kDebugJson = await cf4kDebug.json();
       assert.strictEqual(cf4kDebugJson.ok, true);
-      assert.strictEqual(cf4kDebugJson.result.tier, '4khdhub');
+      assert.strictEqual(cf4kDebugJson.result.tier, 'moviesdrive4k');
       assert.strictEqual(cf4kDebugJson.upstream.fourkhdhubBase, `${mockUpstream.url}/4khdhub`);
+      assert.strictEqual(cf4kDebugJson.upstream.moviesdriveBase, `${mockUpstream.url}/moviesdrive`);
     } finally {
       config.upstreams.fourkhdhubBase = origFourkhdhubBase;
       config.upstreams.moviesdriveBase = origMoviesdriveBase;
@@ -2680,7 +2662,7 @@ async function runTests() {
       config.upstreams.dahmerBase = origDahmerBase;
       config.upstreams.vidsrcDataUrl = origVidsrcUrl;
     }
-    console.log('  ✔ Passed 4KHDHub, MoviesDrive 4K, HiCine 4K, DahmerMovies 4K & ?server=4k tests.');
+    console.log('  ✔ Passed Server 3 movie/TV source order, one fallback, and provider utility tests.');
 
     // 13. Server catalog: a rebrand / re-prioritisation must reach BOTH backends
     // and the player's server modal, with no stale names, slots, or order.
