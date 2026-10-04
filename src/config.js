@@ -82,6 +82,16 @@ const config = {
 
     // MovieBox dynamic cluster pool (replaces deprecated api3.aoneroom.com / uwu.eat-peach.sbs)
     movieboxBase: process.env.MOVIEBOX_BASE_URL || 'https://api.inmoviebox.com',
+    // When true, only MOVIEBOX_BASE_URL / MOVIEBOX_HOSTS / MOVIEBOX_EXTRA_HOSTS
+    // are used (the built-in mirror pool is not appended). Useful for pinning a
+    // working cluster and for hermetic tests.
+    movieboxStrictHosts: parseBoolean(process.env.MOVIEBOX_STRICT_HOSTS, false),
+    // Optional comma-separated provider allowlist for the "hindi" server and
+    // /api/dubs (e.g. HINDI_PROVIDERS=castletv,moviebox,netmirror).
+    hindiProviders: (process.env.HINDI_PROVIDERS || '')
+      .split(',')
+      .map((s) => s.trim().toLowerCase())
+      .filter(Boolean),
     movieboxHosts: (
       process.env.MOVIEBOX_HOSTS ||
       'https://api.inmoviebox.com,https://api6.aoneroom.com,https://h5-api.aoneroom.com,https://apii.inmoviebox.com,https://api.aoneroom.com,https://i-api.aoneroom.com,https://api5.aoneroom.com,https://h5.aoneroom.com'
@@ -171,6 +181,19 @@ const config = {
       badge: 'Anime Sub/Dub • Zoko HLS',
       priority: 5,
       supportsMultiAudio: true
+    },
+    {
+      // TMDB-id keyed Hindi-dub server. Every candidate is identity-checked
+      // against the TMDB title before it can be used, so name collisions
+      // (e.g. Fight Club 1999 vs the 2023 Indian film) can never win.
+      // `fallback: false` keeps it out of the implicit waterfall: it is used
+      // when a client asks for ?server=hindi.
+      id: 'hindi',
+      name: 'Hindi',
+      badge: 'Hindi Dubs • TMDB-ID Verified',
+      priority: 6,
+      supportsMultiAudio: true,
+      fallback: false
     }
   ]
 };

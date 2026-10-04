@@ -1,0 +1,57 @@
+name: Hindi Dub Live Verify
+
+on:
+  push:
+    branches:
+      - 'arena/**'
+    paths:
+      - 'tools/hindi-dub-live-verify.js'
+      - '.github/workflows/hindi-dub-live.yml'
+      - 'src/services/identity.js'
+      - 'src/services/dubCatalog.js'
+  workflow_dispatch:
+    inputs:
+      deep:
+        description: 'Also probe the deep providers (MoviesDrive/4KHDHub/HiCine/Dahmer/HiAnime)'
+        type: boolean
+        default: false
+
+permissions:
+  contents: write
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - run: npm ci --no-audit --no-fund
+
+      - name: Live-verify the TMDB-id keyed Hindi dub layer
+        env:
+          TMDB_API_KEY: ${{ vars.TMDB_API_KEY || '47a1a7df542d3d483227f758a7317dff' }}
+        run: |
+          node tools/hindi-dub-live-verify.js \
+            --out diagnostics/hindi-dub-live.json \
+            ${{ (github.event.inputs.deep == 'true' && '--deep') || '' }}
+
+      - name: Upload report
+        uses: actions/upload-artifact@v4
+        with:
+          name: hindi-dub-live
+          path: diagnostics/hindi-dub-live.json
+          if-no-files-found: warn
+          retention-days: 14
+
+      - name: Persist report on the branch
+        if: github.ref != 'refs/heads/main'
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -f diagnostics/hindi-dub-live.json
+          git diff --cached --quiet && echo "no report changes" && exit 0
+          git commit -m "chore(research): live hindi dub verification report [skip ci]"
+          git push

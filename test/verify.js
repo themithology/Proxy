@@ -60,6 +60,9 @@ const {
   verifySignedAsset
 } = require('../src/services/multitrack');
 
+const identity = require('../src/services/identity');
+const { buildDubCatalog, resolveHindiServer } = require('../src/services/dubCatalog');
+
 function encryptCastleAes(plaintext, key) {
   const cipher = crypto.createCipheriv('aes-128-cbc', key, key);
   cipher.setAutoPadding(true);
@@ -204,6 +207,23 @@ function startUpstreamMockServer() {
       }
 
       // Delayed metadata used to verify Cloudflare Worker Ursa tier concurrency.
+      if (u.pathname === '/tmdb/movie/550') {
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        return res.end(
+          JSON.stringify({
+            id: 550,
+            title: 'Fight Club',
+            original_title: 'Fight Club',
+            release_date: '1999-10-15',
+            runtime: 139,
+            genres: [{ id: 18, name: 'Drama' }, { id: 53, name: 'Thriller' }],
+            imdb_id: 'tt0137523',
+            external_ids: { imdb_id: 'tt0137523' },
+            alternative_titles: { titles: [{ title: 'Fight Club' }, { title: 'Fight Club (1999)' }] }
+          })
+        );
+      }
+
       if (u.pathname === '/tmdb/movie/555555') {
         res.writeHead(200, { 'Content-Type': 'application/json' });
         return res.end(JSON.stringify({
@@ -507,6 +527,17 @@ function startUpstreamMockServer() {
         );
       }
 
+      // 8b. Deliberately-down upstream mocks: used to prove tier cascading
+      // without encoding failure markers into the (identity-validated) title.
+      if (u.pathname.startsWith('/castletv-down')) {
+        res.writeHead(503, { 'Content-Type': 'text/plain' });
+        return res.end('castle down');
+      }
+      if (u.pathname.startsWith('/moviebox-down')) {
+        res.writeHead(503, { 'Content-Type': 'application/json' });
+        return res.end(JSON.stringify({ code: 503, message: 'moviebox down' }));
+      }
+
       // 9. CastleTV Mock Upstream (/castletv/...)
       if (u.pathname === '/castletv/v0.1/system/getSecurityKey/1') {
         res.writeHead(200, { 'Content-Type': 'application/json' });
@@ -519,6 +550,53 @@ function startUpstreamMockServer() {
         if (keyword.includes('fail-castle') || keyword.includes('cascade-test-fail-all')) {
           res.writeHead(200, { 'Content-Type': 'text/plain' });
           return res.end(encryptCastleAes(JSON.stringify({ code: 200, data: { rows: [] } }), mockKey));
+        }
+        // Title-collision scenario (the real CastleTV catalog): the 2023 Indian
+        // "Fight Club" (with a Hindi dub) outranks the 1999 film. Identity
+        // validation must pick the 1999 film and never the 2023 one.
+        if (keyword.includes('fight club')) {
+          const collisionCipher = encryptCastleAes(
+            JSON.stringify({
+              code: 200,
+              data: {
+                rows: [
+                  {
+                    id: 'castle-fc-2023',
+                    title: 'Fight Club',
+                    name: 'Fight Club',
+                    publishTime: Date.UTC(2023, 9, 1),
+                    movieType: 2,
+                    movieTypeName: 'Movies',
+                    languages: ['Tamil', 'Hindi', 'Telugu'],
+                    tags: ['Action']
+                  },
+                  {
+                    id: 'castle-fc-1999',
+                    title: 'Fight Club',
+                    name: 'Fight Club',
+                    publishTime: Date.UTC(1999, 9, 15),
+                    movieType: 2,
+                    movieTypeName: 'Movies',
+                    languages: ['English'],
+                    tags: ['Drama', 'Thriller']
+                  },
+                  {
+                    id: 'castle-fc-members',
+                    title: 'Fight Club - Members Only',
+                    name: 'Fight Club - Members Only',
+                    publishTime: Date.UTC(2006, 4, 1),
+                    movieType: 2,
+                    movieTypeName: 'Movies',
+                    languages: ['Hindi'],
+                    tags: ['Action', 'Drama']
+                  }
+                ]
+              }
+            }),
+            mockKey
+          );
+          res.writeHead(200, { 'Content-Type': 'text/plain' });
+          return res.end(collisionCipher);
         }
         const cipher = encryptCastleAes(
           JSON.stringify({
@@ -541,6 +619,52 @@ function startUpstreamMockServer() {
 
       if (u.pathname === '/castletv/film-api/v1.9.9/movie') {
         const mockKey = buildCastleKey('MTIzNDU2Nzg5MA==');
+        const requestedMovieId = u.searchParams.get('movieId');
+        if (requestedMovieId === 'castle-fc-1999') {
+          res.writeHead(200, { 'Content-Type': 'text/plain' });
+          return res.end(
+            encryptCastleAes(
+              JSON.stringify({
+                code: 200,
+                data: {
+                  title: 'Fight Club',
+                  episodes: [
+                    {
+                      id: 'castle-fc-1999-ep1',
+                      number: 1,
+                      tracks: [{ languageId: 'en', languageName: 'English', existIndividualVideo: false }]
+                    }
+                  ]
+                }
+              }),
+              mockKey
+            )
+          );
+        }
+        if (requestedMovieId === 'castle-fc-2023') {
+          res.writeHead(200, { 'Content-Type': 'text/plain' });
+          return res.end(
+            encryptCastleAes(
+              JSON.stringify({
+                code: 200,
+                data: {
+                  title: 'Fight Club',
+                  episodes: [
+                    {
+                      id: 'castle-fc-2023-ep1',
+                      number: 1,
+                      tracks: [
+                        { languageId: 'hi', languageName: 'Hindi', existIndividualVideo: true },
+                        { languageId: 'ta', languageName: 'Tamil', existIndividualVideo: true }
+                      ]
+                    }
+                  ]
+                }
+              }),
+              mockKey
+            )
+          );
+        }
         const cipher = encryptCastleAes(
           JSON.stringify({
             code: 200,
@@ -600,6 +724,27 @@ function startUpstreamMockServer() {
             res.writeHead(200, { 'Content-Type': 'application/json' });
             return res.end(JSON.stringify({ code: 0, data: { results: [] } }));
           }
+          // Same collision as CastleTV: the 2023 Indian "Fight Club" (Hindi dub)
+          // is ranked first, the 1999 film second.
+          if (kw.includes('fight club')) {
+            res.writeHead(200, { 'Content-Type': 'application/json' });
+            return res.end(
+              JSON.stringify({
+                code: 0,
+                data: {
+                  results: [
+                    {
+                      subjects: [
+                        { subjectId: 'mbox-fc-2023', title: 'Fight Club', subjectType: 1, year: 2023 },
+                        { subjectId: 'mbox-fc-1999', title: 'Fight Club', subjectType: 1, year: 1999 },
+                        { subjectId: 'mbox-fc-tv', title: 'Fight Club', subjectType: 2, year: 2021 }
+                      ]
+                    }
+                  ]
+                }
+              })
+            );
+          }
           res.writeHead(200, { 'Content-Type': 'application/json' });
           res.end(
             JSON.stringify({
@@ -624,6 +769,30 @@ function startUpstreamMockServer() {
       }
 
       if (u.pathname === '/moviebox/wefeed-mobile-bff/subject-api/get') {
+        const requestedSubject = u.searchParams.get('subjectId');
+        if (requestedSubject === 'mbox-fc-1999') {
+          res.writeHead(200, { 'Content-Type': 'application/json' });
+          return res.end(
+            JSON.stringify({
+              code: 0,
+              data: { dubs: [{ subjectId: 'mbox-fc-1999', lanName: 'English' }] }
+            })
+          );
+        }
+        if (requestedSubject === 'mbox-fc-2023') {
+          res.writeHead(200, { 'Content-Type': 'application/json' });
+          return res.end(
+            JSON.stringify({
+              code: 0,
+              data: {
+                dubs: [
+                  { subjectId: 'mbox-fc-2023', lanName: 'Hindi' },
+                  { subjectId: 'mbox-fc-2023-ta', lanName: 'Tamil' }
+                ]
+              }
+            })
+          );
+        }
         res.writeHead(200, { 'Content-Type': 'application/json' });
         return res.end(
           JSON.stringify({
@@ -641,6 +810,24 @@ function startUpstreamMockServer() {
 
       if (u.pathname === '/moviebox/wefeed-mobile-bff/subject-api/play-info') {
         const subId = u.searchParams.get('subjectId');
+        if (subId === 'mbox-fc-1999') {
+          res.writeHead(200, { 'Content-Type': 'application/json' });
+          return res.end(
+            JSON.stringify({
+              code: 0,
+              data: { streams: [{ url: `${mockOrigin}/cdn/mbox/fight-club-1999-en.mp4`, resolutions: '1080p' }] }
+            })
+          );
+        }
+        if (subId === 'mbox-fc-2023' || subId === 'mbox-fc-2023-ta') {
+          res.writeHead(200, { 'Content-Type': 'application/json' });
+          return res.end(
+            JSON.stringify({
+              code: 0,
+              data: { streams: [{ url: `${mockOrigin}/cdn/mbox/fight-club-2023-hi.mp4`, resolutions: '1080p' }] }
+            })
+          );
+        }
         const lang = subId === 'mbox-102' ? 'hi' : subId === 'mbox-103' ? 'ta' : 'en';
         res.writeHead(200, { 'Content-Type': 'application/json' });
         return res.end(
@@ -1512,7 +1699,11 @@ async function runTests() {
     assert.strictEqual(health.json.ok, true);
     assert.strictEqual(health.json.brand, 'LOL Embed');
     assert.strictEqual(health.json.service, 'lol-embed-backend');
-    assert.ok(Array.isArray(health.json.servers) && health.json.servers.length === 5);
+    assert.ok(
+      Array.isArray(health.json.servers) &&
+        health.json.servers.length >= 5 &&
+        health.json.servers.includes('hindi')
+    );
     const unsignedMultiTrack = await httpRequest(
       baseUrl,
       '/api/multitrack/master.m3u8?url=https%3A%2F%2Fpub-abc.r2.dev%2Fmovies%2FRRR.mkv'
@@ -1936,6 +2127,138 @@ async function runTests() {
       assert.ok(taMboxTrack, 'Tamil track must be present');
       assert.strictEqual(taMboxTrack.default, true, 'Preferred audio "ta" must be default');
 
+      // 11b-2. TMDB-anchored identity: a same-name collision must resolve the
+      // 1999 Fight Club, never the 2023 Indian film that ships a Hindi dub.
+      const fightCastle = await resolveCastletv(
+        { title: 'Fight Club', originalTitle: 'Fight Club', releaseYear: 1999, tmdbId: 550, type: 'movie' },
+        'hi'
+      );
+      assert.ok(fightCastle, 'CastleTV must resolve the identity-verified 1999 Fight Club');
+      assert.strictEqual(fightCastle.identity.upstreamId, 'castle-fc-1999', 'CastleTV must bind to the 1999 row');
+      assert.ok(
+        fightCastle.identity.rejectedCandidates.some((c) => Number(c.year) === 2023),
+        'the 2023 Indian Fight Club must be rejected despite its Hindi dub'
+      );
+      assert.deepStrictEqual(
+        fightCastle.audioTracks.map((t) => t.lang),
+        ['en'],
+        'only the verified title audio tracks may be exposed'
+      );
+      assert.ok(
+        !fightCastle.audioTracks.some((t) => t.lang === 'hi'),
+        'a Hindi track from the wrong title must never be surfaced'
+      );
+      assert.ok(
+        !fightCastle.identity.candidates.some((c) => c.accepted && Number(c.year) === 2023),
+        'no accepted candidate may be the 2023 film'
+      );
+
+      // Unverifiable identity -> clean miss so the cascade can continue.
+      const unverifiableCastle = await resolveCastletv(
+        { title: 'Only Indian Fight Club', releaseYear: 1999, type: 'movie' },
+        'hi'
+      );
+      assert.strictEqual(unverifiableCastle, null, 'CastleTV must miss when no row proves the TMDB identity');
+
+      const fightMbox = await resolveMoviebox(
+        { title: 'Fight Club', originalTitle: 'Fight Club', releaseYear: 1999, tmdbId: 550, type: 'movie' },
+        'hi'
+      );
+      assert.ok(fightMbox, 'Moviebox must resolve the identity-verified 1999 Fight Club');
+      assert.strictEqual(fightMbox.identity.upstreamId, 'mbox-fc-1999', 'Moviebox must bind to the 1999 subject');
+      assert.ok(
+        fightMbox.identity.rejectedCandidates.some((c) => Number(c.year) === 2023),
+        'Moviebox must reject the 2023 Indian Fight Club'
+      );
+      assert.ok(
+        !fightMbox.audioTracks.some((t) => String(t.rawUrl).includes('fight-club-2023')),
+        'the wrong title Hindi dub must not leak through Moviebox'
+      );
+      const unverifiableMbox = await resolveMoviebox(
+        { title: 'Only Indian Fight Club', releaseYear: 1999, type: 'movie' },
+        'hi'
+      );
+      assert.strictEqual(unverifiableMbox, null, 'Moviebox must miss when no subject proves the TMDB identity');
+
+      // Identity engine unit checks (title canonicalization + year/type gates)
+      const fcMeta = { title: 'Fight Club', originalTitle: 'Fight Club', releaseYear: 1999, type: 'movie' };
+      assert.strictEqual(identity.normalizeTitleKey('Fight Club (1999) [Hindi Dub]'), 'fight club');
+      assert.strictEqual(
+        identity.scoreIdentityCandidate({ title: 'Fight Club', year: 2023 }, fcMeta).accepted,
+        false,
+        'a same-name different-year film must be rejected'
+      );
+      assert.strictEqual(
+        identity.scoreIdentityCandidate({ title: 'Female Fight Club', year: 1999 }, fcMeta).accepted,
+        false,
+        'substring neighbours must never be accepted'
+      );
+      assert.strictEqual(
+        identity.pickIdentityMatch([{ title: 'Fight Club', year: 2023 }], fcMeta).winner,
+        null,
+        'no identity proof must yield no winner'
+      );
+
+      // 11b-3. Dub inventory endpoint (/api/dubs) + the "hindi" server must
+      // report the verified 1999 film and never the 2023 film's Hindi dub.
+      const dubsRes = await httpRequest(baseUrl, '/api/dubs/movie/550?audio=hi');
+      assert.strictEqual(dubsRes.status, 200, 'GET /api/dubs/movie/550 must answer');
+      assert.strictEqual(dubsRes.json.ok, true);
+      assert.strictEqual(dubsRes.json.hindi, false, 'TMDB 550 has no Hindi dub on the mocked tiers');
+      const castleProvider = (dubsRes.json.providers || []).find((p) => p.id === 'castletv');
+      assert.ok(castleProvider && castleProvider.ok, 'CastleTV must appear in the dub inventory');
+      assert.strictEqual(castleProvider.identity.verified, true, 'CastleTV entry must be identity-verified');
+      assert.strictEqual(castleProvider.identity.matchedYear, 1999, 'CastleTV must have matched the 1999 film');
+      assert.strictEqual(castleProvider.identity.upstreamId, 'castle-fc-1999');
+      assert.ok(
+        !JSON.stringify(dubsRes.json).includes('fight-club-2023'),
+        'the 2023 film must never be reported for TMDB 550'
+      );
+
+      const fcMetadata = {
+        tmdbId: 550,
+        title: 'Fight Club',
+        originalTitle: 'Fight Club',
+        releaseYear: 1999,
+        type: 'movie',
+        genres: ['Drama', 'Thriller'],
+        externalIds: { imdb_id: 'tt0137523' }
+      };
+      const hindiMiss = await resolveHindiServer(fcMetadata, 'hi', { providerIds: ['castletv', 'moviebox'] });
+      assert.strictEqual(hindiMiss.server, 'hindi');
+      assert.strictEqual(hindiMiss.hindiAvailable, false, 'no identity-verified Hindi source exists for the 1999 film');
+      assert.strictEqual(hindiMiss.providerId, 'castletv', 'the verified original-audio stream is still returned');
+      assert.strictEqual(hindiMiss.identity.upstreamId, 'castle-fc-1999');
+      assert.ok(!String(hindiMiss.rawUrl).includes('2023'), 'wrong-title stream must never be returned');
+
+      const hindiHit = await resolveHindiServer(
+        {
+          tmdbId: 693134,
+          title: 'Dune: Part Two',
+          originalTitle: 'Dune: Part Two',
+          releaseYear: 2024,
+          type: 'movie'
+        },
+        'hi',
+        { providerIds: ['castletv', 'moviebox'] }
+      );
+      assert.strictEqual(hindiHit.hindiAvailable, true, 'verified Hindi dub must be reported as available');
+      assert.strictEqual(hindiHit.providerId, 'castletv');
+      assert.strictEqual(hindiHit.audioTracks.find((t) => t.default).lang, 'hi', 'Hindi must be the default track');
+      assert.ok((hindiHit.dubs || []).some((d) => d.code === 'hi'), 'dub inventory must list Hindi');
+
+      // The catalog object itself is usable standalone (worker parity).
+      const catalog = await buildDubCatalog(
+        { tmdbId: 693134, title: 'Dune: Part Two', originalTitle: 'Dune: Part Two', releaseYear: 2024, type: 'movie' },
+        { preferredAudio: 'hi' }
+      );
+      assert.strictEqual(catalog.hindi, true);
+      assert.ok(catalog.dubs.some((d) => d.code === 'hi' && d.providers.includes('castletv')));
+      assert.ok(
+        catalog.providers.every((p) => p.ok === false || p.identity.verified === true),
+        'every reported provider must be identity-verified'
+      );
+
       // Reset movieboxBase for downstream tests
       config.upstreams.movieboxBase = `${mockUpstream.url}/moviebox`;
 
@@ -1970,8 +2293,9 @@ async function runTests() {
       assert.strictEqual(andromedaTier1.sourceName, 'CastleTV', 'Priority 1 must be CastleTV');
 
       // Tier 2: When CastleTV fails, Andromeda cascades to Moviebox
+      config.upstreams.castletvBase = `${mockUpstream.url}/castletv-down`;
       const andromedaTier2 = await resolveAndromedaServer({
-        title: 'fail-castle Dune',
+        title: 'Dune: Part Two',
         releaseYear: 2024,
         tmdbId: '693134',
         type: 'movie'
@@ -1980,14 +2304,23 @@ async function runTests() {
       assert.strictEqual(andromedaTier2.sourceName, 'Moviebox', 'Priority 2 must be Moviebox');
 
       // Tier 3: When CastleTV and Moviebox both fail, Andromeda cascades to NetMirror
+      config.upstreams.movieboxStrictHosts = true;
+      config.upstreams.movieboxBase = `${mockUpstream.url}/moviebox-down`;
+      config.upstreams.movieboxHosts = [`${mockUpstream.url}/moviebox-down`];
       const andromedaTier3 = await resolveAndromedaServer({
-        title: 'fail-castle fail-moviebox Dune',
+        title: 'Dune: Part Two',
         releaseYear: 2024,
         tmdbId: '693134',
         type: 'movie'
       });
+      config.upstreams.movieboxStrictHosts = false;
       assert.ok(andromedaTier3 && andromedaTier3.streamUrl, 'Andromeda must resolve Tier 3 when Tiers 1 & 2 miss');
       assert.ok(andromedaTier3.sourceName.startsWith('NetMirror'), 'Priority 3 must be NetMirror');
+
+      // Restore the healthy tiers for the remaining Andromeda assertions.
+      config.upstreams.castletvBase = `${mockUpstream.url}/castletv`;
+      config.upstreams.movieboxBase = `${mockUpstream.url}/moviebox`;
+      config.upstreams.movieboxHosts = [`${mockUpstream.url}/moviebox`];
 
       // Exhaustion: When all 3 tiers fail, Andromeda returns clean failure
       const andromedaExhausted = await resolveAndromedaServer({
@@ -2048,6 +2381,34 @@ async function runTests() {
       assert.strictEqual(cfAndromedaJson.stream.sourceName, 'CastleTV');
       assert.ok(cfAndromedaJson.stream.audioTracks.length >= 4);
       assert.strictEqual(cfAndromedaJson.stream.activeAudioTrack.lang, 'hi');
+
+      // Worker parity: same-name collision must resolve the 1999 film, and the
+      // TMDB-id keyed dub inventory must never report the 2023 film.
+      const cfDubsRes = await callWorker('http://player.test/api/dubs/movie/550?audio=hi', workerEnv);
+      assert.strictEqual(cfDubsRes.status, 200, 'worker /api/dubs must answer');
+      const cfDubsJson = await cfDubsRes.json();
+      assert.strictEqual(cfDubsJson.ok, true);
+      assert.strictEqual(cfDubsJson.hindi, false, 'worker must not report a Hindi dub for the 1999 film');
+      const cfCastleProvider = (cfDubsJson.providers || []).find((p) => p.id === 'castletv');
+      assert.ok(cfCastleProvider && cfCastleProvider.ok, 'worker CastleTV entry must resolve');
+      assert.strictEqual(cfCastleProvider.identity.matchedYear, 1999);
+      assert.strictEqual(cfCastleProvider.identity.upstreamId, 'castle-fc-1999');
+      assert.ok(!JSON.stringify(cfDubsJson).includes('fight-club-2023'), 'worker must not surface the 2023 film');
+
+      const cfHindiRes = await callWorker(
+        'http://player.test/api/resolve/movie/550?server=hindi&audio=hi',
+        { ...workerEnv, HINDI_PROVIDERS: 'castletv,moviebox' }
+      );
+      assert.strictEqual(cfHindiRes.status, 200);
+      const cfHindiJson = await cfHindiRes.json();
+      assert.strictEqual(cfHindiJson.ok, true);
+      assert.strictEqual(cfHindiJson.stream.server, 'hindi');
+      assert.strictEqual(cfHindiJson.stream.hindiAvailable, false, 'worker must be honest about the missing Hindi dub');
+      assert.strictEqual(cfHindiJson.stream.identity.upstreamId, 'castle-fc-1999');
+      assert.ok(
+        !String(cfHindiJson.stream.rawUrl).includes('2023'),
+        'worker hindi server must never return the wrong-title stream'
+      );
 
       // Worker /api/debug/andromeda/:type/:tmdbId inspects Andromeda upstreams
       const cfDebugRes = await callWorker(

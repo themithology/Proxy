@@ -17,6 +17,8 @@
 import crypto from 'node:crypto';
 import zlib from 'node:zlib';
 import { Buffer } from 'node:buffer';
+// Shared TMDB-anchored identity matching (single source of truth with the Node backend).
+import identity from '../src/services/identity.js';
 
 const USER_AGENT =
   'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36';
@@ -26,7 +28,19 @@ const SERVERS = [
   { id: 'ursa', name: 'Ursa', badge: '4K UHD • Multi-Audio', priority: 2, enabled: true, supportsMultiAudio: true },
   { id: 'centaurus', name: 'Centaurus', badge: 'HiCine • Direct 1080p/720p MP4', priority: 3, enabled: true, supportsMultiAudio: true },
   { id: 'atlas', name: 'Atlas', badge: 'ZXC Backup • Adaptive HLS', priority: 4, enabled: true, supportsMultiAudio: true },
-  { id: 'strings', name: 'Strings', badge: 'Anime Sub/Dub • Zoko HLS', priority: 5, enabled: true, supportsMultiAudio: true }
+  { id: 'strings', name: 'Strings', badge: 'Anime Sub/Dub • Zoko HLS', priority: 5, enabled: true, supportsMultiAudio: true },
+  {
+    // TMDB-id keyed Hindi-dub server: every candidate is identity-checked
+    // against the TMDB title, so name collisions can never win.
+    // `fallback: false` keeps it out of the implicit waterfall.
+    id: 'hindi',
+    name: 'Hindi',
+    badge: 'Hindi Dubs • TMDB-ID Verified',
+    priority: 6,
+    enabled: true,
+    fallback: false,
+    supportsMultiAudio: true
+  }
 ];
 
 // Runtime-editable Upstream Config & Telemetry State in Cloudflare Worker
@@ -417,7 +431,7 @@ async function resolveTmdbMetadata(type, tmdbId, season = 1, episode = 1, env = 
 
   try {
     const detailsRes = await fetch(
-      `${tmdbBase}/${normalizedType}/${cleanId}?api_key=${encodeURIComponent(tmdbKey)}&append_to_response=external_ids&language=en-US`,
+      `${tmdbBase}/${normalizedType}/${cleanId}?api_key=${encodeURIComponent(tmdbKey)}&append_to_response=external_ids,alternative_titles&language=en-US`,
       { headers: { Accept: 'application/json', 'User-Agent': USER_AGENT } }
     );
     if (detailsRes.ok) {
@@ -466,6 +480,10 @@ async function resolveTmdbMetadata(type, tmdbId, season = 1, episode = 1, env = 
       }
 
       const title = data.title || data.name;
+      const alternativeTitles = (data.alternative_titles?.titles || [])
+        .map((entry) => entry && entry.title)
+        .filter((entry) => typeof entry === 'string' && entry.trim())
+        .slice(0, 25);
       let malId = null;
       if (isAnimation && title) {
         try {
@@ -485,6 +503,7 @@ async function resolveTmdbMetadata(type, tmdbId, season = 1, episode = 1, env = 
         type: normalizedType,
         title,
         originalTitle: data.original_title || data.original_name || title,
+        alternativeTitles,
         releaseYear,
         runtime: data.runtime || (Array.isArray(data.episode_run_time) && data.episode_run_time[0]) || null,
         genres,
@@ -772,7 +791,80 @@ async function getCastleSecurityKeyWorker(castletvBase, signal) {
 
 /**
  * Sub-provider 1 for Andromeda: CastleTV API
+ *
+ * Identity: CastleTV search is plain-name only and ranks by popularity, so a
+ * name search for "Fight Club" returns the 2023 Indian film (which carries a
+ * Hindi dub) before the 1999 film. Every row is validated against the TMDB
+ * identity (title + original/alternative titles + year + movie/series type)
+ * before use; an unverifiable result is a miss, never wrong content.
  */
+const CASTLETV_RESOLVE_DEADLINE_MS = 9000;
+const CASTLETV_TRACK_CONCURRENCY = 6;
+
+function buildCastleSearchKeywordsWorker(metadata) {
+  const seen = new Set();
+  const keywords = [];
+  const push = (value) => {
+    const text = String(value || '').trim();
+    if (!text || seen.has(text.toLowerCase())) return;
+    seen.add(text.toLowerCase());
+    keywords.push(text);
+  };
+  const title = metadata.title || '';
+  const year = metadata.releaseYear || metadata.year || '';
+  push(year ? `${title} ${year}` : title);
+  push(title);
+  push(metadata.originalTitle);
+  const alts = Array.isArray(metadata.alternativeTitles)
+    ? metadata.alternativeTitles
+    : Array.isArray(metadata.altTitles)
+      ? metadata.altTitles
+      : [];
+  alts.slice(0, 2).forEach((alt) => push(typeof alt === 'string' ? alt : alt && (alt.title || alt.name)));
+  return keywords.filter(Boolean).slice(0, 4);
+}
+
+function castleRowToCandidateWorker(row) {
+  return {
+    id: String(row.id || row.redirectId || row.redirectIdStr || ''),
+    title: row.title || row.name || '',
+    year: row.publishTime || row.releaseDate || row.year || null,
+    movieType: row.movieType,
+    movieTypeName: row.movieTypeName,
+    languages: Array.isArray(row.languages) ? row.languages : [],
+    tags: Array.isArray(row.tags) ? row.tags : [],
+    rating: row.rating,
+    popularity: row.score
+  };
+}
+
+async function castletvSearchRowsWorker(castletvBase, keyword, key, signal) {
+  const params = new URLSearchParams({
+    channel: 'IndiaA',
+    clientType: '1',
+    keyword,
+    lang: 'en',
+    mode: '1',
+    packageName: 'com.external.castle',
+    page: '1',
+    size: '30'
+  });
+  const res = await fetch(
+    `${castletvBase}/film-api/v1.1.0/movie/searchByKeyword?${params.toString()}`,
+    {
+      headers: { 'User-Agent': USER_AGENT, Accept: 'application/json', Referer: `${castletvBase}/` },
+      signal
+    }
+  );
+  if (!res.ok) return [];
+  try {
+    const json = JSON.parse(decryptCastleAes(await res.text(), key));
+    return (json?.data?.rows || []).filter(Boolean);
+  } catch {
+    return [];
+  }
+}
+
 async function resolveCastletvUpstream(metadata, preferredAudio = '', env = null) {
   const castletvBase = (
     (env && env.CASTLETV_BASE_URL) ||
@@ -781,79 +873,93 @@ async function resolveCastletvUpstream(metadata, preferredAudio = '', env = null
   ).replace(/\/$/, '');
 
   const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), 3500);
+  const timeoutId = setTimeout(() => controller.abort(), CASTLETV_RESOLVE_DEADLINE_MS);
 
   try {
+    if (!metadata || !metadata.title) return null;
     const key = await getCastleSecurityKeyWorker(castletvBase, controller.signal);
-    const searchTerm = `${metadata.title || ''} ${metadata.releaseYear || ''}`.trim();
-    if (!searchTerm) return null;
 
-    const searchParams = new URLSearchParams({
-      channel: 'IndiaA',
-      clientType: '1',
-      keyword: searchTerm,
-      lang: 'en',
-      mode: '1',
-      packageName: 'com.external.castle',
-      page: '1',
-      size: '30'
-    });
+    // 1. Union the results of several identity keys before validating them.
+    const rowsById = new Map();
+    for (const keyword of buildCastleSearchKeywordsWorker(metadata)) {
+      const rows = await castletvSearchRowsWorker(castletvBase, keyword, key, controller.signal);
+      rows.forEach((row) => {
+        const id = String(row.id || row.redirectId || row.redirectIdStr || '');
+        if (id && !rowsById.has(id)) rowsById.set(id, row);
+      });
+      if (!rowsById.size) continue;
+      const early = identity.pickIdentityMatch(
+        Array.from(rowsById.values()).map(castleRowToCandidateWorker),
+        metadata,
+        { preferredAudio }
+      );
+      if (early.winner) break;
+    }
 
-    const searchRes = await fetch(
-      `${castletvBase}/film-api/v1.1.0/movie/searchByKeyword?${searchParams.toString()}`,
-      {
-        headers: { 'User-Agent': USER_AGENT, Accept: 'application/json' },
-        signal: controller.signal
-      }
-    );
-    if (!searchRes.ok) return null;
-    const searchCipher = await searchRes.text();
-    const searchJson = JSON.parse(decryptCastleAes(searchCipher, key));
-    const rows = (searchJson?.data?.rows) || [];
-    if (!rows.length) return null;
+    const candidates = Array.from(rowsById.values()).map(castleRowToCandidateWorker);
+    if (!candidates.length) return null;
 
-    const targetTitleNorm = (metadata.title || '').toLowerCase().replace(/[^a-z0-9]/g, '');
-    let matchedRow = rows.find((r) => {
-      const rowNorm = (r.title || r.name || '').toLowerCase().replace(/[^a-z0-9]/g, '');
-      return rowNorm === targetTitleNorm || rowNorm.includes(targetTitleNorm) || targetTitleNorm.includes(rowNorm);
-    }) || rows[0];
+    // 2. TMDB-anchored identity gate. No first-row fallback.
+    const picked = identity.pickIdentityMatch(candidates, metadata, { preferredAudio });
+    if (!picked.winner) return null;
 
-    const movieId = matchedRow.id || matchedRow.redirectId || matchedRow.redirectIdStr;
+    const matched = picked.winner;
+    const movieId = matched.id;
     if (!movieId) return null;
 
     const detRes = await fetch(
       `${castletvBase}/film-api/v1.9.9/movie?channel=IndiaA&clientType=1&lang=en&movieId=${movieId}&packageName=com.external.castle`,
       {
-        headers: { 'User-Agent': USER_AGENT, Accept: 'application/json' },
+        headers: { 'User-Agent': USER_AGENT, Accept: 'application/json', Referer: `${castletvBase}/` },
         signal: controller.signal
       }
     );
     if (!detRes.ok) return null;
-    const detCipher = await detRes.text();
-    const detJson = JSON.parse(decryptCastleAes(detCipher, key));
-    const episodes = (detJson?.data?.episodes) || [];
+    let detJson = JSON.parse(decryptCastleAes(await detRes.text(), key));
 
     const isTv = metadata.type === 'tv';
-    let targetEpisode = null;
+    let activeId = movieId;
     if (isTv) {
-      targetEpisode = episodes.find((e) => Number(e.number) === Number(metadata.episode || 1)) || episodes[0];
-    } else {
-      targetEpisode = episodes[0];
+      const seasonNumber = Number(metadata.season || 1);
+      const seasonEntry = (detJson?.data?.seasons || []).find((s) => Number(s.number) === seasonNumber);
+      if (seasonEntry && seasonEntry.movieId && String(seasonEntry.movieId) !== String(movieId)) {
+        const seasonRes = await fetch(
+          `${castletvBase}/film-api/v1.9.9/movie?channel=IndiaA&clientType=1&lang=en&movieId=${seasonEntry.movieId}&packageName=com.external.castle`,
+          {
+            headers: { 'User-Agent': USER_AGENT, Accept: 'application/json', Referer: `${castletvBase}/` },
+            signal: controller.signal
+          }
+        );
+        if (seasonRes.ok) {
+          const seasonJson = JSON.parse(decryptCastleAes(await seasonRes.text(), key));
+          if (seasonJson?.data?.episodes?.length) {
+            detJson = seasonJson;
+            activeId = String(seasonEntry.movieId);
+          }
+        }
+      }
     }
-    if (!targetEpisode) return null;
 
+    const episodes = detJson?.data?.episodes || [];
+    const wantedEpisode = Number(metadata.episode || 1);
+    const targetEpisode = isTv
+      ? episodes.find((e) => Number(e.number) === wantedEpisode) || episodes[0]
+      : episodes[0];
+    if (!targetEpisode) return null;
     const episodeId = targetEpisode.id;
+
     const rawTracks =
       targetEpisode.tracks && targetEpisode.tracks.length > 0
         ? targetEpisode.tracks
         : [{ languageId: null, languageName: 'Original', videos: targetEpisode.videos || [] }];
+    const withIndividualVideo = rawTracks.filter((t) => t.existIndividualVideo === true);
+    const tracks = withIndividualVideo.length > 0 ? withIndividualVideo : rawTracks;
 
     const referer = `${castletvBase}/`;
     const APK_SIGN_KEY = 'ED0955EB04E67A1D9F3305B95454FED485261475';
 
-    const trackJobs = rawTracks.map(async (t) => {
-      const resOptions = [4, 2, 1];
-      for (const res of resOptions) {
+    const fetchTrackStream = async (track) => {
+      for (const resolution of [3, 2, 1]) {
         try {
           const body = {
             mode: '1',
@@ -862,13 +968,13 @@ async function resolveCastletvUpstream(metadata, preferredAudio = '', env = null
             woolUser: 'false',
             apkSignKey: APK_SIGN_KEY,
             androidVersion: '13',
-            movieId: String(movieId),
+            movieId: String(activeId),
             episodeId: String(episodeId),
             isNewUser: 'true',
-            resolution: String(res),
+            resolution: String(resolution),
             packageName: 'com.external.castle'
           };
-          if (t.languageId != null) body.languageId = String(t.languageId);
+          if (track.languageId != null) body.languageId = String(track.languageId);
 
           const vRes = await fetch(
             `${castletvBase}/film-api/v2.0.1/movie/getVideo2?clientType=1&packageName=com.external.castle&channel=IndiaA&lang=en`,
@@ -880,56 +986,82 @@ async function resolveCastletvUpstream(metadata, preferredAudio = '', env = null
             }
           );
           if (!vRes.ok) continue;
-          const vCipher = await vRes.text();
-          const vJson = JSON.parse(decryptCastleAes(vCipher, key));
-          const vUrl = vJson?.data?.videoUrl || vJson?.data?.videos?.[0]?.url;
-          if (vUrl) {
-            return {
-              languageId: t.languageId,
-              languageName: t.languageName,
-              videoUrl: vUrl,
-              resolution: res === 4 ? 1080 : res === 2 ? 720 : 480
-            };
-          }
-        } catch {}
+          const vJson = JSON.parse(decryptCastleAes(await vRes.text(), key));
+          const videoUrl = vJson?.data?.videoUrl || vJson?.data?.videos?.[0]?.url;
+          if (!videoUrl) continue;
+          const videos = (vJson?.data?.videos || [])
+            .filter((v) => v && v.url)
+            .map((v) => ({
+              url: v.url,
+              height: v.resolution === 4 ? 2160 : v.resolution === 3 ? 1080 : v.resolution === 2 ? 720 : 480
+            }));
+          return {
+            languageId: track.languageId,
+            languageName: track.languageName || track.abbreviate || 'Original',
+            videoUrl,
+            videos
+          };
+        } catch {
+          // next resolution rung
+        }
       }
       return null;
-    });
+    };
 
-    const settled = await Promise.allSettled(trackJobs);
-    const validTracks = settled
-      .filter((s) => s.status === 'fulfilled' && s.value && s.value.videoUrl)
-      .map((s) => s.value);
+    const streamByTrack = new Array(tracks.length).fill(null);
+    for (let start = 0; start < tracks.length; start += CASTLETV_TRACK_CONCURRENCY) {
+      const slice = tracks.slice(start, start + CASTLETV_TRACK_CONCURRENCY);
+      const settled = await Promise.allSettled(slice.map((track) => fetchTrackStream(track)));
+      settled.forEach((entry, index) => {
+        if (entry.status === 'fulfilled' && entry.value) streamByTrack[start + index] = entry.value;
+      });
+      if (streamByTrack.some(Boolean) && controller.signal.aborted) break;
+    }
 
-    if (!validTracks.length) return null;
+    const resolvedTracks = streamByTrack.filter(Boolean);
+    if (!resolvedTracks.length) {
+      const shared = await fetchTrackStream({ languageId: null, languageName: 'Original' });
+      if (!shared) return null;
+      resolvedTracks.push(shared);
+    }
 
-    const wanted = (preferredAudio || '').trim().toLowerCase();
-    const wantedCode = wanted ? mapLanguageNameToCode(wanted) : '';
+    const wantedCode = preferredAudio ? mapLanguageNameToCode(String(preferredAudio).trim().toLowerCase()) : '';
 
-    const audioTracks = validTracks.map((t, idx) => {
-      const langCode = mapLanguageNameToCode(t.languageName);
-      const isDefault = wantedCode ? langCode === wantedCode : idx === 0;
-      const proxiedUrl = buildWorkerProxyUrl(t.videoUrl, referer, 'full');
+    const audioTracks = resolvedTracks.map((track, index) => {
+      const langCode = mapLanguageNameToCode(track.languageName);
       return {
-        id: `castle-${t.languageId || langCode || idx}`,
+        id: `castle-${track.languageId || langCode || index}`,
         lang: langCode,
-        label: t.languageName || 'Original Audio',
+        label: track.languageName || 'Original Audio',
         type: 'dub',
-        streamUrl: proxiedUrl,
-        rawUrl: t.videoUrl,
-        default: isDefault
+        streamUrl: buildWorkerProxyUrl(track.videoUrl, referer, 'full'),
+        rawUrl: track.videoUrl,
+        default: false
       };
     });
 
-    if (!audioTracks.some((a) => a.default)) {
-      audioTracks[0].default = true;
-    }
+    const hindiTrack = audioTracks.find((track) => track.lang === 'hi');
+    const preferredTrack = wantedCode ? audioTracks.find((track) => track.lang === wantedCode) : null;
+    const defaultTrack = preferredTrack || hindiTrack || audioTracks[0];
+    audioTracks.forEach((track) => {
+      track.default = track === defaultTrack;
+    });
 
-    const activeTrack = audioTracks.find((a) => a.default) || audioTracks[0];
+    const activeTrack = defaultTrack;
+    const qualitySource = resolvedTracks.find((t) => buildWorkerProxyUrl(t.videoUrl, referer, 'full') === activeTrack.streamUrl) ||
+      resolvedTracks[0];
+    const seenHeights = new Set();
     const qualities = [
       { label: 'Auto', height: 0, url: activeTrack.streamUrl },
-      { label: '1080p', height: 1080, url: activeTrack.streamUrl },
-      { label: '720p', height: 720, url: activeTrack.streamUrl }
+      ...(qualitySource.videos || [])
+        .slice()
+        .sort((a, b) => (b.height || 0) - (a.height || 0))
+        .filter((v) => {
+          if (!v.height || seenHeights.has(v.height)) return false;
+          seenHeights.add(v.height);
+          return true;
+        })
+        .map((v) => ({ label: `${v.height}p`, height: v.height, url: buildWorkerProxyUrl(v.url, referer, 'full') }))
     ];
 
     return {
@@ -940,11 +1072,21 @@ async function resolveCastletvUpstream(metadata, preferredAudio = '', env = null
       streamUrl: activeTrack.streamUrl,
       referer,
       headers: { Referer: referer },
-      backupUrls: [
-        buildWorkerProxyUrl(activeTrack.rawUrl, referer, 'manifest')
-      ],
+      backupUrls: [buildWorkerProxyUrl(activeTrack.rawUrl, referer, 'manifest')],
       audioTracks,
-      qualities
+      qualities,
+      identity: {
+        provider: 'castletv',
+        verified: true,
+        matchedTitle: matched.title,
+        matchedYear: matched.year ? identity.extractYearFromValue(matched.year) : null,
+        upstreamId: String(movieId),
+        activeUpstreamId: String(activeId),
+        score: picked.winnerMatch ? picked.winnerMatch.score : null,
+        reasons: picked.winnerMatch ? picked.winnerMatch.reasons : [],
+        candidates: picked.ranked,
+        rejectedCandidates: picked.rejected
+      }
     };
   } catch {
     return null;
@@ -1055,62 +1197,101 @@ function getWorkerMovieboxCandidates(env = null) {
   return unique;
 }
 
+/**
+ * Build Moviebox search keywords. Moviebox is keyword-only (no TMDB/IMDb
+ * lookup exists), so the identity gate decides, not the ranking.
+ */
+function buildMovieboxKeywordsWorker(metadata) {
+  const seen = new Set();
+  const keywords = [];
+  const push = (value) => {
+    const text = String(value || '').trim();
+    if (!text || seen.has(text.toLowerCase())) return;
+    seen.add(text.toLowerCase());
+    keywords.push(text);
+  };
+  const title = metadata.title || '';
+  const year = metadata.releaseYear || metadata.year || '';
+  push(title);
+  push(year ? `${title} ${year}` : null);
+  push(metadata.originalTitle);
+  const alts = Array.isArray(metadata.alternativeTitles)
+    ? metadata.alternativeTitles
+    : Array.isArray(metadata.altTitles)
+      ? metadata.altTitles
+      : [];
+  alts.slice(0, 2).forEach((alt) => push(typeof alt === 'string' ? alt : alt && (alt.title || alt.name)));
+  return keywords.filter(Boolean).slice(0, 3);
+}
+
+function movieboxSubjectToCandidateWorker(subject) {
+  return {
+    id: String(subject.subjectId || subject.id || ''),
+    title: subject.title || subject.name || '',
+    year: subject.year || subject.releaseDate || null,
+    subjectType: subject.subjectType,
+    movieTypeName: subject.subjectTypeName || subject.typeName,
+    tags: subject.genre ? String(subject.genre).split(/[,/|]/) : [],
+    duration: subject.duration,
+    popularity: subject.hot || subject.score
+  };
+}
+
 async function resolveMovieboxUpstream(metadata, preferredAudio = '', env = null) {
   const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), 6000);
+  const timeoutId = setTimeout(() => controller.abort(), 8000);
   const secret = getMovieboxSecretWorker();
   const candidates = getWorkerMovieboxCandidates(env);
 
   try {
-    const searchBody = JSON.stringify({ page: 1, perPage: 20, keyword: metadata.title || '' });
+    if (!metadata || !metadata.title) return null;
     let activeHost = '';
-    let searchJson = null;
+    const subjectsById = new Map();
 
-    // Dynamically iterate through candidate hosts with failover
-    for (const host of candidates) {
-      try {
-        const searchUrl = `${host}/wefeed-mobile-bff/subject-api/search/v2`;
-        const searchRes = await fetch(searchUrl, {
-          method: 'POST',
-          headers: buildMovieboxHeadersWorker('POST', searchUrl, searchBody, secret),
-          body: searchBody,
-          signal: controller.signal
-        });
-        if (!searchRes.ok) continue;
-        const json = await searchRes.json().catch(() => null);
-        if (json && (json.code === 0 || json.data)) {
-          searchJson = json;
+    // 1. Union results from the keyword list across the host pool.
+    for (const keyword of buildMovieboxKeywordsWorker(metadata)) {
+      for (const host of candidates) {
+        try {
+          const searchBody = JSON.stringify({ page: 1, perPage: 20, keyword, restrictKid: 1 });
+          const searchUrl = `${host}/wefeed-mobile-bff/subject-api/search/v2`;
+          const searchRes = await fetch(searchUrl, {
+            method: 'POST',
+            headers: buildMovieboxHeadersWorker('POST', searchUrl, searchBody, secret),
+            body: searchBody,
+            signal: controller.signal
+          });
+          if (!searchRes.ok) continue;
+          const json = await searchRes.json().catch(() => null);
+          if (!json || (json.code !== 0 && !json.data)) continue;
+
           activeHost = host;
           workerCachedMovieboxHost = host;
           workerCachedMovieboxHostExpiry = Date.now() + 15 * 60 * 1000;
+          (json?.data?.results || []).forEach((group) => {
+            (group.subjects || []).forEach((subject) => {
+              const id = String(subject.subjectId || subject.id || '');
+              if (id && !subjectsById.has(id)) subjectsById.set(id, subject);
+            });
+          });
           break;
+        } catch {
+          // next cluster mirror
         }
-      } catch {}
+      }
+      if (subjectsById.size > 0) break;
     }
 
-    if (!activeHost || !searchJson) return null;
+    if (!activeHost || subjectsById.size === 0) return null;
 
-    const subjects = [];
-    if (searchJson?.data?.results) {
-      searchJson.data.results.forEach((group) => {
-        if (group.subjects) subjects.push(...group.subjects);
-      });
-    }
-    if (!subjects.length) return null;
+    // 2. TMDB-anchored identity gate (Moviebox rows carry no id fields).
+    const candidateList = Array.from(subjectsById.values()).map(movieboxSubjectToCandidateWorker);
+    const picked = identity.pickIdentityMatch(candidateList, metadata, { preferredAudio });
+    if (!picked.winner) return null;
 
-    const targetType = metadata.type === 'tv' ? 2 : 1;
-    const normTmdb = (metadata.title || '').toLowerCase().replace(/[^a-z0-9]/g, '');
-    const best =
-      subjects.find((s) => {
-        const norm = (s.title || '').toLowerCase().replace(/[^a-z0-9]/g, '');
-        return s.subjectType === targetType && (norm === normTmdb || norm.includes(normTmdb) || normTmdb.includes(norm));
-      }) ||
-      subjects.find((s) => s.subjectType === targetType) ||
-      subjects[0];
+    const subjectId = picked.winner.id;
+    const isTv = metadata.type === 'tv';
 
-    if (!best || !best.subjectId) return null;
-    const subjectId = best.subjectId;
-
+    // 3. Detail + full dub list (dubs[] and newer resourceDetectors[]).
     const getUrl = `${activeHost}/wefeed-mobile-bff/subject-api/get?subjectId=${subjectId}`;
     const getRes = await fetch(getUrl, {
       headers: buildMovieboxHeadersWorker('GET', getUrl, null, secret),
@@ -1118,40 +1299,69 @@ async function resolveMovieboxUpstream(metadata, preferredAudio = '', env = null
     });
     if (!getRes.ok) return null;
     const getJson = await getRes.json().catch(() => null);
-    const dubs = getJson?.data?.dubs || [];
-    const dubTargets = [{ id: subjectId, lang: 'Original' }];
-    if (Array.isArray(dubs)) {
-      dubs.forEach((d) => {
-        if (d.subjectId && d.subjectId !== subjectId) {
-          dubTargets.push({ id: d.subjectId, lang: d.lanName || 'Dubbed' });
-        }
+    const subjectData = getJson?.data || {};
+
+    const dubTargets = [{ id: subjectId, lang: 'Original', resourceId: null }];
+    const seenDubIds = new Set([String(subjectId)]);
+    if (Array.isArray(subjectData.dubs)) {
+      subjectData.dubs.forEach((dub) => {
+        const id = String(dub.subjectId || '');
+        if (!id || seenDubIds.has(id)) return;
+        seenDubIds.add(id);
+        dubTargets.push({ id, lang: dub.lanName || dub.lan || 'Dubbed', resourceId: null });
+      });
+    }
+    if (Array.isArray(subjectData.resourceDetectors)) {
+      subjectData.resourceDetectors.forEach((detector) => {
+        const name = detector.name || detector.lanName || '';
+        const resourceId = detector.resourceId || null;
+        if (!resourceId || !name || /default|original/i.test(name)) return;
+        const key = `res:${resourceId}`;
+        if (seenDubIds.has(key)) return;
+        seenDubIds.add(key);
+        dubTargets.push({ id: subjectId, lang: name, resourceId });
       });
     }
 
-    const season = metadata.type === 'tv' ? metadata.season || 1 : 0;
-    const episode = metadata.type === 'tv' ? metadata.episode || 1 : 0;
+    const season = isTv ? metadata.season || 1 : 0;
+    const episode = isTv ? metadata.episode || 1 : 0;
     const referer = `${activeHost}/`;
+    const playbackHeaders = {
+      Origin: activeHost,
+      Referer: subjectData.detailPath
+        ? `${activeHost}/movies/${String(subjectData.detailPath).replace(/^\/+/, '')}`
+        : referer,
+      'x-request-lang': 'en',
+      'x-vip-restrict': '0',
+      'x-no-high-risk-restrict': '0'
+    };
 
-    const streamJobs = dubTargets.map(async (t) => {
-      const playUrl = `${activeHost}/wefeed-mobile-bff/subject-api/play-info?subjectId=${t.id}&se=${season}&ep=${episode}`;
+    const streamJobs = dubTargets.map(async (target) => {
+      const params = new URLSearchParams({ subjectId: target.id, se: String(season), ep: String(episode) });
+      if (target.resourceId) params.set('resourceId', String(target.resourceId));
+      const playUrl = `${activeHost}/wefeed-mobile-bff/subject-api/play-info?${params.toString()}`;
       try {
         const pRes = await fetch(playUrl, {
-          headers: buildMovieboxHeadersWorker('GET', playUrl, null, secret),
+          headers: { ...buildMovieboxHeadersWorker('GET', playUrl, null, secret), ...playbackHeaders },
           signal: controller.signal
         });
         if (!pRes.ok) return null;
         const pJson = await pRes.json().catch(() => null);
         const streams = pJson?.data?.streams || [];
         const chosen = streams.find((s) => s.url) || null;
+        const languageName = pJson?.data?.languageName || pJson?.data?.lanName || null;
         if (chosen?.url) {
           return {
-            id: t.id,
-            lang: t.lang,
+            id: target.id,
+            resourceId: target.resourceId,
+            lang: languageName || target.lang,
             url: chosen.url,
             quality: chosen.resolutions || chosen.quality || 'Auto'
           };
         }
-      } catch {}
+      } catch {
+        // next dub target
+      }
       return null;
     });
 
@@ -1166,37 +1376,50 @@ async function resolveMovieboxUpstream(metadata, preferredAudio = '', env = null
 
     const audioTracks = valid.map((v, idx) => {
       const langCode = mapLanguageNameToCode(v.lang);
-      const isDefault = wantedCode ? langCode === wantedCode : idx === 0;
-      const proxiedUrl = buildWorkerProxyUrl(v.url, referer, 'full');
       return {
-        id: `mbox-${v.id || langCode || idx}`,
+        id: `mbox-${v.resourceId || v.id || langCode || idx}`,
         lang: langCode,
         label: v.lang || 'Original Audio',
         type: 'dub',
-        streamUrl: proxiedUrl,
+        streamUrl: buildWorkerProxyUrl(v.url, referer, 'full'),
         rawUrl: v.url,
-        default: isDefault
+        default: false
       };
     });
 
-    if (!audioTracks.some((a) => a.default)) {
-      audioTracks[0].default = true;
-    }
-    const active = audioTracks.find((a) => a.default) || audioTracks[0];
+    const hindiTrack = audioTracks.find((track) => track.lang === 'hi');
+    const preferredTrack = wantedCode ? audioTracks.find((track) => track.lang === wantedCode) : null;
+    const defaultTrack = preferredTrack || hindiTrack || audioTracks[0];
+    audioTracks.forEach((track) => {
+      track.default = track === defaultTrack;
+    });
+
+    const active = defaultTrack;
+    const activeUrl = active.rawUrl;
 
     return {
       server: 'andromeda',
       sourceName: 'Moviebox',
-      format: /\.mpd(\?|$)/i.test(active.rawUrl) ? 'dash' : /\.mp4(\?|$)/i.test(active.rawUrl) ? 'mp4' : 'hls',
+      format: /\.mpd(\?|$)/i.test(activeUrl) ? 'dash' : /\.mp4(\?|$)/i.test(activeUrl) ? 'mp4' : 'hls',
       rawUrl: active.rawUrl,
       streamUrl: active.streamUrl,
       referer,
-      headers: { Referer: referer },
-      backupUrls: [
-        buildWorkerProxyUrl(active.rawUrl, referer, 'manifest')
-      ],
+      headers: { Referer: referer, Origin: activeHost },
+      backupUrls: [buildWorkerProxyUrl(active.rawUrl, referer, 'manifest')],
       audioTracks,
-      qualities: [{ label: 'Auto', height: 0, url: active.streamUrl }]
+      qualities: [{ label: 'Auto', height: 0, url: active.streamUrl }],
+      identity: {
+        provider: 'moviebox',
+        verified: true,
+        matchedTitle: picked.winner.title,
+        matchedYear: identity.extractYearFromValue(picked.winner.year),
+        upstreamId: String(subjectId),
+        score: picked.winnerMatch ? picked.winnerMatch.score : null,
+        reasons: picked.winnerMatch ? picked.winnerMatch.reasons : [],
+        candidates: picked.ranked,
+        rejectedCandidates: picked.rejected,
+        dubTargets: dubTargets.map((t) => ({ id: t.id, resourceId: t.resourceId, lang: t.lang }))
+      }
     };
   } catch {
     return null;
@@ -4467,6 +4690,219 @@ async function resolveUrsaUpstream(metadata, requestedServerId = 'ursa', preferr
  * Centaurus, Atlas, Strings last.
  */
 const WATERFALL_PRIORITY = ['andromeda', 'ursa', 'centaurus', 'atlas', 'strings'];
+/* ------------------------------------------------------------------ *
+ * TMDB-id keyed Hindi dub layer
+ *
+ * "hindi" is an opt-in server: it is only used when a client asks for
+ * ?server=hindi (it is excluded from the implicit waterfall). Every provider
+ * answer is identity-checked against the TMDB title before it can be used, so
+ * a same-name film can never be returned. The dub inventory endpoint
+ * (/api/dubs) exposes every language a verified provider offers.
+ * ------------------------------------------------------------------ */
+
+const DUBS_FAST_PROVIDERS = ['castletv', 'moviebox', 'netmirror'];
+const DUBS_DEEP_PROVIDERS = ['castletv', 'moviebox', 'netmirror', 'ursa', 'centaurus'];
+const HINDI_PROVIDER_ORDER = ['castletv', 'moviebox', 'netmirror', 'ursa', 'centaurus', 'atlas'];
+
+function payloadHasHindi(resolved) {
+  return Boolean(
+    resolved &&
+      Array.isArray(resolved.audioTracks) &&
+      resolved.audioTracks.some(
+        (track) =>
+          track.lang === 'hi' ||
+          (Array.isArray(track.languages) && track.languages.includes('hi')) ||
+          /hindi/i.test(String(track.label || ''))
+      )
+  );
+}
+
+function collectPayloadLanguages(resolved) {
+  const languages = new Map();
+  (resolved?.audioTracks || []).forEach((track) => {
+    const codes = Array.isArray(track.languages) && track.languages.length
+      ? track.languages
+      : track.lang
+        ? [track.lang]
+        : [];
+    codes.forEach((code) => {
+      const key = String(code || '').toLowerCase();
+      if (!key) return;
+      const existing = languages.get(key) || {
+        code: key,
+        label: track.label || code,
+        playable: false,
+        default: false
+      };
+      existing.playable = existing.playable || Boolean(track.streamUrl || track.rawUrl);
+      existing.default = existing.default || Boolean(track.default);
+      languages.set(key, existing);
+    });
+  });
+  return Array.from(languages.values());
+}
+
+async function resolveDubProvider(providerId, metadata, preferredAudio, env) {
+  if (providerId === 'castletv') return resolveCastletvUpstream(metadata, preferredAudio, env);
+  if (providerId === 'moviebox') return resolveMovieboxUpstream(metadata, preferredAudio, env);
+  if (providerId === 'netmirror') return resolveNetmirrorUpstream(metadata, preferredAudio, env);
+  if (providerId === 'ursa') return resolveUrsaUpstream(metadata, 'ursa', preferredAudio, env);
+  if (providerId === 'centaurus') return resolveHicineUpstream(metadata, env);
+  if (providerId === 'atlas') return resolveVidstuckUpstream(metadata, 'atlas', env);
+  return null;
+}
+
+/**
+ * Server "hindi": first identity-verified provider that actually carries a
+ * Hindi track. If none does, the verified original-audio stream is returned
+ * with hindiAvailable:false instead of a wrong-title "Hindi" stream.
+ */
+async function resolveHindiUpstream(metadata, preferredAudio = 'hi', env = null, options = {}) {
+  const configuredOrder = env && env.HINDI_PROVIDERS
+    ? String(env.HINDI_PROVIDERS).split(',').map((s) => s.trim().toLowerCase()).filter(Boolean)
+    : null;
+  const order = options.providerIds || configuredOrder || HINDI_PROVIDER_ORDER;
+  const attempts = [];
+  let firstVerified = null;
+
+  for (const providerId of order) {
+    const startedAt = Date.now();
+    let resolved = null;
+    try {
+      resolved = await withTimeout(resolveDubProvider(providerId, metadata, preferredAudio, env), 12000);
+    } catch (error) {
+      attempts.push({ provider: providerId, ok: false, reason: String(error.message || error), latencyMs: Date.now() - startedAt });
+      continue;
+    }
+    if (!resolved || !resolved.streamUrl) {
+      attempts.push({ provider: providerId, ok: false, reason: 'no_stream', latencyMs: Date.now() - startedAt });
+      continue;
+    }
+
+    const hindi = payloadHasHindi(resolved);
+    attempts.push({ provider: providerId, ok: true, hindi, latencyMs: Date.now() - startedAt });
+    if (!firstVerified) firstVerified = { providerId, resolved };
+
+    if (hindi) {
+      return {
+        ...resolved,
+        server: 'hindi',
+        hindiAvailable: true,
+        preferredAudio: 'hi',
+        providerId,
+        dubs: collectPayloadLanguages(resolved),
+        attempts,
+        identity: resolved.identity || null
+      };
+    }
+  }
+
+  if (firstVerified) {
+    return {
+      ...firstVerified.resolved,
+      server: 'hindi',
+      hindiAvailable: false,
+      preferredAudio: 'hi',
+      providerId: firstVerified.providerId,
+      diagMessage: 'No identity-verified Hindi dub found; serving the verified original-audio stream.',
+      dubs: collectPayloadLanguages(firstVerified.resolved),
+      attempts,
+      identity: firstVerified.resolved.identity || null
+    };
+  }
+
+  return { ok: false, reason: 'hindi_all_sources_failed', attempts, diag: { stage: 'hindi', message: 'No identity-verified source responded for this title.' } };
+}
+
+/** Dub inventory for /api/dubs/:type/:tmdbId. */
+async function buildWorkerDubCatalog(metadata, env, options = {}) {
+  const providerIds = options.deep ? DUBS_DEEP_PROVIDERS : DUBS_FAST_PROVIDERS;
+  const preferredAudio = options.preferredAudio || 'hi';
+
+  const settled = await Promise.all(
+    providerIds.map(async (providerId) => {
+      try {
+        const resolved = await withTimeout(resolveDubProvider(providerId, metadata, preferredAudio, env), options.deep ? 20000 : 12000);
+        return { providerId, resolved };
+      } catch {
+        return { providerId, resolved: null };
+      }
+    })
+  );
+
+  const providers = settled.map(({ providerId, resolved }) => {
+    if (!resolved || !resolved.streamUrl) {
+      return {
+        id: providerId,
+        ok: false,
+        identity: { verified: false, method: null },
+        languages: [],
+        hindi: false,
+        stream: null
+      };
+    }
+    const languages = collectPayloadLanguages(resolved);
+    return {
+      id: providerId,
+      ok: true,
+      sourceName: resolved.sourceName || providerId,
+      format: resolved.format || null,
+      identity: resolved.identity || { verified: false, method: 'provider-native' },
+      languages,
+      hindi: payloadHasHindi(resolved),
+      stream: {
+        server: resolved.server,
+        sourceName: resolved.sourceName,
+        format: resolved.format,
+        streamUrl: resolved.streamUrl,
+        rawUrl: resolved.rawUrl,
+        referer: resolved.referer || '',
+        headers: resolved.headers || {},
+        qualities: resolved.qualities || [],
+        audioTracks: resolved.audioTracks || [],
+        backupUrls: resolved.backupUrls || []
+      }
+    };
+  });
+
+  const languageMap = new Map();
+  providers.forEach((provider) => {
+    (provider.languages || []).forEach((language) => {
+      const key = language.code || language.label;
+      if (!key) return;
+      const existing = languageMap.get(key) || { code: language.code, label: language.label, playable: false, providers: [] };
+      existing.playable = existing.playable || language.playable;
+      if (!existing.providers.includes(provider.id)) existing.providers.push(provider.id);
+      languageMap.set(key, existing);
+    });
+  });
+  const dubs = Array.from(languageMap.values()).sort((a, b) => {
+    const aHindi = a.code === 'hi' ? 0 : 1;
+    const bHindi = b.code === 'hi' ? 0 : 1;
+    if (aHindi !== bHindi) return aHindi - bHindi;
+    return String(a.label).localeCompare(String(b.label));
+  });
+
+  const hindiProvider = providers.find((provider) => provider.ok && provider.hindi);
+  const fallbackProvider = providers.find((provider) => provider.ok);
+  return {
+    mode: options.deep ? 'deep' : 'fast',
+    tmdbId: metadata.tmdbId,
+    type: metadata.type,
+    title: metadata.title,
+    year: metadata.releaseYear,
+    hindi: Boolean(hindiProvider),
+    dubs,
+    providers,
+    best: hindiProvider
+      ? { providerId: hindiProvider.id, hindi: true, stream: hindiProvider.stream }
+      : fallbackProvider
+        ? { providerId: fallbackProvider.id, hindi: false, stream: fallbackProvider.stream }
+        : null,
+    generatedAt: new Date().toISOString()
+  };
+}
+
 /** Hard per-upstream budget: the waterfall must stay fast and deterministic. */
 const WATERFALL_UPSTREAM_TIMEOUT_MS = 9000;
 // A manually selected Ursa/4K request gets a separate 14s budget for concurrent tiers and range probes.
@@ -4498,9 +4934,15 @@ async function resolveStreamWaterfall(metadata, requestedServer, preferredAudio,
   const enabledIds = SERVERS.filter((s) => s.enabled).map((s) => s.id);
   // Default (and fallback) order: andromeda -> ursa -> centaurus -> atlas -> strings.
   // An explicitly requested server is still attempted first and remains authoritative.
+  const isImplicitFallback = (id) => {
+    const server = SERVERS.find((s) => s.id === id);
+    return !server || server.fallback !== false;
+  };
   const prioritized = [
     ...WATERFALL_PRIORITY.filter((id) => enabledIds.includes(id)),
-    ...enabledIds.filter((id) => !WATERFALL_PRIORITY.includes(id))
+    // Opt-in servers (e.g. the TMDB-id keyed "hindi" server) are only used when
+    // explicitly requested, keeping the default waterfall unchanged.
+    ...enabledIds.filter((id) => !WATERFALL_PRIORITY.includes(id) && isImplicitFallback(id))
   ];
   const order = [validServer, ...prioritized.filter((id) => id !== validServer)];
 
@@ -4533,6 +4975,11 @@ async function resolveStreamWaterfall(metadata, requestedServer, preferredAudio,
       );
     } else if (srvId === 'strings') {
       resolved = null;
+    } else if (srvId === 'hindi') {
+      resolved = await withTimeout(
+        resolveHindiUpstream(metadata, preferredAudio || 'hi', env),
+        URSA_WATERFALL_TIMEOUT_MS
+      );
     }
     const latencyMs = Date.now() - t0;
 
@@ -4988,6 +5435,39 @@ export default {
       return new Response(srtToVtt(raw), {
         status: 200,
         headers: corsHeaders({ 'Content-Type': 'text/vtt; charset=utf-8' })
+      });
+    }
+
+    // GET /api/dubs/:type/:tmdbId - TMDB-id keyed dub inventory
+    const dubsMatch = pathname.match(/^\/api\/dubs\/(movie|tv|series)\/([^/]+)$/i);
+    if (dubsMatch) {
+      const [, rawDubsType, dubsTmdbId] = dubsMatch;
+      const dubsSeason = parseInt(url.searchParams.get('season') || url.searchParams.get('s') || '1', 10);
+      const dubsEpisode = parseInt(url.searchParams.get('episode') || url.searchParams.get('e') || '1', 10);
+      const deep = /^(1|true|yes)$/i.test(String(url.searchParams.get('deep') || ''));
+      const preferredAudio = (url.searchParams.get('audio') || 'hi').toLowerCase();
+
+      const dubsMetadata = await resolveTmdbMetadata(rawDubsType, dubsTmdbId, dubsSeason, dubsEpisode, env);
+      if (dubsMetadata.unresolvedTmdb) {
+        return jsonResponse(
+          { ok: false, error: `TMDB id ${dubsTmdbId} could not be resolved; refusing to fall back to a name search.` },
+          404
+        );
+      }
+      const catalog = await buildWorkerDubCatalog(dubsMetadata, env, { deep, preferredAudio });
+      return jsonResponse({
+        ok: true,
+        metadata: {
+          tmdbId: dubsMetadata.tmdbId,
+          type: dubsMetadata.type,
+          title: dubsMetadata.title,
+          originalTitle: dubsMetadata.originalTitle,
+          releaseYear: dubsMetadata.releaseYear,
+          imdbId: dubsMetadata.externalIds?.imdb_id || null,
+          season: dubsMetadata.season,
+          episode: dubsMetadata.episode
+        },
+        ...catalog
       });
     }
 
