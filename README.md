@@ -180,12 +180,18 @@ curl "$API/api/admin/centaurus/diagnose/tv/249477?season=2&episode=1&key=$ADMIN_
 # → per-source {ok, ms, reason, diag, rawUrl, qualities, audioTracks}
 ```
 
-**Worker deployments:** source 2 needs the Node backend for the same reasons as
-Hamster Wheel (HTML extraction, unrolling, probes). When the Worker's built-in
-HiCine attempt finds nothing on an animation title it delegates just that source
-with `?source=animedubhindi`, configured through `ANIMEDUBHINDI_BACKEND_URL`
-(falls back to `HAMSTER_BACKEND_URL`). Without it, source 2 is skipped with an
-explicit `animedubhindi_backend_not_configured` diagnostic.
+**Worker deployments:** source 2 works best on the Node backend (HTML
+extraction, unrolling, probes, and — most importantly — the ffmpeg remux that
+turns HiCine's multi-audio MKVs into switchable HLS audio renditions). Set
+`HICINE_BACKEND_URL` in `wrangler.toml` to the Node deployment's absolute URL
+(falls back to `ANIMEDUBHINDI_BACKEND_URL`, then `HAMSTER_BACKEND_URL`) and the
+Worker delegates the whole Centaurus server — HiCine first, Anime Dub Hindi
+second — to it; if the backend is absent or unreachable the in-Worker path still
+runs. The anime-only source additionally uses `?source=animedubhindi` when the
+in-Worker HiCine attempt finds nothing on an animation title, and reports an
+explicit `animedubhindi_backend_not_configured` diagnostic without it. Without
+ffmpeg on the Node host (`multitrack.enabled=false` in `/api/health`) HiCine
+MKVs still play, but their embedded audio tracks cannot be switched.
 
 ### Server 3 — Hamster Wheel (Hindi-first fan-out)
 
@@ -237,13 +243,15 @@ the `HAMSTER_*`, `MOVIEBOX_*` and `HINDMOVIEZ_*`/`FOURKHDHUB_*` variables in
 
 Audio behavior is intentionally truthful:
 
-- Upstream HLS audio renditions are exposed when they are actually switchable.
+- Upstream HLS audio renditions are exposed when they are actually switchable, and the player also adopts renditions it discovers in the parsed manifest — a single payload row hiding a multi-track HLS master still becomes a switchable menu.
+- Switching is index-first (`audioIndex` from the remux payload) and only claims success when a rendition actually changed; if the stream is a single progressive file the player says so instead of showing a fake "Audio switched" toast.
+- Quality rows are matched to HLS levels by resolution height (not array position), and CastleTV ladders are merged across every resolution rung, so the quality menu lists real 1080p/720p/480p entries instead of a lone "Auto". A remuxed file lists exactly one row at the file's native resolution.
 - HiCine has filename-only language hints, not structured language URLs; progressive sources remain one honest default row rather than duplicate entries for the same file.
 - Node deployments can use FFmpeg/FFprobe to remux embedded MKV/MP4 audio tracks into HLS. The video stream is copied; supported audio is copied and other audio is converted to AAC.
 - Cloudflare Workers do not run FFmpeg. They retain upstream HLS rendition switching and use progressive fallback for embedded MKV tracks; the browser cannot select embedded tracks from progressive MKV.
 - If remuxing is unavailable, unsafe for the source host, or fails, the resolver keeps the source's default audio and progressive fallback rather than claiming unsupported switching.
 
-The generated Node multitrack package is cached locally (default two hours), starts serving once initial segments are ready, and is protected by HMAC-signed playlist and asset URLs. The built-in HTTPS source allowlist includes `r2.dev`, `cloudflarestorage.com`, `cloudfront.net`, `googleusercontent.com`, `workers.dev`, and Pixeldrain. Add trusted suffixes with `MULTITRACK_ALLOWED_HOSTS`; do not allow untrusted hosts. Tune job count and cache limits with the `MULTITRACK_*` settings in `.env.example`.
+The generated Node multitrack package is cached locally (default two hours), starts serving once initial segments are ready, and is protected by HMAC-signed playlist and asset URLs (the signed master also carries the resolver's trust decision, so a provider-resolved file on a release CDN can be remuxed without opening the endpoint to arbitrary hosts). The built-in HTTPS source allowlist includes `r2.dev`, `cloudflarestorage.com`, `cloudfront.net`, `googleusercontent.com`, `workers.dev`, Pixeldrain, and the HubCloud/GDFlix release chains (`hubcloud.ist`, `hubdrive.pics`, `gdflix.dev`, `gdflix.io`, `busycdn.xyz`, `indexserver.site`). Add trusted suffixes with `MULTITRACK_ALLOWED_HOSTS`; do not allow untrusted hosts. Tune job count and cache limits with the `MULTITRACK_*` settings in `.env.example`.
 
 Codec/device combinations such as HEVC/AV1 profiles, HDR/Dolby Vision, AC-3/E-AC-3, and progressive MKV may not work in every browser. Use a compatible source/server when necessary; the backend does not transcode video to conceal these limitations.
 

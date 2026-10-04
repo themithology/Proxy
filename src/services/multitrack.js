@@ -6,6 +6,13 @@ const { spawn, spawnSync } = require('child_process');
 const config = require('../config');
 const { signProxyParams, verifyProxySignature } = require('../utils/crypto');
 
+/**
+ * Hosts the Node tier may fetch for remuxing. These are exactly the CDN
+ * families the resolver already hands to the browser (HubCloud/GDFlix release
+ * chains included), so remuxing from them grants no new trust — while keeping
+ * the SSRF guard intact for anything else. Add deployment-specific suffixes
+ * with MULTITRACK_ALLOWED_HOSTS (do not add untrusted hosts).
+ */
 const DEFAULT_ALLOWED_HOSTS = [
   'r2.dev',
   'cloudflarestorage.com',
@@ -13,7 +20,14 @@ const DEFAULT_ALLOWED_HOSTS = [
   'googleusercontent.com',
   'workers.dev',
   'pixeldrain.com',
-  'pixeldrain.dev'
+  'pixeldrain.dev',
+  // HubCloud / GDFlix / Anime Dub Hindi release chains.
+  'hubcloud.ist',
+  'hubdrive.pics',
+  'gdflix.dev',
+  'gdflix.io',
+  'busycdn.xyz',
+  'indexserver.site'
 ];
 const USER_AGENT =
   'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36';
@@ -141,7 +155,16 @@ function normalizeFallbackLanguages(fallbackLanguages) {
     .slice(0, 16);
 }
 
-function isAllowedSourceUrl(sourceUrl) {
+/**
+ * Gate every URL that reaches the remux/ffprobe tier.
+ *
+ * The suffix allowlist keeps arbitrary third-party hosts out. Resolver call
+ * sites that obtained the URL from a provider they already trust pass
+ * `{ allowUnknownHost: true }`, which skips ONLY the suffix check: https, the
+ * no-credentials/no-port rules and the hard IP/localhost rejection always stay
+ * in force, so internal-network SSRF targets remain blocked.
+ */
+function isAllowedSourceUrl(sourceUrl, options = {}) {
   if (typeof sourceUrl !== 'string' || sourceUrl.length > 8192) return false;
   let parsed;
   try {
@@ -166,6 +189,8 @@ function isAllowedSourceUrl(sourceUrl) {
   }
   // IP literal sources are never accepted, even if a permissive custom host is configured.
   if (/^[0-9.]+$/.test(host) || host.includes(':')) return false;
+
+  if (options && options.allowUnknownHost) return true;
 
   const configuredHosts = Array.from(
     new Set([...DEFAULT_ALLOWED_HOSTS, ...((config.multitrack && config.multitrack.allowedHosts) || [])])
@@ -282,23 +307,25 @@ function normalizeProbe(probe) {
   return parseProbeJson(probe);
 }
 
-function masterSignatureTarget(sourceUrl, langParam = '') {
-  return `multitrack-master|${sourceUrl}|${langParam}`;
+function masterSignatureTarget(sourceUrl, langParam = '', trusted = false) {
+  return `multitrack-master|${sourceUrl}|${langParam}|${trusted ? '1' : '0'}`;
 }
 
-function createSignedMasterUrl(sourceUrl, fallbackLanguages = []) {
+function createSignedMasterUrl(sourceUrl, fallbackLanguages = [], options = {}) {
   const langParam = normalizeFallbackLanguages(fallbackLanguages).join(',');
+  const trusted = !!(options && options.allowUnknownHost);
   const exp = Math.floor(Date.now() / 1000) + (config.tokenTtlSeconds || 14400);
-  const sig = signProxyParams(masterSignatureTarget(sourceUrl, langParam), '', exp);
+  const sig = signProxyParams(masterSignatureTarget(sourceUrl, langParam, trusted), '', exp);
   const params = new URLSearchParams({ url: sourceUrl });
   if (langParam) params.set('lang', langParam);
+  if (trusted) params.set('trusted', '1');
   params.set('exp', String(exp));
   params.set('sig', sig);
   return `${config.publicBaseUrl || ''}/api/multitrack/master.m3u8?${params.toString()}`;
 }
 
-function verifySignedMaster(sourceUrl, langParam, exp, sig) {
-  return verifyProxySignature(masterSignatureTarget(sourceUrl, langParam || ''), '', exp, sig);
+function verifySignedMaster(sourceUrl, langParam, exp, sig, trusted = false) {
+  return verifyProxySignature(masterSignatureTarget(sourceUrl, langParam || '', trusted), '', exp, sig);
 }
 
 function createSignedAssetUrl(jobId, filename, exp) {
@@ -312,13 +339,15 @@ function verifySignedAsset(jobId, filename, exp, sig) {
   return verifyProxySignature(`multitrack-asset|${jobId}|${filename}`, '', exp, sig);
 }
 
-function createMultiTrackPayload(sourceUrl, rawProbe, fallbackLanguages = []) {
+function createMultiTrackPayload(sourceUrl, rawProbe, fallbackLanguages = [], options = {}) {
   const probe = normalizeProbe(rawProbe);
   if (probe.videoStreams.length === 0 || probe.audioStreams.length <= 1) return null;
 
   const mapped = mapAudioStreams(probe.streams, fallbackLanguages);
   if (mapped.length <= 1) return null;
-  const streamUrl = createSignedMasterUrl(sourceUrl, mapped.map((track) => track.lang));
+  const streamUrl = createSignedMasterUrl(sourceUrl, mapped.map((track) => track.lang), {
+    allowUnknownHost: !!(options && options.allowUnknownHost)
+  });
   return {
     format: 'hls',
     streamUrl,
@@ -329,6 +358,11 @@ function createMultiTrackPayload(sourceUrl, rawProbe, fallbackLanguages = []) {
       type: 'dub',
       streamUrl,
       rawUrl: sourceUrl,
+      // Rendition order in the generated master playlist. The player switches
+      // with `hls.audioTrack = audioIndex`, which keeps working when ffprobe
+      // could not tag a language (lang === 'und' used to make the switch a
+      // silent no-op while the UI still said "Audio switched").
+      audioIndex: index,
       default: track.default
     }))
   };
@@ -408,8 +442,8 @@ function runCommand(command, args, options = {}) {
   });
 }
 
-async function probeSource(sourceUrl) {
-  if (!config.multitrack.enabled || !isAllowedSourceUrl(sourceUrl)) return null;
+async function probeSource(sourceUrl, options = {}) {
+  if (!config.multitrack.enabled || !isAllowedSourceUrl(sourceUrl, options)) return null;
   const cacheKey = sourceCacheKey(sourceUrl);
   if (!cacheKey) return null;
 
@@ -460,11 +494,16 @@ async function probeSource(sourceUrl) {
 
 async function prepareMultiTrackStream(sourceUrl, fallbackLanguages = [], options = {}) {
   const enabled = options.enabled == null ? config.multitrack.enabled : !!options.enabled;
-  if (!enabled || !isAllowedSourceUrl(sourceUrl)) return null;
+  const trusted = !!(options && options.trustSource);
+  if (!enabled || !isAllowedSourceUrl(sourceUrl, { allowUnknownHost: trusted })) return null;
   try {
-    const probe = options.probe ? await options.probe(sourceUrl) : await probeSource(sourceUrl);
+    const probe = options.probe
+      ? await options.probe(sourceUrl)
+      : await probeSource(sourceUrl, { allowUnknownHost: trusted });
     if (!probe) return null;
-    return createMultiTrackPayload(sourceUrl, probe, fallbackLanguages);
+    return createMultiTrackPayload(sourceUrl, probe, fallbackLanguages, {
+      allowUnknownHost: trusted
+    });
   } catch {
     // Remux support is an optimization; a probe failure must preserve progressive playback.
     return null;
@@ -851,9 +890,11 @@ async function waitForInitialPackage(job, directory, audioTracks) {
   throw error;
 }
 
-async function ensurePackage(sourceUrl, fallbackLanguages = []) {
+async function ensurePackage(sourceUrl, fallbackLanguages = [], options = {}) {
   if (!config.multitrack.enabled) throw new Error('Multi-track remuxing is disabled');
-  if (!isAllowedSourceUrl(sourceUrl)) throw new Error('Source host is not allowlisted');
+  // Mirrors serveMasterPlaylist's gate: a signed trusted master may package a
+  // provider-resolved source even when its CDN host is not on the allowlist.
+  if (!isAllowedSourceUrl(sourceUrl, options)) throw new Error('Source host is not allowlisted');
   const jobId = buildJobId(sourceUrl);
   if (!jobId) throw new Error('Invalid source URL');
 
@@ -1006,13 +1047,16 @@ async function serveMasterPlaylist(req, res) {
   const langParam = String(req.query.lang || '');
   const exp = String(req.query.exp || '');
   const sig = String(req.query.sig || '');
+  // Only a server-signed master may relax the host suffix check: the flag is
+  // part of the signed payload, so clients cannot add it themselves.
+  const trusted = String(req.query.trusted || '') === '1';
   const validLanguageParam = !langParam || langParam.split(',').every((code) => /^[a-z]{2,3}$/.test(code));
 
-  if (!sourceUrl || !verifySignedMaster(sourceUrl, langParam, exp, sig)) {
+  if (!sourceUrl || !verifySignedMaster(sourceUrl, langParam, exp, sig, trusted)) {
     return res.status(403).json({ error: 'Invalid or expired multi-track signature' });
   }
   if (!validLanguageParam) return res.status(400).json({ error: 'Invalid audio language metadata' });
-  if (!isAllowedSourceUrl(sourceUrl)) {
+  if (!isAllowedSourceUrl(sourceUrl, { allowUnknownHost: trusted })) {
     return res.status(403).json({ error: 'Source host is not allowed for multi-track remuxing' });
   }
   if (!config.multitrack.enabled) {
@@ -1021,7 +1065,7 @@ async function serveMasterPlaylist(req, res) {
 
   try {
     const fallbackLanguages = langParam ? langParam.split(',') : [];
-    const job = await ensurePackage(sourceUrl, fallbackLanguages);
+    const job = await ensurePackage(sourceUrl, fallbackLanguages, { allowUnknownHost: trusted });
     const masterPath = path.join(job.directory, 'master.m3u8');
     const master = await fsp.readFile(masterPath, 'utf8');
     await fsp.utimes(job.directory, new Date(), new Date()).catch(() => {});

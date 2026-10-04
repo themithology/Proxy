@@ -281,7 +281,21 @@ async function resolveCastletv(metadata, preferredAudio = '', parentSignal = nul
     const referer = `${castletvBase}/`;
     const APK_SIGN_KEY = 'ED0955EB04E67A1D9F3305B95454FED485261475';
 
+    // CastleTV answers one quality per `resolution` rung. The old code stopped
+    // at the first rung that produced a URL, so any title whose response carried
+    // no `data.videos` array collapsed to a single "Auto" entry in the player.
+    // Collect every rung into a real ladder instead (this stays inside the same
+    // abort budget: the loop breaks as soon as two heights are known).
+    const CASTLE_HEIGHTS_BY_RESOLUTION = { 1: 480, 2: 720, 3: 1080, 4: 2160 };
+    const castleVideoHeight = (value) => {
+      const num = Number(value);
+      if (!Number.isFinite(num) || num <= 0) return 0;
+      return num <= 4 ? CASTLE_HEIGHTS_BY_RESOLUTION[num] || 0 : num;
+    };
+
     const fetchTrackStream = async (track) => {
+      const ladder = new Map();
+      let base = null;
       for (const resolution of [3, 2, 1]) {
         try {
           const body = {
@@ -310,26 +324,45 @@ async function resolveCastletv(metadata, preferredAudio = '', parentSignal = nul
           );
           if (!vRes.ok) continue;
           const vJson = JSON.parse(decryptCastleAes(await vRes.text(), key));
-          const videoUrl = vJson?.data?.videoUrl || vJson?.data?.videos?.[0]?.url;
-          if (!videoUrl) continue;
-          const videos = (vJson?.data?.videos || [])
+          const rows = (vJson?.data?.videos || [])
             .filter((v) => v && v.url)
             .map((v) => ({
               url: v.url,
-              height: v.resolution === 4 ? 2160 : v.resolution === 3 ? 1080 : v.resolution === 2 ? 720 : 480
-            }));
-          return {
-            languageId: track.languageId,
-            languageName: track.languageName || track.abbreviate || 'Original',
-            videoUrl,
-            videos,
-            subtitles: (vJson?.data?.subtitles || []).filter((s) => s && s.url)
-          };
+              // `resolution` may be a rung number (1-4) or an explicit pixel
+              // height depending on the upstream build; accept both.
+              height: castleVideoHeight(v.resolution != null ? v.resolution : v.height)
+            }))
+            .filter((v) => v.height > 0);
+          const videoUrl =
+            vJson?.data?.videoUrl || rows[0]?.url || '';
+          if (!videoUrl && rows.length === 0) continue;
+
+          if (!base) {
+            base = {
+              languageId: track.languageId,
+              languageName: track.languageName || track.abbreviate || 'Original',
+              videoUrl: videoUrl || rows[0].url,
+              subtitles: (vJson?.data?.subtitles || []).filter((s) => s && s.url)
+            };
+          }
+          rows.forEach((row) => {
+            if (!ladder.has(row.height)) ladder.set(row.height, row.url);
+          });
+          const requestedHeight = CASTLE_HEIGHTS_BY_RESOLUTION[resolution] || 0;
+          if (videoUrl && requestedHeight && !ladder.has(requestedHeight)) {
+            ladder.set(requestedHeight, videoUrl);
+          }
+          // A full ladder is usually inside the first response; only keep
+          // probing lower rungs while the menu would still show one row.
+          if (ladder.size >= 2) break;
         } catch {
           // try the next resolution rung
         }
       }
-      return null;
+      if (!base) return null;
+      base.videos = Array.from(ladder, ([height, url]) => ({ height, url }))
+        .sort((a, b) => b.height - a.height);
+      return base;
     };
 
     // Fetch every language track with bounded concurrency so all dubs survive.
@@ -398,18 +431,51 @@ async function resolveCastletv(metadata, preferredAudio = '', parentSignal = nul
         }))
     ];
 
+    // CastleTV is HLS-first, but some entries are direct progressive files.
+    // Those used to be reported as `format: 'hls'` and handed to hls.js, which
+    // cannot play them — and a browser cannot switch the audio tracks embedded
+    // in a progressive file, so the track menu did nothing. Progressive tracks
+    // now report their real container and go through the same Node remux as the
+    // other servers (HLS tracks already carry switchable renditions).
+    const activeKind = hamster.kindFromUrl(activeTrack.rawUrl);
+    const activeFormat = activeKind === 'unknown' ? 'hls' : activeKind;
+    const remuxStream =
+      activeFormat === 'mp4' || activeFormat === 'mkv'
+        ? await prepareMultiTrackStream(
+            activeTrack.rawUrl,
+            audioTracks.map((track) => ({ code: track.lang, label: track.label })),
+            { trustSource: true }
+          )
+        : null;
+    const finalAudioTracks = remuxStream ? remuxStream.audioTracks : audioTracks;
+    finalAudioTracks.forEach((track, index) => {
+      track.default = remuxStream ? !!track.default : track === defaultTrack;
+      if (!track.id) track.id = `castle-${index}`;
+    });
+
     return {
       server: 'andromeda',
       sourceName: 'CastleTV',
-      format: 'hls',
+      // A remux is HLS by construction; otherwise the container is honest.
+      format: remuxStream ? remuxStream.format : activeFormat,
       rawUrl: activeTrack.rawUrl,
-      streamUrl: activeTrack.streamUrl,
+      streamUrl: remuxStream ? remuxStream.streamUrl : activeTrack.streamUrl,
+      // The variant ladder belongs to the original container, so a remuxed file
+      // carries only its own (single) rendition — labeled with the source's
+      // height instead of a bare "Auto" so the menu reflects reality.
+      qualities: remuxStream ? [remuxQualityRow(qualities, remuxStream.streamUrl)] : qualities,
+      progressiveFormat: remuxStream ? activeFormat : undefined,
       referer,
       headers: { Referer: referer },
-      backupUrls: [buildProxyStreamUrl(activeTrack.rawUrl, referer, '', { mode: 'manifest' })],
-      audioTracks,
-      qualities,
-      downloadAudioTracks: audioTracks,
+      // Manifest proxy first (cheapest retry), then the original ladder so a
+      // remux that the browser cannot decode still has real failover mirrors.
+      backupUrls: Array.from(new Set([
+        buildProxyStreamUrl(activeTrack.rawUrl, referer, '', { mode: 'manifest' }),
+        ...(remuxStream ? qualities.slice(1).map((quality) => quality.url) : []),
+        buildProxyStreamUrl(activeTrack.rawUrl, referer, '', { mode: 'full' })
+      ])),
+      audioTracks: finalAudioTracks,
+      downloadAudioTracks: finalAudioTracks,
       identity: {
         provider: 'castletv',
         verified: true,
@@ -840,6 +906,30 @@ const HUBCLOUD_UNROLL_BODY_CAP = 600 * 1024;
 const HUBCLOUD_UNROLL_ALT_UA =
   'Mozilla/5.0 (compatible; Googlebot/2.1; +http://www.google.com/bot.html)';
 const hubcloudUnrollCache = new Map(); // generatorUrl -> { direct, exp }
+
+/**
+ * A remux publishes exactly one video rendition, so the quality menu must show
+ * that rendition honestly. When the pre-remux ladder knew the file's height we
+ * reuse it (e.g. "1080p"), otherwise the row stays "Auto".
+ */
+function remuxQualityRow(originalQualities, streamUrl) {
+  const heights = (Array.isArray(originalQualities) ? originalQualities : [])
+    .map((quality) => Number(quality && quality.height) || 0)
+    .filter((height) => height > 0);
+  const height = heights.length ? Math.max(...heights) : 0;
+  return { label: height ? `${height}p` : 'Auto', height, url: streamUrl };
+}
+
+/**
+ * Honest container label for a resolved media URL. Extension-less CDN files
+ * are progressive downloads, so they map to 'mp4' — the player sends anything
+ * that is not 'hls'/'dash' to the progressive <video> path, and MKV/MP4 files
+ * become remux candidates when the Node tier can probe them.
+ */
+function containerFormatForUrl(url) {
+  const kind = hamster.kindFromUrl(url);
+  return kind === 'unknown' ? 'mp4' : kind;
+}
 
 function isHubcloudGeneratorUrl(u) {
   if (!u || typeof u !== 'string') return false;
@@ -2139,11 +2229,10 @@ async function resolveVcloudWorkerLink(workerUrl, signal, unrollDeadline) {
             title: data.title || '',
             tokenType,
             isHotlinkBlocked,
-            format: /\.mpd(\?|$)/i.test(location)
-              ? 'dash'
-              : /\.m3u8(\?|$)/i.test(location)
-                ? 'hls'
-                : 'mp4'
+            // Extension-less CDN URLs are progressive files, but `.mkv` must
+            // not be reported as mp4: the resolver's remux gate and the player
+            // both key off the container.
+            format: containerFormatForUrl(location)
           };
         } catch {
           return null;
@@ -2349,10 +2438,17 @@ async function resolveHicineServer(metadata) {
         default: true
       }
     ];
-    const multiTrackStream =
-      primary.streamFormat === 'mp4'
-        ? await prepareMultiTrackStream(primary.rawUrl, hintedLanguages)
-        : null;
+    // Multi-audio releases are progressive MKV/MP4 files whose embedded tracks a
+    // browser cannot switch on its own (it always plays the default track). The
+    // Node tier remuxes them into an HLS master with one EXT-X-MEDIA rendition
+    // per track, which is the only way the player gets a working audio menu.
+    // Only HLS/DASH sources are skipped — they already carry their own
+    // renditions, and the player switches those natively.
+    const isProgressivePrimary =
+      primary.streamFormat !== 'hls' && primary.streamFormat !== 'dash';
+    const multiTrackStream = isProgressivePrimary
+      ? await prepareMultiTrackStream(primary.rawUrl, hintedLanguages, { trustSource: true })
+      : null;
     const streamUrl = multiTrackStream?.streamUrl || primary.rawUrl;
 
     return {
@@ -2374,12 +2470,14 @@ async function resolveHicineServer(metadata) {
       tokenType: primary.tokenType,
       backupUrls: uniqueBackups,
       audioTracks: multiTrackStream?.audioTracks || defaultAudioTracks,
-      qualities: ordered.map((q) => ({
-        label: q.label,
-        height: q.height,
-        url: q.rawUrl,
-        tokenType: q.tokenType
-      }))
+      qualities: multiTrackStream
+        ? [remuxQualityRow(ordered.map((q) => ({ height: q.height })), multiTrackStream.streamUrl)]
+        : ordered.map((q) => ({
+            label: q.label,
+            height: q.height,
+            url: q.rawUrl,
+            tokenType: q.tokenType
+          }))
     };
   } catch {
     circuitBreaker.recordFailure(providerKey);
@@ -2604,8 +2702,14 @@ async function resolveAnimeDubHindiSource(metadata = {}) {
       { code: 'en', label: 'English' },
       { code: 'ja', label: 'Japanese' }
     ];
-    const multiTrackStream =
-      primary.kind === 'mkv' ? await prepareMultiTrackStream(primary.url, hintedLanguages) : null;
+    // MKV (and extension-less CDN files, which are usually MKV too) carry the
+    // Hindi/Tamil/Telugu/English/Japanese tracks inside one file; remux them so
+    // the audio menu actually switches tracks instead of always playing the
+    // default one. HLS/DASH sources keep their own renditions.
+    const isProgressive = primary.kind !== 'hls' && primary.kind !== 'dash';
+    const multiTrackStream = isProgressive
+      ? await prepareMultiTrackStream(primary.url, hintedLanguages, { trustSource: true })
+      : null;
     const fallbackKind = primary.kind === 'unknown' ? 'mp4' : primary.kind;
 
     return {
@@ -2622,9 +2726,17 @@ async function resolveAnimeDubHindiSource(metadata = {}) {
         : primaryTrack,
       referer: primary.referer,
       headers: primary.headers,
-      backupUrls: playable.slice(1).map((item) => item.url),
+      // Proxied (not raw) so referer-protected CDNs still serve the mirror.
+      backupUrls: playable.slice(1).map((item) => proxyFor(item)),
       audioTracks: multiTrackStream ? multiTrackStream.audioTracks : [primaryTrack],
-      qualities: qualities.length > 0 ? qualities : [{ label: 'Auto', height: 0, url: primaryTrack.streamUrl }],
+      // A remux publishes exactly one video rendition — keep the progressive
+      // ladder only while playback really is progressive, so the quality menu
+      // never promises a file the active stream cannot deliver.
+      qualities: multiTrackStream
+        ? [remuxQualityRow(qualities, multiTrackStream.streamUrl)]
+        : qualities.length > 0
+          ? qualities
+          : [{ label: 'Auto', height: 0, url: primaryTrack.streamUrl }],
       animedubhindiDiag: diag.join(', ')
     };
   } catch (error) {
@@ -2942,8 +3054,12 @@ async function resolveHamsterServer(metadata) {
       code: code === 'multi' ? 'hi' : code,
       label: audioLabel(code)
     }));
-    const multiTrackStream =
-      primary.kind === 'mkv' ? await prepareMultiTrackStream(primary.url, hintedLanguages) : null;
+    // Same progressive-file rule as the other servers: MKV and extension-less
+    // CDN files are remuxed so their embedded audio tracks become switchable.
+    const isProgressivePrimary = primary.kind !== 'hls' && primary.kind !== 'dash';
+    const multiTrackStream = isProgressivePrimary
+      ? await prepareMultiTrackStream(primary.url, hintedLanguages, { trustSource: true })
+      : null;
 
     return {
       server: 'hamster',
@@ -2968,10 +3084,15 @@ async function resolveHamsterServer(metadata) {
         : primaryTrack,
       referer: primary.referer || '',
       headers: primary.headers || {},
-      backupUrls: playable.slice(1).map((item) => item.url),
+      // Proxied mirrors (referer/cookie aware) so failover works on the CDNs
+      // that hotlink-block raw URLs.
+      backupUrls: playable.slice(1).map((item) => proxyFor(item)),
       audioTracks: multiTrackStream ? multiTrackStream.audioTracks : audioTracks,
-      qualities:
-        qualities.length > 0
+      // A remux publishes one video rendition: list the file honestly instead
+      // of offering ladder entries the active HLS stream cannot deliver.
+      qualities: multiTrackStream
+        ? [remuxQualityRow(qualities, multiTrackStream.streamUrl)]
+        : qualities.length > 0
           ? qualities
           : [{ label: 'Auto', height: 0, url: primaryTrack.streamUrl }],
       hamsterProviders: providers
@@ -3236,5 +3357,6 @@ module.exports = {
   extractWrappedMediaTargets,
   normalizePlayableUrl,
   scorePlayableUrl,
-  probePlayableMediaUrl
+  probePlayableMediaUrl,
+  containerFormatForUrl
 };

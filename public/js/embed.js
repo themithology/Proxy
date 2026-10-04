@@ -670,16 +670,86 @@
     }
   }
 
+  // Resolve which native HLS audio rendition a payload audio row maps to.
+  // The backend ships an explicit `audioIndex` for remuxed multi-track files,
+  // so index wins; language/name matching is only a fallback for third-party
+  // HLS playlists because ffprobe often cannot tag a language (lang === 'und')
+  // and a 'und' lookup used to silently match nothing while the UI still said
+  // "Audio switched".
+  function resolveHlsAudioIndex(track, hlsTracks) {
+    if (!track || !Array.isArray(hlsTracks) || hlsTracks.length === 0) return -1;
+    if (Number.isInteger(track.audioIndex) && track.audioIndex >= 0 && track.audioIndex < hlsTracks.length) {
+      return track.audioIndex;
+    }
+    const lang = String(track.lang || '').toLowerCase();
+    const usableLang = lang && lang !== 'und' && lang !== 'default';
+    if (usableLang) {
+      const langIdx = hlsTracks.findIndex(t => {
+        const hlsLang = String((t && t.lang) || '').toLowerCase();
+        return hlsLang === lang || hlsLang.startsWith(lang);
+      });
+      if (langIdx !== -1) return langIdx;
+    }
+    const label = String(track.label || '').toLowerCase().trim();
+    if (label) {
+      const labelIdx = hlsTracks.findIndex(t => {
+        const name = String((t && t.name) || '').toLowerCase();
+        return name && (name === label || name.includes(label) || label.includes(name));
+      });
+      if (labelIdx !== -1) return labelIdx;
+    }
+    return -1;
+  }
+
   function syncHlsAudioTracks() {
     if (!state.hlsInstance || !state.hlsInstance.audioTracks) return;
     const hlsTracks = state.hlsInstance.audioTracks;
+
+    // The payload may expose a single row for a manifest that actually carries
+    // several audio renditions (e.g. NetMirror's "Original Audio (Multi-Track
+    // HLS)"). hls.js is the source of truth once the manifest is parsed: add a
+    // row per rendition so the menu can switch them.
+    const distinctStreams = new Set(state.audioTracks.map((t) => t && t.streamUrl).filter(Boolean));
+    if (hlsTracks.length > state.audioTracks.length && distinctStreams.size <= 1) {
+      hlsTracks.forEach((hlsTrack, index) => {
+        const hlsLang = String((hlsTrack && hlsTrack.lang) || '').toLowerCase();
+        const already = state.audioTracks.find(
+          (t) => t.audioIndex === index || (hlsLang && t.lang && t.lang.toLowerCase() === hlsLang && t.audioIndex == null)
+        );
+        if (already) {
+          already.audioIndex = index;
+          if (hlsTrack && hlsTrack.default) already.default = true;
+          return;
+        }
+        const label = (hlsTrack && hlsTrack.name) || (hlsLang ? hlsLang.toUpperCase() : `Audio ${index + 1}`);
+        state.audioTracks.push({
+          id: `hls-${index}`,
+          lang: hlsLang,
+          label,
+          type: 'dub',
+          streamUrl: state.stream ? state.stream.streamUrl : '',
+          audioIndex: index,
+          default: !!(hlsTrack && hlsTrack.default)
+        });
+      });
+      if (typeof renderAudioPopover === 'function' && typeof updateSettingsSummaryValues === 'function') {
+        renderAudioPopover();
+        updateSettingsSummaryValues();
+      }
+    }
+
+    // Learn the rendition order for EVERY row once, so later switches do not
+    // depend on fuzzy name matching.
+    state.audioTracks.forEach(t => {
+      if (!Number.isInteger(t.audioIndex)) {
+        const idx = resolveHlsAudioIndex(t, hlsTracks);
+        if (idx !== -1) t.audioIndex = idx;
+      }
+    });
+
     const selectedObj = state.audioTracks.find(a => a.id === state.activeAudioId);
     if (!selectedObj) return;
-
-    const matchIdx = hlsTracks.findIndex(
-      t => (t.lang && t.lang.toLowerCase().startsWith(selectedObj.lang)) ||
-           (t.name && t.name.toLowerCase().includes(selectedObj.lang))
-    );
+    const matchIdx = resolveHlsAudioIndex(selectedObj, hlsTracks);
     if (matchIdx !== -1) {
       state.hlsInstance.audioTrack = matchIdx;
     }
@@ -709,21 +779,30 @@
     renderAudioPopover();
     updateSettingsSummaryValues();
 
+    let switched = false;
+    let switchHint = '';
+
     // 1. If the selected audio track has its own distinct streamUrl (e.g. separate Sub vs Dub HLS/MP4 stream), switch stream preserving current time
     if (track.streamUrl && state.stream && track.streamUrl !== state.stream.streamUrl) {
       state.stream.streamUrl = track.streamUrl;
       attachStreamToVideo(track.streamUrl, video.currentTime || 0);
+      switched = true;
     }
-    // 2. If HLS instance has multiple embedded audio tracks, switch native HLS audio track
+    // 2. If HLS instance has multiple embedded audio renditions, switch natively
     else if (state.hlsInstance && state.hlsInstance.audioTracks && state.hlsInstance.audioTracks.length > 1) {
-      const idx = state.hlsInstance.audioTracks.findIndex(
-        (t) =>
-          (t.lang && t.lang.toLowerCase().startsWith(track.lang)) ||
-          (t.name && t.name.toLowerCase().includes(track.lang))
-      );
+      const idx = resolveHlsAudioIndex(track, state.hlsInstance.audioTracks);
       if (idx !== -1) {
+        track.audioIndex = idx;
         state.hlsInstance.audioTrack = idx;
+        switched = true;
+      } else {
+        switchHint = ' — no matching track in this stream';
       }
+    } else {
+      // The stream is a single progressive file (no HLS audio renditions) and
+      // every row shares one URL: the browser cannot switch the file's
+      // embedded tracks. Say so instead of faking a successful switch.
+      switchHint = ' — this file plays its default audio track only';
     }
 
     // 3. If track is a "sub" variant, auto-enable English subtitles if available and currently Off
@@ -734,8 +813,12 @@
       }
     }
 
-    showToast(`Audio switched to ${track.label}`, 2200);
-    emitHostEvent('audiotrackchange', { audioTrack: track.label, lang: track.lang });
+    if (switched) {
+      showToast(`Audio switched to ${track.label}`, 2200);
+    } else {
+      showToast(`Audio: ${track.label}${switchHint}`, 3200);
+    }
+    emitHostEvent('audiotrackchange', { audioTrack: track.label, lang: track.lang, switched });
   }
 
   // --- Render Subtitles Popover (Matches Screenshot 3) ---
@@ -1038,7 +1121,25 @@
         const item = createDrillOption(q.label + (q.bitrate ? ` (${q.bitrate})` : ''), q.id === state.activeQualityId, () => {
           state.activeQualityId = q.id;
           if (state.hlsInstance && state.hlsInstance.levels && state.hlsInstance.levels.length > 0) {
-            state.hlsInstance.currentLevel = q.id === 'auto' ? -1 : Math.min(idx - 1, state.hlsInstance.levels.length - 1);
+            // Match the payload quality to the real HLS level by height first.
+            // The old positional `idx - 1` assumption broke whenever the
+            // payload ladder and the manifest ladder disagreed (they usually
+            // do: payload is [Auto, 1080, 720, 480], hls.js levels ascend).
+            const heights = state.hlsInstance.levels.map(l => (l && l.height) || 0);
+            let levelIdx = -1;
+            if (q.id !== 'auto' && q.height) {
+              levelIdx = heights.findIndex(h => h === q.height);
+              if (levelIdx === -1) {
+                const closest = heights.reduce(
+                  (best, h, i) => (h > 0 && Math.abs(h - q.height) < Math.abs((best.height || 1e9) - q.height) ? { height: h, index: i } : best),
+                  { height: 0, index: -1 }
+                );
+                levelIdx = closest.index;
+              }
+            }
+            state.hlsInstance.currentLevel = q.id === 'auto'
+              ? -1
+              : (levelIdx !== -1 ? levelIdx : Math.min(Math.max(idx - 1, 0), state.hlsInstance.levels.length - 1));
           } else if (q.url && state.stream && q.url !== state.stream.streamUrl) {
             state.stream.streamUrl = q.url;
             attachStreamToVideo(q.url, video.currentTime || 0);

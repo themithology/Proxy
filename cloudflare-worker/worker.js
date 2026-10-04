@@ -1009,7 +1009,28 @@ async function resolveCastletvUpstream(metadata, preferredAudio = '', env = null
     const referer = `${castletvBase}/`;
     const APK_SIGN_KEY = 'ED0955EB04E67A1D9F3305B95454FED485261475';
 
+    // CastleTV answers one quality per `resolution` rung; the first rung that
+    // produced a URL used to end the loop, which collapsed the player's quality
+    // menu to "Auto" whenever the response carried no `data.videos` array.
+    // Merge the rungs into a real ladder (breaks as soon as two heights exist).
+    const CASTLE_HEIGHTS_BY_RESOLUTION = { 1: 480, 2: 720, 3: 1080, 4: 2160 };
+    const castleVideoHeight = (value) => {
+      const num = Number(value);
+      if (!Number.isFinite(num) || num <= 0) return 0;
+      return num <= 4 ? CASTLE_HEIGHTS_BY_RESOLUTION[num] || 0 : num;
+    };
+    const containerFormatForUrl = (url) => {
+      const path = String(url || '').split('#')[0].split('?')[0].toLowerCase();
+      if (path.endsWith('.m3u8')) return 'hls';
+      if (path.endsWith('.mp4')) return 'mp4';
+      if (path.endsWith('.mkv')) return 'mkv';
+      if (path.endsWith('.mpd')) return 'dash';
+      return 'hls';
+    };
+
     const fetchTrackStream = async (track) => {
+      const ladder = new Map();
+      let base = null;
       for (const resolution of [3, 2, 1]) {
         try {
           const body = {
@@ -1038,25 +1059,41 @@ async function resolveCastletvUpstream(metadata, preferredAudio = '', env = null
           );
           if (!vRes.ok) continue;
           const vJson = JSON.parse(decryptCastleAes(await vRes.text(), key));
-          const videoUrl = vJson?.data?.videoUrl || vJson?.data?.videos?.[0]?.url;
-          if (!videoUrl) continue;
-          const videos = (vJson?.data?.videos || [])
+          const rows = (vJson?.data?.videos || [])
             .filter((v) => v && v.url)
             .map((v) => ({
               url: v.url,
-              height: v.resolution === 4 ? 2160 : v.resolution === 3 ? 1080 : v.resolution === 2 ? 720 : 480
-            }));
-          return {
-            languageId: track.languageId,
-            languageName: track.languageName || track.abbreviate || 'Original',
-            videoUrl,
-            videos
-          };
+              // `resolution` may be a rung number (1-4) or an explicit pixel
+              // height depending on the upstream build; accept both.
+              height: castleVideoHeight(v.resolution != null ? v.resolution : v.height)
+            }))
+            .filter((v) => v.height > 0);
+          const videoUrl = vJson?.data?.videoUrl || rows[0]?.url || '';
+          if (!videoUrl && rows.length === 0) continue;
+
+          if (!base) {
+            base = {
+              languageId: track.languageId,
+              languageName: track.languageName || track.abbreviate || 'Original',
+              videoUrl: videoUrl || rows[0].url
+            };
+          }
+          rows.forEach((row) => {
+            if (!ladder.has(row.height)) ladder.set(row.height, row.url);
+          });
+          const requestedHeight = CASTLE_HEIGHTS_BY_RESOLUTION[resolution] || 0;
+          if (videoUrl && requestedHeight && !ladder.has(requestedHeight)) {
+            ladder.set(requestedHeight, videoUrl);
+          }
+          if (ladder.size >= 2) break;
         } catch {
           // next resolution rung
         }
       }
-      return null;
+      if (!base) return null;
+      base.videos = Array.from(ladder, ([height, url]) => ({ height, url }))
+        .sort((a, b) => b.height - a.height);
+      return base;
     };
 
     const streamByTrack = new Array(tracks.length).fill(null);
@@ -1099,7 +1136,12 @@ async function resolveCastletvUpstream(metadata, preferredAudio = '', env = null
     });
 
     const activeTrack = defaultTrack;
-    const qualitySource = resolvedTracks.find((t) => buildWorkerProxyUrl(t.videoUrl, referer, 'full') === activeTrack.streamUrl) ||
+    // Prefer the active track's ladder, then any track that actually carries
+    // one. Falling straight to `resolvedTracks[0]` produced an "Auto"-only menu
+    // whenever the first resolved language had no `videos` array.
+    const qualitySource =
+      resolvedTracks.find((t) => buildWorkerProxyUrl(t.videoUrl, referer, 'full') === activeTrack.streamUrl) ||
+      resolvedTracks.find((t) => Array.isArray(t.videos) && t.videos.length > 0) ||
       resolvedTracks[0];
     const seenHeights = new Set();
     const qualities = [
@@ -1118,7 +1160,9 @@ async function resolveCastletvUpstream(metadata, preferredAudio = '', env = null
     return {
       server: 'andromeda',
       sourceName: 'CastleTV',
-      format: 'hls',
+      // Honest container: MKV/MP4 entries must reach the progressive <video>
+      // path (the Worker cannot remux, and hls.js cannot parse those files).
+      format: containerFormatForUrl(activeTrack.rawUrl),
       rawUrl: activeTrack.rawUrl,
       streamUrl: activeTrack.streamUrl,
       referer,
@@ -2894,6 +2938,63 @@ async function resolveHamsterUpstream(metadata, env = {}) {
  * `ANIMEDUBHINDI_BACKEND_URL` behaves exactly like `HAMSTER_BACKEND_URL`
  * (defaults to it when unset, so one Node deployment configures both).
  */
+const CENTAURUS_BACKEND_TIMEOUT_MS = 12000;
+
+/**
+ * Base URL of a Node backend that owns the Centaurus server. The Node tier can
+ * remux multi-audio MKVs into switchable HLS renditions (ffmpeg), which the
+ * Worker cannot — so when a backend is configured the whole server (HiCine
+ * then Anime Dub Hindi) is delegated instead of resolving HiCine locally.
+ */
+function centaurusBackendBase(env = {}) {
+  return String(
+    (env && env.HICINE_BACKEND_URL) ||
+    (env && env.ANIMEDUBHINDI_BACKEND_URL) ||
+    (env && env.HAMSTER_BACKEND_URL) ||
+    ''
+  ).replace(/\/+$/, '');
+}
+
+async function resolveCentaurusBackendUpstream(metadata, env = {}) {
+  const base = centaurusBackendBase(env);
+  if (!base) return { reason: 'centaurus_backend_not_configured' };
+
+  const query = new URLSearchParams({ server: 'centaurus' });
+  if (metadata.type === 'tv') {
+    query.set('season', String(metadata.season || 1));
+    query.set('episode', String(metadata.episode || 1));
+  }
+  try {
+    const response = await fetch(
+      `${base}/api/resolve/${metadata.type}/${encodeURIComponent(metadata.tmdbId)}?${query}`,
+      { headers: { Accept: 'application/json', 'User-Agent': USER_AGENT } }
+    );
+    if (!response.ok) return { reason: `centaurus_backend_http_${response.status}` };
+    const payload = await response.json();
+    const stream = payload && payload.stream;
+    if (!stream || !stream.streamUrl) {
+      return { reason: (payload && payload.failedReason) || 'centaurus_no_source' };
+    }
+    return {
+      server: 'centaurus',
+      sourceName: stream.sourceName || 'Centaurus',
+      format: stream.format || 'mp4',
+      rawUrl: stream.rawUrl,
+      // Already an absolute, HMAC-signed /api/proxy URL on the Node origin.
+      streamUrl: stream.streamUrl,
+      referer: stream.referer || '',
+      headers: stream.headers || {},
+      backupUrls: stream.backupUrls || [],
+      audioTracks: stream.audioTracks || [],
+      qualities: stream.qualities || [],
+      activeAudioTrack: stream.activeAudioTrack || undefined,
+      centaurusSources: stream.centaurusSources || undefined
+    };
+  } catch {
+    return { reason: 'centaurus_backend_unreachable' };
+  }
+}
+
 async function resolveAnimeDubHindiUpstream(metadata, env = {}) {
   const base = String(
     (env && env.ANIMEDUBHINDI_BACKEND_URL) || (env && env.HAMSTER_BACKEND_URL) || ''
@@ -2985,25 +3086,34 @@ async function resolveStreamWaterfall(metadata, requestedServer, preferredAudio,
         WATERFALL_UPSTREAM_TIMEOUT_MS
       );
     } else if (srvId === 'centaurus') {
-      // Two-source server: HiCine first, then Anime Dub Hindi (anime only,
-      // delegated to the Node backend).
-      const hicine = await withTimeout(
-        resolveHicineUpstream(metadata, env),
-        WATERFALL_UPSTREAM_TIMEOUT_MS
-      );
-      if (hicine && hicine.streamUrl) {
-        resolved = hicine;
+      // Two-source server: HiCine first, then Anime Dub Hindi (anime only).
+      // A configured Node backend owns the server end-to-end so its ffmpeg
+      // remux can expose HiCine's embedded MKV audio tracks; if the backend is
+      // absent or dead the in-Worker path still runs.
+      const delegated = centaurusBackendBase(env)
+        ? await withTimeout(resolveCentaurusBackendUpstream(metadata, env), CENTAURUS_BACKEND_TIMEOUT_MS)
+        : null;
+      if (delegated && delegated.streamUrl) {
+        resolved = delegated;
       } else {
-        const anime = isAnimationMetadata(metadata)
-          ? await withTimeout(resolveAnimeDubHindiUpstream(metadata, env), ANIMEDUBHINDI_UPSTREAM_TIMEOUT_MS)
-          : { reason: 'not_anime' };
-        resolved = anime && anime.streamUrl
-          ? anime
-          : {
-              reason: `centaurus_no_source: hicine=${(hicine && hicine.reason) || 'no_stream'}; animedubhindi=${
-                (anime && anime.reason) || 'no_stream'
-              }`
-            };
+        const hicine = await withTimeout(
+          resolveHicineUpstream(metadata, env),
+          WATERFALL_UPSTREAM_TIMEOUT_MS
+        );
+        if (hicine && hicine.streamUrl) {
+          resolved = hicine;
+        } else {
+          const anime = isAnimationMetadata(metadata)
+            ? await withTimeout(resolveAnimeDubHindiUpstream(metadata, env), ANIMEDUBHINDI_UPSTREAM_TIMEOUT_MS)
+            : { reason: 'not_anime' };
+          resolved = anime && anime.streamUrl
+            ? anime
+            : {
+                reason: `centaurus_no_source: hicine=${(hicine && hicine.reason) || 'no_stream'}; animedubhindi=${
+                  (anime && anime.reason) || 'no_stream'
+                }`
+              };
+        }
       }
     } else if (srvId === 'hamster') {
       resolved = await withTimeout(resolveHamsterUpstream(metadata, env), WATERFALL_UPSTREAM_TIMEOUT_MS);
