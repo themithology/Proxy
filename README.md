@@ -116,13 +116,15 @@ The multi-audio tiers (CastleTV, Moviebox) can only be searched by **name**, and
 - The matched identity is returned in the payload (`stream.identity`: `matchedTitle`, `matchedYear`, `upstreamId`, `score`, `reasons`, plus the rejected candidates) so clients can show and verify what was actually selected.
 - All dub languages the verified provider exposes are surfaced as `audioTracks` (CastleTV per-language tracks, Moviebox `dubs[]`/`resourceDetectors[]`); Hindi is the default when present, otherwise the preferred `?audio=` track.
 - If no identity-verified Hindi source exists for a title, the Hindi server returns the verified original-audio stream with `hindiAvailable: false` (never a wrong-title Hindi stream) and the dub inventory reports `hindi: false`.
+- Responses carry their provenance: `hindiVerified: true` means the Hindi track came from a TMDB/IMDb-anchored match, while `hindiVerified: false` + `identityMethod: "title-hint"` flags a provider that only matches by title hints (the resolution still reports `hindiAvailable`, so clients can decide whether to trust it).
 
 `GET /api/dubs/:type/:tmdbId` returns the full inventory for a title:
 
 ```jsonc
 {
   "ok": true,
-  "hindi": true,
+  "hindi": true,           // identity-verified Hindi source exists
+  "hindiAnySource": true,  // also true when only a title-hint provider reports Hindi
   "dubs": [{ "code": "hi", "label": "Hindi", "playable": true, "providers": ["castletv", "moviebox"] }],
   "providers": [
     {
@@ -144,10 +146,10 @@ Provider identity methods:
 | Moviebox      | TMDB title/original/alt titles + subject year + `subjectType`           |
 | NetMirror     | TMDB id (`/api/embed-tmdb/<id>`)                                        |
 | MoviesDrive   | IMDb id from TMDB + title/year scoring                                  |
-| 4KHDHub       | IMDb/title+year extraction                                              |
+| 4KHDHub       | Title + release year parsed from the search page                        |
 | HiCine        | title/year hints                                                        |
 | HiAnime       | MAL id from TMDB (anime only)                                           |
-| DahmerMovies  | IMDb id from TMDB                                                       |
+| DahmerMovies | title (+year) directory path                                           |
 
 Operational notes:
 

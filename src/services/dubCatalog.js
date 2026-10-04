@@ -67,7 +67,9 @@ const PROVIDERS = [
   {
     id: '4khdhub',
     label: '4KHDHub',
-    identity: 'imdb-id',
+    // Matches the title + release year parsed from the search page; IMDb ids
+    // are not part of the 4KHDHub search path.
+    identity: 'title-year',
     modes: ['deep'],
     supports: () => true,
     resolve: (metadata, audio) => resolve4khdhub(metadata, audio)
@@ -84,7 +86,8 @@ const PROVIDERS = [
   {
     id: 'dahmer',
     label: 'DahmerMovies',
-    identity: 'imdb-id',
+    // Open directory: matched by title (+year) path, not by an id.
+    identity: 'title-year',
     modes: ['deep'],
     supports: () => true,
     resolve: (metadata, audio) => resolveDahmer4k(metadata, audio)
