@@ -1,5 +1,5 @@
 {
-  "startedAt": "2026-10-04T07:13:25.731Z",
+  "startedAt": "2026-10-04T07:27:34.116Z",
   "deep": false,
   "titles": {
     "movie/550": {
@@ -87,17 +87,6 @@
             ]
           },
           {
-            "id": "moviebox",
-            "ok": false,
-            "verified": false,
-            "matchedTitle": null,
-            "matchedYear": null,
-            "upstreamId": null,
-            "reasons": null,
-            "rejected": [],
-            "languages": []
-          },
-          {
             "id": "netmirror",
             "ok": false,
             "verified": false,
@@ -152,25 +141,19 @@
             "hindi": false,
             "identityMethod": "tmdb-verified",
             "identityVerified": true,
-            "latencyMs": 744
-          },
-          {
-            "provider": "moviebox",
-            "ok": false,
-            "reason": "no_stream",
-            "latencyMs": 7152
+            "latencyMs": 1046
           },
           {
             "provider": "netmirror",
             "ok": false,
             "reason": "no_stream",
-            "latencyMs": 544
+            "latencyMs": 110
           },
           {
             "provider": "moviesdrive",
             "ok": false,
             "reason": "no_stream",
-            "latencyMs": 1446
+            "latencyMs": 1166
           },
           {
             "provider": "4khdhub",
@@ -178,13 +161,13 @@
             "hindi": true,
             "identityMethod": "title-year",
             "identityVerified": false,
-            "latencyMs": 1242
+            "latencyMs": 821
           },
           {
             "provider": "dahmer",
             "ok": false,
             "reason": "no_stream",
-            "latencyMs": 373
+            "latencyMs": 56
           },
           {
             "provider": "hicine",
@@ -192,7 +175,7 @@
             "hindi": true,
             "identityMethod": "title-hint",
             "identityVerified": false,
-            "latencyMs": 6062
+            "latencyMs": 6004
           }
         ],
         "streamHost": "d33f51dyacx7bd.cloudfront.net"
@@ -312,17 +295,6 @@
             ]
           },
           {
-            "id": "moviebox",
-            "ok": false,
-            "verified": false,
-            "matchedTitle": null,
-            "matchedYear": null,
-            "upstreamId": null,
-            "reasons": null,
-            "rejected": [],
-            "languages": []
-          },
-          {
             "id": "netmirror",
             "ok": false,
             "verified": false,
@@ -359,8 +331,8 @@
           "lang": "hi",
           "label": "Hindi",
           "type": "dub",
-          "streamUrl": "/api/proxy?url=https%3A%2F%2Fimg1.klnwm.com%2Fmyhls_mps%2F2024%2F8yue%2FDune2%2FHindi_720%2Findex_364.m3u8%3Fauth_key%3DKzYVJ%252Fn2RMImPJFiD6MJ%252BrFVbdwZIw1Af92UX5I0VbA%253D%26expire%3D1791108840072&referer=https%3A%2F%2Fapi.hlowb.com%2F&exp=1791112440&sig=de18d783ea4e8b1cf15083e16a9b0141&mode=full",
-          "rawUrl": "https://img1.klnwm.com/myhls_mps/2024/8yue/Dune2/Hindi_720/index_364.m3u8?auth_key=KzYVJ%2Fn2RMImPJFiD6MJ%2BrFVbdwZIw1Af92UX5I0VbA%3D&expire=1791108840072",
+          "streamUrl": "/api/proxy?url=https%3A%2F%2Fimg1.klnwm.com%2Fmyhls_mps%2F2024%2F8yue%2FDune2%2FHindi_720%2Findex_364.m3u8%3Fauth_key%3D1UsHPYp%252FGh%252B2aF2jX1FjBfiGiGi%252B9xFh4qsvqUOmPto%253D%26expire%3D1791109667446&referer=https%3A%2F%2Fapi.hlowb.com%2F&exp=1791113267&sig=0abb8da56fac27f3979aa778116aea33&mode=full",
+          "rawUrl": "https://img1.klnwm.com/myhls_mps/2024/8yue/Dune2/Hindi_720/index_364.m3u8?auth_key=1UsHPYp%2FGh%2B2aF2jX1FjBfiGiGi%2B9xFh4qsvqUOmPto%3D&expire=1791109667446",
           "default": true
         },
         "audioTracks": [
@@ -392,7 +364,7 @@
             "hindi": true,
             "identityMethod": "tmdb-verified",
             "identityVerified": true,
-            "latencyMs": 704
+            "latencyMs": 1055
           }
         ],
         "streamHost": "img1.klnwm.com"
@@ -485,17 +457,6 @@
             ]
           },
           {
-            "id": "moviebox",
-            "ok": false,
-            "verified": false,
-            "matchedTitle": null,
-            "matchedYear": null,
-            "upstreamId": null,
-            "reasons": null,
-            "rejected": [],
-            "languages": []
-          },
-          {
             "id": "netmirror",
             "ok": false,
             "verified": false,
@@ -532,8 +493,8 @@
           "lang": "hi",
           "label": "Hindi",
           "type": "dub",
-          "streamUrl": "/api/proxy?url=https%3A%2F%2Fimg1.flowxn.com%2Fhls_mps%2F4b8b272d03bf2015df0f48db1089d95695f3f694%2F480%2Findex_preview_375.m3u8%3Fauth_key%3DMVioPCHSP5%252Ff7JTiNn8KVD47%252Fv7RT7J0I22LppTg280%253D%26expire%3D1791108845607&referer=https%3A%2F%2Fapi.hlowb.com%2F&exp=1791112445&sig=3ac4bd85fa4379207a89141bc44f90de&mode=full",
-          "rawUrl": "https://img1.flowxn.com/hls_mps/4b8b272d03bf2015df0f48db1089d95695f3f694/480/index_preview_375.m3u8?auth_key=MVioPCHSP5%2Ff7JTiNn8KVD47%2Fv7RT7J0I22LppTg280%3D&expire=1791108845607",
+          "streamUrl": "/api/proxy?url=https%3A%2F%2Fimg1.hlnom.com%2Fhls_mps%2F4b8b272d03bf2015df0f48db1089d95695f3f694%2F480%2Findex_preview_363.m3u8%3Fauth_key%3DN3c%252F%252F6VVlWbrz1pFFSed6g8XxCuU9IE%252FiqVZ81XKrJU%253D%26expire%3D1791109669078&referer=https%3A%2F%2Fapi.hlowb.com%2F&exp=1791113269&sig=0e8de338b6f0efd675d58415dda5cc45&mode=full",
+          "rawUrl": "https://img1.hlnom.com/hls_mps/4b8b272d03bf2015df0f48db1089d95695f3f694/480/index_preview_363.m3u8?auth_key=N3c%2F%2F6VVlWbrz1pFFSed6g8XxCuU9IE%2FiqVZ81XKrJU%3D&expire=1791109669078",
           "default": true
         },
         "audioTracks": [
@@ -550,10 +511,10 @@
             "hindi": true,
             "identityMethod": "tmdb-verified",
             "identityVerified": true,
-            "latencyMs": 327
+            "latencyMs": 811
           }
         ],
-        "streamHost": "img1.flowxn.com"
+        "streamHost": "img1.hlnom.com"
       },
       "error": null
     },
@@ -646,17 +607,6 @@
             ]
           },
           {
-            "id": "moviebox",
-            "ok": false,
-            "verified": false,
-            "matchedTitle": null,
-            "matchedYear": null,
-            "upstreamId": null,
-            "reasons": null,
-            "rejected": [],
-            "languages": []
-          },
-          {
             "id": "netmirror",
             "ok": false,
             "verified": false,
@@ -693,8 +643,8 @@
           "lang": "hi",
           "label": "Hindi",
           "type": "dub",
-          "streamUrl": "/api/proxy?url=https%3A%2F%2Fimg1.klnwm.com%2Fmyhls_mps%2F2024%2F3yue%2FOppenheimer_Hindi_720%2Findex_364.m3u8%3Fauth_key%3DmEo4urljsNiuEBsMTQ4qDV44RrU5k41G%252FBI6u9GWCGs%253D%26expire%3D1791108851892&referer=https%3A%2F%2Fapi.hlowb.com%2F&exp=1791112452&sig=1167e73c31e524edcf156c7674f29475&mode=full",
-          "rawUrl": "https://img1.klnwm.com/myhls_mps/2024/3yue/Oppenheimer_Hindi_720/index_364.m3u8?auth_key=mEo4urljsNiuEBsMTQ4qDV44RrU5k41G%2FBI6u9GWCGs%3D&expire=1791108851892",
+          "streamUrl": "/api/proxy?url=https%3A%2F%2Fimg1.flowxn.com%2Fmyhls_mps%2F2024%2F3yue%2FOppenheimer_Hindi_720%2Findex_375.m3u8%3Fauth_key%3Db3EAKftRjllpXLP1BaavEPKIEbYQBohYwYg46qNfx0M%253D%26expire%3D1791109671183&referer=https%3A%2F%2Fapi.hlowb.com%2F&exp=1791113271&sig=a994e3a72334922e6bd2a34c24b7b578&mode=full",
+          "rawUrl": "https://img1.flowxn.com/myhls_mps/2024/3yue/Oppenheimer_Hindi_720/index_375.m3u8?auth_key=b3EAKftRjllpXLP1BaavEPKIEbYQBohYwYg46qNfx0M%3D&expire=1791109671183",
           "default": true
         },
         "audioTracks": [
@@ -721,10 +671,10 @@
             "hindi": true,
             "identityMethod": "tmdb-verified",
             "identityVerified": true,
-            "latencyMs": 732
+            "latencyMs": 1035
           }
         ],
-        "streamHost": "img1.klnwm.com"
+        "streamHost": "img1.flowxn.com"
       },
       "error": null
     },
@@ -818,17 +768,6 @@
             ]
           },
           {
-            "id": "moviebox",
-            "ok": false,
-            "verified": false,
-            "matchedTitle": null,
-            "matchedYear": null,
-            "upstreamId": null,
-            "reasons": null,
-            "rejected": [],
-            "languages": []
-          },
-          {
             "id": "netmirror",
             "ok": false,
             "verified": false,
@@ -865,8 +804,8 @@
           "lang": "hi",
           "label": "Hindi",
           "type": "dub",
-          "streamUrl": "/api/proxy?url=https%3A%2F%2Fimg1.klnwm.com%2Fhls_mps%2F57ba6bd962339881cd96be7ca2b42efec15f8b8e%2F720%2Findex_364.m3u8%3Fauth_key%3DPipD4tHNHuQMB%252BqnXn5NNX1rhqhLSAQOE5raB67gBMQ%253D%26expire%3D1791108856194&referer=https%3A%2F%2Fapi.hlowb.com%2F&exp=1791112456&sig=82a295b05d8616bdaecf679a4a907d58&mode=full",
-          "rawUrl": "https://img1.klnwm.com/hls_mps/57ba6bd962339881cd96be7ca2b42efec15f8b8e/720/index_364.m3u8?auth_key=PipD4tHNHuQMB%2BqnXn5NNX1rhqhLSAQOE5raB67gBMQ%3D&expire=1791108856194",
+          "streamUrl": "/api/proxy?url=https%3A%2F%2Fimg1.hlnom.com%2Fhls_mps%2F57ba6bd962339881cd96be7ca2b42efec15f8b8e%2F720%2Findex_363.m3u8%3Fauth_key%3DErvBg1lthUxW02q00W8Bmk%252FsADCkQLi0FSxwV21H8fk%253D%26expire%3D1791109673843&referer=https%3A%2F%2Fapi.hlowb.com%2F&exp=1791113273&sig=23e86a541e01e344ade3550f65705779&mode=full",
+          "rawUrl": "https://img1.hlnom.com/hls_mps/57ba6bd962339881cd96be7ca2b42efec15f8b8e/720/index_363.m3u8?auth_key=ErvBg1lthUxW02q00W8Bmk%2FsADCkQLi0FSxwV21H8fk%3D&expire=1791109673843",
           "default": true
         },
         "audioTracks": [
@@ -888,10 +827,10 @@
             "hindi": true,
             "identityMethod": "tmdb-verified",
             "identityVerified": true,
-            "latencyMs": 497
+            "latencyMs": 1321
           }
         ],
-        "streamHost": "img1.klnwm.com"
+        "streamHost": "img1.hlnom.com"
       },
       "error": null
     },
@@ -970,17 +909,6 @@
             ]
           },
           {
-            "id": "moviebox",
-            "ok": false,
-            "verified": false,
-            "matchedTitle": null,
-            "matchedYear": null,
-            "upstreamId": null,
-            "reasons": null,
-            "rejected": [],
-            "languages": []
-          },
-          {
             "id": "netmirror",
             "ok": false,
             "verified": false,
@@ -1016,8 +944,8 @@
           "lang": "en",
           "label": "English",
           "type": "dub",
-          "streamUrl": "/api/proxy?url=https%3A%2F%2Fimg1.klnwm.com%2Fhls_mps%2F244490619%2F720%2Findex_364.m3u8%3Fauth_key%3DNd7Jp6qynDrws8tSu6gVC9JFyN2sbxbQgTm1ka1QEaw%253D%26expire%3D1791108860235&referer=https%3A%2F%2Fapi.hlowb.com%2F&exp=1791112460&sig=5a3d44857938b35a332e476a86bd6630&mode=full",
-          "rawUrl": "https://img1.klnwm.com/hls_mps/244490619/720/index_364.m3u8?auth_key=Nd7Jp6qynDrws8tSu6gVC9JFyN2sbxbQgTm1ka1QEaw%3D&expire=1791108860235",
+          "streamUrl": "/api/proxy?url=https%3A%2F%2Fimg1.klnwm.com%2Fhls_mps%2F244490619%2F720%2Findex_364.m3u8%3Fauth_key%3DZZmoT%252B9mro1BZ%252B6G3ptLB2l5nO3U6TFPEu79cQy2chc%253D%26expire%3D1791109676872&referer=https%3A%2F%2Fapi.hlowb.com%2F&exp=1791113277&sig=1431d26dea935dcb54cba85ac4a0b335&mode=full",
+          "rawUrl": "https://img1.klnwm.com/hls_mps/244490619/720/index_364.m3u8?auth_key=ZZmoT%2B9mro1BZ%2B6G3ptLB2l5nO3U6TFPEu79cQy2chc%3D&expire=1791109676872",
           "default": true
         },
         "audioTracks": [
@@ -1034,25 +962,19 @@
             "hindi": false,
             "identityMethod": "tmdb-verified",
             "identityVerified": true,
-            "latencyMs": 473
-          },
-          {
-            "provider": "moviebox",
-            "ok": false,
-            "reason": "no_stream",
-            "latencyMs": 3757
+            "latencyMs": 1341
           },
           {
             "provider": "netmirror",
             "ok": false,
             "reason": "no_stream",
-            "latencyMs": 259
+            "latencyMs": 111
           },
           {
             "provider": "moviesdrive",
             "ok": false,
             "reason": "no_stream",
-            "latencyMs": 736
+            "latencyMs": 582
           },
           {
             "provider": "4khdhub",
@@ -1060,25 +982,25 @@
             "hindi": false,
             "identityMethod": "title-year",
             "identityVerified": false,
-            "latencyMs": 571
+            "latencyMs": 383
           },
           {
             "provider": "dahmer",
             "ok": false,
             "reason": "no_stream",
-            "latencyMs": 89
+            "latencyMs": 41
           },
           {
             "provider": "hicine",
             "ok": false,
             "reason": "no_stream",
-            "latencyMs": 260
+            "latencyMs": 253
           },
           {
             "provider": "hianime",
             "ok": false,
             "reason": "no_stream",
-            "latencyMs": 763
+            "latencyMs": 690
           }
         ],
         "streamHost": "img1.klnwm.com"
@@ -1184,17 +1106,6 @@
             ]
           },
           {
-            "id": "moviebox",
-            "ok": false,
-            "verified": false,
-            "matchedTitle": null,
-            "matchedYear": null,
-            "upstreamId": null,
-            "reasons": null,
-            "rejected": [],
-            "languages": []
-          },
-          {
             "id": "netmirror",
             "ok": false,
             "verified": false,
@@ -1231,8 +1142,8 @@
           "lang": "hi",
           "label": "Hindi",
           "type": "dub",
-          "streamUrl": "/api/proxy?url=https%3A%2F%2Fimg1.flcwuk.com%2Fhls_mps%2Fdf9465688906eee49da00169974c8fd9110ed0cd%2F720%2Findex_374.m3u8%3Fauth_key%3D%252BTNAfkUkAZOa0aYFFqlb9iL3%252FBq7iIjX5MH7nNpDBLI%253D%26expire%3D1791108875783&referer=https%3A%2F%2Fapi.hlowb.com%2F&exp=1791112475&sig=3ca5da341ee046db56ca0fc67e600580&mode=full",
-          "rawUrl": "https://img1.flcwuk.com/hls_mps/df9465688906eee49da00169974c8fd9110ed0cd/720/index_374.m3u8?auth_key=%2BTNAfkUkAZOa0aYFFqlb9iL3%2FBq7iIjX5MH7nNpDBLI%3D&expire=1791108875783",
+          "streamUrl": "/api/proxy?url=https%3A%2F%2Fimg1.klnwm.com%2Fhls_mps%2Fdf9465688906eee49da00169974c8fd9110ed0cd%2F720%2Findex_364.m3u8%3Fauth_key%3DlfBIeHcm5hnsTahBXoWBLbYSrZJIcdTWIam%252F8sipp6s%253D%26expire%3D1791109682074&referer=https%3A%2F%2Fapi.hlowb.com%2F&exp=1791113282&sig=d3a8ef59455a3c49d82388020d611730&mode=full",
+          "rawUrl": "https://img1.klnwm.com/hls_mps/df9465688906eee49da00169974c8fd9110ed0cd/720/index_364.m3u8?auth_key=lfBIeHcm5hnsTahBXoWBLbYSrZJIcdTWIam%2F8sipp6s%3D&expire=1791109682074",
           "default": true
         },
         "audioTracks": [
@@ -1259,10 +1170,10 @@
             "hindi": true,
             "identityMethod": "tmdb-verified",
             "identityVerified": true,
-            "latencyMs": 731
+            "latencyMs": 1346
           }
         ],
-        "streamHost": "img1.flcwuk.com"
+        "streamHost": "img1.klnwm.com"
       },
       "error": null
     },
@@ -1346,17 +1257,6 @@
             ]
           },
           {
-            "id": "moviebox",
-            "ok": false,
-            "verified": false,
-            "matchedTitle": null,
-            "matchedYear": null,
-            "upstreamId": null,
-            "reasons": null,
-            "rejected": [],
-            "languages": []
-          },
-          {
             "id": "netmirror",
             "ok": false,
             "verified": false,
@@ -1392,8 +1292,8 @@
           "lang": "en",
           "label": "English",
           "type": "dub",
-          "streamUrl": "/api/proxy?url=https%3A%2F%2Fimg1.klnwm.com%2Fhls%2Fab8403967e32999bd5d03acaa913b368%2F720%2Findex_364.m3u8%3Fauth_key%3DIlPZN9z0CQUVwPxBD6j4rZ4AobHkmAzPyoZwNhJ%252F%252B6Y%253D%26expire%3D1791108882114&referer=https%3A%2F%2Fapi.hlowb.com%2F&exp=1791112482&sig=97c793d29a057fae4ccdeaa4a024ffa3&mode=full",
-          "rawUrl": "https://img1.klnwm.com/hls/ab8403967e32999bd5d03acaa913b368/720/index_364.m3u8?auth_key=IlPZN9z0CQUVwPxBD6j4rZ4AobHkmAzPyoZwNhJ%2F%2B6Y%3D&expire=1791108882114",
+          "streamUrl": "/api/proxy?url=https%3A%2F%2Fimg1.klnwm.com%2Fhls%2Fab8403967e32999bd5d03acaa913b368%2F720%2Findex_364.m3u8%3Fauth_key%3DeO5gGn6nOtdiKFo2wjO2LIpFJmxO7AjyGwmmvqoQpu0%253D%26expire%3D1791109685624&referer=https%3A%2F%2Fapi.hlowb.com%2F&exp=1791113285&sig=f778b9182d42d0f2cb1202112bc8e6bc&mode=full",
+          "rawUrl": "https://img1.klnwm.com/hls/ab8403967e32999bd5d03acaa913b368/720/index_364.m3u8?auth_key=eO5gGn6nOtdiKFo2wjO2LIpFJmxO7AjyGwmmvqoQpu0%3D&expire=1791109685624",
           "default": true
         },
         "audioTracks": [
@@ -1410,49 +1310,43 @@
             "hindi": false,
             "identityMethod": "tmdb-verified",
             "identityVerified": true,
-            "latencyMs": 526
-          },
-          {
-            "provider": "moviebox",
-            "ok": false,
-            "reason": "no_stream",
-            "latencyMs": 3272
+            "latencyMs": 1349
           },
           {
             "provider": "netmirror",
             "ok": false,
             "reason": "no_stream",
-            "latencyMs": 250
+            "latencyMs": 112
           },
           {
             "provider": "moviesdrive",
             "ok": false,
             "reason": "no_stream",
-            "latencyMs": 1855
+            "latencyMs": 1172
           },
           {
             "provider": "4khdhub",
             "ok": false,
             "reason": "no_stream",
-            "latencyMs": 606
+            "latencyMs": 640
           },
           {
             "provider": "dahmer",
             "ok": false,
             "reason": "no_stream",
-            "latencyMs": 75
+            "latencyMs": 44
           },
           {
             "provider": "hicine",
             "ok": false,
             "reason": "no_stream",
-            "latencyMs": 239
+            "latencyMs": 269
           },
           {
             "provider": "hianime",
             "ok": false,
             "reason": "no_stream",
-            "latencyMs": 578
+            "latencyMs": 449
           }
         ],
         "streamHost": "img1.klnwm.com"
@@ -1563,17 +1457,6 @@
             ]
           },
           {
-            "id": "moviebox",
-            "ok": false,
-            "verified": false,
-            "matchedTitle": null,
-            "matchedYear": null,
-            "upstreamId": null,
-            "reasons": null,
-            "rejected": [],
-            "languages": []
-          },
-          {
             "id": "netmirror",
             "ok": false,
             "verified": false,
@@ -1610,8 +1493,8 @@
           "lang": "hi",
           "label": "Hindi",
           "type": "dub",
-          "streamUrl": "/api/proxy?url=https%3A%2F%2Fimg1.klnwm.com%2Fhls%2F180221544%2F720%2Findex_364.m3u8%3Fauth_key%3DNZCBIDLIKC2akvguaSHIyPEqYFFRVRrUBB3DWuudRrY%253D%26expire%3D1791108898158&referer=https%3A%2F%2Fapi.hlowb.com%2F&exp=1791112498&sig=a9f9de6bab4e4a743c1d3ab5cfcebf2a&mode=full",
-          "rawUrl": "https://img1.klnwm.com/hls/180221544/720/index_364.m3u8?auth_key=NZCBIDLIKC2akvguaSHIyPEqYFFRVRrUBB3DWuudRrY%3D&expire=1791108898158",
+          "streamUrl": "/api/proxy?url=https%3A%2F%2Fimg1.hlnom.com%2Fhls%2F180221544%2F720%2Findex_363.m3u8%3Fauth_key%3DQYfoGDpPFOiGcU%252FHkxEdXnljhg1z3KHBwptvV6qeXVY%253D%26expire%3D1791109690987&referer=https%3A%2F%2Fapi.hlowb.com%2F&exp=1791113291&sig=687a1c986ad7ed19087ecbeb8ad569ff&mode=full",
+          "rawUrl": "https://img1.hlnom.com/hls/180221544/720/index_363.m3u8?auth_key=QYfoGDpPFOiGcU%2FHkxEdXnljhg1z3KHBwptvV6qeXVY%3D&expire=1791109690987",
           "default": true
         },
         "audioTracks": [
@@ -1638,13 +1521,13 @@
             "hindi": true,
             "identityMethod": "tmdb-verified",
             "identityVerified": true,
-            "latencyMs": 923
+            "latencyMs": 1076
           }
         ],
-        "streamHost": "img1.klnwm.com"
+        "streamHost": "img1.hlnom.com"
       },
       "error": null
     }
   },
-  "finishedAt": "2026-10-04T07:14:58.294Z"
+  "finishedAt": "2026-10-04T07:28:11.151Z"
 }
