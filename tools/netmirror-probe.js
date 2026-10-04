@@ -185,6 +185,7 @@ async function probeResolver() {
       server: resolved && resolved.server,
       rawUrl: resolved && resolved.rawUrl,
       resolvedReferer: resolved && resolved.referer,
+      metadata,
       audioTracks: resolved && resolved.audioTracks,
       reason: resolved && resolved.reason,
       error: resolved && resolved.__error
@@ -196,18 +197,48 @@ async function probeResolver() {
   // Prove the resolved stream is actually playable: NetMirror's CDN is
   // Referer-gated, so fetch it the way /api/proxy does.
   report.playback = [];
+  const browserUA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36';
   for (const entry of results.filter((r) => r.ok && r.rawUrl)) {
-    const res = await fetch(entry.rawUrl, {
-      headers: { Referer: entry.resolvedReferer || 'https://net27.cc/', 'User-Agent': UA, Range: 'bytes=0-1023' },
-      redirect: 'follow'
-    }).catch((error) => ({ status: 0, error }));
-    report.playback.push({
-      title: entry.title,
-      status: res.status,
-      error: res.error ? String(res.error.message || res.error) : null,
-      contentType: res.headers ? res.headers.get('content-type') : null,
-      contentLength: res.headers ? res.headers.get('content-length') : null
-    });
+    const referer = entry.resolvedReferer || 'https://net27.cc/';
+    // (a) the exact fetch the proxy performs: the embedded stream's `sign` is
+    //     time-limited, so an expired URL must be re-resolved, not retried.
+    const attempts = {};
+    for (const [name, options] of [
+      ['plain', { headers: { Referer: referer, 'User-Agent': browserUA } }],
+      ['ranged', { headers: { Referer: referer, 'User-Agent': browserUA, Range: 'bytes=0-1023' } }],
+      ['no-referer', { headers: { 'User-Agent': browserUA } }]
+    ]) {
+      try {
+        const res = await fetch(entry.rawUrl, { ...options, redirect: 'follow' });
+        attempts[name] = {
+          status: res.status,
+          contentType: res.headers.get('content-type'),
+          retryAfter: res.headers.get('retry-after'),
+          server: res.headers.get('server'),
+          bodySample: res.status >= 400 ? (await res.text()).slice(0, 120) : null
+        };
+      } catch (error) {
+        attempts[name] = { status: 0, error: String(error.message || error) };
+      }
+    }
+    // (b) a freshly resolved URL for the same title: proves whether failures
+    //     were sign expiry / CDN throttling of this runner's IP.
+    let fresh = null;
+    try {
+      const rereolved = await resolveNetmirror(entry.metadata, 'hi');
+      if (rereolved && rereolved.rawUrl) {
+        const res = await fetch(rereolved.rawUrl, {
+          headers: { Referer: rereolved.referer || referer, 'User-Agent': browserUA, Range: 'bytes=0-1023' },
+          redirect: 'follow'
+        });
+        fresh = { status: res.status, contentType: res.headers.get('content-type'), sameUrl: rereolved.rawUrl === entry.rawUrl };
+      } else {
+        fresh = { status: 0, reason: 're-resolve miss' };
+      }
+    } catch (error) {
+      fresh = { status: 0, error: String(error.message || error) };
+    }
+    report.playback.push({ title: entry.title, referer, attempts, fresh });
   }
 }
 
@@ -245,7 +276,7 @@ async function main() {
     console.log(`  RESOLVE ${entry.title.padEnd(16)} ok=${entry.ok} ${entry.sourceName || entry.reason || entry.error || ''}`);
   }
   for (const entry of report.playback || []) {
-    console.log(`  PLAYBACK ${entry.title.padEnd(15)} status=${entry.status} type=${entry.contentType} ${entry.error || ''}`);
+    console.log(`  PLAYBACK ${entry.title.padEnd(15)} ${JSON.stringify(entry.attempts)} fresh=${JSON.stringify(entry.fresh)}`);
   }
   console.log(`report: ${OUT}`);
 }
