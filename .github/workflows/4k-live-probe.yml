@@ -1,0 +1,75 @@
+name: 4K Ursa Live Probe
+
+on:
+  push:
+    branches:
+      - 'arena/**'
+    paths:
+      - 'tools/4k-live-probe.js'
+      - '.github/workflows/4k-live-probe.yml'
+      - 'src/services/resolver.js'
+      - 'src/config.js'
+      - 'cloudflare-worker/worker.js'
+  workflow_dispatch:
+    inputs:
+      title:
+        description: 'Optional title substring (default: Dune, Fight Club, Arcane)'
+        required: false
+        type: string
+
+permissions:
+  contents: write
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - run: npm ci --no-audit --no-fund
+
+      - name: Run the live 4K tier probe
+        env:
+          TMDB_API_KEY: ${{ vars.TMDB_API_KEY || '47a1a7df542d3d483227f758a7317dff' }}
+          FOURKHDHUB_BASE_URL: ${{ vars.FOURKHDHUB_BASE_URL || 'https://4khdhub.one' }}
+          MOVIESDRIVE_BASE_URL: ${{ vars.MOVIESDRIVE_BASE_URL || 'https://new5.moviesdrive.christmas' }}
+          HICINE_API_BASE: ${{ vars.HICINE_API_BASE || 'https://api.hicine.sbs' }}
+          DAHMER_BASE_URL: ${{ vars.DAHMER_BASE_URL || 'https://a.111477.xyz' }}
+        run: |
+          args=""
+          if [ -n "${{ inputs.title }}" ]; then args="--title=${{ inputs.title }}"; fi
+          node tools/4k-live-probe.js --out diagnostics/4k-live-probe.json $args
+
+      - name: Upload diagnostics artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: 4k-live-probe
+          path: diagnostics/4k-live-probe.json
+          if-no-files-found: warn
+          retention-days: 14
+
+      - name: Persist diagnostics on the branch
+        if: github.ref != 'refs/heads/main'
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          for attempt in 1 2 3 4 5; do
+            git fetch -q origin "${GITHUB_REF_NAME}"
+            git reset --soft "origin/${GITHUB_REF_NAME}"
+            git add -f diagnostics/4k-live-probe.json
+            if git diff --cached --quiet; then
+              echo "report already up to date"
+              exit 0
+            fi
+            git commit -q -m "chore(research): live 4K probe report [skip ci]"
+            if git push; then
+              exit 0
+            fi
+            echo "push attempt ${attempt} lost the race, retrying..."
+            sleep 5
+          done
+          echo "could not persist the report after retries" >&2
+          exit 1
