@@ -54,4 +54,13 @@ jobs:
           git add -f diagnostics/hindi-dub-live.json
           git diff --cached --quiet && echo "no report changes" && exit 0
           git commit -m "chore(research): live hindi dub verification report [skip ci]"
-          git push
+          # Concurrent runs can land here together; rebase and retry.
+          for attempt in 1 2 3 4 5; do
+            git push && exit 0
+            echo "push attempt ${attempt} failed, rebasing..."
+            git fetch origin "${GITHUB_REF_NAME}"
+            git rebase --autostash "origin/${GITHUB_REF_NAME}" || git rebase --abort || true
+            sleep 5
+          done
+          echo "could not persist the report after retries" >&2
+          exit 1
