@@ -101,6 +101,48 @@
     } catch (_) {}
   }
 
+  const AUTOSKIP_KEY = 'lol_embed_autoskip';
+  const QUALITY_KEY = 'lol_embed_quality';
+
+  /**
+   * `?t=` / `?start=` value in seconds. Accepts plain seconds (`90`, `90.5`),
+   * YouTube-style `1h2m3s` / `2m` / `45s`, and clock form `1:02:03` / `2:03`.
+   */
+  function parseStartParam(raw) {
+    if (raw == null) return 0;
+    const text = String(raw).trim().toLowerCase();
+    if (!text) return 0;
+    if (/^\d+(?:\.\d+)?$/.test(text)) return Math.max(0, parseFloat(text));
+    const clock = text.match(/^(\d+):(\d{1,2})(?::(\d{1,2}))?$/);
+    if (clock) {
+      const parts = clock.slice(1).filter((x) => x !== undefined).map((x) => parseInt(x, 10));
+      return parts.reduce((acc, n) => acc * 60 + n, 0);
+    }
+    const hms = text.match(/^(?:(\d+)h)?(?:(\d+)m)?(?:(\d+(?:\.\d+)?)s?)?$/);
+    if (hms && (hms[1] || hms[2] || hms[3])) {
+      return (parseInt(hms[1] || '0', 10) * 3600) + (parseInt(hms[2] || '0', 10) * 60) + parseFloat(hms[3] || '0');
+    }
+    return 0;
+  }
+
+  /** Per-title memory of the viewer's subtitle / audio language choice. */
+  function showPrefsKey() {
+    return `lol_embed_prefs_${state.type}_${state.tmdbId}`;
+  }
+  function readShowPrefs() {
+    try {
+      const parsed = JSON.parse(storageGet(showPrefsKey()) || 'null');
+      return parsed && typeof parsed === 'object' ? parsed : {};
+    } catch (_) {
+      return {};
+    }
+  }
+  function writeShowPrefs(patch) {
+    if (!state.tmdbId) return;
+    const next = Object.assign(readShowPrefs(), patch);
+    storageSet(showPrefsKey(), JSON.stringify(next));
+  }
+
   // Pick black or white text for a given accent so active pills / badges
   // stay readable with `?color=` overrides.
   function contrastColorFor(hex) {
@@ -250,6 +292,10 @@
   const valSpeed = document.getElementById('val-speed');
   const switchMirror = document.getElementById('switch-mirror');
   const switchPip = document.getElementById('switch-pip');
+  const switchAutoskip = document.getElementById('switch-autoskip');
+  const valAutoskip = document.getElementById('val-autoskip');
+  const valShare = document.getElementById('val-share');
+  const speedBoostBadge = document.getElementById('speed-boost-badge');
 
   const modalEpisodesBackdrop = document.getElementById('modal-episodes-backdrop');
   const seasonSelect = document.getElementById('season-select');
@@ -287,6 +333,13 @@
     activeAudioId: 'en-dub',
     activeSubtitleId: 'off',
     preferredSubtitleLang: '',
+    // `?t=` / `?start=` offset; consumed by the first stream that attaches so
+    // the next episode does not inherit it.
+    startAt: 0,
+    autoSkip: storageGet(AUTOSKIP_KEY) === '1',
+    autoSkipped: new Set(),
+    // Hold-to-fast-forward: { prevRate } while the picture is pressed.
+    longPressBoost: null,
     lastSubtitleId: null,
     activeQualityId: 'auto',
     parsedCues: [],
@@ -370,6 +423,11 @@
       // Subtitle ids are assigned by the API (`os-…`, `wyzie-…`), so a URL
       // preference can only be matched by language once the tracks arrive.
       state.preferredSubtitleLang = params.get('sub').toLowerCase().slice(0, 2);
+    }
+    state.startAt = parseStartParam(params.has('t') ? params.get('t') : params.get('start'));
+    if (params.has('autoskip')) {
+      const autoskip = String(params.get('autoskip')).toLowerCase();
+      state.autoSkip = !(autoskip === '0' || autoskip === 'false' || autoskip === 'off');
     }
 
     // Custom Accent Color (?color=e50914 or ?color=netflix)
@@ -482,8 +540,8 @@
       protocol: HOST_PROTOCOL_VERSION,
       tmdbId: state.tmdbId,
       mediaType: state.type,
-      season: state.season,
-      episode: state.episode,
+      season: state.type === 'tv' ? state.season : null,
+      episode: state.type === 'tv' ? state.episode : null,
       title: state.media ? state.media.displayTitle : '',
       state: playback,
       paused: !!video.paused,
@@ -980,6 +1038,10 @@
       (window.location.ancestorOrigins && window.location.ancestorOrigins[0]) ||
       document.referrer ||
       window.location.origin;
+    // Ask for the audio track the viewer last chose for this title, so the
+    // backend answers with that cut instead of the default one.
+    const rememberedAudioId = readShowPrefs().audioId;
+    if (rememberedAudioId) state.activeAudioId = String(rememberedAudioId);
     return apiUrl(
       `/api/resolve/${state.type}/${encodeURIComponent(state.tmdbId)}?season=${state.season}&episode=${state.episode}&server=${encodeURIComponent(serverId)}&audio=${encodeURIComponent(state.activeAudioId)}&parent=${encodeURIComponent(parentDomain)}`
     );
@@ -1042,6 +1104,7 @@
       }
 
       state.segments = normalizeSegments(data && data.segments);
+      state.autoSkipped = new Set();
       state.subtitles = Array.isArray(data && data.subtitles) ? data.subtitles : [];
       state.servers = ((data && data.servers) || [])
         .filter((s) => s && s.id && s.enabled !== false && (s.listed !== false || s.active))
@@ -1094,13 +1157,27 @@
         }));
 
       if (state.audioTracks.length > 0) {
+        // Order: the language the viewer already picked for this title, then
+        // the track the backend says is playing, then `?lang=`.
+        const prefs = readShowPrefs();
+        const rememberedAudioLang = String(prefs.audio || '').toLowerCase();
+        const rememberedTrack =
+          (prefs.audioId && state.audioTracks.find((a) => a.id === prefs.audioId)) ||
+          (rememberedAudioLang && state.audioTracks.find((a) => String(a.lang || '').toLowerCase() === rememberedAudioLang)) ||
+          null;
         const activeTrack =
+          rememberedTrack ||
           (data.stream.activeAudioTrack && state.audioTracks.find((a) => a.id === data.stream.activeAudioTrack.id)) ||
           state.audioTracks.find((a) => a.default) ||
           state.audioTracks.find((a) => a.id === state.activeAudioId) ||
           state.audioTracks[0];
         if (activeTrack) {
           state.activeAudioId = activeTrack.id;
+        }
+        // A remembered track that lives in its own file (sub vs dub streams)
+        // must actually be the file that plays, as when it is picked from the menu.
+        if (rememberedTrack && rememberedTrack.streamUrl && state.stream.streamUrl && rememberedTrack.streamUrl !== state.stream.streamUrl) {
+          state.stream.streamUrl = rememberedTrack.streamUrl;
         }
       }
 
@@ -1120,16 +1197,19 @@
       setConnectProgress(72, false);
       await attachStreamToVideo(targetStreamUrl, savedTime);
 
-      // Apply the subtitle preference: a track the viewer already had on, a
-      // `?sub=` language, or nothing.
+      // Apply the subtitle preference: a track the viewer already had on, the
+      // language remembered for this title, a `?sub=` language, or nothing.
+      const rememberedSub = String(readShowPrefs().sub || '').toLowerCase();
+      const byLang = (lang) => (lang ? state.subtitles.find((s) => String(s.lang || '').toLowerCase() === lang) : null);
       const preferredSub =
         (state.activeSubtitleId !== 'off' && state.subtitles.find((s) => s.id === state.activeSubtitleId)) ||
         (state.lastSubtitleId && state.subtitles.find((s) => s.id === state.lastSubtitleId)) ||
-        (state.preferredSubtitleLang && state.subtitles.find((s) => String(s.lang || '').toLowerCase() === state.preferredSubtitleLang));
+        (rememberedSub && rememberedSub !== 'off' && byLang(rememberedSub)) ||
+        (rememberedSub !== 'off' && byLang(state.preferredSubtitleLang));
       if (preferredSub) {
-        loadSubtitleTrack(preferredSub, { silent: true });
+        loadSubtitleTrack(preferredSub, { silent: true, remember: false });
       } else if (state.activeSubtitleId !== 'off' && state.activeSubtitleId !== 'custom-upload') {
-        disableSubtitles();
+        disableSubtitles({ remember: false });
       }
 
       emitHostEvent('ready', { title: state.media ? state.media.displayTitle : '' });
@@ -1288,8 +1368,7 @@
     }
     hideBuffering();
 
-    const params = new URLSearchParams(window.location.search);
-    const startParam = parseFloat(params.get('start') || '0');
+    const startParam = state.startAt > 0 ? state.startAt : 0;
     const saved = readProgress(state.type, state.tmdbId, state.season, state.episode);
     let savedProgress = saved ? saved.time : 0;
     if (saved && isNearEnd(saved.time, saved.duration)) savedProgress = 0;
@@ -1306,6 +1385,8 @@
           showToast(`Resuming from ${formatTime(t)}`, 2200);
         }
       }
+      // The `?t=` offset is a one-shot: later attaches resume from progress.
+      if (startParam > 0) state.startAt = 0;
     };
 
     // Track which URLs the fallback ladder already burned through this session.
@@ -1393,6 +1474,7 @@
         }
 
         applyStartTime();
+        applyRememberedQuality();
 
         video.play().catch((error) => {
           // Autoplay denial is recoverable, but an unsupported HLS decode can use the next quality/mirror.
@@ -1602,10 +1684,11 @@
     });
   }
 
-  function selectAudioTrack(track) {
+  function selectAudioTrack(track, options = {}) {
     state.activeAudioId = track.id;
     renderAudioPopover();
     updateSettingsSummaryValues();
+    if (options.remember !== false && track.lang) writeShowPrefs({ audio: String(track.lang).toLowerCase(), audioId: track.id });
 
     let switched = false;
     let switchHint = '';
@@ -1637,7 +1720,7 @@
     if (track.type === 'sub' && state.activeSubtitleId === 'off' && state.subtitles.length > 0) {
       const enSub = state.subtitles.find((s) => s.lang === 'en') || state.subtitles[0];
       if (enSub) {
-        loadSubtitleTrack(enSub);
+        loadSubtitleTrack(enSub, { remember: false });
       }
     }
 
@@ -1701,13 +1784,15 @@
     subtitlesActiveDot.classList.toggle('hidden', state.activeSubtitleId === 'off');
   }
 
-  function disableSubtitles() {
+  function disableSubtitles(options = {}) {
     if (state.activeSubtitleId !== 'off') state.lastSubtitleId = state.activeSubtitleId;
     state.activeSubtitleId = 'off';
     state.parsedCues = [];
     customSubtitleText.textContent = '';
     renderSubtitlesPopover();
     updateSettingsSummaryValues();
+    // Only a deliberate "Off" is remembered for the title, not a failed load.
+    if (options.remember !== false) writeShowPrefs({ sub: 'off' });
     emitHostEvent('subtitlechange', { subtitle: null });
   }
 
@@ -1716,6 +1801,9 @@
     state.lastSubtitleId = sub.id;
     renderSubtitlesPopover();
     updateSettingsSummaryValues();
+    if (options.remember !== false && sub.id !== 'custom-upload' && sub.lang) {
+      writeShowPrefs({ sub: String(sub.lang).toLowerCase() });
+    }
 
     if (sub.id === 'custom-upload' && Array.isArray(sub.cues)) {
       state.parsedCues = sub.cues;
@@ -1742,7 +1830,7 @@
     } catch (_) {
       if (state.activeSubtitleId !== sub.id) return;
       showToast('Failed to load subtitle track', 2000);
-      disableSubtitles();
+      disableSubtitles({ remember: false });
     }
   }
 
@@ -2217,6 +2305,60 @@
     if (mirrorRow) mirrorRow.setAttribute('aria-checked', String(state.mirror));
     if (pipRow) pipRow.setAttribute('aria-checked', String(pipOn));
     valSpeed.textContent = `${state.playbackSpeed}x`;
+    valAutoskip.textContent = state.autoSkip ? 'On' : 'Off';
+    switchAutoskip.classList.toggle('on', state.autoSkip);
+    const autoskipRow = switchAutoskip.closest('.settings-row-btn');
+    if (autoskipRow) autoskipRow.setAttribute('aria-checked', String(state.autoSkip));
+    valShare.textContent = formatTime(video.currentTime || 0);
+  }
+
+  /** Embed URL that opens this title at the current position (`?t=`). */
+  function buildShareUrl() {
+    const url = new URL(window.location.href);
+    url.searchParams.delete('start');
+    url.searchParams.delete('origin');
+    url.searchParams.set('t', String(Math.max(0, Math.floor(video.currentTime || 0))));
+    url.hash = '';
+    return url.toString();
+  }
+
+  async function copyText(text) {
+    try {
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        await navigator.clipboard.writeText(text);
+        return true;
+      }
+    } catch (_) {}
+    try {
+      const ta = document.createElement('textarea');
+      ta.value = text;
+      ta.setAttribute('readonly', '');
+      ta.style.position = 'fixed';
+      ta.style.opacity = '0';
+      document.body.appendChild(ta);
+      ta.select();
+      const ok = document.execCommand && document.execCommand('copy');
+      ta.remove();
+      return !!ok;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  async function shareCurrentTime() {
+    const time = Math.max(0, Math.floor(video.currentTime || 0));
+    const url = buildShareUrl();
+    const copied = await copyText(url);
+    showToast(copied ? `Link copied · starts at ${formatTime(time)}` : 'Could not copy the link', 2600);
+    // Hosts usually want their own page URL shared: the event carries the
+    // position so they can build one.
+    emitHostEvent('share', { url, time, copied });
+  }
+
+  function setAutoSkip(on) {
+    state.autoSkip = !!on;
+    storageSet(AUTOSKIP_KEY, state.autoSkip ? '1' : '0');
+    updateSettingsSummaryValues();
   }
 
   // Apply CSS transforms & filters for Aspect Ratio, Brightness, and Mirror
@@ -2246,6 +2388,17 @@
         return;
       }
 
+      if (action === 'toggle-autoskip') {
+        setAutoSkip(!state.autoSkip);
+        showToast(state.autoSkip ? 'Intros and recaps will be skipped automatically' : 'Auto-skip off', 2200);
+        return;
+      }
+
+      if (action === 'share-time') {
+        await shareCurrentTime();
+        return;
+      }
+
       if (action === 'toggle-pip') {
         if (!document.pictureInPictureEnabled || !video.requestPictureInPicture) {
           showToast('Picture-in-Picture is not supported in this browser', 2400);
@@ -2270,6 +2423,53 @@
     });
   });
 
+  /** Switch to a payload quality; remembered across titles (`lol_embed_quality`). */
+  function applyQuality(q, idx = state.qualities.indexOf(q), options = {}) {
+    state.activeQualityId = q.id;
+    if (options.remember !== false) {
+      if (q.id === 'auto' || !q.height) storageRemove(QUALITY_KEY);
+      else storageSet(QUALITY_KEY, String(q.height));
+    }
+    if (state.hlsInstance && state.hlsInstance.levels && state.hlsInstance.levels.length > 0) {
+      // Match the payload quality to the real HLS level by height first.
+      // The old positional `idx - 1` assumption broke whenever the
+      // payload ladder and the manifest ladder disagreed (they usually
+      // do: payload is [Auto, 1080, 720, 480], hls.js levels ascend).
+      const heights = state.hlsInstance.levels.map((l) => (l && l.height) || 0);
+      let levelIdx = -1;
+      if (q.id !== 'auto' && q.height) {
+        levelIdx = heights.findIndex((h) => h === q.height);
+        if (levelIdx === -1) {
+          const closest = heights.reduce(
+            (best, h, i) => (h > 0 && Math.abs(h - q.height) < Math.abs((best.height || 1e9) - q.height) ? { height: h, index: i } : best),
+            { height: 0, index: -1 }
+          );
+          levelIdx = closest.index;
+        }
+      }
+      state.hlsInstance.currentLevel = q.id === 'auto'
+        ? -1
+        : (levelIdx !== -1 ? levelIdx : Math.min(Math.max(idx - 1, 0), state.hlsInstance.levels.length - 1));
+    } else if (!options.hlsOnly && q.url && state.stream && q.url !== state.stream.streamUrl) {
+      state.stream.streamUrl = q.url;
+      attachStreamToVideo(q.url, video.currentTime || 0);
+    }
+    updateSettingsSummaryValues();
+  }
+
+  /**
+   * Re-apply the height the viewer last picked, once the HLS ladder is known.
+   * Progressive files are left alone: switching them means re-downloading.
+   */
+  function applyRememberedQuality() {
+    const wanted = parseInt(storageGet(QUALITY_KEY) || '', 10);
+    if (!Number.isFinite(wanted) || wanted <= 0) return;
+    if (!state.hlsInstance || !state.hlsInstance.levels || state.hlsInstance.levels.length < 2) return;
+    const match = state.qualities.find((q) => q.id !== 'auto' && q.height === wanted);
+    if (!match) return;
+    applyQuality(match, state.qualities.indexOf(match), { remember: false, hlsOnly: true });
+  }
+
   function openSettingsDrillPanel(panelType) {
     settingsMainPanel.classList.add('hidden');
     settingsDrillPanel.classList.remove('hidden');
@@ -2282,31 +2482,7 @@
       }
       state.qualities.forEach((q, idx) => {
         const item = createDrillOption(q.label + (q.bitrate ? ` (${q.bitrate})` : ''), q.id === state.activeQualityId, () => {
-          state.activeQualityId = q.id;
-          if (state.hlsInstance && state.hlsInstance.levels && state.hlsInstance.levels.length > 0) {
-            // Match the payload quality to the real HLS level by height first.
-            // The old positional `idx - 1` assumption broke whenever the
-            // payload ladder and the manifest ladder disagreed (they usually
-            // do: payload is [Auto, 1080, 720, 480], hls.js levels ascend).
-            const heights = state.hlsInstance.levels.map((l) => (l && l.height) || 0);
-            let levelIdx = -1;
-            if (q.id !== 'auto' && q.height) {
-              levelIdx = heights.findIndex((h) => h === q.height);
-              if (levelIdx === -1) {
-                const closest = heights.reduce(
-                  (best, h, i) => (h > 0 && Math.abs(h - q.height) < Math.abs((best.height || 1e9) - q.height) ? { height: h, index: i } : best),
-                  { height: 0, index: -1 }
-                );
-                levelIdx = closest.index;
-              }
-            }
-            state.hlsInstance.currentLevel = q.id === 'auto'
-              ? -1
-              : (levelIdx !== -1 ? levelIdx : Math.min(Math.max(idx - 1, 0), state.hlsInstance.levels.length - 1));
-          } else if (q.url && state.stream && q.url !== state.stream.streamUrl) {
-            state.stream.streamUrl = q.url;
-            attachStreamToVideo(q.url, video.currentTime || 0);
-          }
+          applyQuality(q, idx);
           closeSettingsDrillPanel();
           showToast(`Quality: ${q.label}`, 2000);
         });
@@ -2475,6 +2651,19 @@
         // Yellow progress fill + thumb while inside the segment.
         playerRoot.classList.add('is-in-segment');
       }
+      // Auto-skip: intros / recaps / previews jump once per episode (so seeking
+      // back into one shows the button instead of looping); credits keep the
+      // manual button so the viewer decides about the next episode. Checked on
+      // every tick, not only on entry: a recap at 0:00 is entered while the
+      // player is still paused.
+      if (state.autoSkip && matchingSeg.type !== 'outro' && !video.paused && !video.seeking && !state.isDraggingTimeline) {
+        const autoKey = `${state.season}_${state.episode}_${matchingSeg.type}_${matchingSeg.start}`;
+        if (!state.autoSkipped.has(autoKey)) {
+          state.autoSkipped.add(autoKey);
+          skipActiveSegment({ auto: true });
+          return;
+        }
+      }
       // Progressive button: the fill tracks how much of the segment has elapsed.
       const segEnd = segmentEndSeconds(matchingSeg);
       const span = segEnd - matchingSeg.start;
@@ -2488,7 +2677,7 @@
     saveProgress();
   }
 
-  function skipActiveSegment() {
+  function skipActiveSegment(options = {}) {
     const seg = state.activeSkipSegment;
     if (!seg) return false;
     if (seg.type === 'outro' && state.type === 'tv' && getNextEpisodeTarget()) {
@@ -2502,7 +2691,7 @@
     video.currentTime = targetSec;
     clearActiveSkip();
     updateTimelineAndSkipState();
-    showToast(`Skipped to ${formatTime(targetSec)}`, 1800);
+    showToast(options.auto ? `Auto-skipped ${seg.type} · ${formatTime(targetSec)}` : `Skipped to ${formatTime(targetSec)}`, 1800);
     return true;
   }
 
@@ -2728,6 +2917,9 @@
           params.delete('e');
         }
       }
+      // A start offset belongs to the link that was opened, not to the next episode.
+      params.delete('t');
+      params.delete('start');
       const qs = params.toString();
       window.history.replaceState({}, '', `${newPath}${qs ? `?${qs}` : ''}`);
     } catch (_) {}
@@ -2766,7 +2958,72 @@
     hudWasIdleOnPointerDown = playerRoot.classList.contains('controls-idle');
   }, { passive: true, capture: true });
 
+  // --- Hold to fast-forward (press and hold the picture for 2×) ---
+  const LONG_PRESS_MS = 550;
+  let longPressTimer = null;
+  let longPressStart = null;
+  let suppressNextCenterClick = false;
+
+  function startLongPressBoost() {
+    if (state.longPressBoost || video.paused || video.ended) return;
+    state.longPressBoost = { prevRate: video.playbackRate || state.playbackSpeed || 1 };
+    video.playbackRate = 2;
+    speedBoostBadge.classList.remove('hidden');
+    speedBoostBadge.setAttribute('aria-hidden', 'false');
+    // The matching pointerup ends in a click: that click must not toggle the HUD.
+    suppressNextCenterClick = true;
+    if (tapTimer) {
+      clearTimeout(tapTimer);
+      tapTimer = null;
+    }
+    lastTapAt = 0;
+  }
+
+  function endLongPressBoost() {
+    if (longPressTimer) {
+      clearTimeout(longPressTimer);
+      longPressTimer = null;
+    }
+    longPressStart = null;
+    if (!state.longPressBoost) return;
+    const { prevRate } = state.longPressBoost;
+    state.longPressBoost = null;
+    video.playbackRate = prevRate;
+    speedBoostBadge.classList.add('hidden');
+    speedBoostBadge.setAttribute('aria-hidden', 'true');
+  }
+
+  centerClickZone.addEventListener('pointerdown', (e) => {
+    if (e.button !== undefined && e.button !== 0) return;
+    if (longPressTimer) clearTimeout(longPressTimer);
+    longPressStart = { x: e.clientX, y: e.clientY };
+    longPressTimer = setTimeout(() => {
+      longPressTimer = null;
+      startLongPressBoost();
+    }, LONG_PRESS_MS);
+  });
+  centerClickZone.addEventListener('pointermove', (e) => {
+    // A drag / scroll gesture is not a hold.
+    if (!longPressTimer || !longPressStart) return;
+    if (Math.abs(e.clientX - longPressStart.x) > 12 || Math.abs(e.clientY - longPressStart.y) > 12) {
+      clearTimeout(longPressTimer);
+      longPressTimer = null;
+    }
+  });
+  ['pointerup', 'pointercancel', 'pointerleave'].forEach((type) => {
+    centerClickZone.addEventListener(type, endLongPressBoost);
+  });
+  window.addEventListener('blur', endLongPressBoost);
+  // Android raises the context menu on a long touch; that would end the press.
+  centerClickZone.addEventListener('contextmenu', (e) => {
+    if (longPressTimer || state.longPressBoost) e.preventDefault();
+  });
+
   centerClickZone.addEventListener('click', (e) => {
+    if (suppressNextCenterClick) {
+      suppressNextCenterClick = false;
+      return;
+    }
     const now = Date.now();
     const isTouch = lastPointerType === 'touch' || lastPointerType === 'pen';
     if (now - lastTapAt < 300) {
@@ -2841,6 +3098,7 @@
   });
 
   video.addEventListener('pause', () => {
+    endLongPressBoost();
     setPlayingUI(false);
     stopRenderLoop();
     updateTimelineAndSkipState();
@@ -2906,11 +3164,12 @@
   });
 
   video.addEventListener('ratechange', () => {
-    if (video.playbackRate > 0 && video.playbackRate !== state.playbackSpeed) {
+    // A hold-to-fast-forward 2× is temporary: it must not become the setting.
+    if (!state.longPressBoost && video.playbackRate > 0 && video.playbackRate !== state.playbackSpeed) {
       state.playbackSpeed = video.playbackRate;
       updateSettingsSummaryValues();
     }
-    emitHostEvent('ratechange');
+    emitHostEvent('ratechange', { boost: !!state.longPressBoost });
   });
 
   video.addEventListener('ended', () => {
@@ -3424,7 +3683,7 @@
         const lang = String(wanted).toLowerCase();
         const track = state.subtitles.find((t) => t.id === wanted) || state.subtitles.find((t) => String(t.lang || '').toLowerCase() === lang);
         if (!track) return { ok: false, error: `No subtitle track matches "${wanted}"` };
-        loadSubtitleTrack(track, { silent: true });
+        loadSubtitleTrack(track, { silent: true, remember: true });
         return { ok: true };
       }
       case 'setAudio': {
@@ -3454,6 +3713,16 @@
         if (!getNextEpisodeTarget()) return { ok: false, error: 'No next episode' };
         goToNextEpisode();
         return { ok: true };
+      case 'setAutoSkip': {
+        const on = msg.enabled !== undefined ? msg.enabled : msg.autoSkip;
+        if (typeof on !== 'boolean') return { ok: false, error: 'setAutoSkip needs boolean `enabled`' };
+        setAutoSkip(on);
+        return { ok: true };
+      }
+      case 'skipSegment': {
+        const skipped = skipActiveSegment();
+        return { ok: skipped, error: skipped ? null : 'No intro / recap / credits segment at the current position' };
+      }
       case 'getState':
       case 'getTime':
       case 'getDuration':

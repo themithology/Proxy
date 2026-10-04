@@ -137,6 +137,9 @@
       <div id="loading-tip" class="connect-tip">Change playback speed in the player settings.</div>
     </div>
 
+    <!-- Hold-to-fast-forward indicator (long-press on the picture) -->
+    <div id="speed-boost-badge" class="speed-boost-badge hidden" aria-hidden="true">2× ▶▶</div>
+
     <!-- Status Toast Notification -->
     <div id="player-toast" class="player-toast" role="status" aria-live="polite">
       <span id="player-toast-text"></span>
@@ -576,6 +579,28 @@
               </div>
               <div class="settings-row-right">
                 <span id="val-speed">1x</span>
+                <span class="chevron">›</span>
+              </div>
+            </button>
+
+            <button class="settings-row-btn" data-action="toggle-autoskip" role="switch" aria-checked="false">
+              <div class="settings-row-left">
+                <span class="settings-icon-box">⏭</span>
+                <span class="settings-row-title">Auto-skip intro &amp; recap</span>
+              </div>
+              <div class="settings-row-right">
+                <span id="val-autoskip" class="sr-only">Off</span>
+                <span id="switch-autoskip" class="toggle-switch" aria-hidden="true"></span>
+              </div>
+            </button>
+
+            <button class="settings-row-btn" data-action="share-time">
+              <div class="settings-row-left">
+                <span class="settings-icon-box">⤴</span>
+                <span class="settings-row-title">Copy link at current time</span>
+              </div>
+              <div class="settings-row-right">
+                <span id="val-share">0:00</span>
                 <span class="chevron">›</span>
               </div>
             </button>

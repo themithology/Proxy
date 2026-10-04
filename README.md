@@ -56,6 +56,9 @@ The page is served with `Content-Security-Policy: frame-ancestors *` so any site
 | `api`      | Absolute API base URL override (see below)                               |
 | `lang`     | Preferred audio language (e.g. `hi`, `en`, `ta`)                         |
 | `sub`      | Preferred subtitle language (e.g. `en`); matched against the resolved tracks' language codes |
+| `t`        | Start position — seconds (`t=754`), `1h2m3s` / `12m34s` or `12:34` (also accepted as `start`). One-shot: it applies to the episode the link opens, not to the next one |
+| `autoskip` | `1` turns **auto-skip** on for this viewer (intros / recaps / previews are skipped automatically; credits keep the manual *Next Episode* button); `0` turns it off. The choice persists in `localStorage` |
+| `origin`   | Origin of the page hosting the iframe (e.g. `https://watch.example`). When set, the player only obeys `postMessage` commands from that origin and posts its events only to it (see *Host control API*) |
 | `color`    | Optional accent override (e.g. `e50914`); default styling is monochrome  |
 | `branding` | Player branding text (defaults to `LOL Embed`)                           |
 | `back`     | `false`/`0` hides the back button                                        |
@@ -64,18 +67,89 @@ All of these routes serve the same player page. When the episode changes, the pl
 
 ### Player UI behaviour
 
-- **Connect screen:** every load and every server/source change shows a connect screen over the blurred TMDB backdrop: the title's logo artwork (TMDB `images.logos`, English PNG preferred; plain title text when the title has none), its genres, a `CONNECTING TO <SERVER>_` status with a progress bar that advances as the stream is resolved, picked and becomes playable, the **Server / Source NN** that answered, rotating usage tips, the `?branding=` name and its own Back / Servers buttons. On first open the TMDB metadata is fetched (`/api/info`) in parallel with the much slower stream resolve, so the artwork is on screen almost immediately. A failure turns the same screen into the error state (message, reason, **Retry** / **Change server**).
+- **Connect screen:** every load and every server/source change shows a connect screen over the blurred TMDB backdrop: the title's logo artwork (TMDB `images.logos`, English PNG preferred; plain title text when the title has none), its genres, a `CONNECTING TO <SERVER>_` status with a progress bar that advances as the stream is resolved, picked and becomes playable, the **Server / Source NN** that answered, rotating usage tips, the `?branding=` name and its own Back / Servers buttons. On first open the TMDB metadata is fetched (`/api/info`) in parallel with the much slower stream resolve, so the artwork is on screen almost immediately. A failure turns the same screen into the error state.
 - **Paused screen:** two seconds after pausing with no interaction, the controls give way to a title card over the blurred artwork — `PAUSED`, the logo image, the episode (`S1 E2 · title`), tagline, `year • runtime • ★ rating`, genre pills and the episode's (or show's) overview. Any pointer, touch or key activity brings the controls back (the card returns after another two idle seconds while still paused); resuming removes it. It never shows over an open menu, while loading/erroring, after the credits, or before playback has started.
 - **Compact layout:** below 720 px wide or 440 px tall the player rearranges itself: the title moves into the top bar beside Back, a `−15 / play-pause / +15` transport sits in the centre of the picture, the timeline spans the full width with the times underneath, and the remaining icons (volume, audio, subtitles, settings, fullscreen) are centred in the bottom row. The layout follows the embed's size live (`ResizeObserver`).
 - **Playback state:** a centre play button appears while paused (and persistently on touch devices); a small spinner shows during buffering/seeks; the HUD and cursor hide after ~3 s of inactivity during playback and come back on pause. Clicking or tapping the picture never pauses: it only shows the controls (a tap on visible controls hides them again); play/pause lives on the buttons, `Space`/`K`, and double-click/double-tap centre toggles fullscreen.
 - **Servers & sources:** the cloud button opens a list of servers; under each one the player lists the stream sources it resolved as **Source 1…N** (upstream provider names and URLs are never shown). Picking a source of the playing server switches mirrors in place; picking another server (or one of its sources) re-resolves. Servers the player knows nothing about yet are checked one at a time while the list is open (✓ ready · — not checked · ✕ unavailable), and what one resolve reveals about other servers (the backend waterfall's attempts) is reused instead of re-asked.
-- **Errors:** when a server fails the player tries the next one automatically; when every server fails it shows an error card with **Retry** and **Change server** instead of an endless spinner.
-- **Skip button & timeline:** only shown for real intro/recap/credits segments returned by the API (see *Skip segments* below); the timeline is split at those segments and the ranges are highlighted in yellow (no invented chapters). While the playhead is inside a segment the progress fill and thumb turn yellow and the button's background fills left-to-right as the segment elapses; the button stays visible even after the rest of the HUD auto-hides. `S` (or the button) jumps to the end of the segment, or to the next episode during credits. Hovering the timeline shows the time and the segment name.
+- **Errors:** when a server fails the player tries the next one automatically. When every server fails, the connect screen turns into the error state — *"Ouu shii… can't find it here. Maybe change the server from below :)"* — with the reason underneath and the **server list rendered right there**: each server shows its status (✓ ready · — not checked · ✕ unavailable), unchecked servers keep being probed while the screen is up, tapping a server switches to it, and tapping the one that just failed retries it (**Retry** does the same). No endless spinner, no dead end.
+- **Skip button & timeline:** only shown for real intro/recap/credits segments returned by the API (see *Skip segments* below); the timeline is split at those segments and the ranges are highlighted in yellow (no invented chapters). While the playhead is inside a segment the progress fill and thumb turn yellow and the button's background fills left-to-right as the segment elapses; the button stays visible even after the rest of the HUD auto-hides. `S` (or the button) jumps to the end of the segment, or to the next episode during credits. Hovering the timeline shows the time and the segment name. **Auto-skip** (Settings → *Auto-skip intro & recap*, `?autoskip=1`, or the `setAutoSkip` host command) skips intros, recaps and previews on its own — once per segment, so seeking back into one shows the button again instead of looping — and never auto-skips credits.
 - **Episodes drawer:** the season dropdown browses another season (`/api/info?season=`) without interrupting playback; cards show a "Now playing" badge and the viewer's watched progress.
 - **Up next:** at the end of a TV episode an 8-second countdown card offers *Play now* / *Cancel*; the last available episode ends without a redirect.
-- **Resume:** progress is saved per episode in `localStorage`; anything past 95 % is treated as finished and restarts from the beginning.
-- **Subtitles:** rendered by the player (multi-line cues, HTML entities decoded, RTL languages right-aligned); style and volume preferences persist.
-- **Keyboard:** `Space`/`K` play-pause · `←`/`→`/`J`/`L` ±15 s · `↑`/`↓` volume · `M` mute · `C` captions · `F` fullscreen · `S` skip intro/recap/credits · `0–9` seek to 0–90 % · `Shift+N` next episode · `Esc` close menus. Touch: double-tap left/right to seek ±15 s, double-tap centre for fullscreen.
+- **Resume:** progress is saved per episode in `localStorage` (every ~3 s while playing, and immediately on pause, tab hide and unload); anything past 95 % is treated as finished and restarts from the beginning. An explicit `?t=` wins over the saved position for the link that was opened.
+- **Share at a timestamp:** Settings → *Copy link at current time* copies the current embed URL with `?t=<seconds>` and fires a `share` host event carrying `{ url, time }`, so a host page can offer its own link instead.
+- **Subtitles & audio:** rendered by the player (multi-line cues, HTML entities decoded, RTL languages right-aligned); styling and delay/offset live in the subtitle menu. The language the viewer picks — or *Off* — is remembered **per title** (`lol_embed_prefs_<type>_<tmdbId>`) and re-applied on the next episode and the next visit, ahead of `?sub=` / `?lang=`; audio language is remembered the same way. Global subtitle style and volume/mute persist too.
+- **Quality:** the quality the viewer picks is remembered (`lol_embed_quality`, by height) and re-applied on HLS streams whose ladder has it; progressive single-file sources are left on *Auto* rather than re-downloading.
+- **Hold to fast-forward:** pressing and holding the picture (touch, pen or mouse) plays at 2× with a small `2× ▶▶` badge until release; the speed setting is left untouched and the release does not toggle the controls.
+- **Keyboard:** `Space`/`K` play-pause · `←`/`→`/`J`/`L` ±15 s · `↑`/`↓` volume · `M` mute · `C` captions · `F` fullscreen · `S` skip intro/recap/credits · `0–9` seek to 0–90 % · `Shift+N` next episode · `Esc` close menus. Touch: double-tap left/right to seek ±15 s, double-tap centre for fullscreen, press-and-hold for 2×. Fullscreen on phones also requests landscape orientation lock where the browser allows it; Picture-in-Picture lives in Settings.
+
+### Host control API (postMessage)
+
+A page embedding the player (a watch-party room, a site with its own "up next" rail, …) talks to it with **one** stable `postMessage` dialect — no polling, no guessing which player is inside the frame. The player identifies itself with `source: "lol-embed-player"` on everything it sends; protocol version `1`.
+
+**Sending commands** — `iframe.contentWindow.postMessage({ type: "LOL_EMBED_PLAYER_COMMAND", command, requestId?, ...args }, playerOrigin)`. Only the frame's parent / top / opener window is obeyed; with `?origin=` on the embed URL, only that origin. When a `requestId` is included (and always for the query commands) the player answers with `{ source, type: "LOL_EMBED_PLAYER_RESPONSE", command, requestId, ok, error, ...snapshot }`.
+
+| Command | Arguments | Notes |
+| --- | --- | --- |
+| `play` / `pause` / `togglePlay` | — | `play` resolves after the browser accepted it; an autoplay refusal answers `ok: false, error: "NotAllowedError"` |
+| `seek` | `time` (seconds) | Clamped to the media; `seekBy` takes `delta` |
+| `setVolume` | `volume` 0–1, optional `muted` | `setMuted { muted }` on its own |
+| `setPlaybackRate` | `rate` 0.25–4 | |
+| `setSubtitle` | `lang` (e.g. `"ar"`) or `id`, or `"off"` | Remembered for the title like a menu choice |
+| `setAudio` | `lang` or `id` | Same as choosing it in the audio menu |
+| `setServer` | `server` id | Re-resolves on that server, keeping the position |
+| `setEpisode` | `season`, `episode` | TV only |
+| `nextEpisode` | — | `ok: false` when there is none |
+| `skipSegment` | — | Skips the intro / recap / credits segment at the playhead, if any |
+| `setAutoSkip` | `enabled` (boolean) | Same switch as Settings → Auto-skip |
+| `getState` / `getTime` / `getDuration` / `ping` | — | Query only; always answered, `requestId` optional |
+
+**Receiving events** — listen for `message` events whose `data.type === "LOL_EMBED_PLAYER_EVENT"`. Every event carries `event` plus the **full snapshot** below (so a host never has to issue a `getState` to interpret an event). Events: `init` (player script ready; sent before anything loads), `loadstart { server }`, `sourcechange` (a different stream URL was attached), `ready` (bundle resolved and attached), `loadedmetadata`, `durationchange` (only once the browser knows the real duration), `play`, `playing`, `pause`, `waiting`, `seeking`, `seeked`, `timeupdate` (~4×/s, native cadence), `ratechange`, `volumechange`, `ended`, `error { error, serverExplanation }`, `statechange { previousState }`, `serverchange`, `episodechange { season, episode }`, `audiotrackchange`, `subtitlechange`, `fullscreenchange`, `share { url, time }`, `back`.
+
+| Snapshot field | Meaning |
+| --- | --- |
+| `protocol` | `1` |
+| `tmdbId`, `mediaType`, `season`, `episode`, `title` | What is loaded (`season`/`episode` are `null` for movies) |
+| `state` | One of `loading` · `error` · `ready` (attached, never played) · `playing` · `buffering` · `paused` · `ended`. **Buffering is its own state** — a stalled stream is `buffering` with `paused: false`, never `paused` |
+| `paused`, `buffering`, `seeking`, `ended` | The raw flags behind `state` |
+| `currentTime`, `playbackRate`, `volume`, `muted`, `fullscreen` | Playback position and output state |
+| `mediaDuration` | The real duration of the attached file in seconds, or `null` until the browser reports one. **Use this for cut detection** — it differs between cuts/encodes of the same episode |
+| `duration` | What the player's timeline shows: `mediaDuration` when known, otherwise the TMDB runtime estimate (so it is never 0 for UI purposes) |
+| `server`, `sourceIndex`, `sourceId` | The server id, the 1-based source index within it (what the servers menu labels *Source N*) and the combined `"<server>/<index>"` fingerprint. The same `sourceId` on every participant means the same upstream source |
+| `sourceHash` | 8-hex FNV-1a of the exact stream URL. Only comparable between clients when the URL is identical (it usually is for a server/source pair) — treat `sourceId` + `mediaDuration` as the authoritative cut fingerprint |
+| `audio`, `subtitle` | `{ id, lang, label }` of the active tracks, or `null` |
+
+The `statechange` event is de-duplicated (one per transition), so a party host can drive its whole sync machine from `statechange` + `seeked` + `timeupdate` alone.
+
+```js
+// Minimal host-side wrapper
+class LolEmbedPlayer {
+  constructor(iframe, playerOrigin) {
+    this.iframe = iframe; this.origin = playerOrigin; this.seq = 0; this.pending = new Map(); this.listeners = new Set();
+    window.addEventListener('message', (e) => {
+      const m = e.data;
+      if (e.origin !== this.origin || !m || m.source !== 'lol-embed-player') return;
+      if (m.type === 'LOL_EMBED_PLAYER_RESPONSE' && this.pending.has(m.requestId)) { this.pending.get(m.requestId)(m); this.pending.delete(m.requestId); }
+      if (m.type === 'LOL_EMBED_PLAYER_EVENT') this.listeners.forEach((fn) => fn(m.event, m));
+    });
+  }
+  on(fn) { this.listeners.add(fn); return () => this.listeners.delete(fn); }
+  send(command, args = {}) {
+    const requestId = `${Date.now()}-${++this.seq}`;
+    return new Promise((resolve) => {
+      this.pending.set(requestId, resolve);
+      this.iframe.contentWindow.postMessage({ type: 'LOL_EMBED_PLAYER_COMMAND', command, requestId, ...args }, this.origin);
+    });
+  }
+  play() { return this.send('play'); }
+  pause() { return this.send('pause'); }
+  seek(time) { return this.send('seek', { time }); }
+  async getTime() { return (await this.send('getTime')).currentTime; }
+  async getDuration() { const s = await this.send('getDuration'); return s.mediaDuration ?? s.duration; }
+}
+```
+
+Legacy shapes are still accepted so existing hosts keep working: a bare `{ command: "play" | "pause" | "seek" | "setVolume" | "nextEpisode", … }`, `{ type: "VIDBOLT_PLAY" | "VIDBOLT_PAUSE" }`, and `{ type: "SCREENSCAPE_GET_WATCH_HISTORY_WITH_PROGRESS" }` (answered with the stored progress entries). The player's own events are never interpreted as commands.
 
 > Easter egg: a human opening the Worker **root URL** in a browser gets rickrolled. API clients keep receiving the JSON service descriptor at `/` unchanged (the redirect is only served when the request advertises `Accept: text/html`).
 
@@ -216,7 +290,9 @@ Codec/device combinations such as HEVC/AV1 profiles, HDR/Dolby Vision, AC-3/E-AC
 node scripts/dev-player-mock.mjs
 # http://localhost:8790/embed?type=tv&tmdb=94605&s=1&e=1                   happy path
 # http://localhost:8790/embed?type=tv&tmdb=94605&s=1&e=1&server=centaurus  server 2 fails -> automatic failover
-# http://localhost:8790/embed?type=movie&tmdb=0                            every server fails -> error state
+# http://localhost:8790/embed?type=movie&tmdb=0                            every server fails -> error screen with the server list inline
+# http://localhost:8790/embed?type=tv&tmdb=94605&s=1&e=1&t=1m30s&autoskip=1 start offset + auto-skip
+# http://localhost:8790/host                                                host page: iframe + the postMessage control API (buttons, live state, event log)
 ```
 
 `scripts/dev-worker.mjs` runs the real Worker code (`cloudflare-worker/worker.js`) against the live upstreams instead.

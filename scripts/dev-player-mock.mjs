@@ -13,8 +13,10 @@
 //   /embed?type=tv&tmdb=94605&s=1&e=1                 happy path (recap + intro + open-ended credits segments, subtitles)
 //   /embed?type=tv&tmdb=94605&s=1&e=1&server=centaurus  server 2 fails -> automatic failover toast
 //   /embed?type=movie&tmdb=693134                     movie (no episodes UI)
-//   /embed?type=movie&tmdb=0                          every server fails -> error state with Retry
+//   /embed?type=movie&tmdb=0                          every server fails -> error screen with the server list inline
 //   /embed?type=tv&tmdb=94605&s=1&e=1&color=e50914    accent override (contrast-aware pills)
+//   /embed?type=tv&tmdb=94605&s=1&e=1&t=1m30s&autoskip=1  start offset + auto-skip on
+//   /host                                             host page: the player in an iframe + the postMessage control API
 
 import http from 'http';
 import fs from 'fs';
@@ -97,6 +99,112 @@ not by the browser.
 This cue arrives from the mock API.
 `;
 
+const HOST_DEMO_HTML = `<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><title>LOL Embed - host control API demo</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>
+  body { margin: 0; background: #0b0b0d; color: #e7e7ea; font: 13px/1.45 system-ui, sans-serif; }
+  .wrap { display: grid; grid-template-columns: minmax(0, 1fr) 360px; gap: 14px; padding: 14px; height: 100vh; box-sizing: border-box; }
+  iframe { width: 100%; aspect-ratio: 16 / 9; border: 0; background: #000; border-radius: 10px; }
+  .panel { display: flex; flex-direction: column; gap: 10px; min-height: 0; }
+  .row { display: flex; flex-wrap: wrap; gap: 6px; }
+  button { background: #1d1e23; color: #f1f1f3; border: 1px solid #34363d; border-radius: 8px; padding: 6px 10px; cursor: pointer; font: inherit; }
+  button:hover { background: #2a2c33; }
+  input { background: #141518; color: inherit; border: 1px solid #34363d; border-radius: 8px; padding: 6px 8px; width: 72px; font: inherit; }
+  .state { display: grid; grid-template-columns: auto 1fr; gap: 2px 10px; background: #141518; border-radius: 10px; padding: 10px; font-family: ui-monospace, monospace; font-size: 12px; }
+  .state b { color: #9aa0a6; font-weight: 500; }
+  #state-badge { font-weight: 700; }
+  #state-badge[data-state="playing"] { color: #4ade80; }
+  #state-badge[data-state="buffering"] { color: #facc15; }
+  #state-badge[data-state="paused"], #state-badge[data-state="ready"] { color: #e7e7ea; }
+  #state-badge[data-state="error"] { color: #f87171; }
+  pre { flex: 1; margin: 0; overflow: auto; background: #141518; border-radius: 10px; padding: 10px; font-size: 11px; line-height: 1.4; min-height: 0; }
+  @media (max-width: 900px) { .wrap { grid-template-columns: 1fr; height: auto; } pre { max-height: 40vh; } }
+</style></head>
+<body>
+<div class="wrap">
+  <div><iframe id="player" src="__EMBED_SRC__" allow="autoplay; fullscreen; picture-in-picture" allowfullscreen></iframe></div>
+  <div class="panel">
+    <div class="row">
+      <button data-cmd="play">play</button>
+      <button data-cmd="pause">pause</button>
+      <button data-cmd="togglePlay">togglePlay</button>
+      <button data-cmd="seekBy" data-args='{"delta":-15}'>-15s</button>
+      <button data-cmd="seekBy" data-args='{"delta":15}'>+15s</button>
+      <input id="seek-to" type="number" min="0" step="1" value="90" aria-label="seconds"><button id="seek-btn">seek</button>
+      <button data-cmd="setMuted" data-args='{"muted":true}'>mute</button>
+      <button data-cmd="setMuted" data-args='{"muted":false}'>unmute</button>
+      <button data-cmd="setPlaybackRate" data-args='{"rate":1.5}'>1.5x</button>
+      <button data-cmd="setPlaybackRate" data-args='{"rate":1}'>1x</button>
+      <button data-cmd="setSubtitle" data-args='{"lang":"en"}'>subs en</button>
+      <button data-cmd="setSubtitle" data-args='{"lang":"off"}'>subs off</button>
+      <button data-cmd="setServer" data-args='{"server":"centaurus"}'>server 2</button>
+      <button data-cmd="setServer" data-args='{"server":"andromeda"}'>server 1</button>
+      <button data-cmd="nextEpisode">nextEpisode</button>
+      <button data-cmd="skipSegment">skipSegment</button>
+      <button data-cmd="setAutoSkip" data-args='{"enabled":true}'>autoskip on</button>
+      <button data-cmd="getState">getState</button>
+    </div>
+    <div class="state">
+      <b>state</b><span id="state-badge">-</span>
+      <b>time</b><span id="s-time">-</span>
+      <b>mediaDuration</b><span id="s-dur">-</span>
+      <b>sourceId</b><span id="s-src">-</span>
+      <b>episode</b><span id="s-ep">-</span>
+      <b>last event</b><span id="s-ev">-</span>
+    </div>
+    <pre id="log"></pre>
+  </div>
+</div>
+<script>
+  const iframe = document.getElementById('player');
+  const playerOrigin = location.origin;
+  const log = document.getElementById('log');
+  let seq = 0;
+  const pending = new Map();
+  function line(text) {
+    log.textContent = (text + '\n' + log.textContent).slice(0, 20000);
+  }
+  function send(command, args = {}) {
+    const requestId = 'req-' + (++seq);
+    return new Promise((resolve) => {
+      pending.set(requestId, resolve);
+      iframe.contentWindow.postMessage({ type: 'LOL_EMBED_PLAYER_COMMAND', command, requestId, ...args }, playerOrigin);
+    });
+  }
+  window.addEventListener('message', (e) => {
+    const m = e.data;
+    if (e.origin !== playerOrigin || !m || m.source !== 'lol-embed-player') return;
+    if (m.type === 'LOL_EMBED_PLAYER_RESPONSE') {
+      line('<- response ' + m.command + ' ok=' + m.ok + (m.error ? ' error=' + m.error : '') + ' state=' + m.state + ' t=' + (m.currentTime || 0).toFixed(1));
+      const r = pending.get(m.requestId); if (r) { pending.delete(m.requestId); r(m); }
+    }
+    if (m.type === 'LOL_EMBED_PLAYER_EVENT') {
+      if (m.event !== 'timeupdate') line('<- ' + m.event + (m.previousState ? ' (' + m.previousState + ' -> ' + m.state + ')' : '') + ' t=' + (m.currentTime || 0).toFixed(1));
+      const badge = document.getElementById('state-badge');
+      badge.textContent = m.state; badge.dataset.state = m.state;
+      document.getElementById('s-time').textContent = (m.currentTime || 0).toFixed(1) + ' / ' + (m.duration || 0).toFixed(0);
+      document.getElementById('s-dur').textContent = m.mediaDuration == null ? 'null (not known yet)' : m.mediaDuration.toFixed(2);
+      document.getElementById('s-src').textContent = (m.sourceId || '-') + '  hash ' + (m.sourceHash || '-');
+      document.getElementById('s-ep').textContent = m.mediaType === 'tv' ? 'S' + m.season + 'E' + m.episode : 'movie';
+      document.getElementById('s-ev').textContent = m.event;
+    }
+  });
+  document.querySelectorAll('button[data-cmd]').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      const args = btn.dataset.args ? JSON.parse(btn.dataset.args) : {};
+      line('-> ' + btn.dataset.cmd + ' ' + JSON.stringify(args));
+      send(btn.dataset.cmd, args);
+    });
+  });
+  document.getElementById('seek-btn').addEventListener('click', () => {
+    const time = Number(document.getElementById('seek-to').value);
+    line('-> seek ' + time);
+    send('seek', { time });
+  });
+</script>
+</body></html>`;
+
 function json(res, status, body) {
   res.writeHead(status, {
     'Content-Type': 'application/json; charset=utf-8',
@@ -134,6 +242,14 @@ const server = http.createServer((req, res) => {
       'Content-Security-Policy': 'frame-ancestors *;'
     });
     res.end(html);
+    return;
+  }
+
+  if (pathname === '/host') {
+    // Host-page demo for the postMessage control API (README: "Host control API").
+    const embedSrc = `/embed?type=tv&tmdb=94605&s=1&e=1&origin=${encodeURIComponent(publicOrigin(req))}`;
+    res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-cache' });
+    res.end(HOST_DEMO_HTML.replace('__EMBED_SRC__', embedSrc));
     return;
   }
 
