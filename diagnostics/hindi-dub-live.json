@@ -1,5 +1,5 @@
 {
-  "startedAt": "2026-10-04T07:10:40.524Z",
+  "startedAt": "2026-10-04T07:13:25.731Z",
   "deep": false,
   "titles": {
     "movie/550": {
@@ -152,25 +152,25 @@
             "hindi": false,
             "identityMethod": "tmdb-verified",
             "identityVerified": true,
-            "latencyMs": 1081
+            "latencyMs": 744
           },
           {
             "provider": "moviebox",
             "ok": false,
             "reason": "no_stream",
-            "latencyMs": 4911
+            "latencyMs": 7152
           },
           {
             "provider": "netmirror",
             "ok": false,
             "reason": "no_stream",
-            "latencyMs": 270
+            "latencyMs": 544
           },
           {
             "provider": "moviesdrive",
             "ok": false,
             "reason": "no_stream",
-            "latencyMs": 1131
+            "latencyMs": 1446
           },
           {
             "provider": "4khdhub",
@@ -178,13 +178,13 @@
             "hindi": true,
             "identityMethod": "title-year",
             "identityVerified": false,
-            "latencyMs": 965
+            "latencyMs": 1242
           },
           {
             "provider": "dahmer",
             "ok": false,
             "reason": "no_stream",
-            "latencyMs": 122
+            "latencyMs": 373
           },
           {
             "provider": "hicine",
@@ -192,7 +192,7 @@
             "hindi": true,
             "identityMethod": "title-hint",
             "identityVerified": false,
-            "latencyMs": 6003
+            "latencyMs": 6062
           }
         ],
         "streamHost": "d33f51dyacx7bd.cloudfront.net"
@@ -359,8 +359,8 @@
           "lang": "hi",
           "label": "Hindi",
           "type": "dub",
-          "streamUrl": "/api/proxy?url=https%3A%2F%2Fimg1.klnwm.com%2Fmyhls_mps%2F2024%2F8yue%2FDune2%2FHindi_720%2Findex_364.m3u8%3Fauth_key%3DQo0uUcwvjPME0%252FPfoep0EnaOlUAoSq1O1HzRpFH8A%252BQ%253D%26expire%3D1791108671875&referer=https%3A%2F%2Fapi.hlowb.com%2F&exp=1791112272&sig=a232f308999376892ff861272eb7a622&mode=full",
-          "rawUrl": "https://img1.klnwm.com/myhls_mps/2024/8yue/Dune2/Hindi_720/index_364.m3u8?auth_key=Qo0uUcwvjPME0%2FPfoep0EnaOlUAoSq1O1HzRpFH8A%2BQ%3D&expire=1791108671875",
+          "streamUrl": "/api/proxy?url=https%3A%2F%2Fimg1.klnwm.com%2Fmyhls_mps%2F2024%2F8yue%2FDune2%2FHindi_720%2Findex_364.m3u8%3Fauth_key%3DKzYVJ%252Fn2RMImPJFiD6MJ%252BrFVbdwZIw1Af92UX5I0VbA%253D%26expire%3D1791108840072&referer=https%3A%2F%2Fapi.hlowb.com%2F&exp=1791112440&sig=de18d783ea4e8b1cf15083e16a9b0141&mode=full",
+          "rawUrl": "https://img1.klnwm.com/myhls_mps/2024/8yue/Dune2/Hindi_720/index_364.m3u8?auth_key=KzYVJ%2Fn2RMImPJFiD6MJ%2BrFVbdwZIw1Af92UX5I0VbA%3D&expire=1791108840072",
           "default": true
         },
         "audioTracks": [
@@ -392,7 +392,7 @@
             "hindi": true,
             "identityMethod": "tmdb-verified",
             "identityVerified": true,
-            "latencyMs": 1073
+            "latencyMs": 704
           }
         ],
         "streamHost": "img1.klnwm.com"
@@ -532,8 +532,8 @@
           "lang": "hi",
           "label": "Hindi",
           "type": "dub",
-          "streamUrl": "/api/proxy?url=https%3A%2F%2Fimg1.flowxn.com%2Fhls_mps%2F4b8b272d03bf2015df0f48db1089d95695f3f694%2F480%2Findex_preview_375.m3u8%3Fauth_key%3DQpFjZiKFIKYx3akSRkGGAXNljGm1uy%252FYKfWP9T0%252BrN8%253D%26expire%3D1791108677659&referer=https%3A%2F%2Fapi.hlowb.com%2F&exp=1791112277&sig=077aa3dbd3c592e799a43a3bd665ade4&mode=full",
-          "rawUrl": "https://img1.flowxn.com/hls_mps/4b8b272d03bf2015df0f48db1089d95695f3f694/480/index_preview_375.m3u8?auth_key=QpFjZiKFIKYx3akSRkGGAXNljGm1uy%2FYKfWP9T0%2BrN8%3D&expire=1791108677659",
+          "streamUrl": "/api/proxy?url=https%3A%2F%2Fimg1.flowxn.com%2Fhls_mps%2F4b8b272d03bf2015df0f48db1089d95695f3f694%2F480%2Findex_preview_375.m3u8%3Fauth_key%3DMVioPCHSP5%252Ff7JTiNn8KVD47%252Fv7RT7J0I22LppTg280%253D%26expire%3D1791108845607&referer=https%3A%2F%2Fapi.hlowb.com%2F&exp=1791112445&sig=3ac4bd85fa4379207a89141bc44f90de&mode=full",
+          "rawUrl": "https://img1.flowxn.com/hls_mps/4b8b272d03bf2015df0f48db1089d95695f3f694/480/index_preview_375.m3u8?auth_key=MVioPCHSP5%2Ff7JTiNn8KVD47%2Fv7RT7J0I22LppTg280%3D&expire=1791108845607",
           "default": true
         },
         "audioTracks": [
@@ -550,7 +550,7 @@
             "hindi": true,
             "identityMethod": "tmdb-verified",
             "identityVerified": true,
-            "latencyMs": 657
+            "latencyMs": 327
           }
         ],
         "streamHost": "img1.flowxn.com"
@@ -693,8 +693,8 @@
           "lang": "hi",
           "label": "Hindi",
           "type": "dub",
-          "streamUrl": "/api/proxy?url=https%3A%2F%2Fimg1.hlnom.com%2Fmyhls_mps%2F2024%2F3yue%2FOppenheimer_Hindi_720%2Findex_363.m3u8%3Fauth_key%3DvmnRdrGOwEMZqoylU3xubMOD%252BeJszm%252FdR2WA3GjK8K0%253D%26expire%3D1791108684127&referer=https%3A%2F%2Fapi.hlowb.com%2F&exp=1791112284&sig=e872630ab8744f0ce82f2c93c08a1012&mode=full",
-          "rawUrl": "https://img1.hlnom.com/myhls_mps/2024/3yue/Oppenheimer_Hindi_720/index_363.m3u8?auth_key=vmnRdrGOwEMZqoylU3xubMOD%2BeJszm%2FdR2WA3GjK8K0%3D&expire=1791108684127",
+          "streamUrl": "/api/proxy?url=https%3A%2F%2Fimg1.klnwm.com%2Fmyhls_mps%2F2024%2F3yue%2FOppenheimer_Hindi_720%2Findex_364.m3u8%3Fauth_key%3DmEo4urljsNiuEBsMTQ4qDV44RrU5k41G%252FBI6u9GWCGs%253D%26expire%3D1791108851892&referer=https%3A%2F%2Fapi.hlowb.com%2F&exp=1791112452&sig=1167e73c31e524edcf156c7674f29475&mode=full",
+          "rawUrl": "https://img1.klnwm.com/myhls_mps/2024/3yue/Oppenheimer_Hindi_720/index_364.m3u8?auth_key=mEo4urljsNiuEBsMTQ4qDV44RrU5k41G%2FBI6u9GWCGs%3D&expire=1791108851892",
           "default": true
         },
         "audioTracks": [
@@ -721,10 +721,10 @@
             "hindi": true,
             "identityMethod": "tmdb-verified",
             "identityVerified": true,
-            "latencyMs": 1024
+            "latencyMs": 732
           }
         ],
-        "streamHost": "img1.hlnom.com"
+        "streamHost": "img1.klnwm.com"
       },
       "error": null
     },
@@ -865,8 +865,8 @@
           "lang": "hi",
           "label": "Hindi",
           "type": "dub",
-          "streamUrl": "/api/proxy?url=https%3A%2F%2Fimg1.hlnom.com%2Fhls_mps%2F57ba6bd962339881cd96be7ca2b42efec15f8b8e%2F720%2Findex_363.m3u8%3Fauth_key%3DPMl7%252Byb6NKS47TgNp%252FTSK83uqwaGVEN42KkEaF1HeCU%253D%26expire%3D1791108687732&referer=https%3A%2F%2Fapi.hlowb.com%2F&exp=1791112287&sig=4d2b79eff6140e2be5f576d482fdb1a4&mode=full",
-          "rawUrl": "https://img1.hlnom.com/hls_mps/57ba6bd962339881cd96be7ca2b42efec15f8b8e/720/index_363.m3u8?auth_key=PMl7%2Byb6NKS47TgNp%2FTSK83uqwaGVEN42KkEaF1HeCU%3D&expire=1791108687732",
+          "streamUrl": "/api/proxy?url=https%3A%2F%2Fimg1.klnwm.com%2Fhls_mps%2F57ba6bd962339881cd96be7ca2b42efec15f8b8e%2F720%2Findex_364.m3u8%3Fauth_key%3DPipD4tHNHuQMB%252BqnXn5NNX1rhqhLSAQOE5raB67gBMQ%253D%26expire%3D1791108856194&referer=https%3A%2F%2Fapi.hlowb.com%2F&exp=1791112456&sig=82a295b05d8616bdaecf679a4a907d58&mode=full",
+          "rawUrl": "https://img1.klnwm.com/hls_mps/57ba6bd962339881cd96be7ca2b42efec15f8b8e/720/index_364.m3u8?auth_key=PipD4tHNHuQMB%2BqnXn5NNX1rhqhLSAQOE5raB67gBMQ%3D&expire=1791108856194",
           "default": true
         },
         "audioTracks": [
@@ -888,10 +888,10 @@
             "hindi": true,
             "identityMethod": "tmdb-verified",
             "identityVerified": true,
-            "latencyMs": 998
+            "latencyMs": 497
           }
         ],
-        "streamHost": "img1.hlnom.com"
+        "streamHost": "img1.klnwm.com"
       },
       "error": null
     },
@@ -1016,8 +1016,8 @@
           "lang": "en",
           "label": "English",
           "type": "dub",
-          "streamUrl": "/api/proxy?url=https%3A%2F%2Fimg1.hlnom.com%2Fhls_mps%2F244490619%2F720%2Findex_363.m3u8%3Fauth_key%3DaHiSkI6NE878W5m15e9CPSaLjCTlb02vQhuQoFqZGnU%253D%26expire%3D1791108693036&referer=https%3A%2F%2Fapi.hlowb.com%2F&exp=1791112293&sig=62f4b1e5dadd21216ae3b95d21d29140&mode=full",
-          "rawUrl": "https://img1.hlnom.com/hls_mps/244490619/720/index_363.m3u8?auth_key=aHiSkI6NE878W5m15e9CPSaLjCTlb02vQhuQoFqZGnU%3D&expire=1791108693036",
+          "streamUrl": "/api/proxy?url=https%3A%2F%2Fimg1.klnwm.com%2Fhls_mps%2F244490619%2F720%2Findex_364.m3u8%3Fauth_key%3DNd7Jp6qynDrws8tSu6gVC9JFyN2sbxbQgTm1ka1QEaw%253D%26expire%3D1791108860235&referer=https%3A%2F%2Fapi.hlowb.com%2F&exp=1791112460&sig=5a3d44857938b35a332e476a86bd6630&mode=full",
+          "rawUrl": "https://img1.klnwm.com/hls_mps/244490619/720/index_364.m3u8?auth_key=Nd7Jp6qynDrws8tSu6gVC9JFyN2sbxbQgTm1ka1QEaw%3D&expire=1791108860235",
           "default": true
         },
         "audioTracks": [
@@ -1034,25 +1034,25 @@
             "hindi": false,
             "identityMethod": "tmdb-verified",
             "identityVerified": true,
-            "latencyMs": 1015
+            "latencyMs": 473
           },
           {
             "provider": "moviebox",
             "ok": false,
             "reason": "no_stream",
-            "latencyMs": 3113
+            "latencyMs": 3757
           },
           {
             "provider": "netmirror",
             "ok": false,
             "reason": "no_stream",
-            "latencyMs": 275
+            "latencyMs": 259
           },
           {
             "provider": "moviesdrive",
             "ok": false,
             "reason": "no_stream",
-            "latencyMs": 716
+            "latencyMs": 736
           },
           {
             "provider": "4khdhub",
@@ -1060,28 +1060,28 @@
             "hindi": false,
             "identityMethod": "title-year",
             "identityVerified": false,
-            "latencyMs": 802
+            "latencyMs": 571
           },
           {
             "provider": "dahmer",
             "ok": false,
             "reason": "no_stream",
-            "latencyMs": 72
+            "latencyMs": 89
           },
           {
             "provider": "hicine",
             "ok": false,
             "reason": "no_stream",
-            "latencyMs": 48
+            "latencyMs": 260
           },
           {
             "provider": "hianime",
             "ok": false,
             "reason": "no_stream",
-            "latencyMs": 955
+            "latencyMs": 763
           }
         ],
-        "streamHost": "img1.hlnom.com"
+        "streamHost": "img1.klnwm.com"
       },
       "error": null
     },
@@ -1231,8 +1231,8 @@
           "lang": "hi",
           "label": "Hindi",
           "type": "dub",
-          "streamUrl": "/api/proxy?url=https%3A%2F%2Fimg1.hlnom.com%2Fhls_mps%2Fdf9465688906eee49da00169974c8fd9110ed0cd%2F720%2Findex_363.m3u8%3Fauth_key%3DgS8co3VcSyaCn9I2%252BDm5%252BqOeizkO189SbzpCcYS4spw%253D%26expire%3D1791108708262&referer=https%3A%2F%2Fapi.hlowb.com%2F&exp=1791112308&sig=954046d0de7e514ff1e4b146909e2638&mode=full",
-          "rawUrl": "https://img1.hlnom.com/hls_mps/df9465688906eee49da00169974c8fd9110ed0cd/720/index_363.m3u8?auth_key=gS8co3VcSyaCn9I2%2BDm5%2BqOeizkO189SbzpCcYS4spw%3D&expire=1791108708262",
+          "streamUrl": "/api/proxy?url=https%3A%2F%2Fimg1.flcwuk.com%2Fhls_mps%2Fdf9465688906eee49da00169974c8fd9110ed0cd%2F720%2Findex_374.m3u8%3Fauth_key%3D%252BTNAfkUkAZOa0aYFFqlb9iL3%252FBq7iIjX5MH7nNpDBLI%253D%26expire%3D1791108875783&referer=https%3A%2F%2Fapi.hlowb.com%2F&exp=1791112475&sig=3ca5da341ee046db56ca0fc67e600580&mode=full",
+          "rawUrl": "https://img1.flcwuk.com/hls_mps/df9465688906eee49da00169974c8fd9110ed0cd/720/index_374.m3u8?auth_key=%2BTNAfkUkAZOa0aYFFqlb9iL3%2FBq7iIjX5MH7nNpDBLI%3D&expire=1791108875783",
           "default": true
         },
         "audioTracks": [
@@ -1259,10 +1259,10 @@
             "hindi": true,
             "identityMethod": "tmdb-verified",
             "identityVerified": true,
-            "latencyMs": 1307
+            "latencyMs": 731
           }
         ],
-        "streamHost": "img1.hlnom.com"
+        "streamHost": "img1.flcwuk.com"
       },
       "error": null
     },
@@ -1392,8 +1392,8 @@
           "lang": "en",
           "label": "English",
           "type": "dub",
-          "streamUrl": "/api/proxy?url=https%3A%2F%2Fimg1.hlnom.com%2Fhls%2Fab8403967e32999bd5d03acaa913b368%2F720%2Findex_363.m3u8%3Fauth_key%3Dr6CdSDbSYvbQExHrHrcKkVhPpSwoCP%252FHrbKlMkfFvGY%253D%26expire%3D1791108713485&referer=https%3A%2F%2Fapi.hlowb.com%2F&exp=1791112313&sig=c33aeab990da281f38c7297059bab2a4&mode=full",
-          "rawUrl": "https://img1.hlnom.com/hls/ab8403967e32999bd5d03acaa913b368/720/index_363.m3u8?auth_key=r6CdSDbSYvbQExHrHrcKkVhPpSwoCP%2FHrbKlMkfFvGY%3D&expire=1791108713485",
+          "streamUrl": "/api/proxy?url=https%3A%2F%2Fimg1.klnwm.com%2Fhls%2Fab8403967e32999bd5d03acaa913b368%2F720%2Findex_364.m3u8%3Fauth_key%3DIlPZN9z0CQUVwPxBD6j4rZ4AobHkmAzPyoZwNhJ%252F%252B6Y%253D%26expire%3D1791108882114&referer=https%3A%2F%2Fapi.hlowb.com%2F&exp=1791112482&sig=97c793d29a057fae4ccdeaa4a024ffa3&mode=full",
+          "rawUrl": "https://img1.klnwm.com/hls/ab8403967e32999bd5d03acaa913b368/720/index_364.m3u8?auth_key=IlPZN9z0CQUVwPxBD6j4rZ4AobHkmAzPyoZwNhJ%2F%2B6Y%3D&expire=1791108882114",
           "default": true
         },
         "audioTracks": [
@@ -1410,52 +1410,52 @@
             "hindi": false,
             "identityMethod": "tmdb-verified",
             "identityVerified": true,
-            "latencyMs": 1305
+            "latencyMs": 526
           },
           {
             "provider": "moviebox",
             "ok": false,
             "reason": "no_stream",
-            "latencyMs": 3628
+            "latencyMs": 3272
           },
           {
             "provider": "netmirror",
             "ok": false,
             "reason": "no_stream",
-            "latencyMs": 273
+            "latencyMs": 250
           },
           {
             "provider": "moviesdrive",
             "ok": false,
             "reason": "no_stream",
-            "latencyMs": 1513
+            "latencyMs": 1855
           },
           {
             "provider": "4khdhub",
             "ok": false,
             "reason": "no_stream",
-            "latencyMs": 533
+            "latencyMs": 606
           },
           {
             "provider": "dahmer",
             "ok": false,
             "reason": "no_stream",
-            "latencyMs": 73
+            "latencyMs": 75
           },
           {
             "provider": "hicine",
             "ok": false,
             "reason": "no_stream",
-            "latencyMs": 48
+            "latencyMs": 239
           },
           {
             "provider": "hianime",
             "ok": false,
             "reason": "no_stream",
-            "latencyMs": 667
+            "latencyMs": 578
           }
         ],
-        "streamHost": "img1.hlnom.com"
+        "streamHost": "img1.klnwm.com"
       },
       "error": null
     },
@@ -1476,21 +1476,91 @@
       },
       "catalog": {
         "mode": "fast",
-        "hindi": false,
-        "hindiAnySource": false,
-        "best": null,
-        "dubs": [],
+        "hindi": true,
+        "hindiAnySource": true,
+        "best": {
+          "providerId": "castletv",
+          "hindi": true,
+          "verified": true,
+          "identityMethod": null
+        },
+        "dubs": [
+          {
+            "code": "hi",
+            "label": "Hindi",
+            "playable": true,
+            "providers": [
+              "castletv"
+            ]
+          },
+          {
+            "code": "en",
+            "label": "English",
+            "playable": true,
+            "providers": [
+              "castletv"
+            ]
+          },
+          {
+            "code": "ja",
+            "label": "Japanese",
+            "playable": true,
+            "providers": [
+              "castletv"
+            ]
+          }
+        ],
         "providers": [
           {
             "id": "castletv",
-            "ok": false,
-            "verified": false,
-            "matchedTitle": null,
-            "matchedYear": null,
-            "upstreamId": null,
-            "reasons": null,
-            "rejected": [],
-            "languages": []
+            "ok": true,
+            "hindi": true,
+            "verified": true,
+            "matchedTitle": "Spirited Away",
+            "matchedYear": 2003,
+            "upstreamId": "6966370463949824",
+            "reasons": [
+              "exact-title",
+              "year-off-by-2",
+              "preferred-audio-present"
+            ],
+            "rejected": [
+              {
+                "title": "Spirited",
+                "year": 2022,
+                "reason": "title-prefix-only,year-mismatch:2022!=2001,preferred-audio-present"
+              },
+              {
+                "title": "Cast Away",
+                "year": 2000,
+                "reason": "year-off-by-1,preferred-audio-present"
+              },
+              {
+                "title": "Swept Away",
+                "year": 2002,
+                "reason": "year-off-by-1"
+              },
+              {
+                "title": "Away",
+                "year": 2020,
+                "reason": "year-mismatch:2020!=2001,type-mismatch:tv!=movie,preferred-audio-present"
+              },
+              {
+                "title": "Run Away",
+                "year": 2026,
+                "reason": "year-mismatch:2026!=2001,type-mismatch:tv!=movie,preferred-audio-present"
+              },
+              {
+                "title": "Knox Goes Away",
+                "year": 2024,
+                "reason": "year-mismatch:2024!=2001,preferred-audio-present"
+              }
+            ],
+            "languages": [
+              "ja",
+              "en",
+              "hi"
+            ]
           },
           {
             "id": "moviebox",
@@ -1519,1214 +1589,62 @@
       "hindiServer": {
         "ok": true,
         "server": "hindi",
-        "sourceName": "HiCine",
-        "providerId": "hicine",
+        "sourceName": "CastleTV",
+        "providerId": "castletv",
         "hindiAvailable": true,
-        "hindiVerified": false,
-        "identityMethod": "title-hint",
-        "diagMessage": "Hindi was found on a provider that matches by title hints rather than a TMDB/IMDb id; verify the title before playback.",
+        "hindiVerified": true,
+        "identityMethod": "tmdb-verified",
+        "diagMessage": null,
         "identity": {
-          "matchedTitle": null,
-          "matchedYear": null,
-          "upstreamId": null,
-          "reasons": []
+          "matchedTitle": "Spirited Away",
+          "matchedYear": 2003,
+          "upstreamId": "6966370463949824",
+          "reasons": [
+            "exact-title",
+            "year-off-by-2",
+            "preferred-audio-present"
+          ]
         },
         "activeTrack": {
-          "id": "hicine-default",
+          "id": "castle-1018",
           "lang": "hi",
-          "label": "Hindi — filename hint; plays default track",
+          "label": "Hindi",
           "type": "dub",
-          "streamUrl": "https://video-downloads.googleusercontent.com/ADGPM2l62VcK9xFt-RZfF_P1daaF1UZMI_X7X0kOyKR6aMMVNUr0HN6d5Q6RuMUIx7aiJJpsDwzSKbqt-46tqJBVX70TAhLFA1jWp8TrS-S6RYzWpYpnbHJBl8nIh0J9g5kIU3aeFwio-1v6-mDaF0kmAtnbHbBvLfN-lMcknZrfIM09WVIg795K3mGTz2SRv1voR24bAqlJPh7LzcYuQr3b9EmKVqOgCCAsB8oX0MhvK9gZDrz9CcwMogFclfZMLnXFb8rxPsnt4UE1eR3NOOG-9hFyljHrCVkb85T1qEa2Q3l6Jz6EKOfqEI23OERQ3xxk9OsCVVyNWU8jtjWduAnVoa4B62Teg9XoFT7L7VMKx6v0JkkJdz7z1HZ25o_-akjHyCy_mIqDILF-fnUlznMiPTk4rgVLhXoIm7ov4DtJcZ7ULUPUAjxLJ0-2ixc_t54kRxJU1LGTVuEEyGdysQg_tfqVSn2hTEhc5k1TDlg5CZWZOXRGD-PHI7EEzQMmdfUQRYNghnbJ2XvbmGx-Un_6wlr4cynEUEgi7WYecZeu54JX65eEDpDzmo3tJeImszcelvbmCA01u9s7hPIrh0lJoDMaU69xEM9zajQeu2M8102aU5iSS80Nu0wkArwDl3KWKZycRC9lJBvWNBw3iHVmN_4zX72ZXG9gwZgoRZqk1zmQY1qoaDDAXGSXjNTQB4aePVZaF14_It5iu54n6OnHCCK2wFrP61MuhjyLzMqurknoVJVychNxhggQVG9Oc-8CqY8nt79_dsdTOJskPPH8IByobrZ9i3l6oCPwaBgNM96Tl4YIrk102w6B_LW5ancWI8qdM01XuP7JFDiCoJrZLj3WpkjrQ2Kti64hI4XrRaw2_fXLZRzNWcGdxsqCdsaM9WU0uCEBq3tr-6pQCtlNqqOsswyT4fAarLnnopnMH2MnogH_y3XeDey_AxatrNH8EdMIJjn3QstIG3NHhzY3yhQvBWoPHI-5X7OaXo5f7YvthpLfF9U_xhnJ1eBjTL-oByrmCNTDDUnb5P4JSyD7bqoZyceUnmFIKLbChj5yE5RxaD-GIYULBLKlJzWo1cZjLswgkNNf8bylBnEQaNyoutVuE4IPvOAfpzy8X1UEaYGjvl8tqa4OqyLR1Sz1M_GTsFIaU69AkKHaXzhfG3cmLwAvsyhyjw",
-          "rawUrl": "https://video-downloads.googleusercontent.com/ADGPM2l62VcK9xFt-RZfF_P1daaF1UZMI_X7X0kOyKR6aMMVNUr0HN6d5Q6RuMUIx7aiJJpsDwzSKbqt-46tqJBVX70TAhLFA1jWp8TrS-S6RYzWpYpnbHJBl8nIh0J9g5kIU3aeFwio-1v6-mDaF0kmAtnbHbBvLfN-lMcknZrfIM09WVIg795K3mGTz2SRv1voR24bAqlJPh7LzcYuQr3b9EmKVqOgCCAsB8oX0MhvK9gZDrz9CcwMogFclfZMLnXFb8rxPsnt4UE1eR3NOOG-9hFyljHrCVkb85T1qEa2Q3l6Jz6EKOfqEI23OERQ3xxk9OsCVVyNWU8jtjWduAnVoa4B62Teg9XoFT7L7VMKx6v0JkkJdz7z1HZ25o_-akjHyCy_mIqDILF-fnUlznMiPTk4rgVLhXoIm7ov4DtJcZ7ULUPUAjxLJ0-2ixc_t54kRxJU1LGTVuEEyGdysQg_tfqVSn2hTEhc5k1TDlg5CZWZOXRGD-PHI7EEzQMmdfUQRYNghnbJ2XvbmGx-Un_6wlr4cynEUEgi7WYecZeu54JX65eEDpDzmo3tJeImszcelvbmCA01u9s7hPIrh0lJoDMaU69xEM9zajQeu2M8102aU5iSS80Nu0wkArwDl3KWKZycRC9lJBvWNBw3iHVmN_4zX72ZXG9gwZgoRZqk1zmQY1qoaDDAXGSXjNTQB4aePVZaF14_It5iu54n6OnHCCK2wFrP61MuhjyLzMqurknoVJVychNxhggQVG9Oc-8CqY8nt79_dsdTOJskPPH8IByobrZ9i3l6oCPwaBgNM96Tl4YIrk102w6B_LW5ancWI8qdM01XuP7JFDiCoJrZLj3WpkjrQ2Kti64hI4XrRaw2_fXLZRzNWcGdxsqCdsaM9WU0uCEBq3tr-6pQCtlNqqOsswyT4fAarLnnopnMH2MnogH_y3XeDey_AxatrNH8EdMIJjn3QstIG3NHhzY3yhQvBWoPHI-5X7OaXo5f7YvthpLfF9U_xhnJ1eBjTL-oByrmCNTDDUnb5P4JSyD7bqoZyceUnmFIKLbChj5yE5RxaD-GIYULBLKlJzWo1cZjLswgkNNf8bylBnEQaNyoutVuE4IPvOAfpzy8X1UEaYGjvl8tqa4OqyLR1Sz1M_GTsFIaU69AkKHaXzhfG3cmLwAvsyhyjw",
+          "streamUrl": "/api/proxy?url=https%3A%2F%2Fimg1.klnwm.com%2Fhls%2F180221544%2F720%2Findex_364.m3u8%3Fauth_key%3DNZCBIDLIKC2akvguaSHIyPEqYFFRVRrUBB3DWuudRrY%253D%26expire%3D1791108898158&referer=https%3A%2F%2Fapi.hlowb.com%2F&exp=1791112498&sig=a9f9de6bab4e4a743c1d3ab5cfcebf2a&mode=full",
+          "rawUrl": "https://img1.klnwm.com/hls/180221544/720/index_364.m3u8?auth_key=NZCBIDLIKC2akvguaSHIyPEqYFFRVRrUBB3DWuudRrY%3D&expire=1791108898158",
           "default": true
         },
         "audioTracks": [
           {
+            "lang": "ja",
+            "label": "Japanese",
+            "default": false
+          },
+          {
+            "lang": "en",
+            "label": "English",
+            "default": false
+          },
+          {
             "lang": "hi",
-            "label": "Hindi — filename hint; plays default track",
+            "label": "Hindi",
             "default": true
           }
         ],
         "attempts": [
           {
             "provider": "castletv",
-            "ok": false,
-            "reason": "no_stream",
-            "latencyMs": 862
-          },
-          {
-            "provider": "moviebox",
-            "ok": false,
-            "reason": "no_stream",
-            "latencyMs": 5862
-          },
-          {
-            "provider": "netmirror",
-            "ok": false,
-            "reason": "no_stream",
-            "latencyMs": 268
-          },
-          {
-            "provider": "moviesdrive",
-            "ok": false,
-            "reason": "no_stream",
-            "latencyMs": 693
-          },
-          {
-            "provider": "4khdhub",
-            "ok": false,
-            "reason": "no_stream",
-            "latencyMs": 495
-          },
-          {
-            "provider": "dahmer",
-            "ok": false,
-            "reason": "no_stream",
-            "latencyMs": 70
-          },
-          {
-            "provider": "hicine",
             "ok": true,
             "hindi": true,
-            "identityMethod": "title-hint",
-            "identityVerified": false,
-            "latencyMs": 6002
-          },
-          {
-            "provider": "hianime",
-            "ok": false,
-            "reason": "no_stream",
-            "latencyMs": 582
+            "identityMethod": "tmdb-verified",
+            "identityVerified": true,
+            "latencyMs": 923
           }
         ],
-        "streamHost": "video-downloads.googleusercontent.com"
+        "streamHost": "img1.klnwm.com"
       },
-      "error": null,
-      "castletvDiagnostics": {
-        "base": "https://api.hlowb.com",
-        "keywords": [
-          {
-            "keyword": "Spirited Away 2001",
-            "rows": 22,
-            "error": null
-          },
-          {
-            "keyword": "Spirited Away",
-            "rows": 17,
-            "error": null
-          },
-          {
-            "keyword": "千と千尋の神隠し",
-            "rows": 0,
-            "error": null
-          },
-          {
-            "keyword": "Sen to Chihiro no Kamikakushi",
-            "rows": 30,
-            "error": null
-          }
-        ],
-        "verdicts": [
-          {
-            "id": "6966370463949824",
-            "title": "Spirited Away",
-            "year": 1048845600000,
-            "movieType": 2,
-            "movieTypeName": "Movies",
-            "seasonDescription": null,
-            "lastEpisodeCount": null,
-            "languages": [
-              "Japanese",
-              "English",
-              "Hindi"
-            ],
-            "tags": [
-              "Drama",
-              "Cartoon",
-              "Science fiction",
-              "Adventure "
-            ],
-            "rating": 0
-          },
-          {
-            "id": "6692653152995328",
-            "title": "Spirited",
-            "year": 1668765600000,
-            "movieType": 2,
-            "movieTypeName": "Movies",
-            "seasonDescription": null,
-            "lastEpisodeCount": null,
-            "languages": [
-              "Indonesian",
-              "English",
-              "Hindi",
-              "Bengali",
-              "Tamil",
-              "Telugu"
-            ],
-            "tags": [
-              "Comedy",
-              "Drama",
-              "Others"
-            ],
-            "rating": 12
-          },
-          {
-            "id": "5698643314433024",
-            "title": "Away",
-            "year": 1599213600000,
-            "movieType": 1,
-            "movieTypeName": "TV shows",
-            "seasonDescription": "1 season",
-            "lastEpisodeCount": null,
-            "languages": [
-              "English",
-              "Germany",
-              "Portuguese",
-              "Hindi",
-              "Japanese",
-              "Turkish",
-              "Russian",
-              "French",
-              "Polish",
-              "Spanish",
-              "Italian"
-            ],
-            "tags": [
-              "Drama",
-              "Romance",
-              "Science fiction"
-            ],
-            "rating": 12
-          },
-          {
-            "id": "9408066790390078",
-            "title": "Run Away",
-            "year": 1767261600000,
-            "movieType": 1,
-            "movieTypeName": "TV shows",
-            "seasonDescription": "1 season",
-            "lastEpisodeCount": null,
-            "languages": [
-              "English",
-              "Hindi",
-              "Tamil",
-              "Telugu"
-            ],
-            "tags": [
-              "Mystery",
-              "Drama",
-              "Crime"
-            ],
-            "rating": 18
-          },
-          {
-            "id": "5772409819249664",
-            "title": "Look Away, Look Away",
-            "year": 1618999200000,
-            "movieType": 2,
-            "movieTypeName": "Movies",
-            "seasonDescription": null,
-            "lastEpisodeCount": null,
-            "languages": [
-              "English"
-            ],
-            "tags": [
-              "Documentary"
-            ],
-            "rating": 0
-          },
-          {
-            "id": "7269548468151296",
-            "title": "Swept Away",
-            "year": 1034330400000,
-            "movieType": 2,
-            "movieTypeName": "Movies",
-            "seasonDescription": null,
-            "lastEpisodeCount": null,
-            "languages": [
-              "English"
-            ],
-            "tags": [
-              "Comedy",
-              "Romance"
-            ],
-            "rating": 12
-          },
-          {
-            "id": "6972406803833856",
-            "title": "Cast Away",
-            "year": 977479200000,
-            "movieType": 2,
-            "movieTypeName": "Movies",
-            "seasonDescription": null,
-            "lastEpisodeCount": null,
-            "languages": [
-              "English",
-              "Hindi"
-            ],
-            "tags": [
-              "Drama",
-              "Romance",
-              "Adventure "
-            ],
-            "rating": 12
-          },
-          {
-            "id": "5699269781806080",
-            "title": "School 2021",
-            "year": 1637748000000,
-            "movieType": 1,
-            "movieTypeName": "TV shows",
-            "seasonDescription": "1 season",
-            "lastEpisodeCount": null,
-            "languages": [
-              "Korean"
-            ],
-            "tags": [
-              "Comedy",
-              "Romance"
-            ],
-            "rating": 12
-          },
-          {
-            "id": "7616474296206336",
-            "title": "Knox Goes Away",
-            "year": 1710496800000,
-            "movieType": 2,
-            "movieTypeName": "Movies",
-            "seasonDescription": null,
-            "lastEpisodeCount": null,
-            "languages": [
-              "Hindi",
-              "English"
-            ],
-            "tags": [
-              "Thriller"
-            ],
-            "rating": 12
-          },
-          {
-            "id": "7532917302118400",
-            "title": "Drive-Away Dolls",
-            "year": 1708682400000,
-            "movieType": 2,
-            "movieTypeName": "Movies",
-            "seasonDescription": null,
-            "lastEpisodeCount": null,
-            "languages": [
-              "Hindi"
-            ],
-            "tags": [
-              "Action",
-              "Comedy",
-              "Thriller"
-            ],
-            "rating": 12
-          },
-          {
-            "id": "7050106264892416",
-            "title": "Don't Look Away",
-            "year": 1693562400000,
-            "movieType": 2,
-            "movieTypeName": "Movies",
-            "seasonDescription": null,
-            "lastEpisodeCount": null,
-            "languages": [
-              "Tamil",
-              "Telugu",
-              "Hindi",
-              "English"
-            ],
-            "tags": [
-              "Thriller"
-            ],
-            "rating": 12
-          },
-          {
-            "id": "5708905160629248",
-            "title": "The Weekend Away",
-            "year": 1646301600000,
-            "movieType": 2,
-            "movieTypeName": "Movies",
-            "seasonDescription": null,
-            "lastEpisodeCount": null,
-            "languages": [
-              "English",
-              "Czech",
-              "Russian",
-              "Ukrainian",
-              "Thai",
-              "Hindi",
-              "Tamil",
-              "Telugu"
-            ],
-            "tags": [
-              "Drama",
-              "Thriller",
-              "Crime",
-              "Science fiction"
-            ],
-            "rating": 12
-          },
-          {
-            "id": "5698642212576256",
-            "title": "A Week Away",
-            "year": 1616752800000,
-            "movieType": 2,
-            "movieTypeName": "Movies",
-            "seasonDescription": null,
-            "lastEpisodeCount": null,
-            "languages": [
-              "English",
-              "Croatian",
-              "Swedish",
-              "Finnish",
-              "Norwegian",
-              "Albanian",
-              "Hebrew",
-              "Polish",
-              "Portuguese",
-              "Spanish",
-              "Japanese",
-              "Danish",
-              "Italian",
-              "Turkish",
-              "Chinese",
-              "Russian",
-              "Hungarian",
-              "Korean",
-              "Germany",
-              "Vietnamese",
-              "French",
-              "Dutch",
-              "Czech",
-              "Greek",
-              "Malay",
-              "Thai",
-              "Indonesian",
-              "Romanian",
-              "Hindi"
-            ],
-            "tags": [
-              "Drama",
-              "Others"
-            ],
-            "rating": 0
-          },
-          {
-            "id": "6800059671982080",
-            "title": "A Whisker Away",
-            "year": 1592474400000,
-            "movieType": 2,
-            "movieTypeName": "Movies",
-            "seasonDescription": null,
-            "lastEpisodeCount": null,
-            "languages": [
-              "Japanese",
-              "English"
-            ],
-            "tags": [
-              "Drama",
-              "Romance",
-              "Cartoon",
-              "Science fiction",
-              "Adventure "
-            ],
-            "rating": 0
-          },
-          {
-            "id": "7040845518681088",
-            "title": "A Million Miles Away",
-            "year": 1694772000000,
-            "movieType": 2,
-            "movieTypeName": "Movies",
-            "seasonDescription": null,
-            "lastEpisodeCount": null,
-            "languages": [
-              "Hindi",
-              "English"
-            ],
-            "tags": [
-              "Drama",
-              "Documentary"
-            ],
-            "rating": 0
-          },
-          {
-            "id": "6081085112786944",
-            "title": "Fly Away With Me",
-            "year": 1663948800000,
-            "movieType": 2,
-            "movieTypeName": "Movies",
-            "seasonDescription": null,
-            "lastEpisodeCount": null,
-            "languages": [
-              "English"
-            ],
-            "tags": [
-              "Comedy",
-              "Romance"
-            ],
-            "rating": 0
-          },
-          {
-            "id": "5699302320135168",
-            "title": "2021 MTV Video Music Awards",
-            "year": 1631376000000,
-            "movieType": 2,
-            "movieTypeName": "Movies",
-            "seasonDescription": null,
-            "lastEpisodeCount": null,
-            "languages": [
-              "English"
-            ],
-            "tags": [
-              "Others"
-            ],
-            "rating": 0
-          },
-          {
-            "id": "5795530777902080",
-            "title": "How to Get Away With Murder",
-            "year": 1569492000000,
-            "movieType": 1,
-            "movieTypeName": "TV shows",
-            "seasonDescription": "6 seasons",
-            "lastEpisodeCount": null,
-            "languages": [
-              "English"
-            ],
-            "tags": [
-              "Drama",
-              "Thriller",
-              "Crime",
-              "Science fiction"
-            ],
-            "rating": 12
-          },
-          {
-            "id": "5795530777738240",
-            "title": "How to Get Away With Murder",
-            "year": 1506592800000,
-            "movieType": 1,
-            "movieTypeName": "TV shows",
-            "seasonDescription": "4 seasons",
-            "lastEpisodeCount": null,
-            "languages": [
-              "English"
-            ],
-            "tags": [
-              "Drama",
-              "Thriller",
-              "Crime",
-              "Science fiction"
-            ],
-            "rating": 12
-          },
-          {
-            "id": "6150771294666752",
-            "title": "Sa Re Ga Ma Pa（2021）",
-            "year": 1622476800000,
-            "movieType": 3,
-            "movieTypeName": "Reality Shows",
-            "seasonDescription": null,
-            "lastEpisodeCount": null,
-            "languages": [
-              "Hindi"
-            ],
-            "tags": [
-              "Reality-TV"
-            ]
-          },
-          {
-            "id": "5930145470403584",
-            "title": "Doraemon the Movie: Nobita's Little Star Wars 2021",
-            "year": 1646388000000,
-            "movieType": 2,
-            "movieTypeName": "Movies",
-            "seasonDescription": null,
-            "lastEpisodeCount": null,
-            "languages": [
-              "Japanese"
-            ],
-            "tags": [
-              "Comedy",
-              "Drama",
-              "Cartoon"
-            ],
-            "rating": 0
-          },
-          {
-            "id": "5699289553460224",
-            "title": "2021 and Done with Snoop Dogg & Kevin Hart",
-            "year": 1640685600000,
-            "movieType": 2,
-            "movieTypeName": "Movies",
-            "seasonDescription": null,
-            "lastEpisodeCount": null,
-            "languages": [
-              "English"
-            ],
-            "tags": [
-              "Comedy"
-            ],
-            "rating": 0
-          },
-          {
-            "id": "9451333009171728",
-            "title": "No Tail to Tell",
-            "year": 1768557600000,
-            "movieType": 1,
-            "movieTypeName": "TV shows",
-            "seasonDescription": "1 season",
-            "lastEpisodeCount": 4,
-            "languages": [
-              "Korean"
-            ],
-            "tags": [
-              "Action",
-              "Comedy",
-              "Drama",
-              "Romance",
-              "Fantasy"
-            ],
-            "rating": 0
-          },
-          {
-            "id": "6766911872385024",
-            "title": "Call Me Chihiro",
-            "year": 1677146400000,
-            "movieType": 2,
-            "movieTypeName": "Movies",
-            "seasonDescription": null,
-            "lastEpisodeCount": null,
-            "languages": [
-              "Japanese",
-              "English"
-            ],
-            "tags": [
-              "Drama"
-            ],
-            "rating": 12
-          },
-          {
-            "id": "5699268994948096",
-            "title": "No Time to Die",
-            "year": 1633687200000,
-            "movieType": 2,
-            "movieTypeName": "Movies",
-            "seasonDescription": null,
-            "lastEpisodeCount": null,
-            "languages": [
-              "OST",
-              "Tamil",
-              "Hindi",
-              "English",
-              "Bengali"
-            ],
-            "tags": [
-              "Action",
-              "Thriller",
-              "Adventure "
-            ],
-            "rating": 12
-          },
-          {
-            "id": "9767285094196212",
-            "title": "No Place to Be Single",
-            "year": 1778234400000,
-            "movieType": 2,
-            "movieTypeName": "Movies",
-            "seasonDescription": null,
-            "lastEpisodeCount": null,
-            "languages": [
-              "Hindi",
-              "English"
-            ],
-            "tags": [
-              "Comedy"
-            ],
-            "rating": 0
-          },
-          {
-            "id": "9203641173122016",
-            "title": "Peter Grill to Kenja No Jikan",
-            "year": 1665309600000,
-            "movieType": 5,
-            "movieTypeName": "Anime",
-            "seasonDescription": "2 seasons",
-            "lastEpisodeCount": null,
-            "languages": [
-              "English"
-            ],
-            "tags": [
-              "Comedy",
-              "Animation",
-              "Erotic",
-              "Romance",
-              "Cartoon",
-              "Fantasy"
-            ],
-            "rating": 18
-          },
-          {
-            "id": "8017028256737280",
-            "title": "No Gain No Love",
-            "year": 1724666400000,
-            "movieType": 1,
-            "movieTypeName": "TV shows",
-            "seasonDescription": "1 season",
-            "lastEpisodeCount": 8,
-            "languages": [
-              "Hindi",
-              "OST"
-            ],
-            "tags": [
-              "Comedy",
-              "Romance"
-            ],
-            "rating": 0
-          },
-          {
-            "id": "6017698038632448",
-            "title": "No Limit",
-            "year": 1662717600000,
-            "movieType": 2,
-            "movieTypeName": "Movies",
-            "seasonDescription": null,
-            "lastEpisodeCount": null,
-            "languages": [
-              "French",
-              "Turkish",
-              "Portuguese",
-              "English",
-              "Hindi",
-              "OST"
-            ],
-            "tags": [
-              "Action",
-              "Drama",
-              "Thriller",
-              "Romance"
-            ],
-            "rating": 18
-          },
-          {
-            "id": "5699245687888897",
-            "title": "No Exit",
-            "year": 1645783200000,
-            "movieType": 2,
-            "movieTypeName": "Movies",
-            "seasonDescription": null,
-            "lastEpisodeCount": null,
-            "languages": [
-              "English"
-            ],
-            "tags": [
-              "Drama",
-              "Thriller",
-              "Science fiction"
-            ],
-            "rating": 18
-          },
-          {
-            "id": "5724830827448320",
-            "title": "California No",
-            "year": 1581264000000,
-            "movieType": 2,
-            "movieTypeName": "Movies",
-            "seasonDescription": null,
-            "lastEpisodeCount": null,
-            "languages": [
-              "English"
-            ],
-            "tags": [
-              "Comedy",
-              "Drama",
-              "Romance"
-            ],
-            "rating": 0
-          },
-          {
-            "id": "5702751679241216",
-            "title": "No Doubt",
-            "year": 1558368000000,
-            "movieType": 2,
-            "movieTypeName": "Movies",
-            "seasonDescription": null,
-            "lastEpisodeCount": null,
-            "languages": [
-              "English"
-            ],
-            "tags": [
-              "Comedy",
-              "Romance"
-            ],
-            "rating": 0
-          },
-          {
-            "id": "5705307434474496",
-            "title": "No Mercy",
-            "year": 1546336800000,
-            "movieType": 2,
-            "movieTypeName": "Movies",
-            "seasonDescription": null,
-            "lastEpisodeCount": null,
-            "languages": [
-              "Korean"
-            ],
-            "tags": [
-              "Action"
-            ],
-            "rating": 12
-          },
-          {
-            "id": "5762009236618240",
-            "title": "No Solicitors",
-            "year": 1514887200000,
-            "movieType": 2,
-            "movieTypeName": "Movies",
-            "seasonDescription": null,
-            "lastEpisodeCount": null,
-            "languages": [
-              "English"
-            ],
-            "tags": [
-              "Thriller"
-            ],
-            "rating": 12
-          },
-          {
-            "id": "5763680340753408",
-            "title": "No Escape",
-            "year": 1440583200000,
-            "movieType": 2,
-            "movieTypeName": "Movies",
-            "seasonDescription": null,
-            "lastEpisodeCount": null,
-            "languages": [
-              "OST",
-              "Tamil"
-            ],
-            "tags": [
-              "Action",
-              "Thriller"
-            ],
-            "rating": 12
-          },
-          {
-            "id": "5807485247390720",
-            "title": "No Breathing",
-            "year": 1383127200000,
-            "movieType": 2,
-            "movieTypeName": "Movies",
-            "seasonDescription": null,
-            "lastEpisodeCount": null,
-            "languages": [
-              "Korean"
-            ],
-            "tags": [
-              "Action",
-              "Romance"
-            ],
-            "rating": 0
-          },
-          {
-            "id": "6920898750611456",
-            "title": "No Problem",
-            "year": 1291975200000,
-            "movieType": 2,
-            "movieTypeName": "Movies",
-            "seasonDescription": null,
-            "lastEpisodeCount": null,
-            "languages": [
-              "Hindi"
-            ],
-            "tags": [
-              "Action",
-              "Comedy",
-              "Crime"
-            ],
-            "rating": 12
-          },
-          {
-            "id": "6882399187684352",
-            "title": "No Entry",
-            "year": 1125050400000,
-            "movieType": 2,
-            "movieTypeName": "Movies",
-            "seasonDescription": null,
-            "lastEpisodeCount": null,
-            "languages": [
-              "Hindi"
-            ],
-            "tags": [
-              "Comedy",
-              "Drama",
-              "Romance",
-              "Others"
-            ],
-            "rating": 0
-          },
-          {
-            "id": "9877226587202984",
-            "title": "Cheater No.1",
-            "year": 1778493600000,
-            "movieType": 4,
-            "movieTypeName": "Short Dramas",
-            "seasonDescription": "1 season",
-            "lastEpisodeCount": null,
-            "languages": [
-              "Hindi"
-            ],
-            "tags": [
-              "Drama"
-            ],
-            "rating": 0
-          },
-          {
-            "id": "9271637218374608",
-            "title": "Naukar No. 1",
-            "year": 1762941600000,
-            "movieType": 1,
-            "movieTypeName": "TV shows",
-            "seasonDescription": "1 season",
-            "lastEpisodeCount": null,
-            "languages": [
-              "OST"
-            ],
-            "tags": [
-              "Drama",
-              "Erotic"
-            ],
-            "rating": 18
-          },
-          {
-            "id": "10131527349104212",
-            "title": "Oshi No Ko",
-            "year": 1768384800000,
-            "movieType": 5,
-            "movieTypeName": "Anime",
-            "seasonDescription": "3 seasons",
-            "lastEpisodeCount": null,
-            "languages": [
-              "Hindi",
-              "Tamil",
-              "Telugu",
-              "English",
-              "Japanese"
-            ],
-            "tags": [
-              "Mystery",
-              "Animation",
-              "Drama",
-              "Thriller",
-              "Cartoon",
-              "Fantasy"
-            ],
-            "rating": 12
-          },
-          {
-            "id": "9837677260412468",
-            "title": "Sniper: No Nation",
-            "year": 1775556000000,
-            "movieType": 2,
-            "movieTypeName": "Movies",
-            "seasonDescription": null,
-            "lastEpisodeCount": null,
-            "languages": [
-              "English",
-              "Hindi"
-            ],
-            "tags": [
-              "Action"
-            ],
-            "rating": 0
-          },
-          {
-            "id": "9450888962631112",
-            "title": "To Love, To Lose",
-            "year": 1768471200000,
-            "movieType": 1,
-            "movieTypeName": "TV shows",
-            "seasonDescription": "1 season",
-            "lastEpisodeCount": null,
-            "languages": [
-              "Turkish",
-              "English"
-            ],
-            "tags": [
-              "Drama"
-            ],
-            "rating": 0
-          },
-          {
-            "id": "8917316221225984",
-            "title": "Kaiju No. 8",
-            "year": 1752300000455,
-            "movieType": 5,
-            "movieTypeName": "Anime",
-            "seasonDescription": "2 seasons",
-            "lastEpisodeCount": null,
-            "languages": [
-              "Japanese",
-              "Hindi",
-              "Tamil",
-              "Telugu",
-              "English"
-            ],
-            "tags": [
-              "Action",
-              "Animation",
-              "Cartoon",
-              "Science fiction",
-              "Adventure "
-            ],
-            "rating": 12
-          },
-          {
-            "id": "8905647176697856",
-            "title": "Dekin no Mogura",
-            "year": 1751796000000,
-            "movieType": 5,
-            "movieTypeName": "Anime",
-            "seasonDescription": "1 season",
-            "lastEpisodeCount": null,
-            "languages": [
-              "Japanese",
-              "Hindi"
-            ],
-            "tags": [
-              "Comedy",
-              "Mystery",
-              "Animation",
-              "Cartoon"
-            ],
-            "rating": 12
-          },
-          {
-            "id": "8319756663038976",
-            "title": "No Good Deed",
-            "year": 1733997600000,
-            "movieType": 1,
-            "movieTypeName": "TV shows",
-            "seasonDescription": "1 season",
-            "lastEpisodeCount": null,
-            "languages": [
-              "English",
-              "Hindi",
-              "Tamil",
-              "Telugu"
-            ],
-            "tags": [
-              "Comedy",
-              "Drama"
-            ],
-            "rating": 12
-          },
-          {
-            "id": "9020702961868824",
-            "title": "Jamai No 1",
-            "year": 1733738400000,
-            "movieType": 1,
-            "movieTypeName": "TV shows",
-            "seasonDescription": "1 season",
-            "lastEpisodeCount": null,
-            "languages": [
-              "Hindi"
-            ],
-            "tags": [
-              "Others"
-            ],
-            "rating": 0
-          },
-          {
-            "id": "8133024807799808",
-            "title": "Speak No Evil",
-            "year": 1726221600000,
-            "movieType": 2,
-            "movieTypeName": "Movies",
-            "seasonDescription": null,
-            "lastEpisodeCount": null,
-            "languages": [
-              "Hindi",
-              "English"
-            ],
-            "tags": [
-              "Drama",
-              "Thriller"
-            ],
-            "rating": 18
-          },
-          {
-            "id": "7544024949573632",
-            "title": "No Way Up",
-            "year": 1708077600000,
-            "movieType": 2,
-            "movieTypeName": "Movies",
-            "seasonDescription": null,
-            "lastEpisodeCount": null,
-            "languages": [
-              "Hindi",
-              "English",
-              "Tamil"
-            ],
-            "tags": [
-              "Action",
-              "Drama",
-              "Thriller",
-              "Adventure "
-            ],
-            "rating": 0
-          },
-          {
-            "id": "7478771283826688",
-            "title": "Tell No Lies",
-            "year": 1705572000000,
-            "movieType": 2,
-            "movieTypeName": "Movies",
-            "seasonDescription": null,
-            "lastEpisodeCount": null,
-            "languages": [
-              "Hindi"
-            ],
-            "tags": [
-              "Drama",
-              "Thriller",
-              "Science fiction"
-            ],
-            "rating": 12
-          },
-          {
-            "id": "7473855958063104",
-            "title": "Route No 17",
-            "year": 1703844000000,
-            "movieType": 2,
-            "movieTypeName": "Movies",
-            "seasonDescription": null,
-            "lastEpisodeCount": null,
-            "languages": [
-              "Tamil"
-            ],
-            "tags": [
-              "Drama",
-              "Thriller"
-            ],
-            "rating": 12
-          },
-          {
-            "id": "7122061409001472",
-            "title": "Chachi No.1",
-            "year": 1697543322212,
-            "movieType": 1,
-            "movieTypeName": "TV shows",
-            "seasonDescription": null,
-            "lastEpisodeCount": null,
-            "languages": [
-              "Hindi"
-            ],
-            "tags": [
-              "Erotic"
-            ],
-            "rating": 18
-          }
-        ],
-        "picked": null,
-        "ranked": [
-          {
-            "title": "Spirited Away",
-            "year": 2003,
-            "accepted": false,
-            "score": 106
-          },
-          {
-            "title": "Spirited",
-            "year": 2022,
-            "accepted": false,
-            "score": 46
-          },
-          {
-            "title": "Cast Away",
-            "year": 2000,
-            "accepted": false,
-            "score": 18
-          },
-          {
-            "title": "Oshi No Ko",
-            "year": 2026,
-            "accepted": false,
-            "score": 16
-          },
-          {
-            "title": "Swept Away",
-            "year": 2002,
-            "accepted": false,
-            "score": 12
-          },
-          {
-            "title": "Kaiju No. 8",
-            "year": 2025,
-            "accepted": false,
-            "score": 11
-          },
-          {
-            "title": "Dekin no Mogura",
-            "year": 2025,
-            "accepted": false,
-            "score": 11
-          },
-          {
-            "title": "Peter Grill to Kenja No Jikan",
-            "year": 2022,
-            "accepted": false,
-            "score": 10
-          }
-        ],
-        "rejected": [
-          {
-            "title": "Spirited Away",
-            "year": 2003,
-            "reason": "exact-title,year-mismatch:2003!=2001,preferred-audio-present"
-          },
-          {
-            "title": "Spirited",
-            "year": 2022,
-            "reason": "title-prefix-only,year-mismatch:2022!=2001,preferred-audio-present"
-          },
-          {
-            "title": "Cast Away",
-            "year": 2000,
-            "reason": "year-off-by-1,preferred-audio-present"
-          },
-          {
-            "title": "Oshi No Ko",
-            "year": 2026,
-            "reason": "year-mismatch:2026!=2001,type-mismatch:anime!=movie,preferred-audio-present"
-          },
-          {
-            "title": "Swept Away",
-            "year": 2002,
-            "reason": "year-off-by-1"
-          },
-          {
-            "title": "Kaiju No. 8",
-            "year": 2025,
-            "reason": "year-mismatch:2025!=2001,type-mismatch:anime!=movie,preferred-audio-present"
-          },
-          {
-            "title": "Dekin no Mogura",
-            "year": 2025,
-            "reason": "year-mismatch:2025!=2001,type-mismatch:anime!=movie,preferred-audio-present"
-          },
-          {
-            "title": "Peter Grill to Kenja No Jikan",
-            "year": 2022,
-            "reason": "year-mismatch:2022!=2001,type-mismatch:anime!=movie"
-          }
-        ]
-      }
+      "error": null
     }
   },
-  "finishedAt": "2026-10-04T07:12:23.578Z"
+  "finishedAt": "2026-10-04T07:14:58.294Z"
 }
