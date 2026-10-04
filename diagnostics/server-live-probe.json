@@ -1,0 +1,1381 @@
+{
+  "startedAt": "2026-10-04T09:57:28.866Z",
+  "runner": "github-actions",
+  "node": "v22.23.3",
+  "serversRequested": [
+    "ursa",
+    "hamster"
+  ],
+  "catalog": [
+    {
+      "id": "andromeda",
+      "priority": 1,
+      "name": "Fiber Optic Speedrun",
+      "badge": "Multi-Audio • Primary",
+      "enabled": true
+    },
+    {
+      "id": "centaurus",
+      "priority": 2,
+      "name": "Gigachad Node",
+      "badge": "Adaptive • Multi-Quality",
+      "enabled": true
+    },
+    {
+      "id": "ursa",
+      "priority": 3,
+      "name": "FBI Surveillance Van",
+      "badge": "4K UHD • Multi-Audio",
+      "enabled": true
+    },
+    {
+      "id": "hamster",
+      "priority": 4,
+      "name": "Hamster Wheel",
+      "badge": "Multi-Language • OMSS Cascade",
+      "enabled": true
+    },
+    {
+      "id": "atlas",
+      "priority": 5,
+      "name": "Atlas",
+      "badge": "Adaptive • Backup",
+      "enabled": true
+    },
+    {
+      "id": "hindi",
+      "priority": 90,
+      "name": "Hindi",
+      "badge": "Hindi Dubs • TMDB-ID Verified",
+      "enabled": true,
+      "listed": false,
+      "fallback": false
+    }
+  ],
+  "upstreams": {
+    "fourkhdhubBase": "https://4khdhub.one",
+    "moviesdriveBase": "https://new5.moviesdrive.christmas",
+    "hicineApiBase": "https://api.hicine.sbs",
+    "dahmerBase": "https://a.111477.xyz",
+    "videasy": "https://api.videasy.net (+ api2.videasy.net)",
+    "peachify": "peachify upstreams",
+    "vidsrc": "vsembed.ru + CDN mirrors"
+  },
+  "titles": {
+    "movie:693134": {
+      "metadata": {
+        "type": "movie",
+        "tmdbId": 693134,
+        "title": "Dune: Part Two",
+        "releaseYear": 2024,
+        "season": 1,
+        "episode": 1,
+        "externalIds": {
+          "imdb_id": "tt15239678",
+          "tvdb_id": null,
+          "mal_id": null,
+          "anilist_id": null
+        },
+        "metadataError": null
+      },
+      "servers": {
+        "ursa": {
+          "workerEndToEnd": {
+            "latencyMs": 3418,
+            "status": 200,
+            "ok": true,
+            "error": null,
+            "explanation": null,
+            "requestedServer": null,
+            "failedReason": null,
+            "resolvedByServer": "ursa",
+            "stream": {
+              "server": "ursa",
+              "provider": null,
+              "tier": "4khdhub",
+              "format": "mp4",
+              "streamUrl": "https://d33f51dyacx7bd.cloudfront.net/",
+              "streamUrlIsRelative": false,
+              "rawUrl": "https://d33f51dyacx7bd.cloudfront.net/",
+              "rawUrlKind": "other",
+              "qualityDegraded": false,
+              "qualities": [
+                {
+                  "label": "2160p (4K)",
+                  "height": 2160,
+                  "url": "https://d33f51dyacx7bd.cloudfront.net/"
+                }
+              ],
+              "audioTracks": [
+                {
+                  "id": "4khdhub-hi+en",
+                  "lang": "hi",
+                  "label": "Hindi + English (4K Multi-Audio)",
+                  "default": true
+                }
+              ],
+              "backupUrlCount": 3
+            },
+            "serverAttempts": [],
+            "playerServerList": [
+              {
+                "id": "andromeda",
+                "order": 1,
+                "name": "Fiber Optic Speedrun",
+                "badge": "Multi-Audio • Primary",
+                "active": false
+              },
+              {
+                "id": "centaurus",
+                "order": 2,
+                "name": "Gigachad Node",
+                "badge": "Adaptive • Multi-Quality",
+                "active": false
+              },
+              {
+                "id": "ursa",
+                "order": 3,
+                "name": "FBI Surveillance Van",
+                "badge": "4K UHD • Multi-Audio",
+                "active": true
+              },
+              {
+                "id": "hamster",
+                "order": 4,
+                "name": "Hamster Wheel",
+                "badge": "Multi-Language • OMSS Cascade",
+                "active": false
+              },
+              {
+                "id": "atlas",
+                "order": 5,
+                "name": "Atlas",
+                "badge": "Adaptive • Backup",
+                "active": false
+              }
+            ],
+            "playback": {
+              "proxy": {
+                "ok": false,
+                "status": 404,
+                "contentType": "application/json; charset=utf-8",
+                "contentLengthHeader": null,
+                "firstBytes": 32,
+                "magic": "7b226f6b223a66616c73652c22657272",
+                "looksLikeHtml": false,
+                "latencyMs": 0
+              },
+              "direct": {
+                "ok": true,
+                "status": 206,
+                "contentType": null,
+                "contentLengthHeader": "2048",
+                "firstBytes": 2048,
+                "magic": "2866756e6374696f6e28297b76617220",
+                "looksLikeHtml": false,
+                "latencyMs": 46
+              }
+            }
+          },
+          "nodeDirect": {
+            "latencyMs": 1337,
+            "ok": true,
+            "reason": null,
+            "selectedTier": "4khdhub",
+            "diagMessage": "Resolved verified 4K stream via 4khdhub (2160p (4K))",
+            "diagSteps": [
+              "4khdhub_attempt: Attempting Tier 1: 4KHDHub (2160p UHD Multi-Audio)...",
+              "moviesdrive4k_attempt: Attempting Tier 2: MoviesDrive 4K (Typesense IMDb + 2160p HubCloud)...",
+              "hicine4k_attempt: Attempting Tier 3: HiCine 4K UHD (2160p vcloud worker)...",
+              "dahmer4k_attempt: Attempting Tier 4: DahmerMovies 4K (2160p direct directory)...",
+              "4khdhub_success: Resolved verified 4K (2160p (4K)) via 4khdhub",
+              "moviesdrive4k_failed: moviesdrive4k returned no verified 2160p stream",
+              "hicine4k_failed: hicine4k returned no verified 2160p stream",
+              "dahmer4k_failed: dahmer4k_directory_not_found"
+            ],
+            "stream": {
+              "server": "ursa",
+              "provider": null,
+              "tier": "4khdhub",
+              "format": "mp4",
+              "streamUrl": "https://d33f51dyacx7bd.cloudfront.net/",
+              "streamUrlIsRelative": false,
+              "rawUrl": "https://d33f51dyacx7bd.cloudfront.net/",
+              "rawUrlKind": "other",
+              "qualityDegraded": false,
+              "qualities": [
+                {
+                  "label": "2160p (4K)",
+                  "height": 2160,
+                  "url": "https://d33f51dyacx7bd.cloudfront.net/"
+                }
+              ],
+              "audioTracks": [
+                {
+                  "id": "4khdhub-hi+en",
+                  "lang": "hi",
+                  "label": "Hindi + English (4K Multi-Audio)",
+                  "default": true
+                }
+              ],
+              "backupUrlCount": 3
+            }
+          },
+          "nodeWaterfall": {
+            "latencyMs": 2657,
+            "ok": true,
+            "reason": null,
+            "requestedServer": "ursa",
+            "resolvedByServer": "ursa",
+            "stream": {
+              "server": "ursa",
+              "provider": null,
+              "tier": "4khdhub",
+              "format": "mp4",
+              "streamUrl": "https://d33f51dyacx7bd.cloudfront.net/",
+              "streamUrlIsRelative": false,
+              "rawUrl": "https://d33f51dyacx7bd.cloudfront.net/",
+              "rawUrlKind": "other",
+              "qualityDegraded": false,
+              "qualities": [
+                {
+                  "label": "2160p (4K)",
+                  "height": 2160,
+                  "url": "https://d33f51dyacx7bd.cloudfront.net/"
+                }
+              ],
+              "audioTracks": [
+                {
+                  "id": "4khdhub-hi+en",
+                  "lang": "hi",
+                  "label": "Hindi + English (4K Multi-Audio)",
+                  "default": true
+                }
+              ],
+              "backupUrlCount": 3
+            },
+            "serverAttempts": []
+          },
+          "tiers": {
+            "latencyMs": 1303,
+            "4khdhub": {
+              "ok": true,
+              "reason": null,
+              "rawUrl": "https://d33f51dyacx7bd.cloudfront.net/",
+              "qualities": [
+                "2160p (4K)"
+              ]
+            },
+            "moviesdrive4k": {
+              "ok": true,
+              "reason": null,
+              "rawUrl": "https://d33f51dyacx7bd.cloudfront.net/",
+              "qualities": [
+                "2160p (4K)"
+              ]
+            },
+            "hicine4k": {
+              "ok": true,
+              "reason": null,
+              "rawUrl": "https://video-downloads.googleusercontent.com/ADGPM2kPcyJ_bb6gGnHup2mGAA7R4p8ZddvfIBA3DDVf0xr5P2JAdXMGM8TaIoWpfffDKkpDEn-tdh-AIUzDb_8G4ajvnN0vHOg0Zrd0gupX4I5hd9_4wIwEwXjfWwbTBdw4sFvpB0C3uySZ0OUpcUhGAxvxeJH4YN6Ulv3V88LtiQTFU5cZcho2dyl3PT8VI_ENqHEmc7a6mFfxO2B5CcC6uBCcPQWu5o-dkwPWYh8vf4msDC60r5qz284MG6R_R4ZrkrZB7vgnFCoUQOiEVeR-P0llUm0eIt4D7eycJQPE9lskpy6Th5UHtdpOJYOqIghTxTiwc-B8xqsutxzdTqoFC43W6mhnqOqcai8JzhtfA827Uyu7TjmUPGh8EKUImEeQp2XxzirTa-09PxpxmJo0-Sww4AiWHOPtOBVM2vFcaBUR5TOjFdm8LXrNObNCqJrVGBUM7pVTr7HcSXWPbEmy_O4kIDUNR8JKom8cT93u_cV3VyfFre-nsDTRZX1AU2k16O_dh6TAxsRF2I4vbTkO3wJBb7vE4lXeBxNiMXeFRWOCG3SSyvXCVX-QccQ0hvVSR80pMkazEerjuosRR1XgQ1YlgjR5fxW1szYGKktgaCU5O0lxElV_ppFkdRDNraILNPUahlNFC36g3K5KAEAmvPvBnsPOTViF-RmvAy5yxVmseHtU3ccMb52pdTFVfOYb01RduIQFTjN8L2-E2cCPIyISg7HdB3CbwM1MV7i-oWmgZuxHgSRkkK7_mXJnftNB2M1lhIKG1vi1PHNib_fGY-fRbutJxESmsIHoxnGVObPh3DMPKafZnkPmHF5S-Fyu-AATH35DP3Tdx-KNYdDqnXosyI4ENPNfQg_4RJW7FWKo8KxdTl1xfTGLzo15WYxIFU-ZpjpTp_TSwbMAFtE0DZv8h0Zq_sUfqvU9PUTq86VCNwXT7LyqpfBCNDEh1XNS8KgPTbvWrb9eIwVtCdeLreDDJNialfWt_z41cD-KKsi4YsFeUyLH3Tdcy8As5wiLLYAOIJ6eStxlXq3MY1EB_3s-yRsMxLHRAbKsKUy-au2T0wwrNuLc3vUDb9sztEmKI1W_Ke1MMaaezS62a4x_bKNw95ymsgv6ysyOfkjMX3XJSwk7FiIrJfprLKx4Hugvd_X6h3IYw3kc5-UHhPen-eYdX2XPwA",
+              "qualities": [
+                "2160p (4K)",
+                "1080p",
+                "1080p (Alt)"
+              ]
+            },
+            "dahmer4k": {
+              "ok": false,
+              "reason": "dahmer4k_directory_not_found",
+              "rawUrl": null,
+              "qualities": []
+            }
+          }
+        },
+        "hamster": {
+          "workerEndToEnd": {
+            "latencyMs": 10571,
+            "status": 200,
+            "ok": true,
+            "error": null,
+            "explanation": null,
+            "requestedServer": null,
+            "failedReason": null,
+            "resolvedByServer": "andromeda",
+            "stream": {
+              "server": "andromeda",
+              "provider": null,
+              "tier": null,
+              "format": "hls",
+              "streamUrl": "server-live-probe.test/api/proxy",
+              "streamUrlIsRelative": true,
+              "rawUrl": "https://img1.hlnom.com/myhls_mps/2024/8yue/Dune2/Hindi_720/index_363.m3u8",
+              "rawUrlKind": "hls",
+              "qualityDegraded": false,
+              "qualities": [
+                {
+                  "label": "Auto",
+                  "height": 0,
+                  "url": "server-live-probe.test/api/proxy"
+                }
+              ],
+              "audioTracks": [
+                {
+                  "id": "castle-1018",
+                  "lang": "hi",
+                  "label": "Hindi",
+                  "default": true
+                },
+                {
+                  "id": "castle-1033",
+                  "lang": "ta",
+                  "label": "Tamil",
+                  "default": false
+                },
+                {
+                  "id": "castle-1037",
+                  "lang": "te",
+                  "label": "Telugu",
+                  "default": false
+                },
+                {
+                  "id": "castle-1035",
+                  "lang": "kn",
+                  "label": "Kannada",
+                  "default": false
+                }
+              ],
+              "backupUrlCount": 1
+            },
+            "serverAttempts": [],
+            "playerServerList": [
+              {
+                "id": "andromeda",
+                "order": 1,
+                "name": "Fiber Optic Speedrun",
+                "badge": "Multi-Audio • Primary",
+                "active": true
+              },
+              {
+                "id": "centaurus",
+                "order": 2,
+                "name": "Gigachad Node",
+                "badge": "Adaptive • Multi-Quality",
+                "active": false
+              },
+              {
+                "id": "ursa",
+                "order": 3,
+                "name": "FBI Surveillance Van",
+                "badge": "4K UHD • Multi-Audio",
+                "active": false
+              },
+              {
+                "id": "hamster",
+                "order": 4,
+                "name": "Hamster Wheel",
+                "badge": "Multi-Language • OMSS Cascade",
+                "active": false
+              },
+              {
+                "id": "atlas",
+                "order": 5,
+                "name": "Atlas",
+                "badge": "Adaptive • Backup",
+                "active": false
+              }
+            ],
+            "playback": {
+              "proxy": {
+                "ok": true,
+                "status": 200,
+                "contentType": "application/vnd.apple.mpegurl; charset=utf-8",
+                "contentLengthHeader": null,
+                "firstBytes": 4476,
+                "magic": "234558544d33550a234558542d582d56",
+                "looksLikeHtml": false,
+                "latencyMs": 285
+              },
+              "direct": {
+                "ok": true,
+                "status": 206,
+                "contentType": "application/vnd.apple.mpegurl",
+                "contentLengthHeader": "2048",
+                "firstBytes": 2048,
+                "magic": "234558544d33550a234558542d582d56",
+                "looksLikeHtml": false,
+                "latencyMs": 236
+              }
+            }
+          },
+          "nodeDirect": {
+            "latencyMs": 10487,
+            "ok": false,
+            "reason": "hamster_all_sources_exhausted",
+            "selectedTier": null,
+            "diagMessage": "All Hamster Wheel providers (Videasy, Peachify, VidSrc) failed to resolve a stream.",
+            "diagSteps": [
+              "videasy_attempt: Querying Videasy multi-language upstream...",
+              "videasy_miss: Videasy returned no playable streams for this title.",
+              "peachify_attempt: Querying Peachify dub/sub upstream...",
+              "peachify_miss: Peachify returned no playable streams for this title.",
+              "vidsrc_attempt: Querying VidSrc fallback upstream...",
+              "vidsrc_miss: VidSrc returned no playable streams for this title.",
+              "hamster_exhausted: All Hamster Wheel providers (Videasy, Peachify, VidSrc) failed to resolve a stream."
+            ],
+            "stream": {
+              "server": null,
+              "provider": null,
+              "tier": null,
+              "format": null,
+              "streamUrl": null,
+              "streamUrlIsRelative": true,
+              "rawUrl": null,
+              "rawUrlKind": "other",
+              "qualityDegraded": false,
+              "qualities": [],
+              "audioTracks": [],
+              "backupUrlCount": 0
+            }
+          },
+          "nodeWaterfall": {
+            "latencyMs": 11644,
+            "ok": true,
+            "reason": null,
+            "requestedServer": "hamster",
+            "resolvedByServer": "andromeda",
+            "stream": {
+              "server": "andromeda",
+              "provider": null,
+              "tier": null,
+              "format": "hls",
+              "streamUrl": "server-live-probe.test/api/proxy",
+              "streamUrlIsRelative": true,
+              "rawUrl": "https://img1.flowxn.com/myhls_mps/2024/8yue/Dune2/Hindi_720/index_375.m3u8",
+              "rawUrlKind": "hls",
+              "qualityDegraded": false,
+              "qualities": [
+                {
+                  "label": "Auto",
+                  "height": 0,
+                  "url": "server-live-probe.test/api/proxy"
+                }
+              ],
+              "audioTracks": [
+                {
+                  "id": "castle-1018",
+                  "lang": "hi",
+                  "label": "Hindi",
+                  "default": true
+                },
+                {
+                  "id": "castle-1033",
+                  "lang": "ta",
+                  "label": "Tamil",
+                  "default": false
+                },
+                {
+                  "id": "castle-1037",
+                  "lang": "te",
+                  "label": "Telugu",
+                  "default": false
+                },
+                {
+                  "id": "castle-1035",
+                  "lang": "kn",
+                  "label": "Kannada",
+                  "default": false
+                }
+              ],
+              "backupUrlCount": 1
+            },
+            "serverAttempts": [
+              {
+                "server": "hamster",
+                "latencyMs": 10523,
+                "reason": "hamster_all_sources_exhausted",
+                "diagMessage": "All Hamster Wheel providers (Videasy, Peachify, VidSrc) failed to resolve a stream."
+              }
+            ]
+          },
+          "providers": {
+            "latencyMs": 9500,
+            "videasy": {
+              "ok": false,
+              "reason": "videasy_no_sources",
+              "provider": null,
+              "rawUrl": null,
+              "audioTracks": []
+            },
+            "peachify": {
+              "ok": false,
+              "reason": "peachify_no_sources",
+              "provider": null,
+              "rawUrl": null,
+              "audioTracks": []
+            },
+            "vidsrc": {
+              "ok": false,
+              "reason": "vidsrc_no_second_url",
+              "provider": null,
+              "rawUrl": null,
+              "audioTracks": []
+            }
+          }
+        }
+      }
+    },
+    "movie:550": {
+      "metadata": {
+        "type": "movie",
+        "tmdbId": 550,
+        "title": "Fight Club",
+        "releaseYear": 1999,
+        "season": 1,
+        "episode": 1,
+        "externalIds": {
+          "imdb_id": "tt0137523",
+          "tvdb_id": null,
+          "mal_id": null,
+          "anilist_id": null
+        },
+        "metadataError": null
+      },
+      "servers": {
+        "ursa": {
+          "workerEndToEnd": {
+            "latencyMs": 2036,
+            "status": 200,
+            "ok": true,
+            "error": null,
+            "explanation": null,
+            "requestedServer": null,
+            "failedReason": null,
+            "resolvedByServer": "ursa",
+            "stream": {
+              "server": "ursa",
+              "provider": null,
+              "tier": "4khdhub",
+              "format": "mp4",
+              "streamUrl": "https://d33f51dyacx7bd.cloudfront.net/",
+              "streamUrlIsRelative": false,
+              "rawUrl": "https://d33f51dyacx7bd.cloudfront.net/",
+              "rawUrlKind": "other",
+              "qualityDegraded": false,
+              "qualities": [
+                {
+                  "label": "2160p (4K)",
+                  "height": 2160,
+                  "url": "https://d33f51dyacx7bd.cloudfront.net/"
+                }
+              ],
+              "audioTracks": [
+                {
+                  "id": "4khdhub-hi+en",
+                  "lang": "hi",
+                  "label": "Hindi + English (4K Multi-Audio)",
+                  "default": true
+                }
+              ],
+              "backupUrlCount": 3
+            },
+            "serverAttempts": [],
+            "playerServerList": [
+              {
+                "id": "andromeda",
+                "order": 1,
+                "name": "Fiber Optic Speedrun",
+                "badge": "Multi-Audio • Primary",
+                "active": false
+              },
+              {
+                "id": "centaurus",
+                "order": 2,
+                "name": "Gigachad Node",
+                "badge": "Adaptive • Multi-Quality",
+                "active": false
+              },
+              {
+                "id": "ursa",
+                "order": 3,
+                "name": "FBI Surveillance Van",
+                "badge": "4K UHD • Multi-Audio",
+                "active": true
+              },
+              {
+                "id": "hamster",
+                "order": 4,
+                "name": "Hamster Wheel",
+                "badge": "Multi-Language • OMSS Cascade",
+                "active": false
+              },
+              {
+                "id": "atlas",
+                "order": 5,
+                "name": "Atlas",
+                "badge": "Adaptive • Backup",
+                "active": false
+              }
+            ],
+            "playback": {
+              "proxy": {
+                "ok": false,
+                "status": 404,
+                "contentType": "application/json; charset=utf-8",
+                "contentLengthHeader": null,
+                "firstBytes": 32,
+                "magic": "7b226f6b223a66616c73652c22657272",
+                "looksLikeHtml": false,
+                "latencyMs": 0
+              },
+              "direct": {
+                "ok": true,
+                "status": 206,
+                "contentType": null,
+                "contentLengthHeader": "2048",
+                "firstBytes": 2048,
+                "magic": "2866756e6374696f6e28297b76617220",
+                "looksLikeHtml": false,
+                "latencyMs": 31
+              }
+            }
+          },
+          "nodeDirect": {
+            "latencyMs": 1445,
+            "ok": true,
+            "reason": null,
+            "selectedTier": "4khdhub",
+            "diagMessage": "Resolved verified 4K stream via 4khdhub (2160p (4K))",
+            "diagSteps": [
+              "4khdhub_attempt: Attempting Tier 1: 4KHDHub (2160p UHD Multi-Audio)...",
+              "moviesdrive4k_attempt: Attempting Tier 2: MoviesDrive 4K (Typesense IMDb + 2160p HubCloud)...",
+              "hicine4k_attempt: Attempting Tier 3: HiCine 4K UHD (2160p vcloud worker)...",
+              "dahmer4k_attempt: Attempting Tier 4: DahmerMovies 4K (2160p direct directory)...",
+              "4khdhub_success: Resolved verified 4K (2160p (4K)) via 4khdhub",
+              "moviesdrive4k_failed: moviesdrive4k_unroll_failed",
+              "hicine4k_failed: hicine4k returned no verified 2160p stream",
+              "dahmer4k_failed: dahmer4k_directory_not_found"
+            ],
+            "stream": {
+              "server": "ursa",
+              "provider": null,
+              "tier": "4khdhub",
+              "format": "mp4",
+              "streamUrl": "https://d33f51dyacx7bd.cloudfront.net/",
+              "streamUrlIsRelative": false,
+              "rawUrl": "https://d33f51dyacx7bd.cloudfront.net/",
+              "rawUrlKind": "other",
+              "qualityDegraded": false,
+              "qualities": [
+                {
+                  "label": "2160p (4K)",
+                  "height": 2160,
+                  "url": "https://d33f51dyacx7bd.cloudfront.net/"
+                }
+              ],
+              "audioTracks": [
+                {
+                  "id": "4khdhub-hi+en",
+                  "lang": "hi",
+                  "label": "Hindi + English (4K Multi-Audio)",
+                  "default": true
+                }
+              ],
+              "backupUrlCount": 3
+            }
+          },
+          "nodeWaterfall": {
+            "latencyMs": 1452,
+            "ok": true,
+            "reason": null,
+            "requestedServer": "ursa",
+            "resolvedByServer": "ursa",
+            "stream": {
+              "server": "ursa",
+              "provider": null,
+              "tier": "4khdhub",
+              "format": "mp4",
+              "streamUrl": "https://d33f51dyacx7bd.cloudfront.net/",
+              "streamUrlIsRelative": false,
+              "rawUrl": "https://d33f51dyacx7bd.cloudfront.net/",
+              "rawUrlKind": "other",
+              "qualityDegraded": false,
+              "qualities": [
+                {
+                  "label": "2160p (4K)",
+                  "height": 2160,
+                  "url": "https://d33f51dyacx7bd.cloudfront.net/"
+                }
+              ],
+              "audioTracks": [
+                {
+                  "id": "4khdhub-hi+en",
+                  "lang": "hi",
+                  "label": "Hindi + English (4K Multi-Audio)",
+                  "default": true
+                }
+              ],
+              "backupUrlCount": 3
+            },
+            "serverAttempts": []
+          },
+          "tiers": {
+            "latencyMs": 1453,
+            "4khdhub": {
+              "ok": true,
+              "reason": null,
+              "rawUrl": "https://d33f51dyacx7bd.cloudfront.net/",
+              "qualities": [
+                "2160p (4K)"
+              ]
+            },
+            "moviesdrive4k": {
+              "ok": false,
+              "reason": "moviesdrive4k_unroll_failed",
+              "rawUrl": null,
+              "qualities": []
+            },
+            "hicine4k": {
+              "ok": true,
+              "reason": null,
+              "rawUrl": "https://video-downloads.googleusercontent.com/ADGPM2n0Hq9sXrUUP7IxBxynJky3hLrtp4cOKlCicmhtHcQ1BZf_wDYFjAVffo2eB0CAMliMzMlZqji3n9mbRwA2P-Z7HHPAlvVrAMd9CtKKi6I01iNhwwRDBKgmm_KqexYuMsuaOIRAHnJ1F9weUhNb5vCdmXOAoJVaekVtz97gmxCUHh7EZXadz_6kJYmjZWWj8EC_e9qLQfr4lkQsImR6-AxuJ5VqEtEcxAcb6V_BU5Eo1oyccv2zUhyxo8w4EZRvbukh5FKjxkLvsU2-vTHGxHQDNFhiG-Q0GN_opJK6wyFWs-9TJ6-6YtFInD9J9f2adcVhoaRgcvhZKBXP-P2AAfD5N_xeiT9ZPX0F99H2Qp7GG9nE4xKRDqGbDgGwq-iLaU_5euEh8xb_2-HFITTaHjpG0dxuPV0znielVMbwtzSHGc24h5JX_yeZqILJOqHC-fUR6qk80YKmHHAZbwRMCixyTxn6QMzxLb-MV-v2q8we-ncQAvzO1c56jugLqqrnx0zqW2KaVCxYmmpTxWPzyhaZZF8TEOswSHrzlokD4ZFNoKLNObXyYTJeRPS5jIvGDNV9Uyst3gkVWPgmGyRMN1N0fjbPvsPmsFhcw2IVfF4UI67h7WwYCzSvXppUy_8ixYbbUgwGUpeTjQErgKZSqk6b_LGq9NpRMlk-eG6LLiQ1dZ9rDz_96wa_ERllGhN7bQPvQab33NmrbijEGGdYGgvWZxney5u-OeDCB63aQAjECjTK53gWj7PuxU_yg41bCS7lLLkJflrGsg_OuhOljg1kZ-4szDAbksT77hBmbo8ad6RVwMnYKGEu2PPRXXseMfJK2YQFd9J6R5lSHBTX37XZaUnuhSsPepCUrUbNArhZAOjheqlSgq52td6tUlo4UcsgT-jLugZKm7h_4JkZFzDLXVM3kNRfpmApATCd1rVzudwyT4rrIZQIjWxim8d8M4YwBAE__mHN3xD0jBgGnSem6StxmT7U-rlhLtWHJWKn1iVCTnOPb7_2Fr5aMyt5uOMPA2Fp1TyGZzK4DjYghL7eRQ7P4uWblin70I78C7F1dVISoZ3-eY-UoDWzKLzQN5iuBbO5J2Bi8MHQNb-7Z4TqusiOlJ10dhUlX9BVec-ga2hLPPGiG05mw3MTt5Gxmt3dMODe8jltQUpgFvI1FQgS_2Zzfg",
+              "qualities": [
+                "1080p",
+                "1080p (Alt)",
+                "720p",
+                "480p"
+              ]
+            },
+            "dahmer4k": {
+              "ok": false,
+              "reason": "dahmer4k_directory_not_found",
+              "rawUrl": null,
+              "qualities": []
+            }
+          }
+        },
+        "hamster": {
+          "workerEndToEnd": {
+            "latencyMs": 1093,
+            "status": 200,
+            "ok": true,
+            "error": null,
+            "explanation": null,
+            "requestedServer": null,
+            "failedReason": null,
+            "resolvedByServer": "andromeda",
+            "stream": {
+              "server": "andromeda",
+              "provider": null,
+              "tier": null,
+              "format": "hls",
+              "streamUrl": "server-live-probe.test/api/proxy",
+              "streamUrlIsRelative": true,
+              "rawUrl": "https://img1.hlnom.com/hls/78164859/720/index_363.m3u8",
+              "rawUrlKind": "hls",
+              "qualityDegraded": false,
+              "qualities": [
+                {
+                  "label": "Auto",
+                  "height": 0,
+                  "url": "server-live-probe.test/api/proxy"
+                }
+              ],
+              "audioTracks": [
+                {
+                  "id": "castle-1003",
+                  "lang": "en",
+                  "label": "English",
+                  "default": true
+                }
+              ],
+              "backupUrlCount": 1
+            },
+            "serverAttempts": [],
+            "playerServerList": [
+              {
+                "id": "andromeda",
+                "order": 1,
+                "name": "Fiber Optic Speedrun",
+                "badge": "Multi-Audio • Primary",
+                "active": true
+              },
+              {
+                "id": "centaurus",
+                "order": 2,
+                "name": "Gigachad Node",
+                "badge": "Adaptive • Multi-Quality",
+                "active": false
+              },
+              {
+                "id": "ursa",
+                "order": 3,
+                "name": "FBI Surveillance Van",
+                "badge": "4K UHD • Multi-Audio",
+                "active": false
+              },
+              {
+                "id": "hamster",
+                "order": 4,
+                "name": "Hamster Wheel",
+                "badge": "Multi-Language • OMSS Cascade",
+                "active": false
+              },
+              {
+                "id": "atlas",
+                "order": 5,
+                "name": "Atlas",
+                "badge": "Adaptive • Backup",
+                "active": false
+              }
+            ],
+            "playback": {
+              "proxy": {
+                "ok": true,
+                "status": 200,
+                "contentType": "application/vnd.apple.mpegurl; charset=utf-8",
+                "contentLengthHeader": null,
+                "firstBytes": 4844,
+                "magic": "234558544d33550a234558542d582d56",
+                "looksLikeHtml": false,
+                "latencyMs": 244
+              },
+              "direct": {
+                "ok": true,
+                "status": 206,
+                "contentType": "application/vnd.apple.mpegurl",
+                "contentLengthHeader": "2048",
+                "firstBytes": 2048,
+                "magic": "234558544d33550a234558542d582d56",
+                "looksLikeHtml": false,
+                "latencyMs": 252
+              }
+            }
+          },
+          "nodeDirect": {
+            "latencyMs": 0,
+            "ok": false,
+            "reason": "hamster_all_sources_exhausted",
+            "selectedTier": null,
+            "diagMessage": "All Hamster Wheel providers (Videasy, Peachify, VidSrc) failed to resolve a stream.",
+            "diagSteps": [
+              "videasy_attempt: Querying Videasy multi-language upstream...",
+              "videasy_miss: Videasy returned no playable streams for this title.",
+              "peachify_attempt: Querying Peachify dub/sub upstream...",
+              "peachify_miss: Peachify returned no playable streams for this title.",
+              "vidsrc_attempt: Querying VidSrc fallback upstream...",
+              "vidsrc_miss: VidSrc returned no playable streams for this title.",
+              "hamster_exhausted: All Hamster Wheel providers (Videasy, Peachify, VidSrc) failed to resolve a stream."
+            ],
+            "stream": {
+              "server": null,
+              "provider": null,
+              "tier": null,
+              "format": null,
+              "streamUrl": null,
+              "streamUrlIsRelative": true,
+              "rawUrl": null,
+              "rawUrlKind": "other",
+              "qualityDegraded": false,
+              "qualities": [],
+              "audioTracks": [],
+              "backupUrlCount": 0
+            }
+          },
+          "nodeWaterfall": {
+            "latencyMs": 835,
+            "ok": true,
+            "reason": null,
+            "requestedServer": "hamster",
+            "resolvedByServer": "andromeda",
+            "stream": {
+              "server": "andromeda",
+              "provider": null,
+              "tier": null,
+              "format": "hls",
+              "streamUrl": "server-live-probe.test/api/proxy",
+              "streamUrlIsRelative": true,
+              "rawUrl": "https://img1.klnwm.com/hls/78164859/720/index_364.m3u8",
+              "rawUrlKind": "hls",
+              "qualityDegraded": false,
+              "qualities": [
+                {
+                  "label": "Auto",
+                  "height": 0,
+                  "url": "server-live-probe.test/api/proxy"
+                }
+              ],
+              "audioTracks": [
+                {
+                  "id": "castle-1003",
+                  "lang": "en",
+                  "label": "English",
+                  "default": true
+                }
+              ],
+              "backupUrlCount": 1
+            },
+            "serverAttempts": [
+              {
+                "server": "hamster",
+                "latencyMs": 0,
+                "reason": "hamster_all_sources_exhausted",
+                "diagMessage": "All Hamster Wheel providers (Videasy, Peachify, VidSrc) failed to resolve a stream."
+              }
+            ]
+          },
+          "providers": {
+            "latencyMs": 0,
+            "videasy": {
+              "ok": false,
+              "reason": "circuit_open",
+              "provider": null,
+              "rawUrl": null,
+              "audioTracks": []
+            },
+            "peachify": {
+              "ok": false,
+              "reason": "circuit_open",
+              "provider": null,
+              "rawUrl": null,
+              "audioTracks": []
+            },
+            "vidsrc": {
+              "ok": false,
+              "reason": "circuit_open",
+              "provider": null,
+              "rawUrl": null,
+              "audioTracks": []
+            }
+          }
+        }
+      }
+    },
+    "tv:94605": {
+      "metadata": {
+        "type": "tv",
+        "tmdbId": 94605,
+        "title": "Arcane",
+        "releaseYear": 2021,
+        "season": 1,
+        "episode": 1,
+        "externalIds": {
+          "imdb_id": "tt11126994",
+          "tvdb_id": 371028,
+          "mal_id": null,
+          "anilist_id": null
+        },
+        "metadataError": null
+      },
+      "servers": {
+        "ursa": {
+          "workerEndToEnd": {
+            "latencyMs": 1900,
+            "status": 200,
+            "ok": true,
+            "error": null,
+            "explanation": null,
+            "requestedServer": null,
+            "failedReason": null,
+            "resolvedByServer": "ursa",
+            "stream": {
+              "server": "ursa",
+              "provider": null,
+              "tier": "4khdhub",
+              "format": "mp4",
+              "streamUrl": "https://d33f51dyacx7bd.cloudfront.net/",
+              "streamUrlIsRelative": false,
+              "rawUrl": "https://d33f51dyacx7bd.cloudfront.net/",
+              "rawUrlKind": "other",
+              "qualityDegraded": false,
+              "qualities": [
+                {
+                  "label": "2160p (4K)",
+                  "height": 2160,
+                  "url": "https://d33f51dyacx7bd.cloudfront.net/"
+                }
+              ],
+              "audioTracks": [
+                {
+                  "id": "4khdhub-en",
+                  "lang": "en",
+                  "label": "Original Audio (4K UHD)",
+                  "default": true
+                }
+              ],
+              "backupUrlCount": 3
+            },
+            "serverAttempts": [],
+            "playerServerList": [
+              {
+                "id": "andromeda",
+                "order": 1,
+                "name": "Fiber Optic Speedrun",
+                "badge": "Multi-Audio • Primary",
+                "active": false
+              },
+              {
+                "id": "centaurus",
+                "order": 2,
+                "name": "Gigachad Node",
+                "badge": "Adaptive • Multi-Quality",
+                "active": false
+              },
+              {
+                "id": "ursa",
+                "order": 3,
+                "name": "FBI Surveillance Van",
+                "badge": "4K UHD • Multi-Audio",
+                "active": true
+              },
+              {
+                "id": "hamster",
+                "order": 4,
+                "name": "Hamster Wheel",
+                "badge": "Multi-Language • OMSS Cascade",
+                "active": false
+              },
+              {
+                "id": "atlas",
+                "order": 5,
+                "name": "Atlas",
+                "badge": "Adaptive • Backup",
+                "active": false
+              }
+            ],
+            "playback": {
+              "proxy": {
+                "ok": false,
+                "status": 404,
+                "contentType": "application/json; charset=utf-8",
+                "contentLengthHeader": null,
+                "firstBytes": 32,
+                "magic": "7b226f6b223a66616c73652c22657272",
+                "looksLikeHtml": false,
+                "latencyMs": 0
+              },
+              "direct": {
+                "ok": true,
+                "status": 206,
+                "contentType": null,
+                "contentLengthHeader": "2048",
+                "firstBytes": 2048,
+                "magic": "2866756e6374696f6e28297b76617220",
+                "looksLikeHtml": false,
+                "latencyMs": 24
+              }
+            }
+          },
+          "nodeDirect": {
+            "latencyMs": 2827,
+            "ok": true,
+            "reason": null,
+            "selectedTier": "4khdhub",
+            "diagMessage": "Resolved verified 4K stream via 4khdhub (2160p (4K))",
+            "diagSteps": [
+              "4khdhub_attempt: Attempting Tier 1: 4KHDHub (2160p UHD Multi-Audio)...",
+              "moviesdrive4k_attempt: Attempting Tier 2: MoviesDrive 4K (Typesense IMDb + 2160p HubCloud)...",
+              "hicine4k_attempt: Attempting Tier 3: HiCine 4K UHD (2160p vcloud worker)...",
+              "dahmer4k_attempt: Attempting Tier 4: DahmerMovies 4K (2160p direct directory)...",
+              "4khdhub_success: Resolved verified 4K (2160p (4K)) via 4khdhub",
+              "moviesdrive4k_failed: moviesdrive4k_unroll_failed",
+              "hicine4k_failed: hicine4k returned no verified 2160p stream",
+              "dahmer4k_failed: dahmer4k_directory_not_found"
+            ],
+            "stream": {
+              "server": "ursa",
+              "provider": null,
+              "tier": "4khdhub",
+              "format": "mp4",
+              "streamUrl": "https://d33f51dyacx7bd.cloudfront.net/",
+              "streamUrlIsRelative": false,
+              "rawUrl": "https://d33f51dyacx7bd.cloudfront.net/",
+              "rawUrlKind": "other",
+              "qualityDegraded": false,
+              "qualities": [
+                {
+                  "label": "2160p (4K)",
+                  "height": 2160,
+                  "url": "https://d33f51dyacx7bd.cloudfront.net/"
+                }
+              ],
+              "audioTracks": [
+                {
+                  "id": "4khdhub-en",
+                  "lang": "en",
+                  "label": "Original Audio (4K UHD)",
+                  "default": true
+                }
+              ],
+              "backupUrlCount": 3
+            }
+          },
+          "nodeWaterfall": {
+            "latencyMs": 1423,
+            "ok": true,
+            "reason": null,
+            "requestedServer": "ursa",
+            "resolvedByServer": "ursa",
+            "stream": {
+              "server": "ursa",
+              "provider": null,
+              "tier": "4khdhub",
+              "format": "mp4",
+              "streamUrl": "https://d33f51dyacx7bd.cloudfront.net/",
+              "streamUrlIsRelative": false,
+              "rawUrl": "https://d33f51dyacx7bd.cloudfront.net/",
+              "rawUrlKind": "other",
+              "qualityDegraded": false,
+              "qualities": [
+                {
+                  "label": "2160p (4K)",
+                  "height": 2160,
+                  "url": "https://d33f51dyacx7bd.cloudfront.net/"
+                }
+              ],
+              "audioTracks": [
+                {
+                  "id": "4khdhub-en",
+                  "lang": "en",
+                  "label": "Original Audio (4K UHD)",
+                  "default": true
+                }
+              ],
+              "backupUrlCount": 3
+            },
+            "serverAttempts": []
+          },
+          "tiers": {
+            "latencyMs": 1422,
+            "4khdhub": {
+              "ok": true,
+              "reason": null,
+              "rawUrl": "https://d33f51dyacx7bd.cloudfront.net/",
+              "qualities": [
+                "2160p (4K)"
+              ]
+            },
+            "moviesdrive4k": {
+              "ok": false,
+              "reason": "moviesdrive4k_unroll_failed",
+              "rawUrl": null,
+              "qualities": []
+            },
+            "hicine4k": {
+              "ok": true,
+              "reason": null,
+              "rawUrl": "https://video-downloads.googleusercontent.com/ADGPM2kBaL3uK6ORR5F3Qd_vs_iCfxiTxosYwGTZrOKisSQTWHiujw7H7OkjPcJk-QVi4L9Fxk8DeIEfpE3k42pG7xc1MjckhRR85VsVaMavd_bOqhfiBHNLqgK0SowfTgB_caBLb8heKRx9i00bg_ZKJkV2UIcoi85HXshn8dX0JQ_IxPGIn2reZ2hAy8fKQYqS1_3QC7DuRndBTMD4f5B-od8x6Yoh1qCZxbPTdoAePVJTWdRgtW9Bou-knDxbkaVo3bAjz_kqE0qDz89Wz08CNihLLjGzOkUJLXGVAojuRNzG9hyySWNbnz0L4Z2ED15eFJBuSlQC2nED32Xsg3MPVI9dm1xcz2Z92wT9yHyxNtxT4SxIZ7mzMCJ85znBTfFW3Rw4JzlSEr5n4IYEodYbCrbkkTc8JkNbOf1wxnOu_7T1DNmWv4ng82m6oPVYZNsl8XQnpu9NV3pGxykzFBKsU1IBs303NHluYJO2qi3RfQ564IQWIG8CoiohJXYbXCebNotwPzs8UGxOnt5j6vdT-VJJZkraV_GoNfMRw5eBYkfhTDSboe_RMvdC0vbR2bMtmLmovr-9KIKKGlOYP7T6-LXiwcNwK1cS8Lgin5YTE5TQFZ8H9oMI21nXBitIB-4JUYs6bUt8MgU6Ena_l-hlZbvQAWFZt970NMtc_fhhzfQ7K0GRfKfP85up_Ov-Mep45DPq7Xqn0sZnkIWdmCQg_a8qSs7F9TAAPzwLVq8o-QdutN6kmYMpA8lGWrWXGaoFAWtpoHUgwOi8Pl_rT_ZysjBsPxwenJgGyQegH4ef1cHdxI71ffb73d9jjglIW1uhv8GeKH2T9__uFK1zM5A0_9xKXAbgqcGY7dY3k1dyGKKa_zEdhvS_iP6RtCP63_vZxFWB5PPJMP4yauIWsp81kq7O94bSQFc47Yz5-7ypwOviRkjNGSzSIVhLIlAaYBmtsQcnWGkhTZkUSZzGsrBr0apkOFNZpFhtLEGUC9gvD4bU5Gy0qD13we1jry7HtptgXS_BUmFvI_FJ3-tSJtMCQEqO7yeoNFpxVJo1J4LGAQLHvTa4ezfYypc_UknsersDsIRHaUs3_-3heRzqHvaNaeE-tKdCiR3MuMAtXEK9ibv0QAkHC_qPv4eyfHzf1WsGvw4dN0mCnS6H2gS_shZAIeA6Io0pxA",
+              "qualities": [
+                "720p",
+                "480p"
+              ]
+            },
+            "dahmer4k": {
+              "ok": false,
+              "reason": "dahmer4k_directory_not_found",
+              "rawUrl": null,
+              "qualities": []
+            }
+          }
+        },
+        "hamster": {
+          "workerEndToEnd": {
+            "latencyMs": 1121,
+            "status": 200,
+            "ok": true,
+            "error": null,
+            "explanation": null,
+            "requestedServer": null,
+            "failedReason": null,
+            "resolvedByServer": "andromeda",
+            "stream": {
+              "server": "andromeda",
+              "provider": null,
+              "tier": null,
+              "format": "hls",
+              "streamUrl": "server-live-probe.test/api/proxy",
+              "streamUrlIsRelative": true,
+              "rawUrl": "https://img1.klnwm.com/hls_mps/244490619/720/index_364.m3u8",
+              "rawUrlKind": "hls",
+              "qualityDegraded": false,
+              "qualities": [
+                {
+                  "label": "Auto",
+                  "height": 0,
+                  "url": "server-live-probe.test/api/proxy"
+                }
+              ],
+              "audioTracks": [
+                {
+                  "id": "castle-1003",
+                  "lang": "en",
+                  "label": "English",
+                  "default": true
+                }
+              ],
+              "backupUrlCount": 1
+            },
+            "serverAttempts": [],
+            "playerServerList": [
+              {
+                "id": "andromeda",
+                "order": 1,
+                "name": "Fiber Optic Speedrun",
+                "badge": "Multi-Audio • Primary",
+                "active": true
+              },
+              {
+                "id": "centaurus",
+                "order": 2,
+                "name": "Gigachad Node",
+                "badge": "Adaptive • Multi-Quality",
+                "active": false
+              },
+              {
+                "id": "ursa",
+                "order": 3,
+                "name": "FBI Surveillance Van",
+                "badge": "4K UHD • Multi-Audio",
+                "active": false
+              },
+              {
+                "id": "hamster",
+                "order": 4,
+                "name": "Hamster Wheel",
+                "badge": "Multi-Language • OMSS Cascade",
+                "active": false
+              },
+              {
+                "id": "atlas",
+                "order": 5,
+                "name": "Atlas",
+                "badge": "Adaptive • Backup",
+                "active": false
+              }
+            ],
+            "playback": {
+              "proxy": {
+                "ok": true,
+                "status": 200,
+                "contentType": "application/vnd.apple.mpegurl; charset=utf-8",
+                "contentLengthHeader": null,
+                "firstBytes": 4736,
+                "magic": "234558544d33550a234558542d582d56",
+                "looksLikeHtml": false,
+                "latencyMs": 317
+              },
+              "direct": {
+                "ok": true,
+                "status": 206,
+                "contentType": "application/vnd.apple.mpegurl",
+                "contentLengthHeader": "2048",
+                "firstBytes": 2048,
+                "magic": "234558544d33550a234558542d582d56",
+                "looksLikeHtml": false,
+                "latencyMs": 227
+              }
+            }
+          },
+          "nodeDirect": {
+            "latencyMs": 0,
+            "ok": false,
+            "reason": "hamster_all_sources_exhausted",
+            "selectedTier": null,
+            "diagMessage": "All Hamster Wheel providers (Videasy, Peachify, VidSrc) failed to resolve a stream.",
+            "diagSteps": [
+              "videasy_attempt: Querying Videasy multi-language upstream...",
+              "videasy_miss: Videasy returned no playable streams for this title.",
+              "peachify_attempt: Querying Peachify dub/sub upstream...",
+              "peachify_miss: Peachify returned no playable streams for this title.",
+              "vidsrc_attempt: Querying VidSrc fallback upstream...",
+              "vidsrc_miss: VidSrc returned no playable streams for this title.",
+              "hamster_exhausted: All Hamster Wheel providers (Videasy, Peachify, VidSrc) failed to resolve a stream."
+            ],
+            "stream": {
+              "server": null,
+              "provider": null,
+              "tier": null,
+              "format": null,
+              "streamUrl": null,
+              "streamUrlIsRelative": true,
+              "rawUrl": null,
+              "rawUrlKind": "other",
+              "qualityDegraded": false,
+              "qualities": [],
+              "audioTracks": [],
+              "backupUrlCount": 0
+            }
+          },
+          "nodeWaterfall": {
+            "latencyMs": 1040,
+            "ok": true,
+            "reason": null,
+            "requestedServer": "hamster",
+            "resolvedByServer": "andromeda",
+            "stream": {
+              "server": "andromeda",
+              "provider": null,
+              "tier": null,
+              "format": "hls",
+              "streamUrl": "server-live-probe.test/api/proxy",
+              "streamUrlIsRelative": true,
+              "rawUrl": "https://img1.klnwm.com/hls_mps/244490619/720/index_364.m3u8",
+              "rawUrlKind": "hls",
+              "qualityDegraded": false,
+              "qualities": [
+                {
+                  "label": "Auto",
+                  "height": 0,
+                  "url": "server-live-probe.test/api/proxy"
+                }
+              ],
+              "audioTracks": [
+                {
+                  "id": "castle-1003",
+                  "lang": "en",
+                  "label": "English",
+                  "default": true
+                }
+              ],
+              "backupUrlCount": 1
+            },
+            "serverAttempts": [
+              {
+                "server": "hamster",
+                "latencyMs": 0,
+                "reason": "hamster_all_sources_exhausted",
+                "diagMessage": "All Hamster Wheel providers (Videasy, Peachify, VidSrc) failed to resolve a stream."
+              }
+            ]
+          },
+          "providers": {
+            "latencyMs": 0,
+            "videasy": {
+              "ok": false,
+              "reason": "circuit_open",
+              "provider": null,
+              "rawUrl": null,
+              "audioTracks": []
+            },
+            "peachify": {
+              "ok": false,
+              "reason": "circuit_open",
+              "provider": null,
+              "rawUrl": null,
+              "audioTracks": []
+            },
+            "vidsrc": {
+              "ok": false,
+              "reason": "circuit_open",
+              "provider": null,
+              "rawUrl": null,
+              "audioTracks": []
+            }
+          }
+        }
+      }
+    }
+  },
+  "finishedAt": "2026-10-04T09:58:40.363Z",
+  "durationMs": 71497
+}
