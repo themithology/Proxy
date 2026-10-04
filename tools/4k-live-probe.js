@@ -264,6 +264,21 @@ async function probeMoviesdrive(meta, hosts) {
         tier.failureReasons.push(`search_json:${error.message}`);
       }
     }
+    const bestHit = [...tier.hits]
+      .sort((a, b) => Number(b.is4K) - Number(a.is4K) || Number(b.hasImdbId) - Number(a.hasImdbId))[0];
+    if (bestHit?.permalink) {
+      const postUrl = new URL(bestHit.permalink, host).href;
+      const post = await fetchTimed(postUrl, { headers: browserHeaders(`${host}/`) }, 10000);
+      tier.post = {
+        url: postUrl,
+        finalUrl: post.url,
+        status: post.status,
+        contentType: post.contentType,
+        html: post.body,
+        linkHints: [...post.body.matchAll(/(?:href|data-href|data-url|onclick)\s*=\s*["']([^"']+)["']/gi)]
+          .map((match) => match[1])
+      };
+    }
     break;
   }
   try {
