@@ -515,7 +515,6 @@ router.get('/debug/andromeda/:type/:tmdbId', requireAdminAuth, async (req, res) 
       },
       upstream: {
         castletvBase: config.upstreams.castletvBase,
-        movieboxBase: config.upstreams.movieboxBase,
         netmirrorBase: config.upstreams.netmirrorBase,
         vidstuckBase: config.upstreams.vidstuckBase,
         zxcBase: config.upstreams.zxcBase,

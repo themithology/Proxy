@@ -21,6 +21,9 @@ const OUT = outIdx !== -1 && process.argv[outIdx + 1] ? process.argv[outIdx + 1]
 
 const UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:136.0) Gecko/20100101 Firefox/136.0';
 
+// Web mirrors that serve /api/embed-tmdb (independent of the NewTV API base).
+const WEB_MIRRORS = ['https://net27.cc', 'https://net52.cc', 'https://net77.cc', 'https://netmiror.com'];
+
 const DISCOVERY_DOMAINS = [
   'https://net27.cc',
   'https://net52.cc',
@@ -122,6 +125,37 @@ async function probeApi(base) {
   }
 }
 
+async function probeWebMirrors() {
+  report.webMirrors = {};
+  for (const base of WEB_MIRRORS) {
+    const entry = {};
+    for (const [name, url] of [
+      ['movie', `${base}/api/embed-tmdb/693134`],
+      ['tv', `${base}/api/embed-tmdb/1396?type=tv&se=1&ep=1`]
+    ]) {
+      const res = await timedFetch(url, {
+        headers: { Accept: 'application/json, text/plain, */*', Referer: `${base}/`, 'User-Agent': UA }
+      });
+      let summary = { status: res.status, latencyMs: res.latencyMs };
+      if (res.text) {
+        try {
+          const json = JSON.parse(res.text);
+          summary.ok = json.ok;
+          summary.error = json.error || null;
+          summary.streams = (json.streams || []).length;
+          summary.mp4 = json.mp4 ? 'yes' : null;
+          summary.firstStream = json.streams && json.streams[0] ? String(json.streams[0].url).slice(0, 110) : null;
+          summary.captions = (json.captions || []).length;
+        } catch {
+          summary.bodySample = res.text.slice(0, 140);
+        }
+      }
+      entry[name] = summary;
+    }
+    report.webMirrors[base] = entry;
+  }
+}
+
 async function probeResolver() {
   const config = require('../src/config');
   const { resolveNetmirror } = require('../src/services/resolver');
@@ -168,6 +202,7 @@ async function main() {
     report.apiBaseSource = 'checknewtv token_hash';
   }
   if (report.apiBase) await probeApi(report.apiBase);
+  await probeWebMirrors();
   await probeResolver();
 
   report.finishedAt = new Date().toISOString();
@@ -177,6 +212,10 @@ async function main() {
   console.log(`api base: ${report.apiBase} (${report.apiBaseSource})`);
   for (const entry of report.discovery) {
     console.log(`  ${entry.domain.padEnd(28)} status=${entry.status} ${entry.error || ''} ${entry.decoded ? '-> ' + entry.decoded : ''}`);
+  }
+  for (const [base, entry] of Object.entries(report.webMirrors || {})) {
+    console.log(`  ${base.padEnd(24)} movie=${JSON.stringify(entry.movie).slice(0, 150)}`);
+    console.log(`  ${''.padEnd(24)} tv=${JSON.stringify(entry.tv).slice(0, 150)}`);
   }
   for (const [name, value] of Object.entries(report.endpoints)) {
     console.log(`  ${name.padEnd(16)} ${JSON.stringify(value).slice(0, 200)}`);

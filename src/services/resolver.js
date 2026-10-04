@@ -465,349 +465,6 @@ async function resolveCastletv(metadata, preferredAudio = '', parentSignal = nul
   }
 }
 
-/**
- * Sub-provider 2 for Andromeda: Moviebox API (https://api3.aoneroom.com)
- * Comprehensive international & Hollywood catalog with discrete dubbed streams.
- */
-const MBOX_KEY_B64 = 'NzZpUmwwN3MweFNOOWpxbUVXQXQ3OUVCSlp1bElRSXNWNjRGWnIyTw==';
-
-function getMovieboxSecret() {
-  try {
-    return Buffer.from(Buffer.from(MBOX_KEY_B64, 'base64').toString('utf8'), 'base64');
-  } catch {
-    return Buffer.from(MBOX_KEY_B64, 'base64');
-  }
-}
-
-function buildMovieboxHeaders(method, urlStr, bodyStr, secret) {
-  const ts = Date.now().toString();
-  const reversed = ts.split('').reverse().join('');
-  const token = `${ts},${crypto.createHash('md5').update(reversed).digest('hex')}`;
-
-  let path = '';
-  let query = '';
-  try {
-    const u = new URL(urlStr);
-    path = u.pathname;
-    const sortedKeys = Array.from(u.searchParams.keys()).sort();
-    if (sortedKeys.length) {
-      query = sortedKeys.map((k) => `${k}=${u.searchParams.getAll(k).join('&')}`).join('&');
-    }
-  } catch {
-    path = urlStr;
-  }
-  const canonicalUrl = query ? `${path}?${query}` : path;
-  const bodyHash = bodyStr ? crypto.createHash('md5').update(bodyStr).digest('hex') : '';
-  const bodyLen = bodyStr ? Buffer.byteLength(bodyStr, 'utf8').toString() : '';
-  const canonical = `${method.toUpperCase()}\napplication/json\napplication/json\n${bodyLen}\n${ts}\n${bodyHash}\n${canonicalUrl}`;
-  const sig = `${ts}|2|${crypto.createHmac('md5', secret).update(canonical).digest('base64')}`;
-
-  const clientInfo = JSON.stringify({
-    package_name: 'com.community.mbox.in',
-    version_name: '3.0.03.0529.03',
-    version_code: 50020042,
-    os: 'android',
-    os_version: '16',
-    device_id: '9a8b7c6d5e4f3a2b1c0d9e8f7a6b5c4d',
-    install_store: 'ps',
-    gaid: 'd7578036d13336cc',
-    brand: 'samsung',
-    model: 'SM-S918B',
-    system_language: 'en',
-    net: 'NETWORK_WIFI',
-    region: 'IN',
-    timezone: 'Asia/Calcutta',
-    sp_code: ''
-  });
-
-  return {
-    Accept: 'application/json',
-    'Content-Type': 'application/json',
-    'x-client-token': token,
-    'x-tr-signature': sig,
-    'User-Agent':
-      'com.community.mbox.in/50020042 (Linux; U; Android 16; en_IN; SM-S918B; Build/BP22.250325.006; Cronet/133.0.6876.3)',
-    'x-client-info': clientInfo,
-    'x-client-status': '0'
-  };
-}
-
-let cachedMovieboxHost = '';
-let cachedMovieboxHostExpiry = 0;
-
-function getMovieboxCandidates() {
-  const primary = (config.upstreams.movieboxBase || '').replace(/\/$/, '');
-  const hosts = Array.isArray(config.upstreams.movieboxHosts) ? config.upstreams.movieboxHosts : [];
-  const extra = process.env.MOVIEBOX_EXTRA_HOSTS
-    ? process.env.MOVIEBOX_EXTRA_HOSTS.split(',').map((s) => s.trim().replace(/\/$/, '')).filter(Boolean)
-    : [];
-
-  const builtIn = config.upstreams.movieboxStrictHosts
-    ? []
-    : [
-        'https://api.inmoviebox.com',
-        'https://api6.aoneroom.com',
-        'https://h5-api.aoneroom.com',
-        'https://apii.inmoviebox.com',
-        'https://api.aoneroom.com',
-        'https://i-api.aoneroom.com',
-        'https://api5.aoneroom.com',
-        'https://h5.aoneroom.com'
-      ];
-
-  const rawList = [primary, ...hosts, ...extra, ...builtIn].filter(Boolean);
-
-  const unique = [...new Set(rawList)];
-  if (cachedMovieboxHost && Date.now() < cachedMovieboxHostExpiry && unique.includes(cachedMovieboxHost)) {
-    return [cachedMovieboxHost, ...unique.filter((h) => h !== cachedMovieboxHost)];
-  }
-  return unique;
-}
-
-/**
- * Build the Moviebox search keyword list. Moviebox search is keyword-only (no
- * TMDB/IMDb lookup exists), so we try the localized title, the localized
- * title + year, the original title and any alternative titles, then validate
- * every result with the TMDB identity gate.
- */
-function buildMovieboxKeywords(metadata) {
-  const seen = new Set();
-  const keywords = [];
-  const push = (value) => {
-    const text = String(value || '').trim();
-    if (!text || seen.has(text.toLowerCase())) return;
-    seen.add(text.toLowerCase());
-    keywords.push(text);
-  };
-  const title = metadata.title || '';
-  const year = metadata.releaseYear || metadata.year || '';
-  push(title);
-  push(year ? `${title} ${year}` : null);
-  push(metadata.originalTitle);
-  const alts = Array.isArray(metadata.alternativeTitles)
-    ? metadata.alternativeTitles
-    : Array.isArray(metadata.altTitles)
-      ? metadata.altTitles
-      : [];
-  alts.slice(0, 2).forEach((alt) => push(typeof alt === 'string' ? alt : alt && (alt.title || alt.name)));
-  return keywords.filter(Boolean).slice(0, 3);
-}
-
-function movieboxSubjectToCandidate(subject) {
-  return {
-    id: String(subject.subjectId || subject.id || ''),
-    title: subject.title || subject.name || '',
-    year: subject.year || subject.releaseDate || null,
-    subjectType: subject.subjectType,
-    movieTypeName: subject.subjectTypeName || subject.typeName,
-    languages: [],
-    tags: subject.genre ? String(subject.genre).split(/[,/|]/) : [],
-    duration: subject.duration,
-    popularity: subject.hot || subject.score
-  };
-}
-
-async function resolveMoviebox(metadata, preferredAudio = '', parentSignal = null) {
-  const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), 8000);
-  if (parentSignal) {
-    parentSignal.addEventListener('abort', () => controller.abort(), { once: true });
-  }
-
-  const secret = getMovieboxSecret();
-  const candidates = getMovieboxCandidates();
-
-  try {
-    if (!metadata || !metadata.title) return null;
-    let activeHost = '';
-    const subjectsById = new Map();
-    let lastSearchJson = null;
-
-    // 1. Search through the candidate host pool and union results across the
-    //    title keys so identity validation sees every possible match.
-    for (const keyword of buildMovieboxKeywords(metadata)) {
-      for (const host of candidates) {
-        try {
-          const searchBody = JSON.stringify({ page: 1, perPage: 20, keyword, restrictKid: 1 });
-          const searchUrl = `${host}/wefeed-mobile-bff/subject-api/search/v2`;
-          const searchRes = await fetch(searchUrl, {
-            method: 'POST',
-            headers: buildMovieboxHeaders('POST', searchUrl, searchBody, secret),
-            body: searchBody,
-            signal: controller.signal
-          });
-          if (!searchRes.ok) continue;
-          const json = await searchRes.json().catch(() => null);
-          if (!json || (json.code !== 0 && !json.data)) continue;
-
-          activeHost = host;
-          cachedMovieboxHost = host;
-          cachedMovieboxHostExpiry = Date.now() + 15 * 60 * 1000;
-          lastSearchJson = json;
-          (json?.data?.results || []).forEach((group) => {
-            (group.subjects || []).forEach((subject) => {
-              const id = String(subject.subjectId || subject.id || '');
-              if (id && !subjectsById.has(id)) subjectsById.set(id, subject);
-            });
-          });
-          break;
-        } catch {
-          // try the next cluster mirror
-        }
-      }
-      if (subjectsById.size > 0) break;
-    }
-
-    if (!activeHost || subjectsById.size === 0) return null;
-
-    // 2. TMDB-anchored identity gate (Moviebox has no id fields on search rows,
-    //    so the TMDB title/year/type is the only trustworthy anchor).
-    const candidateList = Array.from(subjectsById.values()).map(movieboxSubjectToCandidate);
-    const picked = identity.pickIdentityMatch(candidateList, metadata, { preferredAudio });
-    if (!picked.winner) return null;
-
-    const subjectId = picked.winner.id;
-    const isTv = metadata.type === 'tv';
-
-    // 3. Detail + full dub list (dubs[] and, on newer builds, resourceDetectors[]).
-    const getUrl = `${activeHost}/wefeed-mobile-bff/subject-api/get?subjectId=${subjectId}`;
-    const getRes = await fetch(getUrl, {
-      headers: buildMovieboxHeaders('GET', getUrl, null, secret),
-      signal: controller.signal
-    });
-    if (!getRes.ok) return null;
-    const getJson = await getRes.json().catch(() => null);
-    const subjectData = getJson?.data || {};
-
-    const dubTargets = [{ id: subjectId, lang: 'Original', resourceId: null }];
-    const seenDubIds = new Set([String(subjectId)]);
-    if (Array.isArray(subjectData.dubs)) {
-      subjectData.dubs.forEach((dub) => {
-        const id = String(dub.subjectId || '');
-        if (!id || seenDubIds.has(id)) return;
-        seenDubIds.add(id);
-        dubTargets.push({ id, lang: dub.lanName || dub.lan || 'Dubbed', resourceId: null });
-      });
-    }
-    // Newer Moviebox builds expose dub tracks as resourceDetectors with a
-    // resourceId that play-info accepts directly.
-    if (Array.isArray(subjectData.resourceDetectors)) {
-      subjectData.resourceDetectors.forEach((detector) => {
-        const name = detector.name || detector.lanName || '';
-        const resourceId = detector.resourceId || null;
-        if (!resourceId || !name || /default|original/i.test(name)) return;
-        const key = `res:${resourceId}`;
-        if (seenDubIds.has(key)) return;
-        seenDubIds.add(key);
-        dubTargets.push({ id: subjectId, lang: name, resourceId });
-      });
-    }
-
-    const season = isTv ? metadata.season || 1 : 0;
-    const episode = isTv ? metadata.episode || 1 : 0;
-    const referer = `${activeHost}/`;
-    const playbackHeaders = {
-      Origin: activeHost,
-      Referer: subjectData.detailPath ? `${activeHost}/movies/${String(subjectData.detailPath).replace(/^\/+/, '')}` : referer,
-      'x-request-lang': 'en',
-      'x-vip-restrict': '0',
-      'x-no-high-risk-restrict': '0'
-    };
-
-    const streamJobs = dubTargets.map(async (target) => {
-      const params = new URLSearchParams({ subjectId: target.id, se: String(season), ep: String(episode) });
-      if (target.resourceId) params.set('resourceId', String(target.resourceId));
-      const playUrl = `${activeHost}/wefeed-mobile-bff/subject-api/play-info?${params.toString()}`;
-      try {
-        const pRes = await fetch(playUrl, {
-          headers: { ...buildMovieboxHeaders('GET', playUrl, null, secret), ...playbackHeaders },
-          signal: controller.signal
-        });
-        if (!pRes.ok) return null;
-        const pJson = await pRes.json().catch(() => null);
-        const streams = pJson?.data?.streams || [];
-        const chosen = streams.find((s) => s.url) || null;
-        const languageName = pJson?.data?.languageName || pJson?.data?.lanName || null;
-        if (chosen?.url) {
-          return {
-            id: target.id,
-            resourceId: target.resourceId,
-            lang: languageName || target.lang,
-            url: chosen.url,
-            quality: chosen.resolutions || chosen.quality || 'Auto'
-          };
-        }
-      } catch {
-        // keep cascading to the next dub target
-      }
-      return null;
-    });
-
-    const settled = await Promise.allSettled(streamJobs);
-    const valid = settled
-      .filter((s) => s.status === 'fulfilled' && s.value && s.value.url)
-      .map((s) => s.value);
-    if (!valid.length) return null;
-
-    const wanted = (preferredAudio || '').trim().toLowerCase();
-    const wantedCode = wanted ? normalizeAudioLanguage(wanted) : '';
-
-    const audioTracks = valid.map((v, idx) => {
-      const langCode = mapLanguageNameToCode(v.lang);
-      const proxiedUrl = buildProxyStreamUrl(v.url, referer, '', { mode: 'full' });
-      return {
-        id: `mbox-${v.resourceId || v.id || langCode || idx}`,
-        lang: langCode,
-        label: v.lang || 'Original Audio',
-        type: 'dub',
-        streamUrl: proxiedUrl,
-        rawUrl: v.url,
-        default: false
-      };
-    });
-
-    const hindiTrack = audioTracks.find((track) => track.lang === 'hi');
-    const preferredTrack = wantedCode ? audioTracks.find((track) => track.lang === wantedCode) : null;
-    const defaultTrack = preferredTrack || hindiTrack || audioTracks[0];
-    audioTracks.forEach((track) => {
-      track.default = track === defaultTrack;
-    });
-
-    const active = defaultTrack;
-    const activeUrl = active.rawUrl;
-
-    return {
-      server: 'andromeda',
-      sourceName: 'Moviebox',
-      format: /\.mpd(\?|$)/i.test(activeUrl) ? 'dash' : /\.mp4(\?|$)/i.test(activeUrl) ? 'mp4' : 'hls',
-      rawUrl: active.rawUrl,
-      streamUrl: active.streamUrl,
-      referer,
-      headers: { Referer: referer, Origin: activeHost },
-      backupUrls: [buildProxyStreamUrl(active.rawUrl, referer, '', { mode: 'manifest' })],
-      audioTracks,
-      qualities: [{ label: active.label || 'Auto', height: 0, url: active.streamUrl }],
-      identity: {
-        provider: 'moviebox',
-        verified: true,
-        matchedTitle: picked.winner.title,
-        matchedYear: identity.extractYearFromValue(picked.winner.year),
-        upstreamId: String(subjectId),
-        score: picked.winnerMatch ? picked.winnerMatch.score : null,
-        reasons: picked.winnerMatch ? picked.winnerMatch.reasons : [],
-        candidates: picked.ranked,
-        rejectedCandidates: picked.rejected,
-        dubTargets: dubTargets.map((t) => ({ id: t.id, resourceId: t.resourceId, lang: t.lang })),
-        searchJsonCode: lastSearchJson ? lastSearchJson.code : null
-      }
-    };
-  } catch {
-    return null;
-  } finally {
-    clearTimeout(timeoutId);
-  }
-}
-
 let cachedNetmirrorApiUrl = '';
 let cachedNetmirrorExpiry = 0;
 let cachedNetmirrorActiveReferer = 'https://net52.cc';
@@ -1075,11 +732,11 @@ async function resolveNetmirror(metadata, preferredAudio = '', parentSignal = nu
 
 /**
  * Server 1 — Andromeda Multi-Audio Orchestrator
- * Cascades across 3 premier multi-audio sources in priority order:
+ * Cascades across the multi-audio sources in priority order:
  *   1. CastleTV (Priority 1: South Indian dubs, K-Drama/C-Drama, Anime, Hollywood)
- *   2. Moviebox (Priority 2: Broad catalog with discrete language streams)
- *   3. NetMirror (Priority 3: Netflix/Prime/Hotstar official platform streams)
- * If all 3 fail, fails cleanly so the waterfall immediately hands playback to Server 2 (Ursa).
+ *   2. NetMirror (Priority 2: Netflix/Prime/Hotstar official platform streams)
+ * If both fail, fails cleanly so the waterfall immediately hands playback to Server 2 (Ursa).
+ * (The Moviebox tier was removed: the upstreams are region-blocked/unreliable.)
  */
 async function resolveAndromedaServer(metadata, requestedServerId = 'andromeda', preferredAudio = '') {
   const providerKey = 'andromeda';
@@ -1115,21 +772,7 @@ async function resolveAndromedaServer(metadata, requestedServerId = 'andromeda',
     stamp('castletv_error', `CastleTV failed: ${err.message}`);
   }
 
-  // 2. Priority 2: Moviebox
-  stamp('moviebox_attempt', 'Querying Moviebox multi-audio upstream...');
-  try {
-    const mboxRes = await resolveMoviebox(metadata, preferredAudio);
-    if (mboxRes && mboxRes.streamUrl) {
-      circuitBreaker.recordSuccess(providerKey);
-      stamp('moviebox_success', `Moviebox resolved ${mboxRes.audioTracks.length} audio track(s).`);
-      return { ok: true, ...mboxRes, diag };
-    }
-    stamp('moviebox_miss', 'Moviebox returned no playable streams for this title.');
-  } catch (err) {
-    stamp('moviebox_error', `Moviebox failed: ${err.message}`);
-  }
-
-  // 3. Priority 3: NetMirror
+  // 2. Priority 2: NetMirror
   stamp('netmirror_attempt', 'Querying NetMirror OTT upstream...');
   try {
     const nmRes = await resolveNetmirror(metadata, preferredAudio);
@@ -1143,7 +786,7 @@ async function resolveAndromedaServer(metadata, requestedServerId = 'andromeda',
     stamp('netmirror_error', `NetMirror failed: ${err.message}`);
   }
 
-  // 4. Test/Mock Fallback: if VidStuck is explicitly pointed to a local mock (e.g. test suite)
+  // 3. Test/Mock Fallback: if VidStuck is explicitly pointed to a local mock (e.g. test suite)
   if (config.upstreams.vidstuckBase && /127\.0\.0\.1|localhost/i.test(config.upstreams.vidstuckBase)) {
     stamp('vidstuck_mock_attempt', 'Attempting local VidStuck mock fallback...');
     const vsRes = await resolveVidstuckServer(metadata, 'andromeda');
@@ -1153,9 +796,9 @@ async function resolveAndromedaServer(metadata, requestedServerId = 'andromeda',
     }
   }
 
-  // All 3 sub-providers failed: record failure and hand off to Server 2 (Ursa)
+  // All sub-providers failed: record failure and hand off to Server 2 (Ursa)
   circuitBreaker.recordFailure(providerKey);
-  stamp('andromeda_exhausted', 'All 3 Andromeda sub-providers (CastleTV, Moviebox, NetMirror) failed to resolve a stream.');
+  stamp('andromeda_exhausted', 'All Andromeda sub-providers (CastleTV, NetMirror) failed to resolve a stream.');
   return {
     ok: false,
     reason: 'andromeda_all_sources_exhausted',
@@ -4555,7 +4198,6 @@ module.exports = {
   resolveStreamForServer,
   resolveAndromedaServer,
   resolveCastletv,
-  resolveMoviebox,
   resolveNetmirror,
   resolveUrsaServer,
   resolve4khdhub,
@@ -4571,7 +4213,6 @@ module.exports = {
   buildCastleKey,
   decryptCastleAes,
   mapLanguageNameToCode,
-  buildMovieboxHeaders,
   decryptVidsrcWasmPayload,
   decodeZokoAnimeXorPayload,
   parseHicineLinks,

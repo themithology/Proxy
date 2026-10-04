@@ -2,7 +2,7 @@
 
 /**
  * TMDB-anchored identity matching for upstream catalogs that only support
- * plain-name search (CastleTV, Moviebox, ...).
+ * plain-name search (CastleTV, NetMirror, ...).
  *
  * Why this exists: a bare title search is ambiguous. CastleTV returns TWO
  * different "Fight Club" entries and the 2023 Indian film (which carries a

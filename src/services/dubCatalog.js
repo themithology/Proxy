@@ -11,7 +11,7 @@
  * then are the available dub languages reported.
  *
  * Two modes:
- *   fast (default)  - CastleTV + Moviebox + NetMirror (the Hindi workhorses)
+ *   fast (default)  - CastleTV + NetMirror (the Hindi workhorses)
  *   deep (?deep=1)  - adds MoviesDrive, 4KHDHub, HiCine, DahmerMovies, HiAnime
  */
 
@@ -19,7 +19,6 @@ const config = require('../config');
 const { telemetry } = require('./telemetry');
 const {
   resolveCastletv,
-  resolveMoviebox,
   resolveNetmirror,
   resolveMoviesdrive4k,
   resolve4khdhub,
@@ -39,14 +38,6 @@ const PROVIDERS = [
     modes: ['fast', 'deep'],
     supports: () => true,
     resolve: (metadata, audio) => resolveCastletv(metadata, audio)
-  },
-  {
-    id: 'moviebox',
-    label: 'Moviebox',
-    identity: 'tmdb-verified',
-    modes: ['fast', 'deep'],
-    supports: () => true,
-    resolve: (metadata, audio) => resolveMoviebox(metadata, audio)
   },
   {
     id: 'netmirror',
@@ -311,7 +302,7 @@ async function resolveHindiServer(metadata, preferredAudio = 'hi', options = {})
     : null;
   const order = (options.providerIds ||
     configuredOrder ||
-    ['castletv', 'moviebox', 'netmirror', 'moviesdrive', '4khdhub', 'dahmer', 'hicine', 'hianime'])
+    ['castletv', 'netmirror', 'moviesdrive', '4khdhub', 'dahmer', 'hicine', 'hianime'])
     .map((id) => PROVIDERS.find((provider) => provider.id === id))
     .filter((provider) => provider && provider.supports(metadata));
 

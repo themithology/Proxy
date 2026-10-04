@@ -85,7 +85,7 @@ async function resolveTmdbMetadata(type, tmdbId, season = 1, episode = 1) {
   if (config.tmdbApiKey || config.tmdbBearerToken) {
     const apiKeyParam = config.tmdbApiKey ? `api_key=${encodeURIComponent(config.tmdbApiKey)}&` : '';
     // alternative_titles powers the TMDB-anchored identity gate used by the
-    // name-search upstreams (CastleTV / Moviebox): a localized or original
+    // name-search upstreams (CastleTV): a localized or original
     // title must be provably the same film, not just a title collision.
     const detailsUrl = `${config.tmdbBaseUrl}/${normalizedType}/${cleanId}?${apiKeyParam}append_to_response=external_ids,alternative_titles&language=en-US`;
     const data = await safeFetchJson(detailsUrl);
