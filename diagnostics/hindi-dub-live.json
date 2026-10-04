@@ -1,0 +1,1253 @@
+{
+  "startedAt": "2026-10-04T06:50:31.899Z",
+  "deep": false,
+  "titles": {
+    "movie/550": {
+      "note": "Fight Club 1999 (the reported collision)",
+      "tmdb": {
+        "title": "Fight Club",
+        "originalTitle": "Fight Club",
+        "year": 1999,
+        "imdbId": "tt0137523",
+        "altTitles": [
+          "Mo'adon Krav",
+          "Borilački klub",
+          "Boytsovskiy klub",
+          "Boen klub"
+        ],
+        "unresolved": false
+      },
+      "catalog": {
+        "mode": "fast",
+        "hindi": false,
+        "dubs": [
+          {
+            "code": "en",
+            "label": "English",
+            "playable": true,
+            "providers": [
+              "castletv"
+            ]
+          }
+        ],
+        "providers": [
+          {
+            "id": "castletv",
+            "ok": true,
+            "hindi": false,
+            "verified": true,
+            "matchedTitle": "Fight Club",
+            "matchedYear": 1999,
+            "upstreamId": "7269776931136512",
+            "reasons": [
+              "exact-title",
+              "year-match"
+            ],
+            "rejected": [],
+            "languages": [
+              "en"
+            ]
+          },
+          {
+            "id": "moviebox",
+            "ok": false,
+            "verified": false,
+            "matchedTitle": null,
+            "matchedYear": null,
+            "upstreamId": null,
+            "reasons": null,
+            "rejected": [],
+            "languages": []
+          },
+          {
+            "id": "netmirror",
+            "ok": false,
+            "verified": false,
+            "matchedTitle": null,
+            "matchedYear": null,
+            "upstreamId": null,
+            "reasons": null,
+            "rejected": [],
+            "languages": []
+          }
+        ]
+      },
+      "hindiServer": {
+        "ok": true,
+        "server": "hindi",
+        "sourceName": "4KHDHub",
+        "providerId": "4khdhub",
+        "hindiAvailable": true,
+        "identity": {
+          "matchedTitle": null,
+          "matchedYear": null,
+          "upstreamId": null,
+          "reasons": []
+        },
+        "activeTrack": {
+          "id": "4khdhub-hi+en",
+          "lang": "hi",
+          "languages": [
+            "hi",
+            "en"
+          ],
+          "label": "Hindi + English (4K Multi-Audio)",
+          "type": "dub",
+          "streamUrl": "https://d33f51dyacx7bd.cloudfront.net/?aydfd=1015073",
+          "rawUrl": "https://d33f51dyacx7bd.cloudfront.net/?aydfd=1015073",
+          "default": true
+        },
+        "audioTracks": [
+          {
+            "lang": "hi",
+            "label": "Hindi + English (4K Multi-Audio)",
+            "default": true
+          }
+        ],
+        "attempts": [
+          {
+            "provider": "castletv",
+            "ok": true,
+            "hindi": false,
+            "latencyMs": 1353
+          },
+          {
+            "provider": "moviebox",
+            "ok": false,
+            "reason": "no_stream",
+            "latencyMs": 4801
+          },
+          {
+            "provider": "netmirror",
+            "ok": false,
+            "reason": "no_stream",
+            "latencyMs": 479
+          },
+          {
+            "provider": "moviesdrive",
+            "ok": false,
+            "reason": "no_stream",
+            "latencyMs": 1385
+          },
+          {
+            "provider": "4khdhub",
+            "ok": true,
+            "hindi": true,
+            "latencyMs": 1809
+          }
+        ],
+        "streamHost": "d33f51dyacx7bd.cloudfront.net"
+      },
+      "error": null
+    },
+    "movie/693134": {
+      "note": "Dune: Part Two 2024 (Hindi dub expected)",
+      "tmdb": {
+        "title": "Dune: Part Two",
+        "originalTitle": "Dune: Part Two",
+        "year": 2024,
+        "imdbId": "tt15239678",
+        "altTitles": [
+          "Dune 2",
+          "Dune: Part 2",
+          "デューン 砂の惑星PART2",
+          "Duna 2"
+        ],
+        "unresolved": false
+      },
+      "catalog": {
+        "mode": "fast",
+        "hindi": true,
+        "dubs": [
+          {
+            "code": "hi",
+            "label": "Hindi",
+            "playable": true,
+            "providers": [
+              "castletv"
+            ]
+          },
+          {
+            "code": "kn",
+            "label": "Kannada",
+            "playable": true,
+            "providers": [
+              "castletv"
+            ]
+          },
+          {
+            "code": "ta",
+            "label": "Tamil",
+            "playable": true,
+            "providers": [
+              "castletv"
+            ]
+          },
+          {
+            "code": "te",
+            "label": "Telugu",
+            "playable": true,
+            "providers": [
+              "castletv"
+            ]
+          }
+        ],
+        "providers": [
+          {
+            "id": "castletv",
+            "ok": true,
+            "hindi": true,
+            "verified": true,
+            "matchedTitle": "Dune: Part Two",
+            "matchedYear": 2024,
+            "upstreamId": "7475882100889600",
+            "reasons": [
+              "exact-title",
+              "year-match",
+              "preferred-audio-present"
+            ],
+            "rejected": [],
+            "languages": [
+              "hi",
+              "ta",
+              "te",
+              "kn"
+            ]
+          },
+          {
+            "id": "moviebox",
+            "ok": false,
+            "verified": false,
+            "matchedTitle": null,
+            "matchedYear": null,
+            "upstreamId": null,
+            "reasons": null,
+            "rejected": [],
+            "languages": []
+          },
+          {
+            "id": "netmirror",
+            "ok": false,
+            "verified": false,
+            "matchedTitle": null,
+            "matchedYear": null,
+            "upstreamId": null,
+            "reasons": null,
+            "rejected": [],
+            "languages": []
+          }
+        ]
+      },
+      "hindiServer": {
+        "ok": true,
+        "server": "hindi",
+        "sourceName": "CastleTV",
+        "providerId": "castletv",
+        "hindiAvailable": true,
+        "identity": {
+          "matchedTitle": "Dune: Part Two",
+          "matchedYear": 2024,
+          "upstreamId": "7475882100889600",
+          "reasons": [
+            "exact-title",
+            "year-match",
+            "preferred-audio-present"
+          ]
+        },
+        "activeTrack": {
+          "id": "castle-1018",
+          "lang": "hi",
+          "label": "Hindi",
+          "type": "dub",
+          "streamUrl": "/api/proxy?url=https%3A%2F%2Fimg1.flcwuk.com%2Fmyhls_mps%2F2024%2F8yue%2FDune2%2FHindi_720%2Findex_374.m3u8%3Fauth_key%3DFu%252BHzqxMKqI4Ra80SFvXbrHPjDCWA1RuvcvdLOPyH8g%253D%26expire%3D1791107457757&referer=https%3A%2F%2Fapi.hlowb.com%2F&exp=1791111057&sig=06d8227002760ed54123641418fc2e03&mode=full",
+          "rawUrl": "https://img1.flcwuk.com/myhls_mps/2024/8yue/Dune2/Hindi_720/index_374.m3u8?auth_key=Fu%2BHzqxMKqI4Ra80SFvXbrHPjDCWA1RuvcvdLOPyH8g%3D&expire=1791107457757",
+          "default": true
+        },
+        "audioTracks": [
+          {
+            "lang": "hi",
+            "label": "Hindi",
+            "default": true
+          },
+          {
+            "lang": "ta",
+            "label": "Tamil",
+            "default": false
+          },
+          {
+            "lang": "te",
+            "label": "Telugu",
+            "default": false
+          },
+          {
+            "lang": "kn",
+            "label": "Kannada",
+            "default": false
+          }
+        ],
+        "attempts": [
+          {
+            "provider": "castletv",
+            "ok": true,
+            "hindi": true,
+            "latencyMs": 1089
+          }
+        ],
+        "streamHost": "img1.flcwuk.com"
+      },
+      "error": null
+    },
+    "movie/20453": {
+      "note": "3 Idiots (Hindi native)",
+      "tmdb": {
+        "title": "3 Idiots",
+        "originalTitle": "3 Idiots",
+        "year": 2009,
+        "imdbId": "tt1187043",
+        "altTitles": [
+          "三个白痴",
+          "三个傻瓜",
+          "三傻大闹宝莱坞",
+          "세 얼간이"
+        ],
+        "unresolved": false
+      },
+      "catalog": {
+        "mode": "fast",
+        "hindi": true,
+        "dubs": [
+          {
+            "code": "hi",
+            "label": "Hindi",
+            "playable": true,
+            "providers": [
+              "castletv"
+            ]
+          }
+        ],
+        "providers": [
+          {
+            "id": "castletv",
+            "ok": true,
+            "hindi": true,
+            "verified": true,
+            "matchedTitle": "3 Idiots",
+            "matchedYear": 2009,
+            "upstreamId": "5953161024387072",
+            "reasons": [
+              "exact-title",
+              "year-match",
+              "preferred-audio-present"
+            ],
+            "rejected": [],
+            "languages": [
+              "hi"
+            ]
+          },
+          {
+            "id": "moviebox",
+            "ok": false,
+            "verified": false,
+            "matchedTitle": null,
+            "matchedYear": null,
+            "upstreamId": null,
+            "reasons": null,
+            "rejected": [],
+            "languages": []
+          },
+          {
+            "id": "netmirror",
+            "ok": false,
+            "verified": false,
+            "matchedTitle": null,
+            "matchedYear": null,
+            "upstreamId": null,
+            "reasons": null,
+            "rejected": [],
+            "languages": []
+          }
+        ]
+      },
+      "hindiServer": {
+        "ok": true,
+        "server": "hindi",
+        "sourceName": "CastleTV",
+        "providerId": "castletv",
+        "hindiAvailable": true,
+        "identity": {
+          "matchedTitle": "3 Idiots",
+          "matchedYear": 2009,
+          "upstreamId": "5953161024387072",
+          "reasons": [
+            "exact-title",
+            "year-match",
+            "preferred-audio-present"
+          ]
+        },
+        "activeTrack": {
+          "id": "castle-1018",
+          "lang": "hi",
+          "label": "Hindi",
+          "type": "dub",
+          "streamUrl": "/api/proxy?url=https%3A%2F%2Fimg1.flcwuk.com%2Fhls_mps%2F4b8b272d03bf2015df0f48db1089d95695f3f694%2F480%2Findex_preview_374.m3u8%3Fauth_key%3D5Ay0%252BKdBCI7EUoLbm396Xvyipvu4%252FVLlC8Y7XA1rbrE%253D%26expire%3D1791107462870&referer=https%3A%2F%2Fapi.hlowb.com%2F&exp=1791111062&sig=ce94674cb48a075df6cdefb6a3e0b529&mode=full",
+          "rawUrl": "https://img1.flcwuk.com/hls_mps/4b8b272d03bf2015df0f48db1089d95695f3f694/480/index_preview_374.m3u8?auth_key=5Ay0%2BKdBCI7EUoLbm396Xvyipvu4%2FVLlC8Y7XA1rbrE%3D&expire=1791107462870",
+          "default": true
+        },
+        "audioTracks": [
+          {
+            "lang": "hi",
+            "label": "Hindi",
+            "default": true
+          }
+        ],
+        "attempts": [
+          {
+            "provider": "castletv",
+            "ok": true,
+            "hindi": true,
+            "latencyMs": 766
+          }
+        ],
+        "streamHost": "img1.flcwuk.com"
+      },
+      "error": null
+    },
+    "movie/872585": {
+      "note": "Oppenheimer (Hindi dub expected)",
+      "tmdb": {
+        "title": "Oppenheimer",
+        "originalTitle": "Oppenheimer",
+        "year": 2023,
+        "imdbId": "tt15398776",
+        "altTitles": [
+          "Օպենհայմեր",
+          "Gadget",
+          "オッペンハイマー",
+          "اوپنهایمر"
+        ],
+        "unresolved": false
+      },
+      "catalog": {
+        "mode": "fast",
+        "hindi": true,
+        "dubs": [
+          {
+            "code": "hi",
+            "label": "Hindi",
+            "playable": true,
+            "providers": [
+              "castletv"
+            ]
+          },
+          {
+            "code": "ost",
+            "label": "OST",
+            "playable": true,
+            "providers": [
+              "castletv"
+            ]
+          },
+          {
+            "code": "ta",
+            "label": "Tamil",
+            "playable": true,
+            "providers": [
+              "castletv"
+            ]
+          }
+        ],
+        "providers": [
+          {
+            "id": "castletv",
+            "ok": true,
+            "hindi": true,
+            "verified": true,
+            "matchedTitle": "Oppenheimer",
+            "matchedYear": 2023,
+            "upstreamId": "6874614383528960",
+            "reasons": [
+              "exact-title",
+              "year-match",
+              "preferred-audio-present"
+            ],
+            "rejected": [],
+            "languages": [
+              "hi",
+              "ta",
+              "ost"
+            ]
+          },
+          {
+            "id": "moviebox",
+            "ok": false,
+            "verified": false,
+            "matchedTitle": null,
+            "matchedYear": null,
+            "upstreamId": null,
+            "reasons": null,
+            "rejected": [],
+            "languages": []
+          },
+          {
+            "id": "netmirror",
+            "ok": false,
+            "verified": false,
+            "matchedTitle": null,
+            "matchedYear": null,
+            "upstreamId": null,
+            "reasons": null,
+            "rejected": [],
+            "languages": []
+          }
+        ]
+      },
+      "hindiServer": {
+        "ok": true,
+        "server": "hindi",
+        "sourceName": "CastleTV",
+        "providerId": "castletv",
+        "hindiAvailable": true,
+        "identity": {
+          "matchedTitle": "Oppenheimer",
+          "matchedYear": 2023,
+          "upstreamId": "6874614383528960",
+          "reasons": [
+            "exact-title",
+            "year-match",
+            "preferred-audio-present"
+          ]
+        },
+        "activeTrack": {
+          "id": "castle-1018",
+          "lang": "hi",
+          "label": "Hindi",
+          "type": "dub",
+          "streamUrl": "/api/proxy?url=https%3A%2F%2Fimg1.flcwuk.com%2Fmyhls_mps%2F2024%2F3yue%2FOppenheimer_Hindi_720%2Findex_374.m3u8%3Fauth_key%3DoRqIRh8ULzaJ4kVXSgtzczp5mrnNoWBaL6y3dcDUc%252Fs%253D%26expire%3D1791107468228&referer=https%3A%2F%2Fapi.hlowb.com%2F&exp=1791111068&sig=ffb8a478bc3619eb40b48666a149497e&mode=full",
+          "rawUrl": "https://img1.flcwuk.com/myhls_mps/2024/3yue/Oppenheimer_Hindi_720/index_374.m3u8?auth_key=oRqIRh8ULzaJ4kVXSgtzczp5mrnNoWBaL6y3dcDUc%2Fs%3D&expire=1791107468228",
+          "default": true
+        },
+        "audioTracks": [
+          {
+            "lang": "hi",
+            "label": "Hindi",
+            "default": true
+          },
+          {
+            "lang": "ta",
+            "label": "Tamil",
+            "default": false
+          },
+          {
+            "lang": "ost",
+            "label": "OST",
+            "default": false
+          }
+        ],
+        "attempts": [
+          {
+            "provider": "castletv",
+            "ok": true,
+            "hindi": true,
+            "latencyMs": 1029
+          }
+        ],
+        "streamHost": "img1.flcwuk.com"
+      },
+      "error": null
+    },
+    "tv/1396": {
+      "note": "Breaking Bad (Hindi dub expected)",
+      "tmdb": {
+        "title": "Breaking Bad",
+        "originalTitle": "Breaking Bad",
+        "year": 2008,
+        "imdbId": "tt0903747",
+        "altTitles": [],
+        "unresolved": false
+      },
+      "catalog": {
+        "mode": "fast",
+        "hindi": true,
+        "dubs": [
+          {
+            "code": "hi",
+            "label": "Hindi",
+            "playable": true,
+            "providers": [
+              "castletv"
+            ]
+          },
+          {
+            "code": "en",
+            "label": "English",
+            "playable": true,
+            "providers": [
+              "castletv"
+            ]
+          }
+        ],
+        "providers": [
+          {
+            "id": "castletv",
+            "ok": true,
+            "hindi": true,
+            "verified": true,
+            "matchedTitle": "Breaking Bad",
+            "matchedYear": 2012,
+            "upstreamId": "6150388343775232",
+            "reasons": [
+              "exact-title",
+              "year-off-by-4",
+              "preferred-audio-present"
+            ],
+            "rejected": [],
+            "languages": [
+              "hi",
+              "en"
+            ]
+          },
+          {
+            "id": "moviebox",
+            "ok": false,
+            "verified": false,
+            "matchedTitle": null,
+            "matchedYear": null,
+            "upstreamId": null,
+            "reasons": null,
+            "rejected": [],
+            "languages": []
+          },
+          {
+            "id": "netmirror",
+            "ok": false,
+            "verified": false,
+            "matchedTitle": null,
+            "matchedYear": null,
+            "upstreamId": null,
+            "reasons": null,
+            "rejected": [],
+            "languages": []
+          }
+        ]
+      },
+      "hindiServer": {
+        "ok": true,
+        "server": "hindi",
+        "sourceName": "CastleTV",
+        "providerId": "castletv",
+        "hindiAvailable": true,
+        "identity": {
+          "matchedTitle": "Breaking Bad",
+          "matchedYear": 2012,
+          "upstreamId": "6150388343775232",
+          "reasons": [
+            "exact-title",
+            "year-off-by-4",
+            "preferred-audio-present"
+          ]
+        },
+        "activeTrack": {
+          "id": "castle-1018",
+          "lang": "hi",
+          "label": "Hindi",
+          "type": "dub",
+          "streamUrl": "/api/proxy?url=https%3A%2F%2Fimg1.hlnom.com%2Fhls_mps%2F57ba6bd962339881cd96be7ca2b42efec15f8b8e%2F720%2Findex_363.m3u8%3Fauth_key%3Dn5jPKNbxmQ%252FF67wq%252BRf6xv8NwhaUGfAZJFWwKwZhFMM%253D%26expire%3D1791107472353&referer=https%3A%2F%2Fapi.hlowb.com%2F&exp=1791111072&sig=a184548373d57ab2eb52ec3ef69b3cde&mode=full",
+          "rawUrl": "https://img1.hlnom.com/hls_mps/57ba6bd962339881cd96be7ca2b42efec15f8b8e/720/index_363.m3u8?auth_key=n5jPKNbxmQ%2FF67wq%2BRf6xv8NwhaUGfAZJFWwKwZhFMM%3D&expire=1791107472353",
+          "default": true
+        },
+        "audioTracks": [
+          {
+            "lang": "hi",
+            "label": "Hindi",
+            "default": true
+          },
+          {
+            "lang": "en",
+            "label": "English",
+            "default": false
+          }
+        ],
+        "attempts": [
+          {
+            "provider": "castletv",
+            "ok": true,
+            "hindi": true,
+            "latencyMs": 1336
+          }
+        ],
+        "streamHost": "img1.hlnom.com"
+      },
+      "error": null
+    },
+    "tv/94605": {
+      "note": "Arcane (anime-style multi-audio)",
+      "tmdb": {
+        "title": "Arcane",
+        "originalTitle": "Arcane",
+        "year": 2021,
+        "imdbId": "tt11126994",
+        "altTitles": [],
+        "unresolved": false
+      },
+      "catalog": {
+        "mode": "fast",
+        "hindi": false,
+        "dubs": [
+          {
+            "code": "en",
+            "label": "English",
+            "playable": true,
+            "providers": [
+              "castletv"
+            ]
+          }
+        ],
+        "providers": [
+          {
+            "id": "castletv",
+            "ok": true,
+            "hindi": false,
+            "verified": true,
+            "matchedTitle": "Arcane",
+            "matchedYear": 2024,
+            "upstreamId": "8233243460061184",
+            "reasons": [
+              "exact-title",
+              "year-off-by-3"
+            ],
+            "rejected": [],
+            "languages": [
+              "en"
+            ]
+          },
+          {
+            "id": "moviebox",
+            "ok": false,
+            "verified": false,
+            "matchedTitle": null,
+            "matchedYear": null,
+            "upstreamId": null,
+            "reasons": null,
+            "rejected": [],
+            "languages": []
+          },
+          {
+            "id": "netmirror",
+            "ok": false,
+            "verified": false,
+            "matchedTitle": null,
+            "matchedYear": null,
+            "upstreamId": null,
+            "reasons": null,
+            "rejected": [],
+            "languages": []
+          }
+        ]
+      },
+      "hindiServer": {
+        "ok": true,
+        "server": "hindi",
+        "sourceName": "CastleTV",
+        "providerId": "castletv",
+        "hindiAvailable": false,
+        "identity": {
+          "matchedTitle": "Arcane",
+          "matchedYear": 2024,
+          "upstreamId": "8233243460061184",
+          "reasons": [
+            "exact-title",
+            "year-off-by-3"
+          ]
+        },
+        "activeTrack": {
+          "id": "castle-1003",
+          "lang": "en",
+          "label": "English",
+          "type": "dub",
+          "streamUrl": "/api/proxy?url=https%3A%2F%2Fimg1.klnwm.com%2Fhls_mps%2F244490619%2F720%2Findex_364.m3u8%3Fauth_key%3Dr4M03zifge5WNgUSKcsh9scnB%252B77IM9uWV%252Bu9KtJSEU%253D%26expire%3D1791107477517&referer=https%3A%2F%2Fapi.hlowb.com%2F&exp=1791111077&sig=8f41bf76bf6f2b872b3f27cdc37f1b4f&mode=full",
+          "rawUrl": "https://img1.klnwm.com/hls_mps/244490619/720/index_364.m3u8?auth_key=r4M03zifge5WNgUSKcsh9scnB%2B77IM9uWV%2Bu9KtJSEU%3D&expire=1791107477517",
+          "default": true
+        },
+        "audioTracks": [
+          {
+            "lang": "en",
+            "label": "English",
+            "default": true
+          }
+        ],
+        "attempts": [
+          {
+            "provider": "castletv",
+            "ok": true,
+            "hindi": false,
+            "latencyMs": 1304
+          },
+          {
+            "provider": "moviebox",
+            "ok": false,
+            "reason": "no_stream",
+            "latencyMs": 2707
+          },
+          {
+            "provider": "netmirror",
+            "ok": false,
+            "reason": "no_stream",
+            "latencyMs": 252
+          },
+          {
+            "provider": "moviesdrive",
+            "ok": false,
+            "reason": "no_stream",
+            "latencyMs": 629
+          },
+          {
+            "provider": "4khdhub",
+            "ok": true,
+            "hindi": false,
+            "latencyMs": 1774
+          },
+          {
+            "provider": "dahmer",
+            "ok": false,
+            "reason": "no_stream",
+            "latencyMs": 125
+          },
+          {
+            "provider": "hicine",
+            "ok": false,
+            "reason": "no_stream",
+            "latencyMs": 323
+          },
+          {
+            "provider": "hianime",
+            "ok": false,
+            "reason": "no_stream",
+            "latencyMs": 673
+          }
+        ],
+        "streamHost": "img1.klnwm.com"
+      },
+      "error": null
+    },
+    "tv/85937": {
+      "note": "Demon Slayer (anime Hindi dub)",
+      "tmdb": {
+        "title": "Demon Slayer: Kimetsu no Yaiba",
+        "originalTitle": "鬼滅の刃",
+        "year": 2019,
+        "imdbId": "tt9335498",
+        "altTitles": [],
+        "unresolved": false
+      },
+      "catalog": {
+        "mode": "fast",
+        "hindi": true,
+        "dubs": [
+          {
+            "code": "hi",
+            "label": "Hindi",
+            "playable": true,
+            "providers": [
+              "castletv"
+            ]
+          },
+          {
+            "code": "en",
+            "label": "English",
+            "playable": true,
+            "providers": [
+              "castletv"
+            ]
+          },
+          {
+            "code": "ja",
+            "label": "Japanese",
+            "playable": true,
+            "providers": [
+              "castletv"
+            ]
+          }
+        ],
+        "providers": [
+          {
+            "id": "castletv",
+            "ok": true,
+            "hindi": true,
+            "verified": true,
+            "matchedTitle": "Demon Slayer: Kimetsu no Yaiba",
+            "matchedYear": 2024,
+            "upstreamId": "7737031125257216",
+            "reasons": [
+              "exact-title",
+              "year-off-by-5",
+              "preferred-audio-present"
+            ],
+            "rejected": [],
+            "languages": [
+              "ja",
+              "en",
+              "hi"
+            ]
+          },
+          {
+            "id": "moviebox",
+            "ok": false,
+            "verified": false,
+            "matchedTitle": null,
+            "matchedYear": null,
+            "upstreamId": null,
+            "reasons": null,
+            "rejected": [],
+            "languages": []
+          },
+          {
+            "id": "netmirror",
+            "ok": false,
+            "verified": false,
+            "matchedTitle": null,
+            "matchedYear": null,
+            "upstreamId": null,
+            "reasons": null,
+            "rejected": [],
+            "languages": []
+          }
+        ]
+      },
+      "hindiServer": {
+        "ok": true,
+        "server": "hindi",
+        "sourceName": "CastleTV",
+        "providerId": "castletv",
+        "hindiAvailable": true,
+        "identity": {
+          "matchedTitle": "Demon Slayer: Kimetsu no Yaiba",
+          "matchedYear": 2024,
+          "upstreamId": "7737031125257216",
+          "reasons": [
+            "exact-title",
+            "year-off-by-5",
+            "preferred-audio-present"
+          ]
+        },
+        "activeTrack": {
+          "id": "castle-1018",
+          "lang": "hi",
+          "label": "Hindi",
+          "type": "dub",
+          "streamUrl": "/api/proxy?url=https%3A%2F%2Fimg1.klnwm.com%2Fhls_mps%2Fdf9465688906eee49da00169974c8fd9110ed0cd%2F720%2Findex_364.m3u8%3Fauth_key%3DrKs29rUvDLGc5hVJdQI981EOLO7iPJNzx0hvpUKwyrs%253D%26expire%3D1791107492582&referer=https%3A%2F%2Fapi.hlowb.com%2F&exp=1791111092&sig=35b302fffcd6f78fe2c739e11c9415e0&mode=full",
+          "rawUrl": "https://img1.klnwm.com/hls_mps/df9465688906eee49da00169974c8fd9110ed0cd/720/index_364.m3u8?auth_key=rKs29rUvDLGc5hVJdQI981EOLO7iPJNzx0hvpUKwyrs%3D&expire=1791107492582",
+          "default": true
+        },
+        "audioTracks": [
+          {
+            "lang": "ja",
+            "label": "Japanese",
+            "default": false
+          },
+          {
+            "lang": "en",
+            "label": "English",
+            "default": false
+          },
+          {
+            "lang": "hi",
+            "label": "Hindi",
+            "default": true
+          }
+        ],
+        "attempts": [
+          {
+            "provider": "castletv",
+            "ok": true,
+            "hindi": true,
+            "latencyMs": 1394
+          }
+        ],
+        "streamHost": "img1.klnwm.com"
+      },
+      "error": null
+    },
+    "tv/60625": {
+      "note": "Rick and Morty (western animation)",
+      "tmdb": {
+        "title": "Rick and Morty",
+        "originalTitle": "Rick and Morty",
+        "year": 2013,
+        "imdbId": "tt2861424",
+        "altTitles": [],
+        "unresolved": false
+      },
+      "catalog": {
+        "mode": "fast",
+        "hindi": false,
+        "dubs": [
+          {
+            "code": "en",
+            "label": "English",
+            "playable": true,
+            "providers": [
+              "castletv"
+            ]
+          }
+        ],
+        "providers": [
+          {
+            "id": "castletv",
+            "ok": true,
+            "hindi": false,
+            "verified": true,
+            "matchedTitle": "Rick and Morty",
+            "matchedYear": 2025,
+            "upstreamId": "8923558413643776",
+            "reasons": [
+              "exact-title",
+              "year-off-by-12"
+            ],
+            "rejected": [],
+            "languages": [
+              "en"
+            ]
+          },
+          {
+            "id": "moviebox",
+            "ok": false,
+            "verified": false,
+            "matchedTitle": null,
+            "matchedYear": null,
+            "upstreamId": null,
+            "reasons": null,
+            "rejected": [],
+            "languages": []
+          },
+          {
+            "id": "netmirror",
+            "ok": false,
+            "verified": false,
+            "matchedTitle": null,
+            "matchedYear": null,
+            "upstreamId": null,
+            "reasons": null,
+            "rejected": [],
+            "languages": []
+          }
+        ]
+      },
+      "hindiServer": {
+        "ok": true,
+        "server": "hindi",
+        "sourceName": "CastleTV",
+        "providerId": "castletv",
+        "hindiAvailable": false,
+        "identity": {
+          "matchedTitle": "Rick and Morty",
+          "matchedYear": 2025,
+          "upstreamId": "8923558413643776",
+          "reasons": [
+            "exact-title",
+            "year-off-by-12"
+          ]
+        },
+        "activeTrack": {
+          "id": "castle-1003",
+          "lang": "en",
+          "label": "English",
+          "type": "dub",
+          "streamUrl": "/api/proxy?url=https%3A%2F%2Fimg1.klnwm.com%2Fhls%2Fab8403967e32999bd5d03acaa913b368%2F720%2Findex_364.m3u8%3Fauth_key%3DZx2koHl%252BU5ffnXZLeGDJL0VQAO1ugFJobxG6hdY2Ono%253D%26expire%3D1791107497543&referer=https%3A%2F%2Fapi.hlowb.com%2F&exp=1791111097&sig=785bcebe7d2b44132490058eb7ea11de&mode=full",
+          "rawUrl": "https://img1.klnwm.com/hls/ab8403967e32999bd5d03acaa913b368/720/index_364.m3u8?auth_key=Zx2koHl%2BU5ffnXZLeGDJL0VQAO1ugFJobxG6hdY2Ono%3D&expire=1791107497543",
+          "default": true
+        },
+        "audioTracks": [
+          {
+            "lang": "en",
+            "label": "English",
+            "default": true
+          }
+        ],
+        "attempts": [
+          {
+            "provider": "castletv",
+            "ok": true,
+            "hindi": false,
+            "latencyMs": 1302
+          },
+          {
+            "provider": "moviebox",
+            "ok": false,
+            "reason": "no_stream",
+            "latencyMs": 2743
+          },
+          {
+            "provider": "netmirror",
+            "ok": false,
+            "reason": "no_stream",
+            "latencyMs": 261
+          },
+          {
+            "provider": "moviesdrive",
+            "ok": false,
+            "reason": "no_stream",
+            "latencyMs": 1443
+          },
+          {
+            "provider": "4khdhub",
+            "ok": false,
+            "reason": "no_stream",
+            "latencyMs": 1328
+          },
+          {
+            "provider": "dahmer",
+            "ok": false,
+            "reason": "no_stream",
+            "latencyMs": 101
+          },
+          {
+            "provider": "hicine",
+            "ok": false,
+            "reason": "no_stream",
+            "latencyMs": 296
+          },
+          {
+            "provider": "hianime",
+            "ok": false,
+            "reason": "no_stream",
+            "latencyMs": 562
+          }
+        ],
+        "streamHost": "img1.klnwm.com"
+      },
+      "error": null
+    },
+    "movie/129": {
+      "note": "Spirited Away (anime movie)",
+      "tmdb": {
+        "title": "Spirited Away",
+        "originalTitle": "千と千尋の神隠し",
+        "year": 2001,
+        "imdbId": "tt0245429",
+        "altTitles": [
+          "Sen to Chihiro no Kamikakushi",
+          "Unesenniye prizrakami",
+          "Chihiro ilmmiid gaskkas",
+          "El viatge de Chihiro"
+        ],
+        "unresolved": false
+      },
+      "catalog": {
+        "mode": "fast",
+        "hindi": false,
+        "dubs": [],
+        "providers": [
+          {
+            "id": "castletv",
+            "ok": false,
+            "verified": false,
+            "matchedTitle": null,
+            "matchedYear": null,
+            "upstreamId": null,
+            "reasons": null,
+            "rejected": [],
+            "languages": []
+          },
+          {
+            "id": "moviebox",
+            "ok": false,
+            "verified": false,
+            "matchedTitle": null,
+            "matchedYear": null,
+            "upstreamId": null,
+            "reasons": null,
+            "rejected": [],
+            "languages": []
+          },
+          {
+            "id": "netmirror",
+            "ok": false,
+            "verified": false,
+            "matchedTitle": null,
+            "matchedYear": null,
+            "upstreamId": null,
+            "reasons": null,
+            "rejected": [],
+            "languages": []
+          }
+        ]
+      },
+      "hindiServer": {
+        "ok": true,
+        "server": "hindi",
+        "sourceName": "HiCine",
+        "providerId": "hicine",
+        "hindiAvailable": true,
+        "identity": {
+          "matchedTitle": null,
+          "matchedYear": null,
+          "upstreamId": null,
+          "reasons": []
+        },
+        "activeTrack": {
+          "id": "hicine-default",
+          "lang": "hi",
+          "label": "Hindi — filename hint; plays default track",
+          "type": "dub",
+          "streamUrl": "https://video-downloads.googleusercontent.com/ADGPM2nlXPWFCq9b1jguF-FwlXOKEEEjDtB-uXT2jSopp3EaPhFEbWi9dCXnJOsRZdESlGFm_uTNPdI5BgbRCGnpERZqCKU5N3y_hiEcLtwzkhV2X3splKSnjTuYI13A7q4tnRXAPbkqdTVpXi7sbbwPec02-WpRdxatn9Vyrb6whjj8YjpCDX2u8HU417krsg07a_6SdUW57HKwh8V42uH8v82Z1I-KFt3ZGJ7PcrD0jJ1Yw6W1Ln4vUT5eYkt9uLOpkv2saWCuaU-8SeywZBbpN7-iDLxA8HuTR0LllfSz4nprUkb8z7GieiHbgz_3DFyYJgPtbQ6UpNe15AXYd3HcQcJbA8fqmA9o7pI8uXzuRRejcz6I55MG5QrEs2YJTaLTJbFZhG2zHFaMG_Fu0F6elQVp9PvzDux8HoA3ow9cCbKcVGNoqh7QleBZ-ybZabLDOMvQ8WphnVcNt0ObgBUl3RtlzvR3XktghR558IOb-T8BGttuetENKQDA8XDAY2S0mgkJ5GpC49RqlACiNQeJSM93OeWE_lo1_tjZKm0gXgfXGS8kEhDnxvKqj4v_xKrv5YFJqdXSIaVvSXtnCmNvrbJMC_jxTMRdxxdHdS-HnMuLIqlTZHE3JGq3f0pyxsvPxkdKXtrqPTtQEPBBUKoGr-OVP2uEk6bdXd--GQeQF2lfetMRJOBa2iFnSNXqSU2WkBzRFU1NrbTWL7Ey2unuob9CR2ewaFFQi4zdubCi7dMOmJ7jbjCEpKNoGB7FPAXDymuc1Iy1LxvBrajRAgDVis2UwkLLbiV9vDGHW5PSdgaHF97mP7UJEJ_ZeLGpM2wWGqJb8ylQifX2Ft1m0pqPqUxLrLlmZRUKfyFNMqxrCKpL1YR-OT5JKu0U1WRddO5Jyz_vEjLS5Jrz6cAcmjJCKrVUeyF6JCLq0V_3flbSJD74aL7MesffWwM2I4w_VpUoxq29-yk1c1NlHhSAFhvXabEcip0lwFekMPDiO12MNXm_Q9i7esAg_p86zfOnONJLszDUB5QiDcwfUxpac_Tk5Z8wPFdT1Ahv5E--A9d6LjADvIPl8M4oUhjr5T_YdIARgomunPa0sfBGxHzgAEPU-cEx-Wq8QzfvScJGjekJBJtn2vnAGHmwq5nvNr7pu50r1pa6ZGfmtkGUJUcZiJSZGkEGPIPDFw",
+          "rawUrl": "https://video-downloads.googleusercontent.com/ADGPM2nlXPWFCq9b1jguF-FwlXOKEEEjDtB-uXT2jSopp3EaPhFEbWi9dCXnJOsRZdESlGFm_uTNPdI5BgbRCGnpERZqCKU5N3y_hiEcLtwzkhV2X3splKSnjTuYI13A7q4tnRXAPbkqdTVpXi7sbbwPec02-WpRdxatn9Vyrb6whjj8YjpCDX2u8HU417krsg07a_6SdUW57HKwh8V42uH8v82Z1I-KFt3ZGJ7PcrD0jJ1Yw6W1Ln4vUT5eYkt9uLOpkv2saWCuaU-8SeywZBbpN7-iDLxA8HuTR0LllfSz4nprUkb8z7GieiHbgz_3DFyYJgPtbQ6UpNe15AXYd3HcQcJbA8fqmA9o7pI8uXzuRRejcz6I55MG5QrEs2YJTaLTJbFZhG2zHFaMG_Fu0F6elQVp9PvzDux8HoA3ow9cCbKcVGNoqh7QleBZ-ybZabLDOMvQ8WphnVcNt0ObgBUl3RtlzvR3XktghR558IOb-T8BGttuetENKQDA8XDAY2S0mgkJ5GpC49RqlACiNQeJSM93OeWE_lo1_tjZKm0gXgfXGS8kEhDnxvKqj4v_xKrv5YFJqdXSIaVvSXtnCmNvrbJMC_jxTMRdxxdHdS-HnMuLIqlTZHE3JGq3f0pyxsvPxkdKXtrqPTtQEPBBUKoGr-OVP2uEk6bdXd--GQeQF2lfetMRJOBa2iFnSNXqSU2WkBzRFU1NrbTWL7Ey2unuob9CR2ewaFFQi4zdubCi7dMOmJ7jbjCEpKNoGB7FPAXDymuc1Iy1LxvBrajRAgDVis2UwkLLbiV9vDGHW5PSdgaHF97mP7UJEJ_ZeLGpM2wWGqJb8ylQifX2Ft1m0pqPqUxLrLlmZRUKfyFNMqxrCKpL1YR-OT5JKu0U1WRddO5Jyz_vEjLS5Jrz6cAcmjJCKrVUeyF6JCLq0V_3flbSJD74aL7MesffWwM2I4w_VpUoxq29-yk1c1NlHhSAFhvXabEcip0lwFekMPDiO12MNXm_Q9i7esAg_p86zfOnONJLszDUB5QiDcwfUxpac_Tk5Z8wPFdT1Ahv5E--A9d6LjADvIPl8M4oUhjr5T_YdIARgomunPa0sfBGxHzgAEPU-cEx-Wq8QzfvScJGjekJBJtn2vnAGHmwq5nvNr7pu50r1pa6ZGfmtkGUJUcZiJSZGkEGPIPDFw",
+          "default": true
+        },
+        "audioTracks": [
+          {
+            "lang": "hi",
+            "label": "Hindi — filename hint; plays default track",
+            "default": true
+          }
+        ],
+        "attempts": [
+          {
+            "provider": "castletv",
+            "ok": false,
+            "reason": "no_stream",
+            "latencyMs": 1072
+          },
+          {
+            "provider": "moviebox",
+            "ok": false,
+            "reason": "no_stream",
+            "latencyMs": 3878
+          },
+          {
+            "provider": "netmirror",
+            "ok": false,
+            "reason": "no_stream",
+            "latencyMs": 265
+          },
+          {
+            "provider": "moviesdrive",
+            "ok": false,
+            "reason": "no_stream",
+            "latencyMs": 615
+          },
+          {
+            "provider": "4khdhub",
+            "ok": false,
+            "reason": "no_stream",
+            "latencyMs": 1040
+          },
+          {
+            "provider": "dahmer",
+            "ok": false,
+            "reason": "no_stream",
+            "latencyMs": 79
+          },
+          {
+            "provider": "hicine",
+            "ok": true,
+            "hindi": true,
+            "latencyMs": 9501
+          }
+        ],
+        "streamHost": "video-downloads.googleusercontent.com"
+      },
+      "error": null
+    }
+  },
+  "finishedAt": "2026-10-04T06:52:07.809Z"
+}
