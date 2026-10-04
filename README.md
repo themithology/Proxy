@@ -66,12 +66,12 @@ All of these routes serve the same player page. When the episode changes, the pl
 
 - **Playback state:** a centre play button appears while paused (and persistently on touch devices); a small spinner shows during buffering/seeks; the HUD and cursor hide after ~3 s of inactivity during playback and come back on pause.
 - **Errors:** when a server fails the player tries the next one automatically; when every server fails it shows an error card with **Retry** and **Change server** instead of an endless spinner.
-- **Skip button & timeline:** only shown for real intro/recap/outro segments returned by the API; the timeline is split at those segments (no invented chapters). Hovering the timeline shows the time and the segment name.
+- **Skip button & timeline:** only shown for real intro/recap/credits segments returned by the API (see *Skip segments* below); the timeline is split at those segments and the ranges are highlighted in yellow (no invented chapters). While the playhead is inside a segment the progress fill and thumb turn yellow and the button's background fills left-to-right as the segment elapses; the button stays visible even after the rest of the HUD auto-hides. `S` (or the button) jumps to the end of the segment, or to the next episode during credits. Hovering the timeline shows the time and the segment name.
 - **Episodes drawer:** the season dropdown browses another season (`/api/info?season=`) without interrupting playback; cards show a "Now playing" badge and the viewer's watched progress.
 - **Up next:** at the end of a TV episode an 8-second countdown card offers *Play now* / *Cancel*; the last available episode ends without a redirect.
 - **Resume:** progress is saved per episode in `localStorage`; anything past 95 % is treated as finished and restarts from the beginning.
 - **Subtitles:** rendered by the player (multi-line cues, HTML entities decoded, RTL languages right-aligned); style and volume preferences persist.
-- **Keyboard:** `Space`/`K` play-pause · `←`/`→`/`J`/`L` ±15 s · `↑`/`↓` volume · `M` mute · `C` captions · `F` fullscreen · `0–9` seek to 0–90 % · `Shift+N` next episode · `Esc` close menus. Touch: double-tap left/right to seek ±15 s, double-tap centre for fullscreen.
+- **Keyboard:** `Space`/`K` play-pause · `←`/`→`/`J`/`L` ±15 s · `↑`/`↓` volume · `M` mute · `C` captions · `F` fullscreen · `S` skip intro/recap/credits · `0–9` seek to 0–90 % · `Shift+N` next episode · `Esc` close menus. Touch: double-tap left/right to seek ±15 s, double-tap centre for fullscreen.
 
 > Easter egg: a human opening the Worker **root URL** in a browser gets rickrolled. API clients keep receiving the JSON service descriptor at `/` unchanged (the redirect is only served when the request advertises `Accept: text/html`).
 
@@ -99,7 +99,7 @@ The value must be an absolute `http(s)` URL (a path prefix is allowed and traili
 - `GET /api/catalog` — small sample catalog for API clients and smoke tests.
 - `POST /api/handshake` — short-lived request token.
 - `GET /api/info/:type/:tmdbId` — TMDB metadata and skip segments.
-- `GET /api/segments/:type/:tmdbId` — intro, recap, and outro timestamps.
+- `GET /api/segments/:type/:tmdbId` — intro, recap, and credits timestamps (see *Skip segments*).
 - `GET /api/subtitles/:type/:tmdbId` — external subtitle tracks.
 - `GET /api/resolve/:type/:tmdbId` — resolves a source and returns stream, audio, subtitle, and segment metadata.
 - `GET /api/proxy?url=...` — HLS/MP4 stream proxy.
@@ -107,6 +107,18 @@ The value must be an absolute `http(s)` URL (a path prefix is allowed and traili
 - `/api/admin/*` — JSON-only owner operations for health probes, domain blocks, upstream configuration, and source overrides; requires `X-Admin-Key`. There is no admin web UI.
 
 Supported media types are `movie`, `tv`, and `series` where applicable. TV requests accept `season` and `episode` query parameters.
+
+### Skip segments
+
+`/api/info`, `/api/segments`, and `/api/resolve` return a `segments` array of `{ type, label, start, end, source }` with `type` one of `intro`, `recap`, `outro` (credits), or `preview`, times in seconds, and `end: null` meaning "until the end of the file". Both the Node backend and the Worker resolve them through the shared `src/services/skipSegments.js` parsers from three community databases, queried in parallel and merged (earlier sources win overlapping entries, `post_credits` scenes are never offered as a skip):
+
+| Source | Keyed by | Covers | Config |
+| --- | --- | --- | --- |
+| [TheIntroDB](https://theintrodb.org) v3 | TMDB id (+ season/episode) | intro, recap, credits, preview — movies and TV | `THEINTRODB_URL`, optional `THEINTRODB_API_KEY` (raises the 500/day per-IP quota to 1000) |
+| [IntroDB](https://introdb.app) | IMDb id bridged from TMDB | intro, recap, outro — movies (`is_movie=true`) and TV | `INTRODB_URL` |
+| [AniSkip](https://api.aniskip.com) v2 | MyAnimeList id bridged via Jikan | op/ed/mixed/recap for anime | `ANISKIP_URL` |
+
+Results are cached for six hours; confirmed "no data" answers for fifteen minutes; provider outages for one minute only. No keys are required.
 
 ## Source resolution and audio behavior
 

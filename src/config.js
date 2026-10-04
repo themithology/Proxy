@@ -107,6 +107,11 @@ const config = {
     wyzieSubsUrl: process.env.WYZIE_SUBS_URL || 'https://sub.wyzie.ru',
     openSubtitlesRestUrl: 'https://rest.opensubtitles.org',
     openSubtitlesStremioUrl: 'https://opensubtitles-v3.strem.io',
+    // Skip-segment providers (intro / recap / credits). TheIntroDB is keyed by
+    // TMDB id, IntroDB by IMDb id, AniSkip by MAL id. The API key is optional
+    // and only raises TheIntroDB's daily quota (500 -> 1000 requests per IP).
+    theIntroDbUrl: process.env.THEINTRODB_URL || 'https://api.theintrodb.org/v3',
+    theIntroDbApiKey: process.env.THEINTRODB_API_KEY || '',
     introDbUrl: process.env.INTRODB_URL || 'https://api.introdb.app',
     aniSkipUrl: process.env.ANISKIP_URL || 'https://api.aniskip.com/v2',
     cinemetaUrl: 'https://v3-cinemeta.strem.io'

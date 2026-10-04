@@ -1,94 +1,124 @@
 const config = require('../config');
 const { cache } = require('../utils/cache');
+const skipSegments = require('./skipSegments');
 
 const USER_AGENT =
   'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36';
 
-async function fetchJsonWithTimeout(url, timeoutMs = 4500) {
+const POSITIVE_TTL_SECONDS = 6 * 3600;
+// Confirmed misses are cached too: TheIntroDB allows 500 unauthenticated
+// requests per day per IP and every player load would otherwise re-ask for a
+// title that has no data.
+const NEGATIVE_TTL_SECONDS = 15 * 60;
+// When a provider was unreachable (timeout, 5xx, 429) we only hold the empty
+// answer briefly so a transient outage cannot hide segments for long.
+const FAILED_TTL_SECONDS = 60;
+
+/**
+ * Fetch one provider. Resolves `{ answered, data }`:
+ *   - 200          -> answered: true, data: parsed JSON
+ *   - 404          -> answered: true, data: null ("no data for this title")
+ *   - anything else-> answered: false (outage / rate limit / timeout)
+ */
+async function fetchProviderJson(url, { timeoutMs = 4500, headers = {} } = {}) {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
   try {
     const res = await fetch(url, {
       headers: {
         Accept: 'application/json',
-        'User-Agent': USER_AGENT
+        'User-Agent': USER_AGENT,
+        ...headers
       },
       signal: controller.signal
     });
-    if (!res.ok) return null;
-    return await res.json();
+    if (res.status === 404) return { answered: true, data: null };
+    if (!res.ok) return { answered: false, data: null };
+    return { answered: true, data: await res.json() };
   } catch {
-    return null;
+    return { answered: false, data: null };
   } finally {
     clearTimeout(timer);
   }
 }
 
 /**
- * Resolve Skip Intro / Recap / Outro timestamps using real IntroDB & AniSkip APIs.
- * Automatically bridges from TMDB metadata (imdb_id and mal_id).
+ * Resolve Skip Intro / Recap / Credits timestamps for one title.
+ *
+ * Sources (queried in parallel, merged by `skipSegments.mergeSegments`):
+ *   1. TheIntroDB v3 — keyed by the TMDB id we already have (movies + TV).
+ *   2. IntroDB       — keyed by IMDb id from TMDB external ids (movies + TV).
+ *   3. AniSkip v2    — keyed by MAL id when the metadata bridge found one.
+ *
+ * Returns `{ tmdbId, type, season, episode, segments }` where `segments` is
+ * the normalised array the player consumes (see skipSegments.js).
  */
 async function resolveSkipSegments(metadata) {
-  const { tmdbId, type, season = 1, episode = 1, externalIds = {} } = metadata;
-  const cacheKey = `segments:v2:${type}:${tmdbId}:s${season}:e${episode}`;
+  const { tmdbId, type, season = 1, episode = 1, externalIds = {} } = metadata || {};
+  const mediaType = type === 'movie' ? 'movie' : 'tv';
+  const cacheKey = `segments:v3:${mediaType}:${tmdbId}:s${season}:e${episode}`;
   const cached = await cache.get(cacheKey);
   if (cached) return cached;
 
-  const segments = [];
+  const upstreams = config.upstreams;
+  const lookups = [];
+  let allAnswered = true;
+  const parsed = (promise, parse) =>
+    promise.then(({ answered, data }) => {
+      if (!answered) allAnswered = false;
+      return parse(data, mediaType);
+    });
 
-  // 1. Query IntroDB (https://api.introdb.app/intro?imdb_id=tt...&season=1&episode=1)
-  if (externalIds.imdb_id && type === 'tv') {
-    const introUrl = `${config.upstreams.introDbUrl}/intro?imdb_id=${encodeURIComponent(externalIds.imdb_id)}&season=${season}&episode=${episode}`;
-    const introData = await fetchJsonWithTimeout(introUrl);
-    if (introData) {
-      const start = introData.start_sec ?? introData.start;
-      const end = introData.end_sec ?? introData.end;
-      if (typeof start === 'number' && typeof end === 'number' && end > start) {
-        segments.push({
-          type: 'intro',
-          label: 'Skip Intro',
-          start: Math.round(start * 10) / 10,
-          end: Math.round(end * 10) / 10,
-          source: 'introdb'
-        });
-      }
+  const theIntroDbUrl = skipSegments.buildTheIntroDbUrl(upstreams.theIntroDbUrl, {
+    tmdbId,
+    type: mediaType,
+    season,
+    episode
+  });
+  if (theIntroDbUrl) {
+    const headers = upstreams.theIntroDbApiKey
+      ? { Authorization: `Bearer ${upstreams.theIntroDbApiKey}` }
+      : {};
+    lookups.push(parsed(fetchProviderJson(theIntroDbUrl, { headers }), skipSegments.parseTheIntroDb));
+  }
+
+  const introDbUrl = skipSegments.buildIntroDbUrl(upstreams.introDbUrl, {
+    imdbId: externalIds.imdb_id,
+    type: mediaType,
+    season,
+    episode
+  });
+  if (introDbUrl) {
+    lookups.push(parsed(fetchProviderJson(introDbUrl), skipSegments.parseIntroDb));
+  }
+
+  if (mediaType === 'tv') {
+    const aniSkipUrl = skipSegments.buildAniSkipUrl(upstreams.aniSkipUrl, {
+      malId: externalIds.mal_id,
+      episode
+    });
+    if (aniSkipUrl) {
+      lookups.push(parsed(fetchProviderJson(aniSkipUrl), skipSegments.parseAniSkip));
     }
   }
 
-  // 2. Query AniSkip v2 API when MAL ID is available
-  if (externalIds.mal_id) {
-    const aniUrl = `${config.upstreams.aniSkipUrl}/skip-times/${encodeURIComponent(externalIds.mal_id)}/${episode}?types[]=op&types[]=ed&types[]=recap&types[]=mixed-op&types[]=mixed-ed&episodeLength=0`;
-    const aniData = await fetchJsonWithTimeout(aniUrl);
-    if (aniData && aniData.found && Array.isArray(aniData.results)) {
-      for (const item of aniData.results) {
-        const st = item.interval?.startTime;
-        const et = item.interval?.endTime;
-        if (typeof st === 'number' && typeof et === 'number' && et > st) {
-          const isOutro = item.skipType === 'ed' || item.skipType === 'mixed-ed';
-          const isRecap = item.skipType === 'recap';
-          segments.push({
-            type: isOutro ? 'outro' : isRecap ? 'recap' : 'intro',
-            label: isOutro ? 'Next Episode' : isRecap ? 'Skip Recap' : 'Skip Intro',
-            start: Math.round(st * 10) / 10,
-            end: Math.round(et * 10) / 10,
-            source: 'aniskip'
-          });
-        }
-      }
-    }
-  }
+  const results = await Promise.all(lookups);
+  const segments = skipSegments.mergeSegments(results);
 
   const output = {
     tmdbId,
-    type,
+    type: mediaType,
     season,
     episode,
     segments
   };
 
-  if (segments.length > 0) {
-    await cache.set(cacheKey, output, 3600);
-  }
+  const ttl = segments.length > 0
+    ? POSITIVE_TTL_SECONDS
+    : allAnswered
+      ? NEGATIVE_TTL_SECONDS
+      : FAILED_TTL_SECONDS;
+  await cache.set(cacheKey, output, ttl);
   return output;
 }
 

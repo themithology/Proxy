@@ -120,11 +120,13 @@
             <div id="media-tags" class="media-tags"></div>
           </div>
 
-          <!-- Bottom-Right Skip Intro / Recap / Next Episode Button -->
+          <!-- Bottom-Right Skip Intro / Recap / Next Episode Button.
+               The fill behind the label grows as the segment elapses. -->
           <div class="skip-btn-wrapper">
             <button id="btn-skip-intro" class="btn-skip-intro hidden" aria-label="Skip Intro">
-              <span id="skip-intro-label">Skip Intro</span>
-              <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+              <span id="skip-progress-fill" class="skip-progress-fill" aria-hidden="true"></span>
+              <span id="skip-intro-label" class="skip-intro-label">Skip Intro</span>
+              <svg class="skip-intro-arrow" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
                 <line x1="5" y1="12" x2="19" y2="12"></line>
                 <polyline points="13 6 19 12 13 18"></polyline>
               </svg>

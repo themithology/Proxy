@@ -4,6 +4,11 @@
   /* Text colour used ON TOP of --accent (recomputed by the player for ?color=). */
   --accent-contrast: #000000;
   --accent-glow: rgba(255, 255, 255, 0.35);
+  /* Skip-segment yellow: the one deliberate exception to the monochrome
+     palette. Marks intro / recap / credits ranges on the track and tints the
+     progress fill while the playhead is inside one. */
+  --segment-accent: #f5c518;
+  --segment-accent-soft: rgba(245, 197, 24, 0.42);
   --surface-modal: rgba(18, 18, 21, 0.96);
   --surface-popover: rgba(19, 19, 22, 0.97);
   --surface-card: rgba(32, 32, 36, 0.72);
@@ -644,6 +649,9 @@ button {
 }
 
 .btn-skip-intro {
+  position: relative;
+  isolation: isolate;
+  overflow: hidden;
   display: inline-flex;
   align-items: center;
   gap: 8px;
@@ -667,6 +675,47 @@ button {
   background: rgba(52, 52, 58, 0.95);
   border-color: rgba(255, 255, 255, 0.35);
   transform: translateY(-1px);
+}
+
+/* Progressive fill: grows left -> right as the segment elapses (width is
+   driven by the player's render loop), so the button doubles as a countdown. */
+.skip-progress-fill {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  width: 0%;
+  background: rgba(255, 255, 255, 0.26);
+  pointer-events: none;
+  z-index: 0;
+  transition: width 0.12s linear;
+}
+
+.btn-skip-intro .skip-intro-label,
+.btn-skip-intro .skip-intro-arrow {
+  position: relative;
+  z-index: 1;
+}
+
+/* While a skip segment is active the button must outlive the idle HUD
+   (nobody moves the mouse during an intro): keep the HUD mounted, drop its
+   gradient and hide every other control, leaving only the button clickable. */
+.player-root.controls-idle.is-in-segment .controls-hud {
+  opacity: 1;
+  background: none;
+  pointer-events: none;
+}
+
+.player-root.controls-idle.is-in-segment .controls-hud > :not(.bottom-section),
+.player-root.controls-idle.is-in-segment .bottom-section > :not(.above-timeline-row),
+.player-root.controls-idle.is-in-segment .above-timeline-row > :not(.skip-btn-wrapper) {
+  opacity: 0;
+  pointer-events: none;
+}
+
+.player-root.controls-idle.is-in-segment .skip-btn-wrapper,
+.player-root.controls-idle.is-in-segment .btn-skip-intro {
+  pointer-events: auto;
 }
 
 /* Segmented Timeline Row */
@@ -746,13 +795,13 @@ button {
   transition: height 0.15s ease, background 0.15s ease;
 }
 
+/* Intro / recap / credits / preview ranges are highlighted on the track so
+   the viewer can see where the skip lands. */
 .timeline-segment-piece.is-intro,
-.timeline-segment-piece.is-recap {
-  background: rgba(255, 255, 255, 0.34);
-}
-
-.timeline-segment-piece.is-outro {
-  background: rgba(255, 255, 255, 0.3);
+.timeline-segment-piece.is-recap,
+.timeline-segment-piece.is-outro,
+.timeline-segment-piece.is-preview {
+  background: var(--segment-accent-soft);
 }
 
 .timeline-slider:hover .timeline-segments-bg,
@@ -783,7 +832,14 @@ button {
   background: var(--accent);
   border-radius: 3px;
   pointer-events: none;
-  transition: height 0.15s ease;
+  transition: height 0.15s ease, background 0.2s ease;
+}
+
+/* Playhead inside an intro / recap / credits segment: the fill and thumb turn
+   yellow for as long as the skip button is offered. */
+.player-root.is-in-segment .timeline-progress,
+.player-root.is-in-segment .timeline-thumb {
+  background: var(--segment-accent);
 }
 
 /* Vertical White Pill Scrubber Thumb */

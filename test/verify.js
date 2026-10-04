@@ -220,7 +220,69 @@ function startUpstreamMockServer() {
         );
       }
 
-      // 4. IntroDB Skip Intro API
+      // 4a. TheIntroDB v3 (TMDB-keyed). Real shape: arrays per type with
+      // millisecond boundaries; `end_ms: null` means "until the end"; 404 when
+      // the title has no data at all.
+      if (u.pathname === '/theintrodb/v3/media') {
+        const tmdbId = u.searchParams.get('tmdb_id');
+        if (tmdbId === '94605' && u.searchParams.get('season') === '1' && u.searchParams.get('episode') === '1') {
+          res.writeHead(200, { 'Content-Type': 'application/json' });
+          return res.end(
+            JSON.stringify({
+              tmdb_id: 94605,
+              type: 'tv',
+              season: 1,
+              episode: 1,
+              intro: [{ start_ms: 200000, end_ms: 266000 }],
+              recap: [{ start_ms: null, end_ms: 45000 }],
+              credits: [{ start_ms: 2400000, end_ms: null }]
+            })
+          );
+        }
+        res.writeHead(404, { 'Content-Type': 'application/json' });
+        return res.end(JSON.stringify({ error: 'Media not found' }));
+      }
+
+      // 4b. IntroDB `/segments` (IMDb-keyed). Real shape: one object (or null)
+      // per type with both `_ms` and `_sec` boundaries. Boundaries deliberately
+      // disagree with TheIntroDB by a second so the merge precedence is
+      // observable. `post_credits` must never become a skip target.
+      if (u.pathname === '/introdb/segments') {
+        const imdbId = u.searchParams.get('imdb_id');
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        if (u.searchParams.get('is_movie') === 'true') {
+          return res.end(
+            JSON.stringify({
+              imdb_id: imdbId,
+              media_type: 'movie',
+              season: null,
+              episode: null,
+              intro: null,
+              recap: null,
+              outro: imdbId === 'tt15239678'
+                ? { start_ms: 9600000, end_ms: 10020000, start_sec: 9600, end_sec: 10020, confidence: 0.8, submission_count: 3 }
+                : null,
+              post_credits: null
+            })
+          );
+        }
+        return res.end(
+          JSON.stringify({
+            imdb_id: imdbId,
+            media_type: 'tv',
+            season: Number(u.searchParams.get('season') || 1),
+            episode: Number(u.searchParams.get('episode') || 1),
+            intro: { start_ms: 201000, end_ms: 267000, start_sec: 201, end_sec: 267, confidence: 0.92, submission_count: 14 },
+            recap: null,
+            outro: { start_ms: 2399000, end_ms: 2460000, start_sec: 2399, end_sec: 2460, confidence: 0.7, submission_count: 2 },
+            post_credits: { start_ms: 2460000, end_ms: 2500000, start_sec: 2460, end_sec: 2500, confidence: 0.5, submission_count: 1 }
+          })
+        );
+      }
+
+      // 4c. IntroDB legacy `/intro`: the real endpoint only ever returned
+      // millisecond fields. (The old resolver read `start_sec` here and so
+      // never produced a single segment in production.)
       if (u.pathname === '/introdb/intro') {
         res.writeHead(200, { 'Content-Type': 'application/json' });
         return res.end(
@@ -228,8 +290,10 @@ function startUpstreamMockServer() {
             imdb_id: u.searchParams.get('imdb_id'),
             season: Number(u.searchParams.get('season') || 1),
             episode: Number(u.searchParams.get('episode') || 1),
-            start_sec: 200,
-            end_sec: 266
+            start_ms: 200000,
+            end_ms: 266000,
+            confidence: 0.9,
+            submission_count: 12
           })
         );
       }
@@ -996,6 +1060,8 @@ async function runTests() {
   const mockUpstream = await startUpstreamMockServer();
   config.tmdbBaseUrl = `${mockUpstream.url}/tmdb`;
   config.upstreams.introDbUrl = `${mockUpstream.url}/introdb`;
+  config.upstreams.theIntroDbUrl = `${mockUpstream.url}/theintrodb/v3`;
+  config.upstreams.theIntroDbApiKey = '';
   config.upstreams.openSubtitlesRestUrl = `${mockUpstream.url}/opensubtitles`;
   config.upstreams.vidstuckBase = `${mockUpstream.url}/vidstuck`;
   // Andromeda's live tiers: point CastleTV + NetMirror at the mock so the
@@ -1364,11 +1430,70 @@ async function runTests() {
     assert.strictEqual(infoRes.json.metadata.externalIds.imdb_id, 'tt11126994');
     assert.strictEqual(infoRes.json.metadata.externalIds.tvdb_id, 371028);
     assert.ok(infoRes.json.metadata.episodes.length >= 2, 'Episodes list must be populated from TMDB');
-    assert.ok(
-      infoRes.json.segments.some((s) => s.type === 'intro' && s.start === 200 && s.end === 266),
-      'IntroDB skip intro segment (200s -> 266s) must be present'
+    const assertArcaneSegments = (segments, label) => {
+      assert.ok(Array.isArray(segments), `${label}: segments must be an array`);
+      assert.deepStrictEqual(
+        segments.map((s) => [s.type, s.label, s.start, s.end, s.source]),
+        [
+          ['recap', 'Skip Recap', 0, 45, 'theintrodb'],
+          ['intro', 'Skip Intro', 200, 266, 'theintrodb'],
+          ['outro', 'Next Episode', 2400, null, 'theintrodb']
+        ],
+        `${label}: segments must be converted from milliseconds, merged across providers (TheIntroDB wins ` +
+          'overlapping IntroDB entries), sorted by start, keep an open-ended credits segment and drop post_credits'
+      );
+    };
+    assertArcaneSegments(infoRes.json.segments, 'Node /api/info');
+
+    const segmentsRes = await httpRequest(baseUrl, '/api/segments/tv/94605?season=1&episode=1');
+    assert.strictEqual(segmentsRes.status, 200);
+    assertArcaneSegments(segmentsRes.json.segments, 'Node /api/segments');
+
+    // Movies get credits segments too (TheIntroDB 404 -> IntroDB `is_movie` lookup).
+    const movieSegmentsRes = await httpRequest(baseUrl, '/api/segments/movie/693134');
+    assert.strictEqual(movieSegmentsRes.status, 200);
+    assert.deepStrictEqual(
+      movieSegmentsRes.json.segments.map((s) => [s.type, s.label, s.start, s.end, s.source]),
+      [['outro', 'Skip Credits', 9600, 10020, 'introdb']],
+      'movie credits must resolve through IntroDB with is_movie=true'
     );
-    console.log('  ✔ Passed TMDB -> IMDb/TVDB bridging & IntroDB segments.');
+
+    // Parser regressions against the providers' real payloads.
+    const skipSegments = require('../src/services/skipSegments');
+    assert.deepStrictEqual(
+      skipSegments
+        .parseIntroDb({ imdb_id: 'tt11126994', season: 1, episode: 1, start_ms: 200000, end_ms: 266000 }, 'tv')
+        .map((s) => [s.type, s.start, s.end]),
+      [['intro', 200, 266]],
+      'legacy IntroDB /intro payloads only carry *_ms fields and must still parse'
+    );
+    assert.deepStrictEqual(
+      skipSegments
+        .parseAniSkip(
+          {
+            found: true,
+            results: [
+              { interval: { startTime: 60.44, endTime: 150.2 }, skipType: 'op' },
+              { interval: { startTime: 1300, endTime: 1390 }, skipType: 'mixed-ed' },
+              { interval: { startTime: 0, endTime: 0.5 }, skipType: 'recap' }
+            ]
+          },
+          'tv'
+        )
+        .map((s) => [s.type, s.start, s.end]),
+      [['intro', 60.4, 150.2], ['outro', 1300, 1390]],
+      'AniSkip op/ed/mixed types must map to intro/outro and sub-second noise must be dropped'
+    );
+    assert.strictEqual(
+      skipSegments.buildAniSkipUrl('https://api.aniskip.com/v2', { malId: 48583, episode: 3 }),
+      'https://api.aniskip.com/v2/skip-times/48583/3?types=op&types=ed&types=mixed-op&types=mixed-ed&types=recap&episodeLength=0'
+    );
+    assert.strictEqual(
+      skipSegments.buildIntroDbUrl('https://api.introdb.app', { imdbId: 'not-an-id', type: 'tv', season: 1, episode: 1 }),
+      null,
+      'IntroDB must not be queried without a valid IMDb id'
+    );
+    console.log('  ✔ Passed TMDB -> IMDb/TVDB bridging & TheIntroDB/IntroDB/AniSkip segments.');
 
     // 7. Full Production Stream Resolution + OpenSubtitles .srt.gz Decompression + M3U8 Proxy
     console.log('[7/12] Testing /api/resolve/movie/693134, OpenSubtitles .srt.gz -> .vtt, & /api/proxy...');
@@ -1985,7 +2110,9 @@ async function runTests() {
         NETMIRROR_WEB_MIRRORS: `${mockUpstream.url}/netmirror`,
         HICINE_API_BASE: `${mockUpstream.url}/hicine`,
         VIDSTUCK_BASE_URL: '',
-        TMDB_BASE_URL: `${mockUpstream.url}/tmdb`
+        TMDB_BASE_URL: `${mockUpstream.url}/tmdb`,
+        THEINTRODB_URL: `${mockUpstream.url}/theintrodb/v3`,
+        INTRODB_URL: `${mockUpstream.url}/introdb`
       };
 
       // Worker resolves Andromeda directly with CastleTV
@@ -2106,7 +2233,9 @@ async function runTests() {
         NETMIRROR_BASE_URL: `${mockUpstream.url}/netmirror`,
         NETMIRROR_WEB_MIRRORS: `${mockUpstream.url}/netmirror`,
         VIDSTUCK_BASE_URL: '',
-        TMDB_BASE_URL: `${mockUpstream.url}/tmdb`
+        TMDB_BASE_URL: `${mockUpstream.url}/tmdb`,
+        THEINTRODB_URL: `${mockUpstream.url}/theintrodb/v3`,
+        INTRODB_URL: `${mockUpstream.url}/introdb`
       };
 
       const healthRes = await callWorker('http://player.test/api/health');
@@ -2125,6 +2254,20 @@ async function runTests() {
         infoJson.servers.map((s) => [s.id, s.name, s.priority]),
         expected.map((e) => [e[0], e[1], e[3]]),
         'worker /api/info must expose the rebranded server objects'
+      );
+      // The Worker (which serves the player) must resolve the exact same skip
+      // segments as the Node backend through the shared provider parsers.
+      assertArcaneSegments(infoJson.segments, 'Worker /api/info');
+      const workerMovieSegmentsRes = await callWorker(
+        'http://player.test/api/segments/movie/693134',
+        catalogWorkerEnv
+      );
+      assert.strictEqual(workerMovieSegmentsRes.status, 200);
+      const workerMovieSegmentsJson = await workerMovieSegmentsRes.json();
+      assert.deepStrictEqual(
+        workerMovieSegmentsJson.segments.map((s) => [s.type, s.label, s.start, s.end, s.source]),
+        [['outro', 'Skip Credits', 9600, 10020, 'introdb']],
+        'worker movie credits must resolve through IntroDB with is_movie=true'
       );
 
       const resolveRes = await callWorker(

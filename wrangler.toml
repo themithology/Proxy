@@ -18,6 +18,12 @@ PROXY_SECRET = "vidstuck-edge-hmac-secret-key-2026-9f8e7d6c5b4a"
 CASTLETV_BASE_URL = "https://api.hlowb.com"
 NETMIRROR_BASE_URL = "https://net27.cc"
 HICINE_API_BASE = "https://api.hicine.sbs"
+# Skip Intro / Recap / Credits providers. TheIntroDB (TMDB-keyed) and IntroDB
+# (IMDb-keyed) work without keys; THEINTRODB_API_KEY only raises the quota.
+THEINTRODB_URL = "https://api.theintrodb.org/v3"
+THEINTRODB_API_KEY = ""
+INTRODB_URL = "https://api.introdb.app"
+ANISKIP_URL = "https://api.aniskip.com/v2"
 
 # Base URL of the API Worker/backend the /embed player should call.
 # Leave empty ("") when this Worker serves both the player and the API

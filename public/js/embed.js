@@ -156,6 +156,7 @@
   // Skip Intro & Timeline
   const btnSkipIntro = document.getElementById('btn-skip-intro');
   const skipIntroLabel = document.getElementById('skip-intro-label');
+  const skipProgressFill = document.getElementById('skip-progress-fill');
   const timeCurrentEl = document.getElementById('time-current');
   const timeDurationEl = document.getElementById('time-duration');
   const timelineSlider = document.getElementById('timeline-slider');
@@ -581,6 +582,8 @@
     if (!preserveTime) state.progressLocked = true;
     if (!video.paused) video.pause();
     cancelUpNext();
+    // A stale "Skip Intro" from the previous episode must not survive the switch.
+    if (!preserveTime) clearActiveSkip();
     playerRoot.classList.remove('is-ended');
     showLoading(`Connecting to ${serverDisplayName(requestedServer)}…`);
 
@@ -620,7 +623,7 @@
         renderEpisodesModal();
       }
 
-      state.segments = Array.isArray(data && data.segments) ? data.segments : [];
+      state.segments = normalizeSegments(data && data.segments);
       state.subtitles = Array.isArray(data && data.subtitles) ? data.subtitles : [];
       state.servers = ((data && data.servers) || [])
         .filter((s) => s && s.id && s.enabled !== false && (s.listed !== false || s.active))
@@ -746,9 +749,40 @@
     btnNextEpisode.classList.toggle('hidden', !isTv);
   }
 
+  // --- Skip segments (intro / recap / credits / preview) ---
+  // The API sends `{ type, label, start, end }` in seconds; `end: null` means
+  // "until the end of the media" (open-ended credits). Everything else is
+  // dropped here so the render loop never has to re-validate.
+  const SEGMENT_TYPES = ['intro', 'recap', 'outro', 'preview'];
+  const SEGMENT_NOUNS = { intro: 'Intro', recap: 'Recap', outro: 'Credits', preview: 'Preview' };
+
+  function normalizeSegments(list) {
+    if (!Array.isArray(list)) return [];
+    return list
+      .map((seg) => {
+        if (!seg || typeof seg !== 'object') return null;
+        const start = Number(seg.start);
+        const end = seg.end === null || seg.end === undefined ? null : Number(seg.end);
+        if (!Number.isFinite(start) || start < 0) return null;
+        if (end !== null && !(Number.isFinite(end) && end > start)) return null;
+        const type = SEGMENT_TYPES.includes(seg.type) ? seg.type : 'intro';
+        const label = typeof seg.label === 'string' && seg.label.trim() ? seg.label.trim() : '';
+        return { type, label, start, end, source: seg.source || '' };
+      })
+      .filter(Boolean)
+      .sort((a, b) => a.start - b.start);
+  }
+
+  /** Where a segment ends in seconds; open-ended segments run to the media end. */
+  function segmentEndSeconds(seg) {
+    if (seg && Number.isFinite(seg.end)) return seg.end;
+    const total = getEffectiveDuration();
+    return total > 0 ? total : Infinity;
+  }
+
   // --- Render Segmented Timeline Track ---
-  // Pieces come from the real skip segments (intro / recap / outro). Without
-  // segment data the bar is one continuous track — no invented chapters.
+  // Pieces come from the real skip segments. Without segment data the bar is
+  // one continuous track — no invented chapters.
   function renderSegmentedTimeline() {
     timelineSegmentsBg.innerHTML = '';
     const total = getEffectiveDuration();
@@ -763,8 +797,10 @@
     };
 
     const segments = (state.segments || [])
-      .filter((s) => s && isFinite(s.start) && isFinite(s.end) && s.end > s.start)
+      .map((s) => ({ ...s, end: segmentEndSeconds(s) }))
+      .filter((s) => Number.isFinite(s.start) && Number.isFinite(s.end) && s.end > s.start)
       .map((s) => ({ ...s, start: clamp(s.start, 0, total || s.end), end: total > 0 ? Math.min(s.end, total) : s.end }))
+      .filter((s) => s.end > s.start)
       .sort((a, b) => a.start - b.start);
 
     if (!(total > 0) || segments.length === 0) {
@@ -1736,7 +1772,34 @@
 
   // --- Timeline & Skip Intro Logic ---
   function findSegmentAt(seconds) {
-    return state.segments.find((s) => s && seconds >= s.start && seconds < s.end) || null;
+    return state.segments.find((s) => s && seconds >= s.start && seconds < segmentEndSeconds(s)) || null;
+  }
+
+  /** Label for the button: outro only says "Next Episode" when there is one. */
+  function skipLabelFor(seg) {
+    const isOutro = seg.type === 'outro';
+    if (seg.label && !(isOutro && (state.type !== 'tv' || !getNextEpisodeTarget()))) return seg.label;
+    if (isOutro) return 'Skip Credits';
+    if (seg.type === 'recap') return 'Skip Recap';
+    if (seg.type === 'preview') return 'Skip Preview';
+    return 'Skip Intro';
+  }
+
+  // Last width written to the progressive fill (browsers normalise the value
+  // on read-back, so the change guard cannot compare against the DOM).
+  let lastSkipFillWidth = '';
+  function setSkipFillWidth(width) {
+    if (width === lastSkipFillWidth) return;
+    lastSkipFillWidth = width;
+    skipProgressFill.style.width = width;
+  }
+
+  /** Hide the skip button and drop the yellow segment styling. */
+  function clearActiveSkip() {
+    state.activeSkipSegment = null;
+    btnSkipIntro.classList.add('hidden');
+    playerRoot.classList.remove('is-in-segment');
+    setSkipFillWidth('0%');
   }
 
   function updateTimelineAndSkipState() {
@@ -1770,45 +1833,53 @@
       timelineBuffered.style.width = `${clamp((bufEnd / total) * 100, 0, 100)}%`;
     }
 
-    // Only a real intro / recap / outro segment summons the skip button.
+    // Only a real intro / recap / credits segment summons the skip button.
     const matchingSeg = state.upNextTarget ? null : findSegmentAt(current);
     if (matchingSeg) {
       if (state.activeSkipSegment !== matchingSeg) {
         state.activeSkipSegment = matchingSeg;
-        const isOutro = matchingSeg.type === 'outro';
-        let label = matchingSeg.label;
-        if (!label || (isOutro && (state.type !== 'tv' || !getNextEpisodeTarget()))) {
-          // "Next Episode" only makes sense when there is one to go to.
-          label = isOutro ? 'Skip Credits' : matchingSeg.type === 'recap' ? 'Skip Recap' : 'Skip Intro';
-        }
+        const label = skipLabelFor(matchingSeg);
         skipIntroLabel.textContent = label;
         btnSkipIntro.setAttribute('aria-label', label);
+        setSkipFillWidth('0%');
         btnSkipIntro.classList.remove('hidden');
+        // Yellow progress fill + thumb while inside the segment.
+        playerRoot.classList.add('is-in-segment');
       }
+      // Progressive button: the fill tracks how much of the segment has elapsed.
+      const segEnd = segmentEndSeconds(matchingSeg);
+      const span = segEnd - matchingSeg.start;
+      const ratio = Number.isFinite(span) && span > 0 ? clamp((current - matchingSeg.start) / span, 0, 1) : 0;
+      setSkipFillWidth(`${(ratio * 100).toFixed(1)}%`);
     } else if (state.activeSkipSegment) {
-      state.activeSkipSegment = null;
-      btnSkipIntro.classList.add('hidden');
+      clearActiveSkip();
     }
 
     updateActiveSubtitleCue();
     saveProgress();
   }
 
-  btnSkipIntro.addEventListener('click', (e) => {
-    e.stopPropagation();
+  function skipActiveSegment() {
     const seg = state.activeSkipSegment;
-    if (!seg) return;
+    if (!seg) return false;
     if (seg.type === 'outro' && state.type === 'tv' && getNextEpisodeTarget()) {
       goToNextEpisode();
-      return;
+      return true;
     }
     const total = getEffectiveDuration();
-    const targetSec = total > 0 ? Math.min(seg.end, Math.max(0, total - 1)) : seg.end;
+    const end = segmentEndSeconds(seg);
+    // Never seek past the file; an open-ended credits segment lands just before the end.
+    const targetSec = total > 0 ? Math.min(end, Math.max(0, total - 1)) : Number.isFinite(end) ? end : seg.start;
     video.currentTime = targetSec;
-    btnSkipIntro.classList.add('hidden');
-    state.activeSkipSegment = null;
+    clearActiveSkip();
     updateTimelineAndSkipState();
     showToast(`Skipped to ${formatTime(targetSec)}`, 1800);
+    return true;
+  }
+
+  btnSkipIntro.addEventListener('click', (e) => {
+    e.stopPropagation();
+    skipActiveSegment();
   });
 
   // --- Timeline Scrubbing & Hover Timestamp Tooltip (pointer events) ---
@@ -1822,7 +1893,7 @@
     const { ratio, seconds, rect } = getTimelineHoverSeconds(clientX);
     const seg = findSegmentAt(seconds);
     timelineHoverTooltip.innerHTML = seg
-      ? `<span class="tooltip-chapter">${escapeHtml(seg.label || seg.type || '')}</span>${formatTime(seconds)}`
+      ? `<span class="tooltip-chapter">${escapeHtml(SEGMENT_NOUNS[seg.type] || seg.label || seg.type || '')}</span>${formatTime(seconds)}`
       : formatTime(seconds);
     timelineHoverTooltip.classList.remove('hidden');
     // Keep the tooltip inside the slider at both ends.
@@ -1969,8 +2040,7 @@
     upNextTitle.textContent = label;
     upNextProgressFill.style.width = '0%';
     upNextCard.classList.remove('hidden');
-    btnSkipIntro.classList.add('hidden');
-    state.activeSkipSegment = null;
+    clearActiveSkip();
     playerRoot.classList.remove('controls-idle');
     const durationMs = 8000;
     state.upNextDeadline = Date.now() + durationMs;
@@ -2566,6 +2636,8 @@
         if (candidate) loadSubtitleTrack(candidate);
         else showToast('No subtitles available for this title', 1800);
       }
+    } else if (key === 's' || key === 'S') {
+      if (skipActiveSegment()) e.preventDefault();
     } else if (key === 'N' && e.shiftKey) {
       e.preventDefault();
       goToNextEpisode();

@@ -10,7 +10,7 @@
 //   PLAYER_PORT=9000 node scripts/dev-player-mock.mjs
 //
 // Useful URLs:
-//   /embed?type=tv&tmdb=94605&s=1&e=1                 happy path (intro + outro segments, subtitles)
+//   /embed?type=tv&tmdb=94605&s=1&e=1                 happy path (recap + intro + open-ended credits segments, subtitles)
 //   /embed?type=tv&tmdb=94605&s=1&e=1&server=centaurus  server 2 fails -> automatic failover toast
 //   /embed?type=movie&tmdb=693134                     movie (no episodes UI)
 //   /embed?type=movie&tmdb=0                          every server fails -> error state with Retry
@@ -133,9 +133,12 @@ const server = http.createServer((req, res) => {
       seasons: isTv ? SHOW.seasons : [],
       episodes: isTv ? episodesFor(season) : []
     };
+    // Same shape the real resolvers emit (see src/services/skipSegments.js);
+    // the credits segment is open-ended on purpose (`end: null` = media end).
     const segments = [
-      { type: 'intro', start: 20, end: 60, label: 'Skip Intro' },
-      { type: 'outro', start: 560, end: 634, label: 'Next Episode' }
+      { type: 'recap', start: 0, end: 8, label: 'Skip Recap', source: 'theintrodb' },
+      { type: 'intro', start: 20, end: 60, label: 'Skip Intro', source: 'theintrodb' },
+      { type: 'outro', start: 560, end: null, label: 'Next Episode', source: 'theintrodb' }
     ];
 
     if (action === 'info') return json(res, 200, { ok: true, metadata, segments, servers: SERVERS });
