@@ -64,7 +64,7 @@ function summarizeCatalog(catalog) {
       matchedYear: p.identity?.matchedYear ?? null,
       upstreamId: p.identity?.upstreamId ?? null,
       reasons: p.identity?.reasons ?? null,
-      rejected: (p.identity?.rejectedCandidates || []).slice(0, 4),
+      rejected: (p.identity?.rejectedCandidates || []).slice(0, 6),
       languages: (p.languages || []).map((l) => `${l.code || l.label}${l.playable ? '' : '(?)'}`)
     }))
   };

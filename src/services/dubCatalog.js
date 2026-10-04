@@ -186,7 +186,12 @@ function describeProvider(provider, resolved, error) {
       matchedYear: identityInfo ? identityInfo.matchedYear : resolved.matchedYear || null,
       upstreamId: identityInfo ? identityInfo.upstreamId : resolved.upstreamId || null,
       score: identityInfo ? identityInfo.score : null,
-      reasons: identityInfo ? identityInfo.reasons : []
+      reasons: identityInfo ? identityInfo.reasons : [],
+      // Include the losing candidates so callers can see *why* a same-name
+      // title (e.g. the 2023 "Fight Club") was rejected instead of trusting
+      // the provider blindly.
+      candidates: identityInfo ? (identityInfo.candidates || []).slice(0, 10) : [],
+      rejectedCandidates: identityInfo ? (identityInfo.rejectedCandidates || []).slice(0, 10) : []
     },
     languages,
     hindi: Boolean(hindiTrack),
