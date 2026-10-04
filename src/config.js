@@ -140,51 +140,31 @@ const config = {
   servers: [
     {
       id: 'andromeda',
-      name: 'Andromeda',
-      badge: 'Primary • Multi-Audio HLS',
+      name: 'Fiber Optic Speedrun',
+      badge: 'Multi-Audio • Primary',
       priority: 1,
       supportsMultiAudio: true
     },
     {
       id: 'ursa',
-      name: 'Ursa',
+      name: 'FBI Surveillance Van',
       badge: '4K UHD • Multi-Audio',
       priority: 2,
       supportsMultiAudio: true
     },
     {
       id: 'centaurus',
-      name: 'Centaurus',
-      badge: 'HiCine • Direct 1080p/720p MP4',
+      name: 'Gigachad Node',
+      badge: 'Adaptive • Multi-Quality',
       priority: 3,
       supportsMultiAudio: true
     },
     {
       id: 'atlas',
-      name: 'Atlas',
-      badge: 'ZXC Backup • Adaptive HLS',
+      name: 'Hamster Wheel',
+      badge: 'Adaptive • Backup',
       priority: 4,
       supportsMultiAudio: true
-    },
-    {
-      id: 'strings',
-      name: 'Strings',
-      badge: 'Anime Sub/Dub • Zoko HLS',
-      priority: 5,
-      supportsMultiAudio: true
-    },
-    {
-      // TMDB-id keyed Hindi-dub server. Every candidate is identity-checked
-      // against the TMDB title before it can be used, so name collisions
-      // (e.g. Fight Club 1999 vs the 2023 Indian film) can never win.
-      // `fallback: false` keeps it out of the implicit waterfall: it is used
-      // when a client asks for ?server=hindi.
-      id: 'hindi',
-      name: 'Hindi',
-      badge: 'Hindi Dubs • TMDB-ID Verified',
-      priority: 6,
-      supportsMultiAudio: true,
-      fallback: false
     }
   ]
 };

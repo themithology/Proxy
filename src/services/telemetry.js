@@ -263,11 +263,6 @@ class TelemetryAndAdminEngine {
         serverId: 'atlas',
         name: 'ZXC Stream Mirror',
         url: `${config.upstreams.zxcBase}/movie`
-      },
-      {
-        serverId: 'strings',
-        name: 'HiAnime Sub/Dub Source',
-        url: `${config.upstreams.hianimeBase}/search?keyword=arcane`
       }
     ];
 
