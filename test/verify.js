@@ -2259,6 +2259,44 @@ async function runTests() {
         'every reported provider must be identity-verified'
       );
 
+      // The Hindi server end-to-end over HTTP, using the HINDI_PROVIDERS knob.
+      const prevHindiProviders = config.upstreams.hindiProviders;
+      config.upstreams.hindiProviders = ['castletv', 'moviebox'];
+      try {
+        const hindiHttp = await httpRequest(baseUrl, '/api/resolve/movie/550?server=hindi&audio=hi');
+        assert.strictEqual(hindiHttp.status, 200, 'GET /api/resolve?server=hindi must answer');
+        assert.strictEqual(hindiHttp.json.ok, true);
+        assert.strictEqual(hindiHttp.json.stream.server, 'hindi');
+        assert.strictEqual(hindiHttp.json.stream.requestedServer, 'hindi');
+        assert.strictEqual(
+          hindiHttp.json.stream.hindiAvailable,
+          false,
+          'the 1999 film has no Hindi source on the mocked tiers'
+        );
+        assert.strictEqual(hindiHttp.json.stream.hindiVerified, false);
+        assert.strictEqual(hindiHttp.json.stream.identity.upstreamId, 'castle-fc-1999');
+        assert.ok(
+          !String(hindiHttp.json.stream.rawUrl).includes('2023'),
+          'the HTTP Hindi path must never serve the wrong-title stream'
+        );
+      } finally {
+        config.upstreams.hindiProviders = prevHindiProviders;
+      }
+
+      // `hindi` is opt-in: it must never take part in the implicit waterfall,
+      // so a default request resolves through the normal tiers only.
+      const defaultWaterfall = await resolveStreamForServer(fcMetadata, 'andromeda', 'hi');
+      assert.strictEqual(defaultWaterfall.server, 'andromeda', 'default waterfall must resolve Andromeda');
+      assert.ok(
+        !(defaultWaterfall.serverAttempts || []).some((attempt) => attempt.server === 'hindi'),
+        'the hindi server must not be attempted unless explicitly requested'
+      );
+      assert.strictEqual(
+        config.servers.find((server) => server.id === 'hindi').fallback,
+        false,
+        'the hindi server must be marked as an opt-in (fallback:false) server'
+      );
+
       // Reset movieboxBase for downstream tests
       config.upstreams.movieboxBase = `${mockUpstream.url}/moviebox`;
 

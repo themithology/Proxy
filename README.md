@@ -89,6 +89,7 @@ The value must be an absolute `http(s)` URL (a path prefix is allowed and traili
 - `GET /api/info/:type/:tmdbId` — TMDB metadata and skip segments.
 - `GET /api/segments/:type/:tmdbId` — intro, recap, and outro timestamps.
 - `GET /api/subtitles/:type/:tmdbId` — external subtitle tracks.
+- `GET /api/dubs/:type/:tmdbId` — TMDB-id keyed dub inventory (`?deep=1` also probes the 4K/download tiers, `?audio=hi` sets the preferred track).
 - `GET /api/resolve/:type/:tmdbId` — resolves a source and returns stream, audio, subtitle, and segment metadata.
 - `GET /api/proxy?url=...` — HLS/MP4 stream proxy.
 - `GET /api/multitrack/master.m3u8` and `/api/multitrack/file/:jobId/:filename` — signed Node-side audio-remux output.
@@ -104,6 +105,55 @@ The resolver supports five server configurations:
 - **Server 3 (Centaurus)**: HiCine Direct MP4.
 - **Server 4 (Atlas)**: ZXC Backup Adaptive HLS.
 - **Server 5 (Strings)**: Anime Sub/Dub (HiAnime / ZokoAnime).
+- **Server 6 (Hindi, opt-in)**: TMDB-id keyed Hindi dubs across every tier — requested explicitly with `?server=hindi`.
+
+### Hindi dubs and TMDB-id identity (Server 6 / `?server=hindi`)
+
+The multi-audio tiers (CastleTV, Moviebox) can only be searched by **name**, and those catalogs contain same-name collisions. A name search for `Fight Club` returns the 2023 Indian film — which happens to ship a Hindi dub — ahead of the 1999 film (TMDB `550`), so a naive first-row pick plays the wrong movie. The Hindi layer removes name ambiguity entirely:
+
+- Metadata is always resolved from the **TMDB id** first (`/api/info`, `/api/resolve`, `/api/dubs`), including original and alternative titles.
+- Every upstream search row/subject is scored against that identity (title + original/alt titles + release year + movie/series type), and only an exact-identity candidate can be used. Unverifiable results are a clean miss, so the waterfall moves on instead of playing a different film.
+- The matched identity is returned in the payload (`stream.identity`: `matchedTitle`, `matchedYear`, `upstreamId`, `score`, `reasons`, plus the rejected candidates) so clients can show and verify what was actually selected.
+- All dub languages the verified provider exposes are surfaced as `audioTracks` (CastleTV per-language tracks, Moviebox `dubs[]`/`resourceDetectors[]`); Hindi is the default when present, otherwise the preferred `?audio=` track.
+- If no identity-verified Hindi source exists for a title, the Hindi server returns the verified original-audio stream with `hindiAvailable: false` (never a wrong-title Hindi stream) and the dub inventory reports `hindi: false`.
+
+`GET /api/dubs/:type/:tmdbId` returns the full inventory for a title:
+
+```jsonc
+{
+  "ok": true,
+  "hindi": true,
+  "dubs": [{ "code": "hi", "label": "Hindi", "playable": true, "providers": ["castletv", "moviebox"] }],
+  "providers": [
+    {
+      "id": "castletv",
+      "ok": true,
+      "identity": { "verified": true, "matchedTitle": "Dune: Part Two", "matchedYear": 2024, "upstreamId": "7475882100889600" },
+      "languages": [{ "code": "hi", "label": "Hindi", "playable": true }],
+      "hindi": true
+    }
+  ]
+}
+```
+
+Provider identity methods:
+
+| Provider      | Identity anchor                                                        |
+| ------------- | ---------------------------------------------------------------------- |
+| CastleTV      | TMDB title/original/alt titles + `publishTime` year + `movieType`       |
+| Moviebox      | TMDB title/original/alt titles + subject year + `subjectType`           |
+| NetMirror     | TMDB id (`/api/embed-tmdb/<id>`)                                        |
+| MoviesDrive   | IMDb id from TMDB + title/year scoring                                  |
+| 4KHDHub       | IMDb/title+year extraction                                              |
+| HiCine        | title/year hints                                                        |
+| HiAnime       | MAL id from TMDB (anime only)                                           |
+| DahmerMovies  | IMDb id from TMDB                                                       |
+
+Operational notes:
+
+- Moviebox geo-blocks some regions (HTTP 403 `Service not available in current region`); the cascade treats that as a miss and continues.
+- `MOVIEBOX_STRICT_HOSTS=true` pins the host pool to `MOVIEBOX_BASE_URL`/`MOVIEBOX_HOSTS`/`MOVIEBOX_EXTRA_HOSTS` only (no built-in mirrors).
+- `HINDI_PROVIDERS=castletv,moviebox` limits which providers the Hindi server and `/api/dubs` may use.
 
 ### Server Andromeda Multi-Tier Architecture
 

@@ -253,7 +253,11 @@ async function buildDubCatalog(metadata, options = {}) {
     return String(a.label).localeCompare(String(b.label));
   });
 
+  const verifiedHindiProvider = providers.find(
+    (provider) => provider.ok && provider.hindi && provider.identity.verified
+  );
   const hindiProvider = providers.find((provider) => provider.ok && provider.hindi);
+  const verifiedProvider = providers.find((provider) => provider.ok && provider.identity.verified);
   const fallbackProvider = providers.find((provider) => provider.ok);
 
   return {
@@ -262,14 +266,25 @@ async function buildDubCatalog(metadata, options = {}) {
     type: metadata.type,
     title: metadata.title,
     year: metadata.releaseYear,
-    hindi: Boolean(hindiProvider),
+    hindi: Boolean(verifiedHindiProvider),
+    hindiAnySource: Boolean(hindiProvider),
     dubs,
     providers,
-    best: hindiProvider
-      ? { providerId: hindiProvider.id, hindi: true, stream: hindiProvider.stream }
-      : fallbackProvider
-        ? { providerId: fallbackProvider.id, hindi: false, stream: fallbackProvider.stream }
-        : null,
+    best: verifiedHindiProvider
+      ? { providerId: verifiedHindiProvider.id, hindi: true, verified: true, stream: verifiedHindiProvider.stream }
+      : hindiProvider
+        ? {
+            providerId: hindiProvider.id,
+            hindi: true,
+            verified: false,
+            identityMethod: hindiProvider.identity.method,
+            stream: hindiProvider.stream
+          }
+        : verifiedProvider
+          ? { providerId: verifiedProvider.id, hindi: false, verified: true, stream: verifiedProvider.stream }
+          : fallbackProvider
+            ? { providerId: fallbackProvider.id, hindi: false, verified: false, stream: fallbackProvider.stream }
+            : null,
     generatedAt: new Date().toISOString()
   };
 }
@@ -293,6 +308,10 @@ async function resolveHindiServer(metadata, preferredAudio = 'hi', options = {})
     .filter((provider) => provider && provider.supports(metadata));
 
   let firstVerified = null;
+  // A Hindi-carrying stream from a provider whose identity is only a title
+  // hint. Kept as a last resort: a verified provider with Hindi is always
+  // preferred, even if it answers later in the order.
+  let hintHindi = null;
 
   for (const provider of order) {
     const startedAt = Date.now();
@@ -315,20 +334,24 @@ async function resolveHindiServer(metadata, preferredAudio = 'hi', options = {})
     }
 
     const summary = describeProvider(provider, resolved);
-    if (!firstVerified) firstVerified = { provider, resolved, summary };
+    if (!firstVerified && summary.identity.verified) firstVerified = { provider, resolved, summary };
     attempts.push({
       provider: provider.id,
       ok: true,
       hindi: summary.hindi,
+      identityMethod: summary.identity.method,
+      identityVerified: summary.identity.verified,
       latencyMs: Date.now() - startedAt
     });
 
-    if (summary.hindi) {
+    if (summary.hindi && summary.identity.verified) {
       return {
         ...resolved,
         server: 'hindi',
         sourceName: resolved.sourceName || provider.label,
         hindiAvailable: true,
+        hindiVerified: true,
+        identityMethod: summary.identity.method,
         preferredAudio: 'hi',
         dubs: summary.languages,
         providerId: provider.id,
@@ -336,6 +359,25 @@ async function resolveHindiServer(metadata, preferredAudio = 'hi', options = {})
         identity: summary.identity
       };
     }
+    if (summary.hindi && !hintHindi) hintHindi = { provider, resolved, summary };
+  }
+
+  if (hintHindi) {
+    return {
+      ...hintHindi.resolved,
+      server: 'hindi',
+      sourceName: hintHindi.resolved.sourceName || hintHindi.provider.label,
+      hindiAvailable: true,
+      hindiVerified: false,
+      identityMethod: hintHindi.summary.identity.method,
+      preferredAudio: 'hi',
+      diagMessage:
+        'Hindi was found on a provider that matches by title hints rather than a TMDB/IMDb id; verify the title before playback.',
+      dubs: hintHindi.summary.languages,
+      providerId: hintHindi.provider.id,
+      attempts,
+      identity: hintHindi.summary.identity
+    };
   }
 
   if (firstVerified) {
@@ -344,6 +386,8 @@ async function resolveHindiServer(metadata, preferredAudio = 'hi', options = {})
       server: 'hindi',
       sourceName: firstVerified.resolved.sourceName || firstVerified.provider.label,
       hindiAvailable: false,
+      hindiVerified: false,
+      identityMethod: firstVerified.summary.identity.method,
       preferredAudio: 'hi',
       diagMessage: 'No identity-verified Hindi dub found; serving the verified original-audio stream.',
       dubs: firstVerified.summary.languages,
