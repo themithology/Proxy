@@ -4323,6 +4323,21 @@ async function resolveUrsaServer(metadata, requestedServerId = 'ursa', preferred
     diag.message = detail || step;
   };
 
+  // Every Ursa tier is a search-by-title scrape: without the TMDB title there
+  // is nothing to search, and all four tiers used to bail individually with
+  // `*_missing_title` while the cascade still reported "all four sub-providers
+  // failed" — making it look like the tiers ran and found nothing. Fail fast
+  // with an honest reason so the API response, telemetry and owner debug
+  // endpoint say what actually happened: the metadata lookup never produced a
+  // title, so zero probing took place.
+  if (!metadata || !metadata.title) {
+    stamp(
+      'metadata_missing',
+      'Ursa needs the TMDB title to search its 4K tiers, but metadata resolution returned no title (unresolved TMDB lookup). No tier was probed.'
+    );
+    return { ok: false, reason: 'ursa_metadata_missing', diag };
+  }
+
   if (!circuitBreaker.isAvailable(providerKey)) {
     stamp('circuit_open', 'Ursa (4K UHD) circuit breaker is open');
     return { ok: false, reason: 'circuit_open', diag };
@@ -4683,7 +4698,10 @@ async function resolveStreamForServer(metadata, requestedServerId = 'andromeda',
     } else if (srvId === 'hamster') {
       resolved = await resolveHamsterWheelServer(metadata, srvId, preferredAudio);
     } else if (srvId === 'ursa') {
-      resolved = await resolveUrsaServer(metadata, requestedServerId, preferredAudio);
+      // Pass the server actually being attempted (srvId), not the caller's
+      // original request: when the waterfall reaches Ursa as an implicit
+      // fallback the diag `alias` must describe this attempt, not the first one.
+      resolved = await resolveUrsaServer(metadata, srvId, preferredAudio);
     } else if (srvId === 'centaurus') {
       resolved = await resolveHicineServer(metadata);
     } else if (srvId === 'hindi') {

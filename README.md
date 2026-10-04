@@ -205,6 +205,17 @@ Server 3 (`ursa`, also accessible via `?server=4k`) delivers true **2160p (4K UH
 4. **Priority 4: DahmerMovies 4K (`a.111477.xyz`)**
    - **Coverage:** Direct open-directory 2160p HDR/SDR `.mkv`/`.mp4` streams (`/movies/<Title> (<Year>)/` and `/tvs/<Title>/Season <NN>/`) with Original and Multi-Audio tracks.
 
+**Honest failure (`ursa_metadata_missing`).** Every Ursa tier is a
+search-by-title scrape, so the cascade needs a title from TMDB metadata before
+it can probe anything. If metadata resolution produced no title, Ursa now fails
+fast with `reason: ursa_metadata_missing` and a `metadata_missing` diag step
+instead of running four tiers that instantly bail and then reporting a
+misleading `ursa_all_4k_sources_exhausted` ("all four sub-providers failed"),
+which read as if the tiers had been probed. Both `/api/resolve` backends map the
+reason to a human explanation, and the Worker retries the TMDB lookup once and
+falls back to the VidStuck TMDB proxy so a rate-limited TMDB call on shared
+edge IPs no longer strips the title from every search-by-title server.
+
 ### Server 4 — Hamster Wheel (`?server=hamster`) Multi-Language OMSS Cascade
 
 Hamster Wheel is the multi-language fallback tier and is implemented once in

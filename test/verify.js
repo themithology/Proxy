@@ -2551,6 +2551,27 @@ async function runTests() {
       assert.strictEqual(ursaExhausted.ok, false);
       assert.strictEqual(ursaExhausted.reason, 'ursa_all_4k_sources_exhausted');
 
+      // 12f-meta. Missing metadata must fail fast and honestly.
+      // When TMDB resolution produced no title, every Ursa tier is a
+      // search-by-title scrape with nothing to search. The cascade must NOT
+      // pretend the four providers ran and found nothing ("all sources
+      // exhausted"); it must report ursa_metadata_missing and probe nothing.
+      const ursaNoMeta = await resolveUrsaServer({ title: null, type: 'movie', tmdbId: 999999 }, 'ursa', '');
+      assert.strictEqual(ursaNoMeta.ok, false, 'Ursa must fail when metadata has no title');
+      assert.strictEqual(
+        ursaNoMeta.reason,
+        'ursa_metadata_missing',
+        'Missing title must surface as ursa_metadata_missing, not a fake exhaustion'
+      );
+      assert.ok(
+        ursaNoMeta.diag && ursaNoMeta.diag.steps.some((s) => s.step === 'metadata_missing'),
+        'diag must record the metadata_missing step'
+      );
+      assert.ok(
+        !ursaNoMeta.diag.steps.some((s) => /_attempt$/.test(s.step)),
+        'No 4K tier may be attempted when the title is missing'
+      );
+
       // All four independent Ursa tiers should be in flight together rather
       // than adding their provider latencies serially.
       mockUpstream.metrics.peakUrsaTierRequests = 0;

@@ -435,13 +435,28 @@ async function resolveTmdbMetadata(type, tmdbId, season = 1, episode = 1, env = 
   ).replace(/\/$/, '');
   let result = null;
 
+  // A single failed TMDB call used to hand back a title-less metadata stub,
+  // which silently disables every search-by-title server — Ursa then probes
+  // nothing (`ursa_metadata_missing`) and the waterfall slides to Server 1,
+  // whose NetMirror tier is TMDB-id keyed and keeps playing. Retry once
+  // quickly: Cloudflare's shared egress IPs hit TMDB rate limits more often
+  // than a dedicated host would.
+  let detailsData = null;
+  const detailsUrl = `${tmdbBase}/${normalizedType}/${cleanId}?api_key=${encodeURIComponent(tmdbKey)}&append_to_response=external_ids,alternative_titles&language=en-US`;
+  for (let attempt = 0; attempt < 2; attempt += 1) {
+    try {
+      const detailsRes = await fetch(detailsUrl, {
+        headers: { Accept: 'application/json', 'User-Agent': USER_AGENT }
+      });
+      if (detailsRes.ok) detailsData = await detailsRes.json();
+    } catch {}
+    if (detailsData && (detailsData.id || detailsData.title || detailsData.name)) break;
+    if (attempt === 0) await new Promise((wait) => setTimeout(wait, 300));
+  }
+
   try {
-    const detailsRes = await fetch(
-      `${tmdbBase}/${normalizedType}/${cleanId}?api_key=${encodeURIComponent(tmdbKey)}&append_to_response=external_ids,alternative_titles&language=en-US`,
-      { headers: { Accept: 'application/json', 'User-Agent': USER_AGENT } }
-    );
-    if (detailsRes.ok) {
-      const data = await detailsRes.json();
+    if (detailsData && (detailsData.id || detailsData.title || detailsData.name)) {
+      const data = detailsData;
       const releaseDate = data.release_date || data.first_air_date || '';
       const releaseYear = releaseDate ? parseInt(releaseDate.slice(0, 4), 10) : null;
       const genres = Array.isArray(data.genres) ? data.genres.map((g) => g.name) : [];
@@ -535,6 +550,73 @@ async function resolveTmdbMetadata(type, tmdbId, season = 1, episode = 1, env = 
   } catch {}
 
   if (!result) {
+    // Secondary live fallback (mirrors the Node backend): the VidStuck backend
+    // proxies TMDB details, so a TMDB outage/rate-limit on the Worker's shared
+    // egress IP does not strip the title from metadata. Without a title every
+    // search-by-title cascade (Ursa first) instantly reports "nothing to probe"
+    // while TMDB-id keyed tiers keep answering — exactly the "Server 3 falls
+    // back to Server 1" symptom.
+    const vidstuckBase = (
+      (env && env.VIDSTUCK_BASE_URL) ||
+      runtimeState.upstreams.vidstuckBase ||
+      ''
+    ).replace(/\/$/, '');
+    if (vidstuckBase) {
+      try {
+        const vsRes = await fetch(
+          `${vidstuckBase}/backend/tmdb/details/${normalizedType}/${cleanId}?language=en-US`,
+          {
+            headers: {
+              Accept: 'application/json',
+              'User-Agent': USER_AGENT,
+              Referer: `${vidstuckBase}/`
+            }
+          }
+        );
+        if (vsRes.ok) {
+          const vsData = await vsRes.json();
+          if (vsData && (vsData.id || vsData.title || vsData.name)) {
+            const vsReleaseDate = vsData.release_date || vsData.first_air_date || '';
+            result = {
+              tmdbId: Number(cleanId) || cleanId,
+              type: normalizedType,
+              title: vsData.title || vsData.name || null,
+              originalTitle: vsData.original_title || vsData.original_name || vsData.title || vsData.name || null,
+              alternativeTitles: [],
+              releaseYear: vsReleaseDate ? parseInt(vsReleaseDate.slice(0, 4), 10) : null,
+              runtime: vsData.runtime || (Array.isArray(vsData.episode_run_time) && vsData.episode_run_time[0]) || null,
+              genres: Array.isArray(vsData.genres) ? vsData.genres.map((g) => g.name) : [],
+              overview: vsData.overview || '',
+              backdrop: vsData.backdrop_path ? `https://image.tmdb.org/t/p/w1280${vsData.backdrop_path}` : null,
+              poster: vsData.poster_path ? `https://image.tmdb.org/t/p/w500${vsData.poster_path}` : null,
+              externalIds: {
+                imdb_id: vsData.imdb_id || vsData.external_ids?.imdb_id || null,
+                tvdb_id: vsData.external_ids?.tvdb_id || null,
+                mal_id: null,
+                anilist_id: null
+              },
+              seasons: Array.isArray(vsData.seasons)
+                ? vsData.seasons
+                    .filter((s) => s.season_number > 0)
+                    .map((s) => ({
+                      season_number: s.season_number,
+                      name: s.name || `Season ${s.season_number}`,
+                      episode_count: s.episode_count || 0
+                    }))
+                : [],
+              episodes: [],
+              season: sNum,
+              episode: eNum,
+              activeEpisode: null,
+              tmdbFallback: 'vidstuck'
+            };
+          }
+        }
+      } catch {}
+    }
+  }
+
+  if (!result) {
     return {
       tmdbId: Number(cleanId) || cleanId,
       type: normalizedType,
@@ -545,7 +627,8 @@ async function resolveTmdbMetadata(type, tmdbId, season = 1, episode = 1, env = 
       seasons: [],
       episodes: [],
       season: sNum,
-      episode: eNum
+      episode: eNum,
+      unresolvedTmdb: true
     };
   }
 
@@ -4721,6 +4804,19 @@ async function resolveUrsaUpstream(metadata, requestedServerId = 'ursa', preferr
     diag.steps.push({ step, detail, t: Date.now() });
     diag.message = detail || step;
   };
+
+  // Every Ursa tier is a search-by-title scrape: without the TMDB title there
+  // is nothing to search. Fail fast with an honest reason instead of running
+  // four tiers that instantly bail with `*_missing_title` and then reporting
+  // "all four sub-providers failed" (which reads as if they were probed).
+  if (!metadata || !metadata.title) {
+    stamp(
+      'metadata_missing',
+      'Ursa needs the TMDB title to search its 4K tiers, but metadata resolution returned no title (unresolved TMDB lookup). No tier was probed.'
+    );
+    return { ok: false, reason: 'ursa_metadata_missing', diag };
+  }
+
   const tiers = [
     {
       id: '4khdhub',
@@ -5108,8 +5204,11 @@ async function resolveStreamWaterfall(metadata, requestedServer, preferredAudio,
       );
     } else if (srvId === 'ursa') {
       const timeoutMs = validServer === 'ursa' ? URSA_WATERFALL_TIMEOUT_MS : WATERFALL_UPSTREAM_TIMEOUT_MS;
+      // Pass the server actually being attempted (srvId), not the caller's
+      // original request: when the waterfall reaches Ursa as an implicit
+      // fallback the diag `alias` must describe this attempt, not the first one.
       resolved = await withTimeout(
-        resolveUrsaUpstream(metadata, requestedServer, preferredAudio, env),
+        resolveUrsaUpstream(metadata, srvId, preferredAudio, env),
         timeoutMs
       );
     } else if (srvId === 'centaurus') {
@@ -5702,7 +5801,12 @@ export default {
             servers_no_link: 'Upstream has no stream link for this title on this server.',
             aes_decrypt_failed: 'Stream link decryption failed (ZXC_AES_KEY rotated).',
             upstream_timeout: 'Timed out talking to the upstream provider.',
-            upstream_exception: 'Unhandled error contacting the upstream provider.'
+            upstream_exception: 'Unhandled error contacting the upstream provider.',
+            ursa_metadata_missing:
+              'TMDB metadata (title/year) could not be resolved, so this server had nothing to search for — no 4K tier was probed.',
+            ursa_all_4k_sources_exhausted:
+              'None of the four 4K tiers (4KHDHub, MoviesDrive 4K, HiCine 4K, DahmerMovies 4K) yielded a verified playable stream for this title.',
+            ursa_upstream_timeout: 'The 4K cascade exceeded its resolve budget before any tier produced a verified stream.'
           };
           const humanReason = firstFailed
             ? reasonMap[firstFailed.reason] || firstFailed.reason

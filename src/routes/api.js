@@ -292,7 +292,12 @@ router.get('/resolve/:type/:tmdbId', async (req, res) => {
         servers_no_link: 'Upstream has no stream link for this title on this server.',
         aes_decrypt_failed: 'Stream link decryption failed (ZXC_AES_KEY rotated).',
         upstream_timeout: 'Timed out talking to the upstream provider.',
-        upstream_exception: 'Unhandled error contacting the upstream provider.'
+        upstream_exception: 'Unhandled error contacting the upstream provider.',
+        ursa_metadata_missing:
+          'TMDB metadata (title/year) could not be resolved, so this server had nothing to search for — no 4K tier was probed.',
+        ursa_all_4k_sources_exhausted:
+          'None of the four 4K tiers (4KHDHub, MoviesDrive 4K, HiCine 4K, DahmerMovies 4K) yielded a verified playable stream for this title.',
+        ursa_upstream_timeout: 'The 4K cascade exceeded its resolve budget before any tier produced a verified stream.'
       };
       const humanReason = firstFailed
         ? reasonMap[firstFailed.reason] || firstFailed.reason
