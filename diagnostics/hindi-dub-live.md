@@ -1,9 +1,11 @@
 # Live Hindi-dub verification (real upstreams)
 
-Workflow: `Hindi Dub Live Verify` — 2026-10-04T07:13:25.731Z → 2026-10-04T07:14:58.294Z (deep providers: no).
+Workflow: `Hindi Dub Live Verify` — 2026-10-04T07:27:34.116Z → 2026-10-04T07:28:11.151Z (deep providers: no).
 Raw data: `diagnostics/hindi-dub-live.json`.
 
 Every request below starts from a **TMDB id**: metadata (title, original/alternative titles, year, IMDb id) is resolved from TMDB first, then each provider result is scored against that identity before use.
+
+Cascade after the Moviebox removal: **CastleTV → NetMirror**, with the 4K/download tiers (4KHDHub, MoviesDrive, HiCine, DahmerMovies, HiAnime) only in `deep` mode.
 
 | Request | TMDB title | Hindi result | Identity-verified | Serving provider | Matched upstream |
 | --- | --- | --- | --- | --- | --- |
@@ -30,8 +32,8 @@ Every request below starts from a **TMDB id**: metadata (title, original/alterna
 
 - **Movies**: Dune: Part Two (`hi, ta, te, kn`), 3 Idiots, Oppenheimer, Spirited Away → identity-verified Hindi on CastleTV.
 - **TV / series**: Breaking Bad, Demon Slayer → identity-verified Hindi; Arcane and Rick and Morty have no Hindi in any tier → `hindiAvailable: false` plus the verified original stream (never a wrong-title dub).
-- **Anime film**: Spirited Away @2003 published year (real release 2001) is now accepted — the year window tolerates provider drift of ±2 years while still rejecting decade-apart collisions.
-- `/api/dubs/:type/:tmdbId?deep=1` adds the 4K/download tiers (4KHDHub, MoviesDrive, HiCine 4K, DahmerMovies, HiAnime) for the full inventory.
+- **Anime film**: Spirited Away @2003 published year (real release 2001) is accepted — the year window tolerates provider drift of ±2 years while still rejecting decade-apart collisions.
+- **NetMirror** (tier 2) is TMDB-id keyed, but its OTT catalog is small: it missed all probed titles here. The separate `diagnostics/netmirror-probe.json` shows it live on `net27.cc` for titles it does carry (e.g. Breaking Bad S1E1 → 4 streams).
 
 ## Provider attempt log for `movie/550`
 
@@ -43,25 +45,19 @@ Every request below starts from a **TMDB id**: metadata (title, original/alterna
   "hindi": false,
   "identityMethod": "tmdb-verified",
   "identityVerified": true,
-  "latencyMs": 744
- },
- {
-  "provider": "moviebox",
-  "ok": false,
-  "reason": "no_stream",
-  "latencyMs": 7152
+  "latencyMs": 1046
  },
  {
   "provider": "netmirror",
   "ok": false,
   "reason": "no_stream",
-  "latencyMs": 544
+  "latencyMs": 110
  },
  {
   "provider": "moviesdrive",
   "ok": false,
   "reason": "no_stream",
-  "latencyMs": 1446
+  "latencyMs": 1166
  },
  {
   "provider": "4khdhub",
@@ -69,13 +65,13 @@ Every request below starts from a **TMDB id**: metadata (title, original/alterna
   "hindi": true,
   "identityMethod": "title-year",
   "identityVerified": false,
-  "latencyMs": 1242
+  "latencyMs": 821
  },
  {
   "provider": "dahmer",
   "ok": false,
   "reason": "no_stream",
-  "latencyMs": 373
+  "latencyMs": 56
  },
  {
   "provider": "hicine",
@@ -83,7 +79,7 @@ Every request below starts from a **TMDB id**: metadata (title, original/alterna
   "hindi": true,
   "identityMethod": "title-hint",
   "identityVerified": false,
-  "latencyMs": 6062
+  "latencyMs": 6004
  }
 ]
 ```
