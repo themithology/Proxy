@@ -2834,6 +2834,113 @@ async function resolveHicineUpstream(metadata, env = {}) {
 // ============================================================================
 /** Per-upstream budget keeps the waterfall deterministic. */
 const WATERFALL_UPSTREAM_TIMEOUT_MS = 9000;
+/** Anime Dub Hindi is a backend HTTP call that itself runs a multi-hop flow. */
+const ANIMEDUBHINDI_UPSTREAM_TIMEOUT_MS = 11000;
+
+/**
+ * Hamster Wheel (server #3) runs on the Node backend: it needs HMAC request
+ * signing, HTML release-page extraction, hubcloud unrolling and media probes
+ * that the Worker cannot do inside its CPU budget (and the Worker's egress IPs
+ * get blocked by some of those hosts). When `HAMSTER_BACKEND_URL` is set the
+ * Worker delegates the resolve to that backend and re-uses its signed proxy
+ * stream URL; without it the server stays listed but is skipped by the
+ * waterfall with an explicit diagnostic.
+ */
+async function resolveHamsterUpstream(metadata, env = {}) {
+  const base = String((env && env.HAMSTER_BACKEND_URL) || '').replace(/\/$/, '');
+  if (!base) return { reason: 'hamster_backend_not_configured' };
+
+  const query = new URLSearchParams({
+    server: 'hamster',
+    season: String(metadata.season || 1),
+    episode: String(metadata.episode || 1)
+  });
+  try {
+    const response = await fetch(`${base}/api/resolve/${metadata.type}/${metadata.tmdbId}?${query}`, {
+      headers: { Accept: 'application/json', 'User-Agent': USER_AGENT }
+    });
+    if (!response.ok) return { reason: `hamster_backend_http_${response.status}` };
+    const payload = await response.json();
+    const stream = payload && payload.stream;
+    if (!stream || !stream.streamUrl) {
+      return { reason: (payload && payload.failedReason) || 'hamster_no_stream' };
+    }
+    return {
+      server: 'hamster',
+      sourceName: stream.sourceName || 'Hamster Wheel',
+      format: stream.format || 'hls',
+      rawUrl: stream.rawUrl,
+      // Already an absolute, HMAC-signed /api/proxy URL on the Node origin.
+      streamUrl: stream.streamUrl,
+      referer: stream.referer || '',
+      headers: stream.headers || {},
+      backupUrls: stream.backupUrls || [],
+      audioTracks: stream.audioTracks || [],
+      qualities: stream.qualities || []
+    };
+  } catch {
+    return { reason: 'hamster_backend_unreachable' };
+  }
+}
+
+/**
+ * Anime Dub Hindi (Centaurus source #2) runs on the Node backend for the same
+ * reasons as Hamster Wheel: WordPress/adhlinks HTML extraction, HubCloud and
+ * GDFlix unrolling, and media probes that the Worker cannot do inside its CPU
+ * budget. The Worker's own centaurus source is HiCine; when that finds nothing
+ * on an anime title it asks the backend for this one source directly
+ * (`?source=animedubhindi`, so the backend does not re-run HiCine).
+ *
+ * `ANIMEDUBHINDI_BACKEND_URL` behaves exactly like `HAMSTER_BACKEND_URL`
+ * (defaults to it when unset, so one Node deployment configures both).
+ */
+async function resolveAnimeDubHindiUpstream(metadata, env = {}) {
+  const base = String(
+    (env && env.ANIMEDUBHINDI_BACKEND_URL) || (env && env.HAMSTER_BACKEND_URL) || ''
+  ).replace(/\/$/, '');
+  if (!base) return { reason: 'animedubhindi_backend_not_configured' };
+
+  const query = new URLSearchParams({
+    server: 'centaurus',
+    source: 'animedubhindi',
+    season: String(metadata.season || 1),
+    episode: String(metadata.episode || 1)
+  });
+  try {
+    const response = await fetch(`${base}/api/resolve/${metadata.type}/${metadata.tmdbId}?${query}`, {
+      headers: { Accept: 'application/json', 'User-Agent': USER_AGENT }
+    });
+    if (!response.ok) return { reason: `animedubhindi_backend_http_${response.status}` };
+    const payload = await response.json();
+    const stream = payload && payload.stream;
+    if (!stream || !stream.streamUrl) {
+      return { reason: (payload && payload.failedReason) || 'animedubhindi_no_stream' };
+    }
+    return {
+      server: 'centaurus',
+      sourceName: stream.sourceName || 'Anime Dub Hindi',
+      format: stream.format || 'mkv',
+      rawUrl: stream.rawUrl,
+      // Already an absolute, HMAC-signed /api/proxy URL on the Node origin.
+      streamUrl: stream.streamUrl,
+      referer: stream.referer || '',
+      headers: stream.headers || {},
+      backupUrls: stream.backupUrls || [],
+      audioTracks: stream.audioTracks || [],
+      qualities: stream.qualities || []
+    };
+  } catch {
+    return { reason: 'animedubhindi_backend_unreachable' };
+  }
+}
+
+/** Titles whose genres say animation/anime are the only ones the second source can serve. */
+function isAnimationMetadata(metadata = {}) {
+  const genres = Array.isArray(metadata.genres) ? metadata.genres : [];
+  if (genres.some((genre) => /animation|anime/i.test(String(genre)))) return true;
+  // No genre data at all (fallback metadata builders) — let the backend decide.
+  return genres.length === 0;
+}
 
 async function withTimeout(promise, ms, fallback = null) {
   let timer;
@@ -2878,10 +2985,28 @@ async function resolveStreamWaterfall(metadata, requestedServer, preferredAudio,
         WATERFALL_UPSTREAM_TIMEOUT_MS
       );
     } else if (srvId === 'centaurus') {
-      resolved = await withTimeout(
+      // Two-source server: HiCine first, then Anime Dub Hindi (anime only,
+      // delegated to the Node backend).
+      const hicine = await withTimeout(
         resolveHicineUpstream(metadata, env),
         WATERFALL_UPSTREAM_TIMEOUT_MS
       );
+      if (hicine && hicine.streamUrl) {
+        resolved = hicine;
+      } else {
+        const anime = isAnimationMetadata(metadata)
+          ? await withTimeout(resolveAnimeDubHindiUpstream(metadata, env), ANIMEDUBHINDI_UPSTREAM_TIMEOUT_MS)
+          : { reason: 'not_anime' };
+        resolved = anime && anime.streamUrl
+          ? anime
+          : {
+              reason: `centaurus_no_source: hicine=${(hicine && hicine.reason) || 'no_stream'}; animedubhindi=${
+                (anime && anime.reason) || 'no_stream'
+              }`
+            };
+      }
+    } else if (srvId === 'hamster') {
+      resolved = await withTimeout(resolveHamsterUpstream(metadata, env), WATERFALL_UPSTREAM_TIMEOUT_MS);
     }
     const latencyMs = Date.now() - t0;
 
@@ -3176,6 +3301,14 @@ export default {
         const targets = [
           { serverId: 'andromeda', url: `${runtimeState.upstreams.vidstuckBase}/backend/tmdb/details/tv/94605?language=en-US` },
           { serverId: 'centaurus', url: `${runtimeState.upstreams.hicineApiBase}/api/search/arcane` },
+          // Anime Dub Hindi (centaurus source #2) lives on the Node backend, so
+          // probe that backend — only when one is configured.
+          ...(() => {
+            const backend = String((env && (env.ANIMEDUBHINDI_BACKEND_URL || env.HAMSTER_BACKEND_URL)) || '').replace(/\/$/, '');
+            return backend
+              ? [{ serverId: 'centaurus:animedubhindi', url: `${backend}/api/health` }]
+              : [];
+          })()
         ];
         const probeResults = [];
         for (const t of targets) {

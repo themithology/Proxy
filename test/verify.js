@@ -1,3 +1,10 @@
+// Hamster Wheel fans out to real, rotating Hindi release hosts. This suite is
+// hermetic (every upstream is mocked), so the fan-out is disabled here: the
+// waterfall still exercises the hamster branch and records a deterministic
+// `hamster_no_candidates` (diag: disabled) attempt instead of calling the
+// internet. Parsers/ranking are covered by test/hamster.test.js.
+process.env.HAMSTER_ENABLED = 'false';
+
 const http = require('http');
 const fs = require('fs');
 const path = require('path');
@@ -1898,8 +1905,8 @@ async function runTests() {
         .map((s) => s.id);
       assert.deepStrictEqual(
         failoverOrder,
-        ['andromeda', 'centaurus'],
-        'waterfall order must follow the live catalog (andromeda -> centaurus)'
+        ['andromeda', 'centaurus', 'hamster'],
+        'waterfall order must follow the live catalog (andromeda -> centaurus -> hamster)'
       );
 
       // 11f. Cloudflare Worker: Multi-Tier Andromeda Resolution, Debug Telemetry & Waterfall Failover
@@ -1967,7 +1974,8 @@ async function runTests() {
       const catalog = require('../src/services/serverCatalog');
       const expected = [
         ['andromeda', 'Fiber Optic Speedrun', 'Multi-Audio • Primary', 1],
-        ['centaurus', 'Gigachad Node', 'Adaptive • Multi-Quality', 2]
+        ['centaurus', 'Gigachad Node', 'Adaptive • Multi-Quality', 2],
+        ['hamster', 'Hamster Wheel', 'Hindi First • Multi-Audio • Max Coverage', 3]
       ];
 
       // 13a. The Node backend serves the catalog order verbatim.
@@ -2015,7 +2023,7 @@ async function runTests() {
       // 13d. The player must default to priority 1 and order rows defensively.
       const embedJs = fs.readFileSync(path.join(__dirname, '..', 'public', 'js', 'embed.js'), 'utf8');
       assert.match(embedJs, /server: 'andromeda'/, 'player default server must be the priority-1 server');
-      assert.ok(!/server: '(atlas|ursa|hamster)'/.test(embedJs), 'player must not default to a removed server');
+      assert.ok(!/server: '(atlas|ursa)'/.test(embedJs), 'player must not default to a removed server');
       assert.ok(
         /\.sort\(\(a, b\) => \(Number\(a\.priority\) \|\| 999\)/.test(embedJs),
         'player must re-sort the API server array by priority before rendering'

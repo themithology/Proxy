@@ -19,6 +19,19 @@ CASTLETV_BASE_URL = "https://api.hlowb.com"
 NETMIRROR_BASE_URL = "https://net27.cc"
 HICINE_API_BASE = "https://api.hicine.sbs"
 
+# Hamster Wheel (server #3) runs on the Node backend: HMAC signing, HTML
+# release-page extraction, HubCloud unrolling and media probes do not fit the
+# Worker CPU budget, and some upstream hosts block Cloudflare egress IPs.
+# Set this to the Node deployment's absolute URL to let the Worker's waterfall
+# delegate Hamster Wheel resolves to it. Leave empty to keep the server listed
+# but skipped (the API reports `hamster_backend_not_configured`).
+HAMSTER_BACKEND_URL = ""
+
+# Anime Dub Hindi (Centaurus / server #2 second source) also runs on the Node
+# backend. Defaults to HAMSTER_BACKEND_URL when empty, so a single Node
+# deployment configures both delegated servers.
+ANIMEDUBHINDI_BACKEND_URL = ""
+
 # Base URL of the API Worker/backend the /embed player should call.
 # Leave empty ("") when this Worker serves both the player and the API
 # (same origin). When the API runs on a different Worker or Node deployment,
@@ -38,3 +51,5 @@ API_BASE_URL = ""
 CASTLETV_BASE_URL = "https://api.hlowb.com"
 NETMIRROR_BASE_URL = "https://net27.cc"
 HICINE_API_BASE = "https://api.hicine.sbs"
+HAMSTER_BACKEND_URL = ""
+ANIMEDUBHINDI_BACKEND_URL = ""
