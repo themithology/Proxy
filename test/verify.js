@@ -31,7 +31,6 @@ const {
   resolveStreamForServer,
   resolveAndromedaServer,
   resolveCastletv,
-  resolveMoviebox,
   resolveNetmirror,
   resolveUrsaServer,
   resolve4khdhub,
@@ -43,7 +42,6 @@ const {
   buildCastleKey,
   decryptCastleAes,
   mapLanguageNameToCode,
-  buildMovieboxHeaders
 } = require('../src/services/resolver');
 const {
   parseProbeJson,
@@ -506,12 +504,6 @@ function startUpstreamMockServer() {
         );
       }
 
-      // 8d. Upstream MP4 Stream for Moviebox verification
-      if (u.pathname.startsWith('/cdn/mbox/')) {
-        res.writeHead(200, { 'Content-Type': 'video/mp4' });
-        return res.end('fake-mp4-data-stream');
-      }
-
       // 8e. TMDB failover fixture
       if (u.pathname === '/tmdb/movie/cascade-test-fail-all') {
         res.writeHead(200, { 'Content-Type': 'application/json' });
@@ -532,10 +524,6 @@ function startUpstreamMockServer() {
       if (u.pathname.startsWith('/castletv-down')) {
         res.writeHead(503, { 'Content-Type': 'text/plain' });
         return res.end('castle down');
-      }
-      if (u.pathname.startsWith('/moviebox-down')) {
-        res.writeHead(503, { 'Content-Type': 'application/json' });
-        return res.end(JSON.stringify({ code: 503, message: 'moviebox down' }));
       }
 
       // 9. CastleTV Mock Upstream (/castletv/...)
@@ -712,140 +700,7 @@ function startUpstreamMockServer() {
         return;
       }
 
-      // 10. Moviebox Mock Upstream (/moviebox/...)
-      if (u.pathname === '/moviebox/wefeed-mobile-bff/subject-api/search/v2') {
-        let rawBody = '';
-        req.on('data', (c) => { rawBody += c; });
-        req.on('end', () => {
-          let bodyObj = {};
-          try { bodyObj = JSON.parse(rawBody); } catch {}
-          const kw = (bodyObj.keyword || '').toLowerCase();
-          if (kw.includes('fail-moviebox') || kw.includes('cascade-test-fail-all')) {
-            res.writeHead(200, { 'Content-Type': 'application/json' });
-            return res.end(JSON.stringify({ code: 0, data: { results: [] } }));
-          }
-          // Same collision as CastleTV: the 2023 Indian "Fight Club" (Hindi dub)
-          // is ranked first, the 1999 film second.
-          if (kw.includes('fight club')) {
-            res.writeHead(200, { 'Content-Type': 'application/json' });
-            return res.end(
-              JSON.stringify({
-                code: 0,
-                data: {
-                  results: [
-                    {
-                      subjects: [
-                        { subjectId: 'mbox-fc-2023', title: 'Fight Club', subjectType: 1, year: 2023 },
-                        { subjectId: 'mbox-fc-1999', title: 'Fight Club', subjectType: 1, year: 1999 },
-                        { subjectId: 'mbox-fc-tv', title: 'Fight Club', subjectType: 2, year: 2021 }
-                      ]
-                    }
-                  ]
-                }
-              })
-            );
-          }
-          res.writeHead(200, { 'Content-Type': 'application/json' });
-          res.end(
-            JSON.stringify({
-              code: 0,
-              data: {
-                results: [
-                  {
-                    subjects: [
-                      {
-                        subjectId: 'mbox-101',
-                        title: 'Dune: Part Two',
-                        subjectType: 1
-                      }
-                    ]
-                  }
-                ]
-              }
-            })
-          );
-        });
-        return;
-      }
-
-      if (u.pathname === '/moviebox/wefeed-mobile-bff/subject-api/get') {
-        const requestedSubject = u.searchParams.get('subjectId');
-        if (requestedSubject === 'mbox-fc-1999') {
-          res.writeHead(200, { 'Content-Type': 'application/json' });
-          return res.end(
-            JSON.stringify({
-              code: 0,
-              data: { dubs: [{ subjectId: 'mbox-fc-1999', lanName: 'English' }] }
-            })
-          );
-        }
-        if (requestedSubject === 'mbox-fc-2023') {
-          res.writeHead(200, { 'Content-Type': 'application/json' });
-          return res.end(
-            JSON.stringify({
-              code: 0,
-              data: {
-                dubs: [
-                  { subjectId: 'mbox-fc-2023', lanName: 'Hindi' },
-                  { subjectId: 'mbox-fc-2023-ta', lanName: 'Tamil' }
-                ]
-              }
-            })
-          );
-        }
-        res.writeHead(200, { 'Content-Type': 'application/json' });
-        return res.end(
-          JSON.stringify({
-            code: 0,
-            data: {
-              dubs: [
-                { subjectId: 'mbox-101', lanName: 'English' },
-                { subjectId: 'mbox-102', lanName: 'Hindi' },
-                { subjectId: 'mbox-103', lanName: 'Tamil' }
-              ]
-            }
-          })
-        );
-      }
-
-      if (u.pathname === '/moviebox/wefeed-mobile-bff/subject-api/play-info') {
-        const subId = u.searchParams.get('subjectId');
-        if (subId === 'mbox-fc-1999') {
-          res.writeHead(200, { 'Content-Type': 'application/json' });
-          return res.end(
-            JSON.stringify({
-              code: 0,
-              data: { streams: [{ url: `${mockOrigin}/cdn/mbox/fight-club-1999-en.mp4`, resolutions: '1080p' }] }
-            })
-          );
-        }
-        if (subId === 'mbox-fc-2023' || subId === 'mbox-fc-2023-ta') {
-          res.writeHead(200, { 'Content-Type': 'application/json' });
-          return res.end(
-            JSON.stringify({
-              code: 0,
-              data: { streams: [{ url: `${mockOrigin}/cdn/mbox/fight-club-2023-hi.mp4`, resolutions: '1080p' }] }
-            })
-          );
-        }
-        const lang = subId === 'mbox-102' ? 'hi' : subId === 'mbox-103' ? 'ta' : 'en';
-        res.writeHead(200, { 'Content-Type': 'application/json' });
-        return res.end(
-          JSON.stringify({
-            code: 0,
-            data: {
-              streams: [
-                {
-                  url: `${mockOrigin}/cdn/mbox/mbox-${lang}.mp4`,
-                  resolutions: '1080p'
-                }
-              ]
-            }
-          })
-        );
-      }
-
-      // 11. NetMirror Mock Upstream (/netmirror/...)
+      // 11. NetMirror Mock Upstream (/netmirror/...)      // 11. NetMirror Mock Upstream (/netmirror/...)
       if (u.pathname === '/checknewtv.php') {
         const tokenHash = Buffer.from(mockOrigin).toString('base64');
         res.writeHead(200, { 'Content-Type': 'application/json' });
@@ -2063,9 +1918,8 @@ async function runTests() {
 
     // 11. Server Andromeda Multi-Tier Architecture & Waterfall Failover
     // Priority 1: CastleTV (South Indian, Asian, Hollywood dubs)
-    // Priority 2: Moviebox (Broad catalog, multi-language MP4/HLS)
-    // Priority 3: NetMirror (Official OTT platform mirrors)
-    // Waterfall Failover: When all 3 tiers miss, cleanly hand off to Server 2 (Ursa / VidSrc)
+    // Priority 2: NetMirror (Official OTT platform mirrors)
+    // Waterfall Failover: When both tiers miss, cleanly hand off to Server 2 (Ursa / VidSrc)
     console.log('[11/11] Testing Server Andromeda Multi-Tier Architecture & Waterfall Failover...');
 
     // 11a. CastleTV Unit & Sub-resolver: Security key handshake, AES-128-CBC encryption, multi-audio tracks
@@ -2077,15 +1931,13 @@ async function runTests() {
     assert.strictEqual(testDec, testPlain, 'Castle AES encryption and decryption must roundtrip');
 
     const origCastleBase = config.upstreams.castletvBase;
-    const origMovieboxBase = config.upstreams.movieboxBase;
     const origNetmirrorBase = config.upstreams.netmirrorBase;
     const origVidstuckBase = config.upstreams.vidstuckBase;
 
     try {
       config.upstreams.castletvBase = `${mockUpstream.url}/castletv`;
-      config.upstreams.movieboxBase = `${mockUpstream.url}/moviebox`;
       config.upstreams.netmirrorBase = `${mockUpstream.url}/netmirror`;
-      // Clear VidStuck base to verify the pure 3-tier cascade and Ursa failover without old fallback
+      // Clear VidStuck base to verify the pure cascade and Ursa failover without old fallback
       config.upstreams.vidstuckBase = '';
 
       // Test Direct CastleTV Resolver
@@ -2102,83 +1954,6 @@ async function runTests() {
       const hiCastleTrack = castleRes.audioTracks.find((t) => t.lang === 'hi');
       assert.ok(hiCastleTrack, 'Hindi track must be present in CastleTV tracks');
       assert.strictEqual(hiCastleTrack.default, true, 'Preferred audio "hi" must be marked default');
-
-      // 11b. Moviebox Unit & Sub-resolver: HMAC-MD5 signing, search, detail & play-info
-      const mboxSecret = Buffer.from('test-mbox-secret-key-12345');
-      const mboxHeaders = buildMovieboxHeaders('POST', `${mockUpstream.url}/test`, JSON.stringify({ a: 1 }), mboxSecret);
-      assert.ok(mboxHeaders['x-client-token'], 'Moviebox headers must include x-client-token');
-      assert.ok(mboxHeaders['x-tr-signature'], 'Moviebox headers must include x-tr-signature');
-      assert.match(mboxHeaders['x-tr-signature'], /^\d+\|2\|[A-Za-z0-9+/=]+$/, 'Signature must follow ts|2|b64 format');
-
-      // Test Dynamic Moviebox Failover (dead host in pool -> failover to working mirror)
-      config.upstreams.movieboxBase = 'http://127.0.0.1:1'; // unreachable dead port
-      config.upstreams.movieboxHosts = [`${mockUpstream.url}/moviebox`];
-
-      const mboxRes = await resolveMoviebox(
-        { title: 'Dune: Part Two', releaseYear: 2024, type: 'movie' },
-        'ta'
-      );
-      assert.ok(mboxRes, 'Moviebox resolver must succeed by failing over to working host in pool');
-      assert.strictEqual(mboxRes.server, 'andromeda');
-      assert.strictEqual(mboxRes.sourceName, 'Moviebox');
-      assert.strictEqual(mboxRes.format, 'mp4');
-      assert.strictEqual(mboxRes.audioTracks.length, 3, 'Moviebox must yield 3 audio tracks');
-      const taMboxTrack = mboxRes.audioTracks.find((t) => t.lang === 'ta');
-      assert.ok(taMboxTrack, 'Tamil track must be present');
-      assert.strictEqual(taMboxTrack.default, true, 'Preferred audio "ta" must be default');
-
-      // 11b-2. TMDB-anchored identity: a same-name collision must resolve the
-      // 1999 Fight Club, never the 2023 Indian film that ships a Hindi dub.
-      const fightCastle = await resolveCastletv(
-        { title: 'Fight Club', originalTitle: 'Fight Club', releaseYear: 1999, tmdbId: 550, type: 'movie' },
-        'hi'
-      );
-      assert.ok(fightCastle, 'CastleTV must resolve the identity-verified 1999 Fight Club');
-      assert.strictEqual(fightCastle.identity.upstreamId, 'castle-fc-1999', 'CastleTV must bind to the 1999 row');
-      assert.ok(
-        fightCastle.identity.rejectedCandidates.some((c) => Number(c.year) === 2023),
-        'the 2023 Indian Fight Club must be rejected despite its Hindi dub'
-      );
-      assert.deepStrictEqual(
-        fightCastle.audioTracks.map((t) => t.lang),
-        ['en'],
-        'only the verified title audio tracks may be exposed'
-      );
-      assert.ok(
-        !fightCastle.audioTracks.some((t) => t.lang === 'hi'),
-        'a Hindi track from the wrong title must never be surfaced'
-      );
-      assert.ok(
-        !fightCastle.identity.candidates.some((c) => c.accepted && Number(c.year) === 2023),
-        'no accepted candidate may be the 2023 film'
-      );
-
-      // Unverifiable identity -> clean miss so the cascade can continue.
-      const unverifiableCastle = await resolveCastletv(
-        { title: 'Only Indian Fight Club', releaseYear: 1999, type: 'movie' },
-        'hi'
-      );
-      assert.strictEqual(unverifiableCastle, null, 'CastleTV must miss when no row proves the TMDB identity');
-
-      const fightMbox = await resolveMoviebox(
-        { title: 'Fight Club', originalTitle: 'Fight Club', releaseYear: 1999, tmdbId: 550, type: 'movie' },
-        'hi'
-      );
-      assert.ok(fightMbox, 'Moviebox must resolve the identity-verified 1999 Fight Club');
-      assert.strictEqual(fightMbox.identity.upstreamId, 'mbox-fc-1999', 'Moviebox must bind to the 1999 subject');
-      assert.ok(
-        fightMbox.identity.rejectedCandidates.some((c) => Number(c.year) === 2023),
-        'Moviebox must reject the 2023 Indian Fight Club'
-      );
-      assert.ok(
-        !fightMbox.audioTracks.some((t) => String(t.rawUrl).includes('fight-club-2023')),
-        'the wrong title Hindi dub must not leak through Moviebox'
-      );
-      const unverifiableMbox = await resolveMoviebox(
-        { title: 'Only Indian Fight Club', releaseYear: 1999, type: 'movie' },
-        'hi'
-      );
-      assert.strictEqual(unverifiableMbox, null, 'Moviebox must miss when no subject proves the TMDB identity');
 
       // Identity engine unit checks (title canonicalization + year/type gates)
       const fcMeta = { title: 'Fight Club', originalTitle: 'Fight Club', releaseYear: 1999, type: 'movie' };
@@ -2273,7 +2048,7 @@ async function runTests() {
         genres: ['Drama', 'Thriller'],
         externalIds: { imdb_id: 'tt0137523' }
       };
-      const hindiMiss = await resolveHindiServer(fcMetadata, 'hi', { providerIds: ['castletv', 'moviebox'] });
+      const hindiMiss = await resolveHindiServer(fcMetadata, 'hi', { providerIds: ['castletv', 'netmirror'] });
       assert.strictEqual(hindiMiss.server, 'hindi');
       assert.strictEqual(hindiMiss.hindiAvailable, false, 'no identity-verified Hindi source exists for the 1999 film');
       assert.strictEqual(hindiMiss.providerId, 'castletv', 'the verified original-audio stream is still returned');
@@ -2289,7 +2064,7 @@ async function runTests() {
           type: 'movie'
         },
         'hi',
-        { providerIds: ['castletv', 'moviebox'] }
+        { providerIds: ['castletv', 'netmirror'] }
       );
       assert.strictEqual(hindiHit.hindiAvailable, true, 'verified Hindi dub must be reported as available');
       assert.strictEqual(hindiHit.providerId, 'castletv');
@@ -2310,7 +2085,7 @@ async function runTests() {
 
       // The Hindi server end-to-end over HTTP, using the HINDI_PROVIDERS knob.
       const prevHindiProviders = config.upstreams.hindiProviders;
-      config.upstreams.hindiProviders = ['castletv', 'moviebox'];
+      config.upstreams.hindiProviders = ['castletv', 'netmirror'];
       try {
         const hindiHttp = await httpRequest(baseUrl, '/api/resolve/movie/550?server=hindi&audio=hi');
         assert.strictEqual(hindiHttp.status, 200, 'GET /api/resolve?server=hindi must answer');
@@ -2346,9 +2121,6 @@ async function runTests() {
         'the hindi server must be marked as an opt-in (fallback:false) server'
       );
 
-      // Reset movieboxBase for downstream tests
-      config.upstreams.movieboxBase = `${mockUpstream.url}/moviebox`;
-
       // 11c. NetMirror Dynamic Sub-resolver: Discovery checknewtv.php & rotating referer tracker
       config.upstreams.netmirrorDiscoveryUrls = [mockUpstream.url];
       config.upstreams.netmirrorBase = ''; // clear static netmirror base to enforce dynamic discovery
@@ -2365,10 +2137,27 @@ async function runTests() {
       assert.ok(nmRes.referer.includes('net77.cc'), 'Referer must dynamically adapt to active mirror (net77.cc)');
       assert.ok(nmRes.audioTracks.length >= 1);
 
+      // NetMirror web-mirror rotation: the NewTV API base and the first mirror
+      // are dead, so the resolver must rotate to the next /api/embed-tmdb host.
+      config.upstreams.netmirrorBase = '';
+      config.upstreams.netmirrorDiscoveryUrls = [];
+      config.upstreams.netmirrorWebMirrors = ['http://127.0.0.1:1', `${mockUpstream.url}/netmirror`];
+      const nmRotated = await resolveNetmirror(
+        { tmdbId: '693134', title: 'Dune: Part Two', type: 'movie' },
+        'hi'
+      );
+      assert.ok(nmRotated, 'NetMirror must rotate to a working web mirror');
+      assert.ok(nmRotated.streamUrl.startsWith('/api/proxy?url='));
+      assert.ok(
+        nmRotated.rawUrl.includes('netmirror-master.m3u8'),
+        'rotated mirror must return the mocked mirror stream'
+      );
+      config.upstreams.netmirrorWebMirrors = [`${mockUpstream.url}/netmirror`];
+
       // Restore static netmirrorBase as fallback
       config.upstreams.netmirrorBase = `${mockUpstream.url}/netmirror`;
 
-      // 11d. Andromeda Multi-Tier Internal Cascading (Priority 1: Castle -> Priority 2: Moviebox -> Priority 3: NetMirror)
+      // 11d. Andromeda Multi-Tier Internal Cascading (Priority 1: Castle -> Priority 2: NetMirror)
       // Tier 1: When CastleTV succeeds, Andromeda returns CastleTV
       const andromedaTier1 = await resolveAndromedaServer({
         title: 'Dune: Part Two',
@@ -2379,7 +2168,7 @@ async function runTests() {
       assert.ok(andromedaTier1 && andromedaTier1.streamUrl, 'Andromeda must resolve Tier 1');
       assert.strictEqual(andromedaTier1.sourceName, 'CastleTV', 'Priority 1 must be CastleTV');
 
-      // Tier 2: When CastleTV fails, Andromeda cascades to Moviebox
+      // Tier 2: When CastleTV fails, Andromeda cascades to NetMirror
       config.upstreams.castletvBase = `${mockUpstream.url}/castletv-down`;
       const andromedaTier2 = await resolveAndromedaServer({
         title: 'Dune: Part Two',
@@ -2388,28 +2177,12 @@ async function runTests() {
         type: 'movie'
       });
       assert.ok(andromedaTier2 && andromedaTier2.streamUrl, 'Andromeda must resolve Tier 2 when Tier 1 misses');
-      assert.strictEqual(andromedaTier2.sourceName, 'Moviebox', 'Priority 2 must be Moviebox');
-
-      // Tier 3: When CastleTV and Moviebox both fail, Andromeda cascades to NetMirror
-      config.upstreams.movieboxStrictHosts = true;
-      config.upstreams.movieboxBase = `${mockUpstream.url}/moviebox-down`;
-      config.upstreams.movieboxHosts = [`${mockUpstream.url}/moviebox-down`];
-      const andromedaTier3 = await resolveAndromedaServer({
-        title: 'Dune: Part Two',
-        releaseYear: 2024,
-        tmdbId: '693134',
-        type: 'movie'
-      });
-      config.upstreams.movieboxStrictHosts = false;
-      assert.ok(andromedaTier3 && andromedaTier3.streamUrl, 'Andromeda must resolve Tier 3 when Tiers 1 & 2 miss');
-      assert.ok(andromedaTier3.sourceName.startsWith('NetMirror'), 'Priority 3 must be NetMirror');
+      assert.ok(andromedaTier2.sourceName.startsWith('NetMirror'), 'Priority 2 must be NetMirror');
 
       // Restore the healthy tiers for the remaining Andromeda assertions.
       config.upstreams.castletvBase = `${mockUpstream.url}/castletv`;
-      config.upstreams.movieboxBase = `${mockUpstream.url}/moviebox`;
-      config.upstreams.movieboxHosts = [`${mockUpstream.url}/moviebox`];
 
-      // Exhaustion: When all 3 tiers fail, Andromeda returns clean failure
+      // Exhaustion: when every tier fails, Andromeda returns a clean failure
       const andromedaExhausted = await resolveAndromedaServer({
         title: 'cascade-test-fail-all',
         releaseYear: 2024,
@@ -2421,7 +2194,7 @@ async function runTests() {
 
       // 11e. End-to-End Waterfall Failover to Server 2 (Ursa / VidSrc)
       // The client explicitly requests Server 1 (Andromeda).
-      // Since all 3 Andromeda tiers fail, the waterfall must fall back cleanly to Server 2 (Ursa).
+      // Since every Andromeda tier fails, the waterfall must fall back cleanly to Server 2 (Ursa).
       const waterfallFailoverRes = await resolveStreamForServer(
         {
           tmdbId: 'cascade-test-fail-all',
@@ -2449,8 +2222,8 @@ async function runTests() {
       // 11f. Cloudflare Worker: Multi-Tier Andromeda Resolution, Debug Telemetry & Waterfall Failover
       const workerEnv = {
         CASTLETV_BASE_URL: `${mockUpstream.url}/castletv`,
-        MOVIEBOX_BASE_URL: `${mockUpstream.url}/moviebox`,
         NETMIRROR_BASE_URL: `${mockUpstream.url}/netmirror`,
+        NETMIRROR_WEB_MIRRORS: `${mockUpstream.url}/netmirror`,
         VIDSTUCK_BASE_URL: '',
         TMDB_BASE_URL: `${mockUpstream.url}/tmdb`,
         VIDSRC_DATA_URL: `${mockUpstream.url}/vidsrc/api.php`
@@ -2484,7 +2257,7 @@ async function runTests() {
 
       const cfHindiRes = await callWorker(
         'http://player.test/api/resolve/movie/550?server=hindi&audio=hi',
-        { ...workerEnv, HINDI_PROVIDERS: 'castletv,moviebox' }
+        { ...workerEnv, HINDI_PROVIDERS: 'castletv,netmirror' }
       );
       assert.strictEqual(cfHindiRes.status, 200);
       const cfHindiJson = await cfHindiRes.json();
@@ -2506,7 +2279,6 @@ async function runTests() {
       const cfDebugJson = await cfDebugRes.json();
       assert.strictEqual(cfDebugJson.ok, true);
       assert.strictEqual(cfDebugJson.upstream.castletvBase, `${mockUpstream.url}/castletv`);
-      assert.strictEqual(cfDebugJson.upstream.movieboxBase, `${mockUpstream.url}/moviebox`);
       assert.strictEqual(cfDebugJson.upstream.netmirrorBase, `${mockUpstream.url}/netmirror`);
       assert.strictEqual(cfDebugJson.result.sourceName, 'CastleTV');
 
@@ -2524,11 +2296,10 @@ async function runTests() {
 
     } finally {
       config.upstreams.castletvBase = origCastleBase;
-      config.upstreams.movieboxBase = origMovieboxBase;
       config.upstreams.netmirrorBase = origNetmirrorBase;
       config.upstreams.vidstuckBase = origVidstuckBase;
     }
-    console.log('  ✔ Passed CastleTV, Moviebox, NetMirror & Server 2 Ursa failover waterfall tests.');
+    console.log('  ✔ Passed CastleTV, NetMirror & Server 2 Ursa failover waterfall tests.');
 
     // 12. Server 2 (Ursa / 4K UHD • Multi-Audio) 4-Tier Architecture & Waterfall Failover
     console.log('[12/12] Testing Server Ursa (4K UHD • Multi-Audio) 4-Tier Architecture & Waterfall Failover...');

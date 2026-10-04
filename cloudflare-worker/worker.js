@@ -1104,7 +1104,7 @@ async function resolveCastletvUpstream(metadata, preferredAudio = '', env = null
  */
 let workerCachedNetmirrorApi = '';
 let workerCachedNetmirrorExpiry = 0;
-let workerCachedNetmirrorReferer = 'https://net52.cc';
+let workerCachedNetmirrorReferer = '';
 
 function getWorkerNetmirrorDiscoveryPool(env = null) {
   const envUrls = (env && env.NETMIRROR_DISCOVERY_URLS) ? env.NETMIRROR_DISCOVERY_URLS.split(',') : [];
@@ -1284,23 +1284,35 @@ async function resolveNetmirrorUpstream(metadata, preferredAudio = '', env = nul
       }
     } catch {}
 
-    // 2. Direct embed-tmdb endpoint fallback (using dynamic active referer or configuredBase)
-    const effectiveWebBase = configuredBase || workerCachedNetmirrorReferer || 'https://net52.cc';
-    const netflixUrl = isTv
-      ? `${effectiveWebBase}/api/embed-tmdb/${encodeURIComponent(metadata.tmdbId)}?type=tv&se=${metadata.season || 1}&ep=${metadata.episode || 1}`
-      : `${effectiveWebBase}/api/embed-tmdb/${encodeURIComponent(metadata.tmdbId)}`;
+    // 2. Direct embed-tmdb endpoint (TMDB-id keyed). The NewTV API base is
+    // regressed upstream, so rotate through the web mirror pool until one
+    // answers. `?type=tv&se=&ep=` (not s/e) is what the API honours.
+    const webBases = [];
+    const pushWebBase = (value) => {
+      const clean = String(value || '').replace(/\/$/, '');
+      if (clean.startsWith('http') && !webBases.includes(clean)) webBases.push(clean);
+    };
+    pushWebBase(configuredBase);
+    pushWebBase(workerCachedNetmirrorReferer);
+    const mirrorEnv = env && env.NETMIRROR_WEB_MIRRORS ? String(env.NETMIRROR_WEB_MIRRORS).split(',') : [];
+    [...mirrorEnv, 'https://net27.cc', 'https://net52.cc', 'https://net77.cc', 'https://netmiror.com'].forEach(pushWebBase);
 
-    const res = await fetch(netflixUrl, {
-      headers: {
-        Accept: 'application/json, text/plain, */*',
-        Referer: `${effectiveWebBase}/`,
-        'User-Agent': USER_AGENT
-      },
-      redirect: 'follow',
-      signal: controller.signal
-    });
+    for (const effectiveWebBase of webBases.slice(0, 5)) {
+      const netflixUrl = isTv
+        ? `${effectiveWebBase}/api/embed-tmdb/${encodeURIComponent(metadata.tmdbId)}?type=tv&se=${metadata.season || 1}&ep=${metadata.episode || 1}`
+        : `${effectiveWebBase}/api/embed-tmdb/${encodeURIComponent(metadata.tmdbId)}`;
 
-    if (res.ok) {
+      const res = await fetch(netflixUrl, {
+        headers: {
+          Accept: 'application/json, text/plain, */*',
+          Referer: `${effectiveWebBase}/`,
+          'User-Agent': USER_AGENT
+        },
+        redirect: 'follow',
+        signal: controller.signal
+      });
+
+      if (!res.ok) continue;
       if (res.url) {
         try {
           const finalOrigin = new URL(res.url).origin;

@@ -82,7 +82,17 @@ const config = {
 
     // MovieBox dynamic cluster pool (replaces deprecated api3.aoneroom.com / uwu.eat-peach.sbs)
     // NetMirror dynamic discovery & rotating web mirror (replaces static net27.cc)
-    netmirrorBase: process.env.NETMIRROR_BASE_URL || 'https://net52.cc',
+    netmirrorBase: process.env.NETMIRROR_BASE_URL || 'https://net27.cc',
+    // Web mirrors that serve the TMDB-id keyed /api/embed-tmdb endpoint. The
+    // NewTV discovery API base (tv.imgcdn.kim) is regressed upstream, so these
+    // are tried directly (and rotated) before giving up on NetMirror.
+    netmirrorWebMirrors: (
+      process.env.NETMIRROR_WEB_MIRRORS ||
+      'https://net27.cc,https://net52.cc,https://net77.cc,https://netmiror.com'
+    )
+      .split(',')
+      .map((s) => s.trim().replace(/\/$/, ''))
+      .filter(Boolean),
     netmirrorDiscoveryUrls: (
       process.env.NETMIRROR_DISCOVERY_URLS ||
       'https://mobiledetect.app,https://mobiledetects.com,https://mobidetect.cc,https://mobidetects.top,https://getimgcdn.com,https://mobidetect.art,https://mobidetect.click'
