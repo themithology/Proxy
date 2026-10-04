@@ -22,37 +22,6 @@ function evpBytesToKeyMd5(passphrase, salt) {
 }
 
 /**
- * Decrypts AES-256-CBC OpenSSL-formatted base64 payloads (used by VidStuck / ZXC).
- */
-function decryptZxcLink(cipherTextBase64, passphrase = config.zxcAesKey) {
-  try {
-    const raw = Buffer.from(String(cipherTextBase64), 'base64');
-    if (raw.length < 16 || raw.subarray(0, 8).toString('utf8') !== 'Salted__') {
-      return null;
-    }
-    const salt = raw.subarray(8, 16);
-    const ciphertext = raw.subarray(16);
-    const { key, iv } = evpBytesToKeyMd5(passphrase, salt);
-    const decipher = crypto.createDecipheriv('aes-256-cbc', key, iv);
-    const decrypted = Buffer.concat([decipher.update(ciphertext), decipher.final()]);
-    return decrypted.toString('utf8') || null;
-  } catch {
-    return null;
-  }
-}
-
-/**
- * Encrypts a string using OpenSSL-compatible AES-256-CBC (Salted__ + 8-byte salt).
- */
-function encryptZxcLink(plainText, passphrase = config.zxcAesKey) {
-  const salt = crypto.randomBytes(8);
-  const { key, iv } = evpBytesToKeyMd5(passphrase, salt);
-  const cipher = crypto.createCipheriv('aes-256-cbc', key, iv);
-  const encrypted = Buffer.concat([cipher.update(String(plainText), 'utf8'), cipher.final()]);
-  return Buffer.concat([Buffer.from('Salted__', 'utf8'), salt, encrypted]).toString('base64');
-}
-
-/**
  * Generates an HMAC-SHA256 signature for proxy URLs (`url|referer|exp`).
  */
 function signProxyParams(targetUrl, referer = '', exp = 0, secret = config.proxySecret) {
@@ -136,8 +105,6 @@ function verifyHandshakeToken(token) {
 }
 
 module.exports = {
-  decryptZxcLink,
-  encryptZxcLink,
   signProxyParams,
   verifyProxySignature,
   createSignedProxyUrl,

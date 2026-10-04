@@ -3,9 +3,8 @@ const config = require('../config');
 const { resolveTmdbMetadata } = require('../services/tmdb');
 const { resolveSkipSegments } = require('../services/segments');
 const { resolveSubtitles, fetchAndConvertSubtitleToVtt } = require('../services/subtitles');
-const { resolveStreamForServer, resolveAndromedaServer, resolveUrsaServer } = require('../services/resolver');
+const { resolveStreamForServer, resolveAndromedaServer } = require('../services/resolver');
 const serverCatalog = require('../services/serverCatalog');
-const { buildDubCatalog } = require('../services/dubCatalog');
 const { handleStreamProxy } = require('../services/proxy');
 const { serveMasterPlaylist, serveGeneratedFile } = require('../services/multitrack');
 const { generateHandshakeToken } = require('../utils/crypto');
@@ -290,14 +289,8 @@ router.get('/resolve/:type/:tmdbId', async (req, res) => {
         servers_404: 'Upstream has no record for this server.',
         servers_5xx: 'Upstream 5xx on the server lookup.',
         servers_no_link: 'Upstream has no stream link for this title on this server.',
-        aes_decrypt_failed: 'Stream link decryption failed (ZXC_AES_KEY rotated).',
         upstream_timeout: 'Timed out talking to the upstream provider.',
         upstream_exception: 'Unhandled error contacting the upstream provider.',
-        ursa_metadata_missing:
-          'TMDB metadata could not be resolved, so the 4K sources had no title to search — no source was probed.',
-        ursa_all_4k_sources_exhausted:
-          'Neither 4KHDHub nor MoviesDrive 4K returned a verified playable stream; the player can continue to the next server.',
-        ursa_upstream_timeout: 'The 4K source lookups exceeded their resolve budget before producing a verified stream.'
       };
       const humanReason = firstFailed
         ? reasonMap[firstFailed.reason] || firstFailed.reason
@@ -325,51 +318,6 @@ router.get('/resolve/:type/:tmdbId', async (req, res) => {
       subtitles,
       segments: segmentsData.segments,
       servers: streamData.servers
-    });
-  } catch (err) {
-    return res.status(500).json({ ok: false, error: err.message });
-  }
-});
-
-/**
- * GET /api/dubs/:type/:tmdbId
- * TMDB-id keyed dub inventory. Every provider answer is identity-checked
- * against the TMDB title, so a same-name film (e.g. the 2023 "Fight Club")
- * can never be reported as a dub source for the 1999 film.
- *
- *   ?deep=1     also probe MoviesDrive / 4KHDHub / HiCine / Dahmer / HiAnime
- *   ?audio=hi   preferred audio used for the returned default track
- */
-router.get('/dubs/:type/:tmdbId', async (req, res) => {
-  try {
-    const { type, tmdbId } = req.params;
-    const season = parseInt(req.query.season || '1', 10);
-    const episode = parseInt(req.query.episode || '1', 10);
-    const deep = /^(1|true|yes)$/i.test(String(req.query.deep || ''));
-    const audio = String(req.query.audio || 'hi').toLowerCase();
-
-    const metadata = await resolveTmdbMetadata(type, tmdbId, season, episode);
-    if (metadata.unresolvedTmdb) {
-      return res.status(404).json({
-        ok: false,
-        error: `TMDB id ${tmdbId} could not be resolved; refusing to fall back to a name search.`
-      });
-    }
-
-    const catalog = await buildDubCatalog(metadata, { deep, preferredAudio: audio });
-    return res.json({
-      ok: true,
-      metadata: {
-        tmdbId: metadata.tmdbId,
-        type: metadata.type,
-        title: metadata.title,
-        originalTitle: metadata.originalTitle,
-        releaseYear: metadata.releaseYear,
-        imdbId: metadata.externalIds?.imdb_id || null,
-        season: metadata.season,
-        episode: metadata.episode
-      },
-      ...catalog
     });
   } catch (err) {
     return res.status(500).json({ ok: false, error: err.message });
@@ -524,40 +472,7 @@ router.get('/debug/andromeda/:type/:tmdbId', requireAdminAuth, async (req, res) 
         castletvBase: config.upstreams.castletvBase,
         netmirrorBase: config.upstreams.netmirrorBase,
         vidstuckBase: config.upstreams.vidstuckBase,
-        zxcBase: config.upstreams.zxcBase,
-        aesKeySet: !!config.zxcAesKey,
         tmdbKeySet: !!config.tmdbApiKey
-      },
-      result
-    });
-  } catch (err) {
-    return res.status(500).json({ ok: false, error: err.message });
-  }
-});
-
-/**
- * GET /api/debug/ursa/:type/:tmdbId (and /api/debug/4k/:type/:tmdbId)
- * Owner-only diagnostic for Server 3 (Ursa: 4KHDHub + MoviesDrive 4K fallback).
- */
-router.get(['/debug/ursa/:type/:tmdbId', '/debug/4k/:type/:tmdbId'], requireAdminAuth, async (req, res) => {
-  const { type, tmdbId } = req.params;
-  const season = parseInt(req.query.season || '1', 10);
-  const episode = parseInt(req.query.episode || '1', 10);
-  try {
-    const metadata = await resolveTmdbMetadata(type, tmdbId, season, episode);
-    const result = await resolveUrsaServer(metadata, 'ursa', '');
-    return res.json({
-      ok: !!(result && result.streamUrl),
-      metadata: {
-        title: metadata.title,
-        releaseYear: metadata.releaseYear,
-        unresolvedTmdb: !!metadata.unresolvedTmdb,
-        externalIds: metadata.externalIds
-      },
-      upstream: {
-        fourkhdhubBase: config.upstreams.fourkhdhubBase,
-        moviesdriveBase: config.upstreams.moviesdriveBase,
-        vidsrcDataUrl: config.upstreams.vidsrcDataUrl
       },
       result
     });

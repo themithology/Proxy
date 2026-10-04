@@ -61,9 +61,6 @@
         if (quality) quality.url = absolutizeApiUrl(quality.url);
       });
     }
-    if (stream.vsEnvelope && stream.vsEnvelope.wasmUrl) {
-      stream.vsEnvelope.wasmUrl = absolutizeApiUrl(stream.vsEnvelope.wasmUrl);
-    }
   }
 
   // --- DOM Elements ---
@@ -221,7 +218,7 @@
 
     if (params.get('server')) {
       const rawServer = params.get('server').toLowerCase();
-      state.server = ['4k', 'uhd', '2160p'].includes(rawServer) ? 'ursa' : rawServer;
+      state.server = rawServer;
     }
     if (params.get('branding')) state.branding = params.get('branding');
     if (params.get('lang')) {
@@ -513,85 +510,6 @@
     });
   }
 
-  // --- VidSrc.sh Browser WASM Assist (Ursa) -------------------------------
-  // Cloudflare Workers V8 isolates refuse runtime `WebAssembly.compile()`
-  // ("CompileError: Wasm code generation disallowed by embedder"), so the edge
-  // ships the sealed ChaCha20 envelope (`vsEnvelope`) and the *browser* finishes
-  // the decryption with the exact vicine v1.5.2 ABI:
-  //   alloc -> memcpy ciphertext -> decrypt(ptr, len) -> utf8 at ptr + 12
-  const VSRC_WASM_ENVELOPE_URL = 'vidsrc://wasm-envelope';
-  const VSRC_REFERER = 'https://vidsrc.sh/';
-
-  function base64ToBytes(b64) {
-    const clean = String(b64 || '').replace(/\s+/g, '').replace(/-/g, '+').replace(/_/g, '/');
-    const padded = clean + '='.repeat((4 - (clean.length % 4)) % 4);
-    const bin = atob(padded);
-    const out = new Uint8Array(bin.length);
-    for (let i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i);
-    return out;
-  }
-
-  /**
-   * Decrypt a `vsEnvelope` in the browser and return absolute playable URLs.
-   */
-  async function decryptVidsrcEnvelope(envelope) {
-    if (!envelope) throw new Error('Missing VidSrc WASM envelope');
-
-    let wasmBuffer;
-    if (envelope.wasmBase64) {
-      wasmBuffer = base64ToBytes(envelope.wasmBase64).buffer;
-    } else if (envelope.wasmUrl) {
-      const wasmRes = await fetch(envelope.wasmUrl);
-      if (!wasmRes.ok) throw new Error(`Unable to fetch stream decryptor (HTTP ${wasmRes.status})`);
-      wasmBuffer = await wasmRes.arrayBuffer();
-    } else {
-      throw new Error('Envelope carries neither wasmUrl nor wasmBase64');
-    }
-
-    const mod = await WebAssembly.compile(wasmBuffer);
-    const inst = await WebAssembly.instantiate(mod, {
-      env: { emscripten_notify_memory_growth() {} }
-    });
-    const ex = inst.exports;
-    const mem = ex.memory;
-    if (!mem || typeof ex.decrypt !== 'function') throw new Error('Unsupported decryptor ABI');
-
-    const raw = base64ToBytes(envelope.streamUrls);
-    const alloc = typeof ex.alloc === 'function' ? ex.alloc : ex.malloc;
-    if (typeof alloc !== 'function') throw new Error('Decryptor exposes no allocator');
-
-    const ptr = alloc(raw.length);
-    new Uint8Array(mem.buffer, ptr, raw.length).set(raw);
-    // vicine v1.5.2: decrypt() returns the plaintext byte length and the UTF-8
-    // payload starts 12 bytes past the input pointer.
-    const len = ex.decrypt(ptr, raw.length);
-    const decoded = new TextDecoder().decode(new Uint8Array(mem.buffer, ptr + 12, len));
-    const parsed = JSON.parse(decoded);
-    const list = Array.isArray(parsed)
-      ? parsed
-      : parsed?.stream_urls || parsed?.urls || parsed?.sources || [];
-
-    return list
-      .filter((u) => typeof u === 'string' && u)
-      .map((u) => {
-        try {
-          return new URL(u, 'https://data.vidsrc.sh/').toString();
-        } catch {
-          return u;
-        }
-      })
-      .filter((u) => /^https?:\/\//i.test(u));
-  }
-
-  /**
-   * Wrap a decrypted CDN URL in the Worker proxy with the VidSrc JWT stamp:
-   * the host is Origin/Referer gated and every variant + segment must carry the
-   * per-host `generate.php` token (fetched by /api/proxy when vidsrcStamp=1).
-   */
-  function buildVidsrcProxyUrl(targetUrl) {
-    return apiUrl(`/api/proxy?url=${encodeURIComponent(targetUrl)}&referer=${encodeURIComponent(VSRC_REFERER)}&vidsrcStamp=1&mode=full`);
-  }
-
   // --- Attach Stream via HLS.js / Dash.js / Native Video ---
   async function attachStreamToVideo(streamUrl, resumeTime = 0) {
     video.onerror = null;
@@ -610,39 +528,6 @@
     const savedProgressKey = `lol_embed_prog_${state.type}_${state.tmdbId}_${state.season}_${state.episode}`;
     const savedProgress = parseFloat(localStorage.getItem(savedProgressKey) || '0');
     const targetStartTime = resumeTime > 0 ? resumeTime : (startParam > 0 ? startParam : savedProgress);
-
-    // --- VidSrc browser WASM assist: the edge could not run WebAssembly.compile
-    // ("Wasm code generation disallowed by embedder"), so decrypt right here and
-    // stream the result through /api/proxy with vidsrcStamp=1 + mode=full.
-    if (streamUrl === VSRC_WASM_ENVELOPE_URL || (state.stream && state.stream.vsEnvelope && !streamUrl)) {
-      const envelope = state.stream && state.stream.vsEnvelope;
-      if (!envelope) {
-        handleFatalStreamError();
-        return;
-      }
-      loadingOverlay.classList.remove('hidden');
-      loadingStatusText.textContent = 'Decrypting secure stream...';
-      try {
-        const decrypted = await decryptVidsrcEnvelope(envelope);
-        if (decrypted.length === 0) throw new Error('Decryptor returned no stream URLs');
-        const playable = decrypted.map(buildVidsrcProxyUrl);
-        state.stream.streamUrl = playable[0];
-        state.stream.format = 'hls';
-        state.stream.backupUrls = playable.slice(1).concat(state.stream.backupUrls || []);
-        state.qualities = playable.map((u, idx) => ({
-          id: idx === 0 ? 'auto' : `q-${idx}`,
-          label: idx === 0 ? 'Auto' : `Mirror ${idx}`,
-          height: 0,
-          url: u
-        }));
-        renderServersModal();
-        attachStreamToVideo(playable[0], targetStartTime);
-      } catch (err) {
-        showToast(`Secure stream decrypt failed: ${err.message}`, 4200);
-        handleFatalStreamError();
-      }
-      return;
-    }
 
     // Track which URLs the fallback ladder already burned through this session.
     if (!state.stream) state.stream = {};

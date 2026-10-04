@@ -41,48 +41,6 @@ const PRODUCTION_SERVERS = [
     priority: 2,
     enabled: true,
     supportsMultiAudio: true
-  },
-  {
-    id: 'ursa',
-    name: 'FBI Surveillance Van',
-    badge: '4K UHD • Multi-Audio',
-    priority: 3,
-    enabled: true,
-    supportsMultiAudio: true
-  },
-  {
-    id: 'hamster',
-    name: 'Hamster Wheel',
-    badge: 'Multi-Language • OMSS Cascade',
-    priority: 4,
-    enabled: true,
-    supportsMultiAudio: true
-  },
-  {
-    id: 'atlas',
-    name: 'Atlas',
-    badge: 'Adaptive • Backup',
-    priority: 5,
-    enabled: true,
-    supportsMultiAudio: true
-  }
-];
-
-/**
- * Opt-in servers: resolvable only when a client explicitly asks for them
- * (`?server=hindi`). `fallback: false` keeps them out of the implicit
- * waterfall and `listed: false` keeps them out of the player's server array.
- */
-const OPT_IN_SERVERS = [
-  {
-    id: 'hindi',
-    name: 'Hindi',
-    badge: 'Hindi Dubs • TMDB-ID Verified',
-    priority: 90,
-    enabled: true,
-    fallback: false,
-    listed: false,
-    supportsMultiAudio: true
   }
 ];
 
@@ -114,12 +72,12 @@ function waterfallEnabledServers(list) {
 
 /**
  * Map a (possibly stale or unknown) requested server id onto a real one.
- * Keeps `4k`/`uhd`/`2160p` aliases working and falls back to the top-priority
- * server so a rebranded or removed id can never strand the player.
+ * Removed or unknown ids (including legacy `4k`/`uhd`/`2160p` aliases) fall back
+ * to the top-priority server so a stale bookmark can never strand the player.
  */
 function resolveServerId(list, requestedServerId) {
   const requested = String(requestedServerId || '').trim().toLowerCase();
-  const normalized = ['4k', 'uhd', '2160p'].includes(requested) ? 'ursa' : requested;
+  const normalized = requested;
   if (normalized) {
     const known = list.find((s) => s.id === normalized && s.enabled !== false);
     if (known) return known.id;
@@ -138,8 +96,8 @@ function resolveServerId(list, requestedServerId) {
 function buildServerPayload(allServers, activeServerId = null) {
   const listed = listableServers(allServers);
   const activeId = activeServerId || null;
-  // A stream resolved by a hidden server (e.g. the opt-in Hindi cascade) would
-  // otherwise leave the modal with nothing highlighted.
+  // A stream resolved by a server that is not listed (e.g. an owner "custom"
+  // override) would otherwise leave the modal with nothing highlighted.
   const includesActive = listed.some((s) => s.id === activeId);
   const payload = listed.map((s) => ({ ...s, active: s.id === activeId }));
   if (activeId && !includesActive) {
@@ -150,13 +108,13 @@ function buildServerPayload(allServers, activeServerId = null) {
 }
 
 /**
- * Every server a backend knows how to resolve: production servers in priority
- * order plus opt-in cascades. This is what `config.servers` / the Worker's
- * SERVERS hold — use `listableServers()`/`buildServerPayload()` for anything the
- * player renders, and this list for resolution, /api/health and admin views.
+ * Every server a backend knows how to resolve, in waterfall priority order.
+ * This is what `config.servers` / the Worker's SERVERS hold — use
+ * `listableServers()`/`buildServerPayload()` for anything the player renders,
+ * and this list for resolution, /api/health and admin views.
  */
 function allServers() {
-  return [...PRODUCTION_SERVERS, ...OPT_IN_SERVERS].map((s) => ({ ...s }));
+  return PRODUCTION_SERVERS.map((s) => ({ ...s }));
 }
 
 /** @deprecated alias kept for readability at the call sites. */
@@ -166,7 +124,6 @@ const workerServerList = allServers;
 
 module.exports = {
   PRODUCTION_SERVERS,
-  OPT_IN_SERVERS,
   WATERFALL_PRIORITY,
   sortByPriority,
   listableServers,

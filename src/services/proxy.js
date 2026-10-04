@@ -50,7 +50,7 @@ function buildProxyStreamUrl(targetUrl, referer = '', origin = '', options = {})
 }
 
 /**
- * Fetch a per-host JWT from `<host>/generate.php` (VidSrc-style CDN gate).
+ * Fetch a per-host JWT from `<host>/generate.php` (token-gated CDN).
  * The endpoint answers either a bare text/plain JWT or `{"token": "..."}` JSON.
  * Tokens are IP bound with a ~4h TTL, so a short process-local cache is safe.
  */
@@ -122,7 +122,7 @@ function rewriteM3u8Manifest(m3u8Content, baseManifestUrl, refererOrOpts = '') {
 
   const wrapInProxy = (targetUrl, isSegmentOverride = false) => {
     let absoluteUrl = resolveAbsolute(targetUrl);
-    // Per-host JWT gate (VidSrc-style): every rewritten playlist / key / segment
+    // Per-host JWT gate: every rewritten playlist / key / segment
     // must carry the token or the CDN answers 403.
     if (token) absoluteUrl = stampTokenOnUrl(absoluteUrl, token, isSegmentOverride || true);
     const proxyBase = getProxyNodeBase(reqBaseUrl);

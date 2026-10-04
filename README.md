@@ -51,7 +51,7 @@ The page is served with `Content-Security-Policy: frame-ancestors *` so any site
 | `type`     | `tv` (default) or `movie`                                               |
 | `tmdb`     | TMDB ID (also accepted as `id`)                                          |
 | `s` / `e`  | Season / episode for TV (also `season` / `episode`)                      |
-| `server`   | Preferred upstream server: `andromeda`, `ursa` (or `4k`), `centaurus`, `atlas`, `strings` |
+| `server`   | Preferred upstream server: `andromeda` or `centaurus` (a stale/removed id falls back to the top-priority server) |
 | `api`      | Absolute API base URL override (see below)                               |
 | `lang`     | Preferred audio language (e.g. `hi`, `en`, `ta`)                         |
 | `sub`      | Preferred subtitle language (e.g. `en`)                                  |
@@ -89,7 +89,6 @@ The value must be an absolute `http(s)` URL (a path prefix is allowed and traili
 - `GET /api/info/:type/:tmdbId` — TMDB metadata and skip segments.
 - `GET /api/segments/:type/:tmdbId` — intro, recap, and outro timestamps.
 - `GET /api/subtitles/:type/:tmdbId` — external subtitle tracks.
-- `GET /api/dubs/:type/:tmdbId` — TMDB-id keyed dub inventory (`?deep=1` also probes the 4K/download tiers, `?audio=hi` sets the preferred track).
 - `GET /api/resolve/:type/:tmdbId` — resolves a source and returns stream, audio, subtitle, and segment metadata.
 - `GET /api/proxy?url=...` — HLS/MP4 stream proxy.
 - `GET /api/multitrack/master.m3u8` and `/api/multitrack/file/:jobId/:filename` — signed Node-side audio-remux output.
@@ -108,10 +107,6 @@ server modal can never drift from what the waterfall actually tries:
 |----------|-------------|-----------------------|----------------------------------------|---------|
 | 1        | `andromeda` | Fiber Optic Speedrun  | Multi-Audio • Primary                  | CastleTV → NetMirror |
 | 2        | `centaurus` | Gigachad Node         | Adaptive • Multi-Quality               | HiCine Direct MP4 |
-| 3        | `ursa` (`4k`)| FBI Surveillance Van | 4K UHD • Multi-Audio                   | 4KHDHub → MoviesDrive 4K → HiCine 4K UHD → DahmerMovies 4K |
-| 4        | `hamster`   | Hamster Wheel         | Multi-Language • OMSS Cascade          | Videasy → Peachify → VidSrc |
-| 5        | `atlas`     | Atlas                 | Adaptive • Backup                      | ZXC Backup Adaptive HLS |
-| opt-in   | `hindi`     | *(not listed)*        | Hindi Dubs • TMDB-ID Verified          | TMDB-id keyed Hindi dubs (`?server=hindi`) |
 
 Every `/api/resolve` payload carries the `servers` array in this exact order with
 the answering server flagged `active`, and it is rebuilt from the live catalog on
@@ -119,57 +114,9 @@ every response — including cache hits — so a rebrand or re-prioritisation sh
 up in the player immediately. Owner priority changes made through
 `POST /api/admin/upstreams` feed the same array and the waterfall.
 
-### Hindi dubs and TMDB-id identity (Server 6 / `?server=hindi`)
-
-The multi-audio tiers (CastleTV, NetMirror) can only be searched by **name**, and those catalogs contain same-name collisions. A name search for `Fight Club` returns the 2023 Indian film — which happens to ship a Hindi dub — ahead of the 1999 film (TMDB `550`), so a naive first-row pick plays the wrong movie. The Hindi layer removes name ambiguity entirely:
-
-- Metadata is always resolved from the **TMDB id** first (`/api/info`, `/api/resolve`, `/api/dubs`), including original and alternative titles.
-- Every upstream search row/subject is scored against that identity (title + original/alt titles + release year + movie/series type), and only an exact-identity candidate can be used. Unverifiable results are a clean miss, so the waterfall moves on instead of playing a different film.
-- Provider years are release-ish, so movies tolerate a ±2-year drift (CastleTV lists Spirited Away as 2003) while decade-apart collisions — the 2023 "Fight Club" for TMDB `550` — are still rejected; exact-year candidates outrank drifted ones.
-- The matched identity is returned in the payload (`stream.identity`: `matchedTitle`, `matchedYear`, `upstreamId`, `score`, `reasons`, plus the rejected candidates) so clients can show and verify what was actually selected.
-- All dub languages the verified provider exposes are surfaced as `audioTracks` (CastleTV per-language tracks, NetMirror OTT audio); Hindi is the default when present, otherwise the preferred `?audio=` track.
-- If no identity-verified Hindi source exists for a title, the Hindi server returns the verified original-audio stream with `hindiAvailable: false` (never a wrong-title Hindi stream) and the dub inventory reports `hindi: false`.
-- Responses carry their provenance: `hindiVerified: true` means the Hindi track came from a TMDB/IMDb-anchored match, while `hindiVerified: false` + `identityMethod: "title-hint"` flags a provider that only matches by title hints (the resolution still reports `hindiAvailable`, so clients can decide whether to trust it).
-
-`GET /api/dubs/:type/:tmdbId` returns the full inventory for a title:
-
-```jsonc
-{
-  "ok": true,
-  "hindi": true,           // identity-verified Hindi source exists
-  "hindiAnySource": true,  // also true when only a title-hint provider reports Hindi
-  "dubs": [{ "code": "hi", "label": "Hindi", "playable": true, "providers": ["castletv"] }],
-  "providers": [
-    {
-      "id": "castletv",
-      "ok": true,
-      "identity": { "verified": true, "matchedTitle": "Dune: Part Two", "matchedYear": 2024, "upstreamId": "7475882100889600" },
-      "languages": [{ "code": "hi", "label": "Hindi", "playable": true }],
-      "hindi": true
-    }
-  ]
-}
-```
-
-Provider identity methods:
-
-| Provider      | Identity anchor                                                        |
-| ------------- | ---------------------------------------------------------------------- |
-| CastleTV      | TMDB title/original/alt titles + `publishTime` year + `movieType`       |
-| NetMirror     | TMDB id (`/api/embed-tmdb/<id>`)                                        |
-| MoviesDrive   | IMDb id from TMDB + title/year scoring                                  |
-| 4KHDHub       | Title + release year parsed from the search page                        |
-| HiCine        | title/year hints                                                        |
-| HiAnime       | MAL id from TMDB (anime only)                                           |
-| DahmerMovies | title (+year) directory path                                           |
-
-Operational notes:
-
-- `HINDI_PROVIDERS=castletv,netmirror` limits which providers the Hindi server and `/api/dubs` may use.
-
 ### Server 1 — Andromeda (Fiber Optic Speedrun) Multi-Tier Architecture
 
-To replace the deprecated VidStuck upstream, Server Andromeda uses a resilient cascade backed by automatic dynamic discovery:
+Server Andromeda uses a resilient two-tier cascade backed by automatic dynamic discovery:
 
 1. **Priority 1: CastleTV (`api.hlowb.com`)**
    - **Coverage:** Extensive South Indian dubs (Tamil, Telugu, Malayalam, Kannada, Hindi), K-dramas, C-dramas, anime, and Hollywood multi-audio.
@@ -183,53 +130,8 @@ To replace the deprecated VidStuck upstream, Server Andromeda uses a resilient c
    - **Last live probe (2026-10-04, `diagnostics/netmirror-probe.json`):** `net27.cc` live (a TV title returned 4 streams + 13 subtitle languages; a movie not in their catalog returns `ok:true` + "couldn't find this title", treated as a miss), `net52.cc`/`net77.cc`/`netmiror.com` 404, and every CDN fetch from the CI runner was `429` regardless of Referer/Range/sign, so playback could not be confirmed from cloud IPs.
    - **Not yet wired:** NetMirror's `captions[]` (13 languages on the probed episode, sourced from Moviebox's library) are still ignored by `/api/subtitles`, which currently uses OpenSubtitles/Wyzie only.
 
-3. **Clean Waterfall Failover: Server 3 (Ursa / 4K UHD)**
+3. **Clean Waterfall Failover: Server 2 (Centaurus, HiCine)**
    - If both internal Andromeda tiers return no playable streams for a given title, Andromeda cleanly cascades to the next server in the shared priority waterfall.
-
-### Server 3 — Ursa (`?server=ursa` / `?server=4k`) 4K UHD
-
-Server 3 uses a small sequential resolver with **two sources, not four**:
-MoviesDrive 4K first for movies (the live-probed Dune link was responsive),
-and 4KHDHub first for TV. Each has the other as its single fallback. A source
-must unroll to a direct media URL and pass the playability check; if both miss,
-the normal server waterfall takes over. Lower-resolution quality links remain
-available for playback fallback.
-
-The latest live probe confirmed direct 206 media for Dune via MoviesDrive and
-for Fight Club and Arcane via 4KHDHub. Dune's 4KHDHub Google mirror timed out
-in the independent range probe, which is why movie resolution prefers
-MoviesDrive. The Worker does not transcode, so MKV/HEVC playback still depends
-on the browser/device.
-
-**Honest metadata failure (`ursa_metadata_missing`).** Both sources search by
-title. If TMDB metadata has no title, Ursa returns
-`reason: ursa_metadata_missing` with a `metadata_missing` diagnostic step
-instead of claiming a provider was probed. The Worker retries TMDB once and
-uses the VidStuck TMDB proxy as a fallback.
-
-### Server 4 — Hamster Wheel (`?server=hamster`) Multi-Language OMSS Cascade
-
-Hamster Wheel is the multi-language fallback tier and is implemented once in
-`src/services/hamsterCore.js`, shared verbatim by the Node backend
-(`src/services/hamsterWheel.js` wires the Node proxy/breaker) and the Worker
-(`resolveHamsterWheelUpstream` wires the edge proxy/breaker). Priority order:
-
-1. **Videasy (primary)** — `api.videasy.net` / `api2.videasy.net`, parallel fan-out
-   across `mb-flix`, `1movies`, `cdn`, `superflix`, `lamovie`, `cuevana` and
-   `hdmovie` (Hindi). Encrypted answers are round-tripped through
-   `enc-dec.app/api/decrypt`; each answering server becomes an audio track with a
-   language label (English, Hindi, etc.).
-2. **Peachify (fallback 1)** — `uwu.eat-peach.sbs` / `usa.eat-peach.sbs`, dub/sub
-   labels, AES-256-CBC envelope decryption (hex key + 16-byte IV prefix in the
-   payload).
-3. **VidSrc via vsembed.ru (fallback 2)** — three-hop scrape that substitutes the
-   `{v1}`–`{v4}` CDN domain placeholders (neonhorizonworkshops, wanderlynest,
-   orchidpixelgardens, cloudnestra).
-
-Circuit breakers are per provider (`videasy:hamster`, `peachify:hamster`,
-`vidsrc:hamster`); the Node backend reuses the shared breaker so provider health
-stays visible in `/api/admin/overview`, and the Worker uses the shared module's
-in-isolate breaker. All playback URLs are routed through `/api/proxy`.
 
 ### Audio Behavior & Remuxing
 
