@@ -1,10 +1,10 @@
 {
-  "startedAt": "2026-10-04T07:25:41.176Z",
+  "startedAt": "2026-10-04T07:27:32.645Z",
   "discovery": [
     {
       "domain": "https://net27.cc",
       "status": 404,
-      "latencyMs": 667,
+      "latencyMs": 730,
       "error": null,
       "bodySample": "<!DOCTYPE html><html lang=\"en\"> <head><meta charset=\"UTF-8\"><meta name=\"clckd\" content=\"502623715d0616ada312531d38452d6c\"><meta name=\"viewport\" content=\"width=device-width, initial-scale=1, viewport-f",
       "parse": "not-json"
@@ -12,7 +12,7 @@
     {
       "domain": "https://net52.cc",
       "status": 404,
-      "latencyMs": 419,
+      "latencyMs": 506,
       "error": null,
       "bodySample": "File not found.\n",
       "parse": "not-json"
@@ -20,7 +20,7 @@
     {
       "domain": "https://net77.cc",
       "status": 404,
-      "latencyMs": 634,
+      "latencyMs": 699,
       "error": null,
       "bodySample": "File not found.\n",
       "parse": "not-json"
@@ -28,7 +28,7 @@
     {
       "domain": "https://mobiledetect.app",
       "status": 200,
-      "latencyMs": 199,
+      "latencyMs": 116,
       "error": null,
       "bodySample": "{\"token_hash\":\"aHR0cHM6Ly90di5pbWdjZG4ua2lt\",\"doms\":\"false\",\"mwin\":\"true\",\"popwin\":\"true\",\"var\":\"1.0\"}",
       "token_hash": "aHR0cHM6Ly90di5pbWdjZG4ua2lt",
@@ -37,7 +37,7 @@
     {
       "domain": "https://mobiledetects.com",
       "status": 200,
-      "latencyMs": 461,
+      "latencyMs": 149,
       "error": null,
       "bodySample": "{\"token_hash\":\"aHR0cHM6Ly90di5pbWdjZG4ua2lt\",\"doms\":\"false\",\"mwin\":\"true\",\"popwin\":\"true\",\"var\":\"1.0\"}",
       "token_hash": "aHR0cHM6Ly90di5pbWdjZG4ua2lt",
@@ -46,7 +46,7 @@
     {
       "domain": "https://mobidetect.cc",
       "status": 200,
-      "latencyMs": 109,
+      "latencyMs": 287,
       "error": null,
       "bodySample": "{\"token_hash\":\"aHR0cHM6Ly90di5pbWdjZG4ua2lt\",\"doms\":\"false\",\"mwin\":\"true\",\"popwin\":\"true\",\"var\":\"1.0\"}",
       "token_hash": "aHR0cHM6Ly90di5pbWdjZG4ua2lt",
@@ -55,19 +55,19 @@
     {
       "domain": "https://mobidetects.top",
       "status": 0,
-      "latencyMs": 10221,
+      "latencyMs": 10494,
       "error": "fetch failed"
     },
     {
       "domain": "https://getimgcdn.com",
       "status": 0,
-      "latencyMs": 101,
+      "latencyMs": 116,
       "error": "fetch failed"
     },
     {
       "domain": "https://mobidetect.art",
       "status": 200,
-      "latencyMs": 125,
+      "latencyMs": 178,
       "error": null,
       "bodySample": "{\"token_hash\":\"aHR0cHM6Ly90di5pbWdjZG4ua2lt\",\"doms\":\"false\",\"mwin\":\"true\",\"popwin\":\"true\",\"var\":\"1.0\"}",
       "token_hash": "aHR0cHM6Ly90di5pbWdjZG4ua2lt",
@@ -76,7 +76,7 @@
     {
       "domain": "https://mobidetect.click",
       "status": 0,
-      "latencyMs": 10269,
+      "latencyMs": 10201,
       "error": "fetch failed"
     }
   ],
@@ -84,24 +84,24 @@
   "endpoints": {
     "newtvSearch": {
       "status": 403,
-      "latencyMs": 110,
+      "latencyMs": 206,
       "sample": "Page Not Found"
     },
     "embedMovie": {
       "status": 403,
-      "latencyMs": 22,
+      "latencyMs": 46,
       "sample": "Page Not Found"
     },
     "embedTv": {
       "status": 403,
-      "latencyMs": 7,
+      "latencyMs": 9,
       "sample": "Page Not Found"
     }
   },
   "resolver": [
     {
       "title": "Dune: Part Two",
-      "latencyMs": 157,
+      "latencyMs": 283,
       "ok": false,
       "sourceName": null,
       "server": null,
@@ -112,7 +112,7 @@
     },
     {
       "title": "Fight Club",
-      "latencyMs": 119,
+      "latencyMs": 162,
       "ok": false,
       "sourceName": null,
       "server": null,
@@ -123,7 +123,7 @@
     },
     {
       "title": "Breaking Bad",
-      "latencyMs": 120,
+      "latencyMs": 160,
       "ok": false,
       "sourceName": null,
       "server": null,
@@ -134,5 +134,65 @@
     }
   ],
   "apiBaseSource": "checknewtv token_hash",
-  "finishedAt": "2026-10-04T07:26:04.933Z"
+  "webMirrors": {
+    "https://net27.cc": {
+      "movie": {
+        "status": 200,
+        "latencyMs": 913,
+        "ok": true,
+        "error": "We couldn't find this title on NetMirror yet. Try a different one.",
+        "streams": 0,
+        "mp4": null,
+        "firstStream": null,
+        "captions": 0
+      },
+      "tv": {
+        "status": 200,
+        "latencyMs": 1285,
+        "ok": true,
+        "error": null,
+        "streams": 4,
+        "mp4": "yes",
+        "firstStream": "https://bcdnxw.hakunaymatata.com/bt/ad047603b18afe1d194d5b9adb0c21a7.mp4?sign=e1698e30d16b2f4904134ec4ee2f0e43",
+        "captions": 13
+      }
+    },
+    "https://net52.cc": {
+      "movie": {
+        "status": 404,
+        "latencyMs": 146,
+        "bodySample": "<!DOCTYPE HTML PUBLIC \"-//W3C//DTD HTML 4.01//EN\" \"http://www.w3.org/TR/html4/strict.dtd\">\n<html><head>\n<title>404 Not Found</title>\n</head>"
+      },
+      "tv": {
+        "status": 404,
+        "latencyMs": 119,
+        "bodySample": "<!DOCTYPE HTML PUBLIC \"-//W3C//DTD HTML 4.01//EN\" \"http://www.w3.org/TR/html4/strict.dtd\">\n<html><head>\n<title>404 Not Found</title>\n</head>"
+      }
+    },
+    "https://net77.cc": {
+      "movie": {
+        "status": 404,
+        "latencyMs": 653,
+        "bodySample": "<!DOCTYPE HTML PUBLIC \"-//W3C//DTD HTML 4.01//EN\" \"http://www.w3.org/TR/html4/strict.dtd\">\n<html><head>\n<title>404 Not Found</title>\n</head>"
+      },
+      "tv": {
+        "status": 404,
+        "latencyMs": 231,
+        "bodySample": "<!DOCTYPE HTML PUBLIC \"-//W3C//DTD HTML 4.01//EN\" \"http://www.w3.org/TR/html4/strict.dtd\">\n<html><head>\n<title>404 Not Found</title>\n</head>"
+      }
+    },
+    "https://netmiror.com": {
+      "movie": {
+        "status": 404,
+        "latencyMs": 552,
+        "bodySample": "<html>\r\n<head><title>404 Not Found</title></head>\r\n<body>\r\n<center><h1>404 Not Found</h1></center>\r\n<hr><center>nginx</center>\r\n</body>\r\n</h"
+      },
+      "tv": {
+        "status": 404,
+        "latencyMs": 137,
+        "bodySample": "<html>\r\n<head><title>404 Not Found</title></head>\r\n<body>\r\n<center><h1>404 Not Found</h1></center>\r\n<hr><center>nginx</center>\r\n</body>\r\n</h"
+      }
+    }
+  },
+  "finishedAt": "2026-10-04T07:28:01.039Z"
 }
