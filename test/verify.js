@@ -2199,6 +2199,26 @@ async function runTests() {
         'no identity proof must yield no winner'
       );
 
+      // Year handling: providers publish release-ish years that can drift by a
+      // year or two (CastleTV lists Spirited Away as 2003), so a +/-2 window is
+      // accepted; collisions a decade apart are still rejected.
+      const yearMeta = { title: 'Spirited Away', releaseYear: 2001, type: 'movie' };
+      const yearRow = (year) => ({ title: 'Spirited Away', year, movieType: 2, movieTypeName: 'Movies' });
+      assert.ok(
+        identity.pickIdentityMatch([yearRow(2003)], yearMeta).winner,
+        'a 2-year publish drift must still match the film'
+      );
+      assert.strictEqual(
+        identity.pickIdentityMatch([yearRow(2004)], yearMeta).winner,
+        null,
+        'a 3-year drift is beyond the tolerance and must be rejected'
+      );
+      assert.strictEqual(
+        identity.pickIdentityMatch([yearRow(2003), yearRow(2001)], yearMeta).winner.year,
+        2001,
+        'the exact-year candidate must outrank the drifted one'
+      );
+
       // Anime movies are tagged as "anime" by CastleTV; that classification is
       // orthogonal to movie/series, so anime films must still match a movie
       // request while anime *series* must not.

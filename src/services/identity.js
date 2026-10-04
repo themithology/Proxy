@@ -120,6 +120,13 @@ function extractYearFromTitle(title) {
 }
 
 /** Year of a whole season (upstream TV rows report the latest season year). */
+// Provider "year" fields are release-ish, not authoritative: a re-release,
+// remaster or catalog re-upload can shift them by a year or two (CastleTV lists
+// Spirited Away as 2003). Remakes/namesakes that must not be confused sit a
+// decade apart, so a +/-2 window keeps true matches while still rejecting
+// collisions like the 2023 "Fight Club" for the 1999 film.
+const MOVIE_YEAR_TOLERANCE = 2;
+
 function isYearCompatible(candidateYear, tmdbYear, type) {
   if (!candidateYear || !tmdbYear) return true; // unknown -> no evidence either way
   const diff = Math.abs(Number(candidateYear) - Number(tmdbYear));
@@ -128,7 +135,7 @@ function isYearCompatible(candidateYear, tmdbYear, type) {
     // only a candidate OLDER than the show start is a red flag.
     return Number(candidateYear) >= Number(tmdbYear) - 1 || diff <= 1;
   }
-  return diff <= 1;
+  return diff <= MOVIE_YEAR_TOLERANCE;
 }
 
 /** Map upstream type labels to the TMDB vocabulary. */
@@ -275,8 +282,14 @@ function scoreIdentityCandidate(candidate = {}, metadata = {}, options = {}) {
   if (!typeOk) reasons.push(`type-mismatch:${candidateType}!=${wantedType}`);
 
   let score = titleMatch.score;
-  if (candidateYear && tmdbYear && candidateYear === tmdbYear) score += 30;
-  else if (yearOk && candidateYear && tmdbYear) score += 12;
+  if (candidateYear && tmdbYear) {
+    const yearDiff = Math.abs(candidateYear - tmdbYear);
+    if (yearDiff === 0) score += 30;
+    else if (yearDiff <= 1) score += 12;
+    else if (yearOk && (wantedType === 'series' || wantedType === 'tv')) score += 12;
+    // Tolerated but not preferred: an exact-year candidate always outranks it.
+    else if (yearOk) score -= 10;
+  }
 
   score += genreOverlapScore(candidate.tags || candidate.genres, metadata);
 
