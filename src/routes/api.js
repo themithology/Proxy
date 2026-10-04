@@ -2,7 +2,7 @@ const express = require('express');
 const config = require('../config');
 const { resolveTmdbMetadata } = require('../services/tmdb');
 const { resolveSkipSegments } = require('../services/segments');
-const { resolveSubtitles, fetchAndConvertSubtitleToVtt } = require('../services/subtitles');
+const { resolveSubtitles, fetchAndConvertSubtitleToVtt, isProxyableSubtitleUrl } = require('../services/subtitles');
 const { resolveStreamForServer, resolveAndromedaServer, diagnoseCentaurus } = require('../services/resolver');
 const serverCatalog = require('../services/serverCatalog');
 const { handleStreamProxy } = require('../services/proxy');
@@ -189,16 +189,24 @@ router.get('/segments/:type/:tmdbId', async (req, res) => {
 });
 
 /**
- * GET /api/subtitles/proxy
- * Proxies remote .srt.gz / .srt / .vtt subtitles (OpenSubtitles / Wyzie) and converts to WebVTT on the fly
+ * GET /api/subtitles/proxy?url=...&enc=<charset>&lang=<code>
+ * Fetches a remote .srt / .vtt (.gz / .zip, any charset) from a subtitle host
+ * and converts it to WebVTT on the fly. Not a general relay: only subtitle
+ * hosts and the configured source mirrors are allowed.
  */
 router.get('/subtitles/proxy', async (req, res) => {
-  const targetUrl = req.query.url;
+  const targetUrl = typeof req.query.url === 'string' ? req.query.url : '';
   if (!targetUrl) {
     return res.status(400).send('Missing subtitle url');
   }
+  if (!isProxyableSubtitleUrl(targetUrl)) {
+    return res.status(403).send('Subtitle host not allowed');
+  }
   try {
-    const vtt = await fetchAndConvertSubtitleToVtt(targetUrl);
+    const vtt = await fetchAndConvertSubtitleToVtt(targetUrl, {
+      encoding: typeof req.query.enc === 'string' ? req.query.enc : '',
+      lang: typeof req.query.lang === 'string' ? req.query.lang : ''
+    });
     res.setHeader('Content-Type', 'text/vtt; charset=utf-8');
     res.setHeader('Access-Control-Allow-Origin', '*');
     res.setHeader('Cache-Control', 'public, max-age=7200');

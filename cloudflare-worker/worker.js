@@ -23,6 +23,7 @@ import identity from '../src/services/identity.js';
 // so rebranding or re-prioritising a server must never require a second edit here.
 import serverCatalog from '../src/services/serverCatalog.js';
 import skipSegments from '../src/services/skipSegments.js';
+import subtitleSources from '../src/services/subtitleSources.js';
 import tmdbArtwork from '../src/services/tmdbArtwork.js';
 
 const USER_AGENT =
@@ -228,6 +229,19 @@ async function edgeCacheSet(key, val, ttlSec = 1800) {
       await caches.default.put(cacheUrl, resp);
     } catch {}
   }
+}
+
+// The /embed page carries the ad tag between <!--LOL_EMBED_ADS--> markers.
+const AD_BLOCK_RE = /[ \t]*<!--LOL_EMBED_ADS-->[\s\S]*?<!--\/LOL_EMBED_ADS-->\n?/g;
+
+function adsEnabled(env) {
+  const raw = env && env.ADS_ENABLED;
+  if (raw === undefined || raw === null || raw === '') return true;
+  return !['false', '0', 'off', 'no'].includes(String(raw).trim().toLowerCase());
+}
+
+function stripAdBlock(html) {
+  return String(html).replace(AD_BLOCK_RE, '');
 }
 
 function corsHeaders(extra = {}) {
@@ -699,69 +713,96 @@ async function resolveSkipSegments(metadata, env) {
 }
 
 /**
- * 3. Resolve Real Subtitles (OpenSubtitles REST API + OpenSubtitles Stremio v3)
+ * 3. Subtitles — OpenSubtitles (via Stremio's keyless v3 addon) + optional
+ *    keyed sources (Wyzie, SubDL). The retired rest.opensubtitles.org API is
+ *    gone: it answered every download with a "buy VIP" notice.
  */
-async function resolveSubtitles(metadata) {
+const SUBTITLE_FETCH_TIMEOUT_MS = 6500;
+const SUBTITLE_PROXY_TIMEOUT_MS = 10000;
+const SUBTITLE_MAX_BYTES = 4 * 1024 * 1024;
+
+function subtitleSourceConfig(env) {
+  const e = env || {};
+  const D = subtitleSources.DEFAULT_URLS;
+  return {
+    stremioBase: e.OPENSUBTITLES_STREMIO_URL || D.openSubtitlesStremioUrl,
+    wyzieBase: e.WYZIE_SUBS_URL || D.wyzieSubsUrl,
+    wyzieKey: e.WYZIE_API_KEY || '',
+    subdlBase: e.SUBDL_API_URL || D.subdlApiUrl,
+    subdlDownloadBase: e.SUBDL_DOWNLOAD_URL || D.subdlDownloadUrl,
+    subdlKey: e.SUBDL_API_KEY || '',
+    extraProxyHosts: e.SUBTITLE_PROXY_HOSTS || ''
+  };
+}
+
+async function fetchSubtitleJson(url, headers = {}) {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), SUBTITLE_FETCH_TIMEOUT_MS);
+  try {
+    const res = await fetch(url, {
+      headers: { Accept: 'application/json', 'User-Agent': USER_AGENT, ...headers },
+      signal: controller.signal
+    });
+    if (!res.ok) return null;
+    return await res.json();
+  } catch {
+    return null;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+async function resolveSubtitles(metadata, env) {
   const { tmdbId, type, season = 1, episode = 1, externalIds = {} } = metadata;
-  const cacheKey = `cf:subs:${type}:${tmdbId}:s${season}:e${episode}`;
+  const cacheKey = `cf:subs:v2:${type}:${tmdbId}:s${season}:e${episode}`;
   const cached = await edgeCacheGet(cacheKey);
   if (cached) return cached;
 
-  const tracks = [];
-  const seenLangs = new Set();
+  const cfg = subtitleSourceConfig(env);
+  const ids = { tmdbId, imdbId: externalIds.imdb_id, type, season, episode };
+  const lookups = [];
 
-  if (externalIds.imdb_id) {
-    const imdbDigits = String(externalIds.imdb_id).replace(/^tt/i, '');
-    const osPath =
-      type === 'tv'
-        ? `/search/episode-${episode}/imdbid-${imdbDigits}/season-${season}`
-        : `/search/imdbid-${imdbDigits}`;
+  const stremioUrl = subtitleSources.buildStremioUrl(cfg.stremioBase, ids);
+  if (stremioUrl) lookups.push(fetchSubtitleJson(stremioUrl).then(subtitleSources.parseStremio));
 
-    try {
-      const res = await fetch(`https://rest.opensubtitles.org${osPath}`, {
-        headers: {
-          Accept: 'application/json',
-          'User-Agent': USER_AGENT,
-          'X-User-Agent': 'TemporaryUserAgent'
-        }
-      });
-      if (res.ok) {
-        const data = await res.json();
-        if (Array.isArray(data)) {
-          const sorted = [...data].sort(
-            (a, b) => Number(b.SubDownloadsCnt || 0) - Number(a.SubDownloadsCnt || 0)
-          );
-          for (const item of sorted) {
-            if (!item.SubDownloadLink) continue;
-            const iso = (item.ISO639 || item.SubLanguageID || 'en').toLowerCase();
-            if (seenLangs.has(iso)) continue;
-            seenLangs.add(iso);
-            const label =
-              NATIVE_LANG_LABELS[iso] ||
-              NATIVE_LANG_LABELS[item.SubLanguageID] ||
-              item.LanguageName ||
-              iso.toUpperCase();
+  const wyzieUrl = subtitleSources.buildWyzieUrl(cfg.wyzieBase, { ...ids, key: cfg.wyzieKey });
+  if (wyzieUrl) lookups.push(fetchSubtitleJson(wyzieUrl).then(subtitleSources.parseWyzie));
 
-            tracks.push({
-              id: `os-${item.IDSubtitleFile || iso}`,
-              lang: iso.slice(0, 2),
-              label,
-              format: 'vtt',
-              url: `/api/subtitles/proxy?url=${encodeURIComponent(item.SubDownloadLink)}`,
-              default: iso === 'en',
-              source: 'opensubtitles'
-            });
-            if (tracks.length >= 24) break;
-          }
-        }
-      }
-    } catch {}
-  }
+  const subdlUrl = subtitleSources.buildSubdlUrl(cfg.subdlBase, { ...ids, key: cfg.subdlKey });
+  if (subdlUrl) lookups.push(fetchSubtitleJson(subdlUrl).then((data) => subtitleSources.parseSubdl(data, cfg.subdlDownloadBase)));
 
-  if (tracks.length > 0) {
-    await edgeCacheSet(cacheKey, tracks, 3600);
-  }
+  const lists = await Promise.all(lookups);
+  const tracks = subtitleSources.toApiTracks(subtitleSources.mergeSubtitleTracks(lists));
+  // Positive answers are stable for an hour; an empty answer is retried soon
+  // (a source outage should not pin "no subtitles" on a title).
+  await edgeCacheSet(cacheKey, tracks, tracks.length > 0 ? 3600 : 120);
   return tracks;
+}
+
+/** Fetch a subtitle file (srt / vtt / .gz / .zip, any charset) and return WebVTT text. */
+async function fetchSubtitleAsVtt(subUrl, { encoding = '', lang = '' } = {}) {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), SUBTITLE_PROXY_TIMEOUT_MS);
+  try {
+    const res = await fetch(subUrl, {
+      headers: { 'User-Agent': USER_AGENT, Accept: '*/*' },
+      signal: controller.signal
+    });
+    if (!res.ok) throw new Error(`Upstream subtitle HTTP ${res.status}`);
+    const arrBuf = await res.arrayBuffer();
+    if (arrBuf.byteLength > SUBTITLE_MAX_BYTES) throw new Error('Subtitle file too large');
+    const bytes = subtitleSources.unwrapSubtitlePayload(new Uint8Array(arrBuf), {
+      gunzip: (b) => new Uint8Array(zlib.gunzipSync(Buffer.from(b))),
+      inflateRaw: (b) => new Uint8Array(zlib.inflateRawSync(Buffer.from(b)))
+    });
+    const text = subtitleSources.decodeSubtitleBytes(bytes, { encoding, lang });
+    if (subtitleSources.looksLikePlaceholderSubtitle(text)) {
+      throw new Error('Upstream returned a placeholder instead of a subtitle');
+    }
+    return srtToVtt(text);
+  } finally {
+    clearTimeout(timer);
+  }
 }
 
 /**
@@ -3352,20 +3393,23 @@ export default {
       });
     }
 
-    // GET /api/subtitles/proxy?url=...
+    // GET /api/subtitles/proxy?url=...&enc=<charset>&lang=<code>
+    // Only subtitle hosts (and the configured source mirrors) may be fetched:
+    // this endpoint must not be a general-purpose relay.
     if (pathname === '/api/subtitles/proxy') {
       const subUrl = url.searchParams.get('url');
       if (!subUrl) return new Response('Missing url', { status: 400, headers: corsHeaders() });
+      const cfg = subtitleSourceConfig(env);
+      const allowed = subtitleSources.isAllowedSubtitleUrl(subUrl, {
+        bases: [cfg.stremioBase, cfg.wyzieBase, cfg.subdlBase, cfg.subdlDownloadBase],
+        extraHosts: cfg.extraProxyHosts
+      });
+      if (!allowed) return new Response('Subtitle host not allowed', { status: 403, headers: corsHeaders() });
       try {
-        const res = await fetch(subUrl, {
-          headers: { 'User-Agent': USER_AGENT, 'X-User-Agent': 'TemporaryUserAgent' }
+        const vtt = await fetchSubtitleAsVtt(subUrl, {
+          encoding: url.searchParams.get('enc') || '',
+          lang: url.searchParams.get('lang') || ''
         });
-        const arrBuf = await res.arrayBuffer();
-        let buf = Buffer.from(arrBuf);
-        if ((buf.length >= 2 && buf[0] === 0x1f && buf[1] === 0x8b) || subUrl.endsWith('.gz')) {
-          buf = zlib.gunzipSync(buf);
-        }
-        const vtt = srtToVtt(buf.toString('utf8'));
         return new Response(vtt, {
           status: 200,
           headers: corsHeaders({
@@ -3410,7 +3454,7 @@ export default {
       }
 
       if (action === 'subtitles') {
-        const tracks = await resolveSubtitles(metadata);
+        const tracks = await resolveSubtitles(metadata, env);
         return jsonResponse({ ok: true, tmdbId: metadata.tmdbId, tracks });
       }
 
@@ -3451,7 +3495,7 @@ export default {
                 servers: serverCatalog.buildServerPayload(SERVERS, null)
               })
             : resolveStreamWaterfall(metadata, server, audio, env),
-          resolveSubtitles(metadata),
+          resolveSubtitles(metadata, env),
           resolveSkipSegments(metadata, env)
         ]);
 
@@ -3532,6 +3576,8 @@ export default {
       html = html.includes('<!--LOL_EMBED_CONFIG-->')
         ? html.replace('<!--LOL_EMBED_CONFIG-->', configScript)
         : html.replace('</head>', `${configScript}\n</head>`);
+      // Ads ship by default; ADS_ENABLED = "false" serves an ad-free player.
+      if (!adsEnabled(env)) html = stripAdBlock(html);
       const headers = new Headers({
         'Content-Type': 'text/html; charset=utf-8',
         'Cache-Control': 'no-cache',

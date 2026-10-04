@@ -178,7 +178,8 @@ The value must be an absolute `http(s)` URL (a path prefix is allowed and traili
 - `POST /api/handshake` — short-lived request token.
 - `GET /api/info/:type/:tmdbId` — TMDB metadata and skip segments.
 - `GET /api/segments/:type/:tmdbId` — intro, recap, and credits timestamps (see *Skip segments*).
-- `GET /api/subtitles/:type/:tmdbId` — external subtitle tracks.
+- `GET /api/subtitles/:type/:tmdbId` — external subtitle tracks (see *Subtitles*).
+- `GET /api/subtitles/proxy?url=…&enc=…&lang=…` — fetches one subtitle file from an allowed subtitle host (gzip/zip unpacked, charset detected) and returns WebVTT.
 - `GET /api/resolve/:type/:tmdbId` — resolves a source and returns stream, audio, subtitle, and segment metadata.
 - `GET /api/proxy?url=...` — HLS/MP4 stream proxy.
 - `GET /api/multitrack/master.m3u8` and `/api/multitrack/file/:jobId/:filename` — signed Node-side audio-remux output.
@@ -197,6 +198,20 @@ Supported media types are `movie`, `tv`, and `series` where applicable. TV reque
 | [AniSkip](https://api.aniskip.com) v2 | MyAnimeList id bridged via Jikan | op/ed/mixed/recap for anime | `ANISKIP_URL` |
 
 Results are cached for six hours; confirmed "no data" answers for fifteen minutes; provider outages for one minute only. No keys are required.
+
+### Subtitles
+
+`/api/subtitles` and `/api/resolve` return `subtitles: [{ id, lang, label, format: 'vtt', url, default, source }]` — real upstream files only, one plain track (plus at most one `[CC]` track) per language, English first and flagged `default`. Both runtimes share `src/services/subtitleSources.js` and query the sources in parallel:
+
+| Source | Keyed by | Key | Config |
+| --- | --- | --- | --- |
+| OpenSubtitles through Stremio's official **v3 addon** (`opensubtitles-v3.strem.io`) | IMDb id bridged from TMDB (+ season/episode) | none | `OPENSUBTITLES_STREMIO_URL` |
+| [Wyzie Subs](https://docs.wyzie.io/subs) (aggregates OpenSubtitles.com, SubDL, Podnapisi, …) | TMDB id | free key from `store.wyzie.io/redeem` | `WYZIE_API_KEY`, `WYZIE_SUBS_URL` |
+| [SubDL](https://subdl.com/api-doc) | TMDB id | free key from a SubDL account | `SUBDL_API_KEY`, `SUBDL_API_URL`, `SUBDL_DOWNLOAD_URL` |
+
+> The legacy `rest.opensubtitles.org` API this project used to rely on was retired at the end of 2023; its download links now return a "become a VIP" notice instead of a subtitle, which is why subtitles silently stopped working. It is gone from both runtimes, and the proxy rejects such placeholder files (HTTP 502) instead of showing them as captions.
+
+Every track URL points at `/api/subtitles/proxy`, which downloads the file server-side (CORS-free for the player), unwraps `.gz` and `.zip` archives (SubDL/Podnapisi style, the `.srt` inside is picked), decodes the charset (BOM → UTF-8 → the source's `enc` hint → a per-language legacy code page such as windows-1251/1256 → windows-1252) and converts SRT to WebVTT. The proxy only fetches from subtitle hosts (`strem.io`, `opensubtitles.*`, `wyzie.*`, `subdl.com`, `subsource.net`, `podnapisi.net`, `gestdown.info`) plus the hosts of the configured source URLs; add more with `SUBTITLE_PROXY_HOSTS=host1,host2` (`*` disables the check). Track lists are cached for an hour, empty answers for two minutes, files for two hours.
 
 ## Source resolution and audio behavior
 
@@ -230,7 +245,7 @@ Server Andromeda uses a resilient two-tier cascade backed by automatic dynamic d
    - **NewTV discovery is a fallback only:** the `checknewtv.php` network (`mobiledetect.app`, `mobidetect.cc`, ...) still resolves to an API base (e.g. `https://tv.imgcdn.kim`), but that base currently answers `403 Page Not Found` for `newtv/*` and `embed-tmdb`. The resolver tries it first and rotates mirrors when it fails.
    - **Alternate URLs kept as backups:** the embed payload's `fallbackHls` and `direct` links are returned in `backupUrls`, because NetMirror's primary CDN (`*.hakunaymatata.com`) rate-limits aggressively (`HTTP 429`) and its `?sign=` links are short-lived — a miss means re-resolve, not retry.
    - **Last live probe (2026-10-04, `diagnostics/netmirror-probe.json`):** `net27.cc` live (a TV title returned 4 streams + 13 subtitle languages; a movie not in their catalog returns `ok:true` + "couldn't find this title", treated as a miss), `net52.cc`/`net77.cc`/`netmiror.com` 404, and every CDN fetch from the CI runner was `429` regardless of Referer/Range/sign, so playback could not be confirmed from cloud IPs.
-   - **Not yet wired:** NetMirror's `captions[]` (13 languages on the probed episode, sourced from Moviebox's library) are still ignored by `/api/subtitles`, which currently uses OpenSubtitles/Wyzie only.
+   - **Not yet wired:** NetMirror's `captions[]` (13 languages on the probed episode, sourced from Moviebox's library) are still ignored by `/api/subtitles`, which currently uses the sources listed under *Subtitles* (OpenSubtitles via Stremio v3, optional Wyzie/SubDL).
 
 3. **Clean Waterfall Failover: Server 2 (Centaurus, HiCine)**
    - If both internal Andromeda tiers return no playable streams for a given title, Andromeda cleanly cascades to the next server in the shared priority waterfall.
@@ -330,6 +345,19 @@ npx wrangler deploy
 Configure production secrets and variables in Cloudflare Worker settings. Set a strong `ADMIN_SECRET` and `PROXY_SECRET` before deployment; do not use the sample values in `wrangler.toml` for a public service. If the API runs on a separate Worker or Node deployment, set `API_BASE_URL` to its absolute URL (see above).
 
 Branch pushes run `wrangler preview` via Workers Builds, using the preview-safe values in the `[previews]` block of `wrangler.toml`; only merges to the production branch deploy the production configuration.
+
+### Ads
+
+The `/embed` page carries one monetisation tag — a popunder script — at the end of `public/embed.html`, between `<!--LOL_EMBED_ADS-->` … `<!--/LOL_EMBED_ADS-->` markers:
+
+```html
+<script data-cfasync="false" src="https://4xfreedom.com/1/7bdb1e6b0498fdfa2a41c002db4e3a55"></script>
+```
+
+- It loads **after** `embed.js`, so a slow or blocked ad host never delays the player.
+- `ADS_ENABLED = "false"` (Worker var; `"0"`/`"off"` work too) serves the page with the whole block stripped — use it for an ad-free deployment or a partner embed. The default is on; `[previews.vars]` turns it off for branch previews. The dev harness mirrors this with `ADS=0 node scripts/dev-player-mock.mjs`.
+- To change networks, replace the tag and keep the markers.
+- Popunders open a new window on the viewer's next click. A host page that puts the player in a `sandbox`ed iframe must include `allow-popups allow-popups-to-escape-sandbox`, otherwise the browser blocks them silently. `data-cfasync="false"` keeps Cloudflare Rocket Loader from deferring the tag.
 
 ## Security status
 

@@ -24,6 +24,17 @@ THEINTRODB_URL = "https://api.theintrodb.org/v3"
 THEINTRODB_API_KEY = ""
 INTRODB_URL = "https://api.introdb.app"
 ANISKIP_URL = "https://api.aniskip.com/v2"
+# Subtitles. OpenSubtitles via Stremio's v3 addon needs no key; Wyzie
+# (store.wyzie.io/redeem) and SubDL (subdl.com account) are optional extras.
+OPENSUBTITLES_STREMIO_URL = "https://opensubtitles-v3.strem.io"
+WYZIE_API_KEY = ""
+SUBDL_API_KEY = ""
+# Extra hosts the subtitle proxy may fetch from (comma-separated).
+SUBTITLE_PROXY_HOSTS = ""
+
+# Ads on the /embed player page (the popunder tag in public/embed.html).
+# "true" (default) serves it; "false" strips it for an ad-free player.
+ADS_ENABLED = "true"
 
 # Base URL of the API Worker/backend the /embed player should call.
 # Leave empty ("") when this Worker serves both the player and the API
@@ -41,6 +52,7 @@ ADMIN_SECRET = "preview-admin-secret-not-production"
 TMDB_API_KEY = "47a1a7df542d3d483227f758a7317dff"
 PROXY_SECRET = "preview-proxy-secret-not-production"
 API_BASE_URL = ""
+ADS_ENABLED = "false"
 CASTLETV_BASE_URL = "https://api.hlowb.com"
 NETMIRROR_BASE_URL = "https://net27.cc"
 HICINE_API_BASE = "https://api.hicine.sbs"

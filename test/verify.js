@@ -313,31 +313,30 @@ function startUpstreamMockServer() {
         );
       }
 
-      // 5. OpenSubtitles REST API + .srt.gz Gzipped Subtitle Stream
-      if (u.pathname.startsWith('/opensubtitles/search/')) {
+      // 5. OpenSubtitles via Stremio's v3 addon (the only keyless source left:
+      //    rest.opensubtitles.org is retired) + .srt.gz download fixtures.
+      //    Shape mirrors the live addon: {subtitles:[{id,url,lang(ISO 639-2),SubEncoding}]}.
+      const stremioMatch = u.pathname.match(/^\/stremio\/subtitles\/(movie|series)\/([^/]+)\.json$/);
+      if (stremioMatch) {
         res.writeHead(200, { 'Content-Type': 'application/json' });
         return res.end(
-          JSON.stringify([
-            {
-              IDSubtitleFile: '1957433621',
-              ISO639: 'en',
-              SubLanguageID: 'eng',
-              LanguageName: 'English',
-              SubHearingImpaired: '0',
-              SubDownloadsCnt: '329244',
-              SubDownloadLink: `${mockOrigin}/opensubtitles/download/1957433621.gz`
-            },
-            {
-              IDSubtitleFile: '1957440969',
-              ISO639: 'ar',
-              SubLanguageID: 'ara',
-              LanguageName: 'Arabic',
-              SubHearingImpaired: '0',
-              SubDownloadsCnt: '88178',
-              SubDownloadLink: `${mockOrigin}/opensubtitles/download/1957440969.gz`
-            }
-          ])
+          JSON.stringify({
+            subtitles: [
+              { id: '1957433621', url: `${mockOrigin}/opensubtitles/download/1957433621.gz`, lang: 'eng', SubEncoding: 'UTF-8', m: 'i', g: 'fileid' },
+              { id: '1957433622', url: `${mockOrigin}/opensubtitles/download/1957433622.gz`, lang: 'eng', SubEncoding: 'UTF-8' },
+              { id: '1957440969', url: `${mockOrigin}/opensubtitles/download/1957440969.gz`, lang: 'ara', SubEncoding: 'UTF-8' },
+              { id: '1957440970', url: `${mockOrigin}/opensubtitles/download/vip-notice.gz`, lang: 'pob', SubEncoding: 'UTF-8' },
+              { id: 'bogus', url: 'not a url', lang: 'fre' }
+            ]
+          })
         );
+      }
+
+      if (u.pathname === '/opensubtitles/download/vip-notice.gz') {
+        // What the retired OpenSubtitles.org downloads answer with today.
+        const notice = '1\r\n00:00:01,000 --> 00:00:30,000\r\nSubtitles downloaded from opensubtitles.org - become a VIP member\r\n';
+        res.writeHead(200, { 'Content-Type': 'application/x-gzip' });
+        return res.end(zlib.gzipSync(Buffer.from(notice, 'utf8')));
       }
 
       if (u.pathname.startsWith('/opensubtitles/download/')) {
@@ -346,6 +345,26 @@ function startUpstreamMockServer() {
         const gzBuf = zlib.gzipSync(Buffer.from(sampleSrt, 'utf8'));
         res.writeHead(200, { 'Content-Type': 'application/x-gzip' });
         return res.end(gzBuf);
+      }
+
+      // Windows-1251 Russian subtitle served as a deflated ZIP (SubDL style).
+      if (u.pathname === '/subdl-dl/subtitle/ru.zip') {
+        const cp1251 = Buffer.from([0xcf, 0xf0, 0xe8, 0xe2, 0xe5, 0xf2]); // "Привет"
+        const srt = Buffer.concat([Buffer.from('1\r\n00:00:01,000 --> 00:00:04,000\r\n'), cp1251, Buffer.from('\r\n\r\n2\r\n00:00:05,000 --> 00:00:06,000\r\nok\r\n')]);
+        const nameBuf = Buffer.from('Film.ru.srt');
+        const data = zlib.deflateRawSync(srt);
+        const lh = Buffer.alloc(30);
+        lh.writeUInt32LE(0x04034b50, 0); lh.writeUInt16LE(20, 4); lh.writeUInt16LE(8, 8);
+        lh.writeUInt32LE(data.length, 18); lh.writeUInt32LE(srt.length, 22); lh.writeUInt16LE(nameBuf.length, 26);
+        const ch = Buffer.alloc(46);
+        ch.writeUInt32LE(0x02014b50, 0); ch.writeUInt16LE(8, 10); ch.writeUInt32LE(data.length, 20); ch.writeUInt32LE(srt.length, 24);
+        ch.writeUInt16LE(nameBuf.length, 28); ch.writeUInt32LE(0, 42);
+        const cdOffset = lh.length + nameBuf.length + data.length;
+        const eocd = Buffer.alloc(22);
+        eocd.writeUInt32LE(0x06054b50, 0); eocd.writeUInt16LE(1, 8); eocd.writeUInt16LE(1, 10);
+        eocd.writeUInt32LE(ch.length + nameBuf.length, 12); eocd.writeUInt32LE(cdOffset, 16);
+        res.writeHead(200, { 'Content-Type': 'application/zip' });
+        return res.end(Buffer.concat([lh, nameBuf, data, ch, nameBuf, eocd]));
       }
 
       // 8b. HubCloud generator landing pages (Centaurus unroller fixtures).
@@ -1077,7 +1096,8 @@ async function runTests() {
   config.upstreams.introDbUrl = `${mockUpstream.url}/introdb`;
   config.upstreams.theIntroDbUrl = `${mockUpstream.url}/theintrodb/v3`;
   config.upstreams.theIntroDbApiKey = '';
-  config.upstreams.openSubtitlesRestUrl = `${mockUpstream.url}/opensubtitles`;
+  config.upstreams.openSubtitlesStremioUrl = `${mockUpstream.url}/stremio`;
+  config.upstreams.subdlDownloadUrl = `${mockUpstream.url}/subdl-dl`;
   config.upstreams.vidstuckBase = `${mockUpstream.url}/vidstuck`;
   // Andromeda's live tiers: point CastleTV + NetMirror at the mock so the
   // end-to-end suites resolve without touching real upstreams.
@@ -1557,13 +1577,40 @@ async function runTests() {
       preferredAudioRes.json.stream.audioTracks.every((track) => track.default === (track.lang === 'hi')),
       'Cached resolver responses must still apply each caller’s audio preference'
     );
-    assert.ok(resolveRes.json.subtitles.length >= 2, 'OpenSubtitles tracks must be returned');
+    // Subtitles come from OpenSubtitles' Stremio v3 addon (keyless), merged
+    // to one plain track per language with English first and as the default.
+    const subs = resolveRes.json.subtitles;
+    assert.ok(subs.length >= 3, `OpenSubtitles (Stremio v3) tracks must be returned, got ${subs.length}`);
+    assert.deepStrictEqual(
+      subs.map((t) => [t.lang, t.label, t.default]),
+      [['en', 'English', true], ['ar', 'العربية', false], ['pt', 'Português (BR)', false]],
+      'one track per language, native labels, English default, bogus entries dropped'
+    );
+    assert.ok(subs.every((t) => t.url.startsWith('/api/subtitles/proxy?url=') && t.url.includes('&lang=')), 'tracks are served through the subtitle proxy');
+    assert.ok(!JSON.stringify(subs).includes('rest.opensubtitles.org'), 'the retired OpenSubtitles REST API must not be used');
 
     // Test /api/subtitles/proxy decompressing .srt.gz and converting to WebVTT
-    const subProxyRes = await httpRequest(baseUrl, resolveRes.json.subtitles[0].url);
+    const subProxyRes = await httpRequest(baseUrl, subs[0].url);
     assert.strictEqual(subProxyRes.status, 200);
     assert.ok(subProxyRes.body.startsWith('WEBVTT'), 'Proxied .srt.gz must decompress and convert to WEBVTT');
     assert.ok(subProxyRes.body.includes('Welcome to Piltover and Zaun.'));
+    assert.match(subProxyRes.headers['content-type'] || '', /text\/vtt/);
+
+    // A "become a VIP" placeholder must fail the track, not play as subtitles.
+    const vipRes = await httpRequest(baseUrl, subs[2].url);
+    assert.strictEqual(vipRes.status, 502, 'placeholder subtitle files are rejected');
+
+    // ZIP (SubDL-style) + legacy charset: unpacked and decoded via the lang hint.
+    const zipRes = await httpRequest(
+      baseUrl,
+      `/api/subtitles/proxy?url=${encodeURIComponent(`${mockUpstream.url}/subdl-dl/subtitle/ru.zip`)}&lang=ru`
+    );
+    assert.strictEqual(zipRes.status, 200, zipRes.body);
+    assert.ok(zipRes.body.includes('Привет'), 'windows-1251 subtitle inside a zip must decode');
+
+    // The proxy is not an open relay: unknown hosts are refused.
+    const relayRes = await httpRequest(baseUrl, `/api/subtitles/proxy?url=${encodeURIComponent('https://evil.example/x.srt')}`);
+    assert.strictEqual(relayRes.status, 403, 'subtitle proxy must refuse non-subtitle hosts');
 
     // Test /api/proxy rewriting the upstream M3U8 playlist
     const m3u8ProxyRes = await httpRequest(baseUrl, resolveRes.json.stream.streamUrl);
@@ -1754,6 +1801,19 @@ async function runTests() {
     );
     assert.ok(!embedHtml.includes('<!--LOL_EMBED_CONFIG-->'), 'Config placeholder must be replaced');
     assert.ok(!/vidstuck/i.test(embedHtml), 'Player page must be rebranded to LOL Embed');
+
+    // 10a-1. Ads: the popunder tag ships by default and ADS_ENABLED="false" strips it.
+    const AD_TAG = '<script data-cfasync="false" src="https://4xfreedom.com/1/7bdb1e6b0498fdfa2a41c002db4e3a55"></script>';
+    assert.ok(embedHtml.includes(AD_TAG), 'embed page must carry the ad tag by default');
+    assert.ok(embedHtml.indexOf('/js/embed.js') < embedHtml.indexOf(AD_TAG), 'ad tag must load after the player script');
+    for (const off of ['false', '0', 'off']) {
+      const adFreeRes = await callWorker('http://player.test/embed?type=tv&tmdb=94605&s=1&e=1', { ADS_ENABLED: off });
+      const adFreeHtml = await adFreeRes.text();
+      assert.ok(!adFreeHtml.includes('4xfreedom.com') && !adFreeHtml.includes('LOL_EMBED_ADS'), `ADS_ENABLED=${off} must serve an ad-free page`);
+      assert.ok(adFreeHtml.includes('/js/embed.js') && adFreeHtml.includes('</body>'), 'stripping the ad block must leave the page intact');
+    }
+    const adsOnRes = await callWorker('http://player.test/embed?type=tv&tmdb=94605&s=1&e=1', { ADS_ENABLED: 'true' });
+    assert.ok((await adsOnRes.text()).includes(AD_TAG), 'ADS_ENABLED=true keeps the ad tag');
 
     // 10a-2. The player bundle must revalidate so a server rebrand (or any player
     // fix) reaches viewers on their next load, while vendor libraries keep the
@@ -2138,7 +2198,8 @@ async function runTests() {
         VIDSTUCK_BASE_URL: '',
         TMDB_BASE_URL: `${mockUpstream.url}/tmdb`,
         THEINTRODB_URL: `${mockUpstream.url}/theintrodb/v3`,
-        INTRODB_URL: `${mockUpstream.url}/introdb`
+        INTRODB_URL: `${mockUpstream.url}/introdb`,
+        OPENSUBTITLES_STREMIO_URL: `${mockUpstream.url}/stremio`
       };
 
       // Worker resolves Andromeda directly with CastleTV
@@ -2261,7 +2322,8 @@ async function runTests() {
         VIDSTUCK_BASE_URL: '',
         TMDB_BASE_URL: `${mockUpstream.url}/tmdb`,
         THEINTRODB_URL: `${mockUpstream.url}/theintrodb/v3`,
-        INTRODB_URL: `${mockUpstream.url}/introdb`
+        INTRODB_URL: `${mockUpstream.url}/introdb`,
+        OPENSUBTITLES_STREMIO_URL: `${mockUpstream.url}/stremio`
       };
 
       const healthRes = await callWorker('http://player.test/api/health');
@@ -2323,6 +2385,31 @@ async function runTests() {
         !JSON.stringify(resolveJson.servers).includes('Strings'),
         'worker payload must not leak removed servers'
       );
+
+      // 13e-2. Worker subtitles: same sources, merge and proxy as the Node API.
+      assert.deepStrictEqual(
+        resolveJson.subtitles.map((t) => [t.lang, t.label, t.default]),
+        [['en', 'English', true], ['ar', 'العربية', false], ['pt', 'Português (BR)', false]],
+        'worker must resolve subtitles through the Stremio v3 addon'
+      );
+      const workerSubRes = await callWorker(`http://player.test${resolveJson.subtitles[0].url}`, catalogWorkerEnv);
+      assert.strictEqual(workerSubRes.status, 200);
+      const workerVtt = await workerSubRes.text();
+      assert.ok(workerVtt.startsWith('WEBVTT') && workerVtt.includes('Welcome to Piltover and Zaun.'), 'worker subtitle proxy must return WebVTT');
+      assert.strictEqual(workerSubRes.headers.get('access-control-allow-origin'), '*');
+      const workerVipRes = await callWorker(`http://player.test${resolveJson.subtitles[2].url}`, catalogWorkerEnv);
+      assert.strictEqual(workerVipRes.status, 502, 'worker must reject VIP placeholder subtitles');
+      const workerRelayRes = await callWorker(
+        `http://player.test/api/subtitles/proxy?url=${encodeURIComponent('https://evil.example/x.srt')}`,
+        catalogWorkerEnv
+      );
+      assert.strictEqual(workerRelayRes.status, 403, 'worker subtitle proxy must not be an open relay');
+      const workerZipRes = await callWorker(
+        `http://player.test/api/subtitles/proxy?url=${encodeURIComponent(`${mockUpstream.url}/subdl-dl/subtitle/ru.zip`)}&lang=ru`,
+        { ...catalogWorkerEnv, SUBDL_DOWNLOAD_URL: `${mockUpstream.url}/subdl-dl` }
+      );
+      assert.strictEqual(workerZipRes.status, 200);
+      assert.ok((await workerZipRes.text()).includes('Привет'), 'worker must unpack zip + decode windows-1251');
 
       // 13f. The worker must build its server list from the same shared catalog.
       const workerSrc = fs.readFileSync(path.join(__dirname, '..', 'cloudflare-worker', 'worker.js'), 'utf8');

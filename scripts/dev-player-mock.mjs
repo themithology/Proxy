@@ -8,6 +8,7 @@
 //
 //   node scripts/dev-player-mock.mjs            # http://0.0.0.0:8790/embed?type=tv&tmdb=94605&s=1&e=1
 //   PLAYER_PORT=9000 node scripts/dev-player-mock.mjs
+//   ADS=0 node scripts/dev-player-mock.mjs      # ad-free page (what ADS_ENABLED="false" serves)
 //
 // Useful URLs:
 //   /embed?type=tv&tmdb=94605&s=1&e=1                 happy path (recap + intro + open-ended credits segments, subtitles)
@@ -236,6 +237,8 @@ const server = http.createServer((req, res) => {
   if (isEmbedRoute) {
     let html = fs.readFileSync(path.join(PUBLIC_DIR, 'embed.html'), 'utf8');
     html = html.replace('<!--LOL_EMBED_CONFIG-->', '<script>window.__LOL_EMBED_CONFIG__={"apiBaseUrl":""};</script>');
+    // ADS=0 previews the ad-free page (what ADS_ENABLED = "false" serves).
+    if (process.env.ADS === '0') html = html.replace(/[ \t]*<!--LOL_EMBED_ADS-->[\s\S]*?<!--\/LOL_EMBED_ADS-->\n?/g, '');
     res.writeHead(200, {
       'Content-Type': 'text/html; charset=utf-8',
       'Cache-Control': 'no-cache',
