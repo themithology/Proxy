@@ -1,5 +1,5 @@
 {
-  "startedAt": "2026-10-04T07:00:42.506Z",
+  "startedAt": "2026-10-04T07:03:48.134Z",
   "deep": false,
   "titles": {
     "movie/550": {
@@ -50,7 +50,38 @@
               "exact-title",
               "year-match"
             ],
-            "rejected": [],
+            "rejected": [
+              {
+                "title": "Fight Club",
+                "year": 2023,
+                "reason": "exact-title,year-mismatch:2023!=1999,preferred-audio-present"
+              },
+              {
+                "title": "Fight Club - Members Only",
+                "year": 2006,
+                "reason": "title-prefix-only,year-mismatch:2006!=1999,preferred-audio-present"
+              },
+              {
+                "title": "Run Hide Fight",
+                "year": 2021,
+                "reason": "year-mismatch:2021!=1999,preferred-audio-present"
+              },
+              {
+                "title": "The Midnight Club",
+                "year": 2022,
+                "reason": "year-mismatch:2022!=1999,type-mismatch:tv!=movie,preferred-audio-present"
+              },
+              {
+                "title": "Chick Fight",
+                "year": 2020,
+                "reason": "year-mismatch:2020!=1999,preferred-audio-present"
+              },
+              {
+                "title": "Assassin Club",
+                "year": 2023,
+                "reason": "year-mismatch:2023!=1999,preferred-audio-present"
+              }
+            ],
             "languages": [
               "en"
             ]
@@ -121,25 +152,25 @@
             "hindi": false,
             "identityMethod": "tmdb-verified",
             "identityVerified": true,
-            "latencyMs": 606
+            "latencyMs": 1010
           },
           {
             "provider": "moviebox",
             "ok": false,
             "reason": "no_stream",
-            "latencyMs": 5715
+            "latencyMs": 3981
           },
           {
             "provider": "netmirror",
             "ok": false,
             "reason": "no_stream",
-            "latencyMs": 342
+            "latencyMs": 258
           },
           {
             "provider": "moviesdrive",
             "ok": false,
             "reason": "no_stream",
-            "latencyMs": 1204
+            "latencyMs": 1284
           },
           {
             "provider": "4khdhub",
@@ -147,13 +178,13 @@
             "hindi": true,
             "identityMethod": "title-year",
             "identityVerified": false,
-            "latencyMs": 1453
+            "latencyMs": 1187
           },
           {
             "provider": "dahmer",
             "ok": false,
             "reason": "no_stream",
-            "latencyMs": 180
+            "latencyMs": 143
           },
           {
             "provider": "hicine",
@@ -161,7 +192,7 @@
             "hindi": true,
             "identityMethod": "title-hint",
             "identityVerified": false,
-            "latencyMs": 9111
+            "latencyMs": 9502
           }
         ],
         "streamHost": "d33f51dyacx7bd.cloudfront.net"
@@ -241,7 +272,38 @@
               "year-match",
               "preferred-audio-present"
             ],
-            "rejected": [],
+            "rejected": [
+              {
+                "title": "Two",
+                "year": 2021,
+                "reason": "title-variant,year-mismatch:2021!=2024"
+              },
+              {
+                "title": "Dune",
+                "year": 2021,
+                "reason": "title-prefix-only,year-mismatch:2021!=2024,preferred-audio-present"
+              },
+              {
+                "title": "Dune: Prophecy",
+                "year": 2024,
+                "reason": "year-match,type-mismatch:tv!=movie,preferred-audio-present"
+              },
+              {
+                "title": "Rebel Moon — Part Two: The Scargiver",
+                "year": 2024,
+                "reason": "year-match,preferred-audio-present"
+              },
+              {
+                "title": "Two Sister",
+                "year": 2024,
+                "reason": "year-match,type-mismatch:tv!=movie,preferred-audio-present"
+              },
+              {
+                "title": "Sa Re Ga Ma Pa 2024",
+                "year": 2024,
+                "reason": "year-match,type-mismatch:tv!=movie,preferred-audio-present"
+              }
+            ],
             "languages": [
               "hi",
               "ta",
@@ -297,8 +359,8 @@
           "lang": "hi",
           "label": "Hindi",
           "type": "dub",
-          "streamUrl": "/api/proxy?url=https%3A%2F%2Fimg1.flowxn.com%2Fmyhls_mps%2F2024%2F8yue%2FDune2%2FHindi_720%2Findex_375.m3u8%3Fauth_key%3DjM9w0kRUnq96GkGqyjN87pU7FXjf9vWy148HEWKwy6A%253D%26expire%3D1791108077655&referer=https%3A%2F%2Fapi.hlowb.com%2F&exp=1791111678&sig=9737116567259696272621d844a747ac&mode=full",
-          "rawUrl": "https://img1.flowxn.com/myhls_mps/2024/8yue/Dune2/Hindi_720/index_375.m3u8?auth_key=jM9w0kRUnq96GkGqyjN87pU7FXjf9vWy148HEWKwy6A%3D&expire=1791108077655",
+          "streamUrl": "/api/proxy?url=https%3A%2F%2Fimg1.flcwuk.com%2Fmyhls_mps%2F2024%2F8yue%2FDune2%2FHindi_720%2Findex_374.m3u8%3Fauth_key%3DGLzkt5WDHIXUtxJkwfAYdx7lmymNU%252B5tKxVRajFhd2E%253D%26expire%3D1791108261157&referer=https%3A%2F%2Fapi.hlowb.com%2F&exp=1791111861&sig=6fd9f2da801f1ee837dcdd5117902f18&mode=full",
+          "rawUrl": "https://img1.flcwuk.com/myhls_mps/2024/8yue/Dune2/Hindi_720/index_374.m3u8?auth_key=GLzkt5WDHIXUtxJkwfAYdx7lmymNU%2B5tKxVRajFhd2E%3D&expire=1791108261157",
           "default": true
         },
         "audioTracks": [
@@ -330,10 +392,10 @@
             "hindi": true,
             "identityMethod": "tmdb-verified",
             "identityVerified": true,
-            "latencyMs": 864
+            "latencyMs": 1359
           }
         ],
-        "streamHost": "img1.flowxn.com"
+        "streamHost": "img1.flcwuk.com"
       },
       "error": null
     },
@@ -386,7 +448,38 @@
               "year-match",
               "preferred-audio-present"
             ],
-            "rejected": [],
+            "rejected": [
+              {
+                "title": "3%",
+                "year": 2020,
+                "reason": "title-alt,year-mismatch:2020!=2009,type-mismatch:tv!=movie"
+              },
+              {
+                "title": "3 Ekka",
+                "year": 2023,
+                "reason": "title-prefix-only,year-mismatch:2023!=2009"
+              },
+              {
+                "title": "3:33",
+                "year": 2021,
+                "reason": "title-prefix-only,year-mismatch:2021!=2009"
+              },
+              {
+                "title": "3 Days 3 Nights",
+                "year": 2021,
+                "reason": "title-prefix-only,year-mismatch:2021!=2009"
+              },
+              {
+                "title": "3 Demons",
+                "year": 2022,
+                "reason": "title-prefix-only,year-mismatch:2022!=2009"
+              },
+              {
+                "title": "Fukrey 3",
+                "year": 2023,
+                "reason": "year-mismatch:2023!=2009,preferred-audio-present"
+              }
+            ],
             "languages": [
               "hi"
             ]
@@ -439,8 +532,8 @@
           "lang": "hi",
           "label": "Hindi",
           "type": "dub",
-          "streamUrl": "/api/proxy?url=https%3A%2F%2Fimg1.klnwm.com%2Fhls_mps%2F4b8b272d03bf2015df0f48db1089d95695f3f694%2F480%2Findex_preview_364.m3u8%3Fauth_key%3DX74s7n9iEEM4S41D%252B3zL%252BasI3kz5NRur7YRYmu4b78U%253D%26expire%3D1791108083279&referer=https%3A%2F%2Fapi.hlowb.com%2F&exp=1791111683&sig=f89589012968fd934a29919c524e8d63&mode=full",
-          "rawUrl": "https://img1.klnwm.com/hls_mps/4b8b272d03bf2015df0f48db1089d95695f3f694/480/index_preview_364.m3u8?auth_key=X74s7n9iEEM4S41D%2B3zL%2BasI3kz5NRur7YRYmu4b78U%3D&expire=1791108083279",
+          "streamUrl": "/api/proxy?url=https%3A%2F%2Fimg1.flcwuk.com%2Fhls_mps%2F4b8b272d03bf2015df0f48db1089d95695f3f694%2F480%2Findex_preview_374.m3u8%3Fauth_key%3DMJgUzDKxYRdWMn4vnZipvy4xb6BeXGOukcnHS%252FR9PBk%253D%26expire%3D1791108266175&referer=https%3A%2F%2Fapi.hlowb.com%2F&exp=1791111866&sig=501c0146618d67dd366c2b43e4513186&mode=full",
+          "rawUrl": "https://img1.flcwuk.com/hls_mps/4b8b272d03bf2015df0f48db1089d95695f3f694/480/index_preview_374.m3u8?auth_key=MJgUzDKxYRdWMn4vnZipvy4xb6BeXGOukcnHS%2FR9PBk%3D&expire=1791108266175",
           "default": true
         },
         "audioTracks": [
@@ -457,10 +550,10 @@
             "hindi": true,
             "identityMethod": "tmdb-verified",
             "identityVerified": true,
-            "latencyMs": 327
+            "latencyMs": 784
           }
         ],
-        "streamHost": "img1.klnwm.com"
+        "streamHost": "img1.flcwuk.com"
       },
       "error": null
     },
@@ -529,7 +622,23 @@
               "year-match",
               "preferred-audio-present"
             ],
-            "rejected": [],
+            "rejected": [
+              {
+                "title": "Spaghetti (2023)",
+                "year": 2023,
+                "reason": "year-match,preferred-audio-present"
+              },
+              {
+                "title": "WWE Royal Rumble 2023",
+                "year": 2023,
+                "reason": "year-match"
+              },
+              {
+                "title": "To End All War: Oppenheimer & the Atomic Bomb",
+                "year": 2023,
+                "reason": "year-match"
+              }
+            ],
             "languages": [
               "hi",
               "ta",
@@ -584,8 +693,8 @@
           "lang": "hi",
           "label": "Hindi",
           "type": "dub",
-          "streamUrl": "/api/proxy?url=https%3A%2F%2Fimg1.flowxn.com%2Fmyhls_mps%2F2024%2F3yue%2FOppenheimer_Hindi_720%2Findex_375.m3u8%3Fauth_key%3DysZNXXH9uwURw32fEYFhTkNm5wCoQzmBDXQ4IQF1LcU%253D%26expire%3D1791108088728&referer=https%3A%2F%2Fapi.hlowb.com%2F&exp=1791111688&sig=97c1ae378c8cb149b0fb1b9d36f67aad&mode=full",
-          "rawUrl": "https://img1.flowxn.com/myhls_mps/2024/3yue/Oppenheimer_Hindi_720/index_375.m3u8?auth_key=ysZNXXH9uwURw32fEYFhTkNm5wCoQzmBDXQ4IQF1LcU%3D&expire=1791108088728",
+          "streamUrl": "/api/proxy?url=https%3A%2F%2Fimg1.flcwuk.com%2Fmyhls_mps%2F2024%2F3yue%2FOppenheimer_Hindi_720%2Findex_374.m3u8%3Fauth_key%3DqsuYK7kGm6Pxq3CSK%252FXb5LyNcx0woXJAQpl%252BygJFYsQ%253D%26expire%3D1791108271892&referer=https%3A%2F%2Fapi.hlowb.com%2F&exp=1791111872&sig=64e4c326a1856061c942d370fae6478c&mode=full",
+          "rawUrl": "https://img1.flcwuk.com/myhls_mps/2024/3yue/Oppenheimer_Hindi_720/index_374.m3u8?auth_key=qsuYK7kGm6Pxq3CSK%2FXb5LyNcx0woXJAQpl%2BygJFYsQ%3D&expire=1791108271892",
           "default": true
         },
         "audioTracks": [
@@ -612,10 +721,10 @@
             "hindi": true,
             "identityMethod": "tmdb-verified",
             "identityVerified": true,
-            "latencyMs": 555
+            "latencyMs": 1039
           }
         ],
-        "streamHost": "img1.flowxn.com"
+        "streamHost": "img1.flcwuk.com"
       },
       "error": null
     },
@@ -671,7 +780,38 @@
               "year-off-by-4",
               "preferred-audio-present"
             ],
-            "rejected": [],
+            "rejected": [
+              {
+                "title": "Breaking",
+                "year": 2022,
+                "reason": "title-prefix-only,year-off-by-14,type-mismatch:movie!=tv,preferred-audio-present"
+              },
+              {
+                "title": "The Bad Guys: Breaking In",
+                "year": 2025,
+                "reason": "year-off-by-17,preferred-audio-present"
+              },
+              {
+                "title": "Breaking Surface",
+                "year": 2020,
+                "reason": "year-off-by-12,type-mismatch:movie!=tv,preferred-audio-present"
+              },
+              {
+                "title": "Bad Girl",
+                "year": 2025,
+                "reason": "year-off-by-17,type-mismatch:movie!=tv,preferred-audio-present"
+              },
+              {
+                "title": "Bad Boy",
+                "year": 2025,
+                "reason": "year-off-by-17,preferred-audio-present"
+              },
+              {
+                "title": "Bad Cop",
+                "year": 2024,
+                "reason": "year-off-by-16,preferred-audio-present"
+              }
+            ],
             "languages": [
               "hi",
               "en"
@@ -725,8 +865,8 @@
           "lang": "hi",
           "label": "Hindi",
           "type": "dub",
-          "streamUrl": "/api/proxy?url=https%3A%2F%2Fimg1.klnwm.com%2Fhls_mps%2F57ba6bd962339881cd96be7ca2b42efec15f8b8e%2F720%2Findex_364.m3u8%3Fauth_key%3DXio8B5snOIOHPOpwSBJO7M1J9ImakQNRJ4kBFoPH3gI%253D%26expire%3D1791108092490&referer=https%3A%2F%2Fapi.hlowb.com%2F&exp=1791111692&sig=421ed9989c7ef85b4f2779e1cfe5dd80&mode=full",
-          "rawUrl": "https://img1.klnwm.com/hls_mps/57ba6bd962339881cd96be7ca2b42efec15f8b8e/720/index_364.m3u8?auth_key=Xio8B5snOIOHPOpwSBJO7M1J9ImakQNRJ4kBFoPH3gI%3D&expire=1791108092490",
+          "streamUrl": "/api/proxy?url=https%3A%2F%2Fimg1.hlnom.com%2Fhls_mps%2F57ba6bd962339881cd96be7ca2b42efec15f8b8e%2F720%2Findex_363.m3u8%3Fauth_key%3DodgOvMJfJ2eQiFQL8p1ihQTWhkzmoQyvRB24Tin9qks%253D%26expire%3D1791108276018&referer=https%3A%2F%2Fapi.hlowb.com%2F&exp=1791111876&sig=52d236696e975a9c4ec97a01cda40b75&mode=full",
+          "rawUrl": "https://img1.hlnom.com/hls_mps/57ba6bd962339881cd96be7ca2b42efec15f8b8e/720/index_363.m3u8?auth_key=odgOvMJfJ2eQiFQL8p1ihQTWhkzmoQyvRB24Tin9qks%3D&expire=1791108276018",
           "default": true
         },
         "audioTracks": [
@@ -748,10 +888,10 @@
             "hindi": true,
             "identityMethod": "tmdb-verified",
             "identityVerified": true,
-            "latencyMs": 542
+            "latencyMs": 1291
           }
         ],
-        "streamHost": "img1.klnwm.com"
+        "streamHost": "img1.hlnom.com"
       },
       "error": null
     },
@@ -798,7 +938,33 @@
               "exact-title",
               "year-off-by-3"
             ],
-            "rejected": [],
+            "rejected": [
+              {
+                "title": "Sa Re Ga Ma Pa（2021）",
+                "year": 2021,
+                "reason": "year-match,preferred-audio-present"
+              },
+              {
+                "title": "School 2021",
+                "year": 2021,
+                "reason": "year-match"
+              },
+              {
+                "title": "2021 MTV Video Music Awards",
+                "year": 2021,
+                "reason": "year-match,type-mismatch:movie!=tv"
+              },
+              {
+                "title": "2021 and Done with Snoop Dogg & Kevin Hart",
+                "year": 2021,
+                "reason": "year-match,type-mismatch:movie!=tv"
+              },
+              {
+                "title": "Doraemon the Movie: Nobita's Little Star Wars 2021",
+                "year": 2022,
+                "reason": "year-off-by-1,type-mismatch:movie!=tv"
+              }
+            ],
             "languages": [
               "en"
             ]
@@ -850,8 +1016,8 @@
           "lang": "en",
           "label": "English",
           "type": "dub",
-          "streamUrl": "/api/proxy?url=https%3A%2F%2Fimg1.hlnom.com%2Fhls_mps%2F244490619%2F720%2Findex_363.m3u8%3Fauth_key%3D7drzOX8N9qzE144poxGUwGo%252BQJ29LOAZyZYZ0epZ4UE%253D%26expire%3D1791108096989&referer=https%3A%2F%2Fapi.hlowb.com%2F&exp=1791111697&sig=cc5ccf258f0ccb6432517c5fb23acde7&mode=full",
-          "rawUrl": "https://img1.hlnom.com/hls_mps/244490619/720/index_363.m3u8?auth_key=7drzOX8N9qzE144poxGUwGo%2BQJ29LOAZyZYZ0epZ4UE%3D&expire=1791108096989",
+          "streamUrl": "/api/proxy?url=https%3A%2F%2Fimg1.hlnom.com%2Fhls_mps%2F244490619%2F720%2Findex_363.m3u8%3Fauth_key%3DIFyHdaCIKO%252BFGkb2FrK27vhxha%252B5qRPny2P%252BBlTBOEo%253D%26expire%3D1791108280805&referer=https%3A%2F%2Fapi.hlowb.com%2F&exp=1791111880&sig=0659b274831b280ab6ca33162959bdf4&mode=full",
+          "rawUrl": "https://img1.hlnom.com/hls_mps/244490619/720/index_363.m3u8?auth_key=IFyHdaCIKO%2BFGkb2FrK27vhxha%2B5qRPny2P%2BBlTBOEo%3D&expire=1791108280805",
           "default": true
         },
         "audioTracks": [
@@ -868,25 +1034,25 @@
             "hindi": false,
             "identityMethod": "tmdb-verified",
             "identityVerified": true,
-            "latencyMs": 563
+            "latencyMs": 1276
           },
           {
             "provider": "moviebox",
             "ok": false,
             "reason": "no_stream",
-            "latencyMs": 3066
+            "latencyMs": 2721
           },
           {
             "provider": "netmirror",
             "ok": false,
             "reason": "no_stream",
-            "latencyMs": 323
+            "latencyMs": 235
           },
           {
             "provider": "moviesdrive",
             "ok": false,
             "reason": "no_stream",
-            "latencyMs": 738
+            "latencyMs": 935
           },
           {
             "provider": "4khdhub",
@@ -894,25 +1060,25 @@
             "hindi": false,
             "identityMethod": "title-year",
             "identityVerified": false,
-            "latencyMs": 2346
+            "latencyMs": 1264
           },
           {
             "provider": "dahmer",
             "ok": false,
             "reason": "no_stream",
-            "latencyMs": 131
+            "latencyMs": 105
           },
           {
             "provider": "hicine",
             "ok": false,
             "reason": "no_stream",
-            "latencyMs": 247
+            "latencyMs": 362
           },
           {
             "provider": "hianime",
             "ok": false,
             "reason": "no_stream",
-            "latencyMs": 704
+            "latencyMs": 625
           }
         ],
         "streamHost": "img1.hlnom.com"
@@ -979,7 +1145,38 @@
               "year-off-by-5",
               "preferred-audio-present"
             ],
-            "rejected": [],
+            "rejected": [
+              {
+                "title": "Demon Slayer -Kimetsu no Yaiba- The Movie: Infinity Castle",
+                "year": 2025,
+                "reason": "title-prefix-only,year-off-by-6,type-mismatch:movie!=tv,preferred-audio-present"
+              },
+              {
+                "title": "Demon Slayer: Kimetsu No Yaiba - To the Hashira Training",
+                "year": 2024,
+                "reason": "title-prefix-only,year-off-by-5,type-mismatch:movie!=tv"
+              },
+              {
+                "title": "Demon",
+                "year": 2023,
+                "reason": "title-prefix-only,year-off-by-4,type-mismatch:movie!=tv"
+              },
+              {
+                "title": "Demon",
+                "year": 2017,
+                "reason": "title-prefix-only,year-mismatch:2017!=2019,type-mismatch:movie!=tv"
+              },
+              {
+                "title": "No Mercy",
+                "year": 2019,
+                "reason": "year-match,type-mismatch:movie!=tv"
+              },
+              {
+                "title": "No Doubt",
+                "year": 2019,
+                "reason": "year-match,type-mismatch:movie!=tv"
+              }
+            ],
             "languages": [
               "ja",
               "en",
@@ -1034,8 +1231,8 @@
           "lang": "hi",
           "label": "Hindi",
           "type": "dub",
-          "streamUrl": "/api/proxy?url=https%3A%2F%2Fimg1.flowxn.com%2Fhls_mps%2Fdf9465688906eee49da00169974c8fd9110ed0cd%2F720%2Findex_375.m3u8%3Fauth_key%3DIBq7tK176TFcHVOi9aCG0erfeZbggYzY0YxpilJSFP8%253D%26expire%3D1791108113130&referer=https%3A%2F%2Fapi.hlowb.com%2F&exp=1791111713&sig=3706c5a926210e6262666498b0612f44&mode=full",
-          "rawUrl": "https://img1.flowxn.com/hls_mps/df9465688906eee49da00169974c8fd9110ed0cd/720/index_375.m3u8?auth_key=IBq7tK176TFcHVOi9aCG0erfeZbggYzY0YxpilJSFP8%3D&expire=1791108113130",
+          "streamUrl": "/api/proxy?url=https%3A%2F%2Fimg1.klnwm.com%2Fhls_mps%2Fdf9465688906eee49da00169974c8fd9110ed0cd%2F720%2Findex_364.m3u8%3Fauth_key%3DSrpGHfD%252Bd9IoFj4y3vGTQE6%252Fi5EZGIcafpXYO%252BGTi4g%253D%26expire%3D1791108295760&referer=https%3A%2F%2Fapi.hlowb.com%2F&exp=1791111896&sig=b5046a111486dc58257548b9b181f2f0&mode=full",
+          "rawUrl": "https://img1.klnwm.com/hls_mps/df9465688906eee49da00169974c8fd9110ed0cd/720/index_364.m3u8?auth_key=SrpGHfD%2Bd9IoFj4y3vGTQE6%2Fi5EZGIcafpXYO%2BGTi4g%3D&expire=1791108295760",
           "default": true
         },
         "audioTracks": [
@@ -1062,10 +1259,10 @@
             "hindi": true,
             "identityMethod": "tmdb-verified",
             "identityVerified": true,
-            "latencyMs": 851
+            "latencyMs": 1621
           }
         ],
-        "streamHost": "img1.flowxn.com"
+        "streamHost": "img1.klnwm.com"
       },
       "error": null
     },
@@ -1112,7 +1309,38 @@
               "exact-title",
               "year-off-by-12"
             ],
-            "rejected": [],
+            "rejected": [
+              {
+                "title": "Magic and Muscles",
+                "year": 2024,
+                "reason": "year-off-by-11,preferred-audio-present"
+              },
+              {
+                "title": "Pride and Prejudice and Zombies",
+                "year": 2016,
+                "reason": "year-off-by-3,type-mismatch:movie!=tv,preferred-audio-present"
+              },
+              {
+                "title": "Cat and Dog",
+                "year": 2024,
+                "reason": "year-off-by-11,type-mismatch:movie!=tv,preferred-audio-present"
+              },
+              {
+                "title": "Willie and Me",
+                "year": 2024,
+                "reason": "year-off-by-11,type-mismatch:movie!=tv,preferred-audio-present"
+              },
+              {
+                "title": "Parimala and Co",
+                "year": 2026,
+                "reason": "year-off-by-13,type-mismatch:movie!=tv,preferred-audio-present"
+              },
+              {
+                "title": "Cousins and Kalyanams",
+                "year": 2026,
+                "reason": "year-off-by-13,preferred-audio-present"
+              }
+            ],
             "languages": [
               "en"
             ]
@@ -1164,8 +1392,8 @@
           "lang": "en",
           "label": "English",
           "type": "dub",
-          "streamUrl": "/api/proxy?url=https%3A%2F%2Fimg1.klnwm.com%2Fhls%2Fab8403967e32999bd5d03acaa913b368%2F720%2Findex_364.m3u8%3Fauth_key%3DerZxVcGy22b3iVCdjPj55QMv3%252Fb1xd3ptFuIeCWMH%252FE%253D%26expire%3D1791108117332&referer=https%3A%2F%2Fapi.hlowb.com%2F&exp=1791111717&sig=05edf81ea61ab03855d67351581fd047&mode=full",
-          "rawUrl": "https://img1.klnwm.com/hls/ab8403967e32999bd5d03acaa913b368/720/index_364.m3u8?auth_key=erZxVcGy22b3iVCdjPj55QMv3%2Fb1xd3ptFuIeCWMH%2FE%3D&expire=1791108117332",
+          "streamUrl": "/api/proxy?url=https%3A%2F%2Fimg1.hlnom.com%2Fhls%2Fab8403967e32999bd5d03acaa913b368%2F720%2Findex_363.m3u8%3Fauth_key%3DKL0r%252F9gKZ1KeSh5ATkEkQw6ruH70NIhV%252BPNYn0J9BeU%253D%26expire%3D1791108300505&referer=https%3A%2F%2Fapi.hlowb.com%2F&exp=1791111900&sig=1e33379d0818338c3b548f94a131b2dc&mode=full",
+          "rawUrl": "https://img1.hlnom.com/hls/ab8403967e32999bd5d03acaa913b368/720/index_363.m3u8?auth_key=KL0r%2F9gKZ1KeSh5ATkEkQw6ruH70NIhV%2BPNYn0J9BeU%3D&expire=1791108300505",
           "default": true
         },
         "audioTracks": [
@@ -1182,52 +1410,52 @@
             "hindi": false,
             "identityMethod": "tmdb-verified",
             "identityVerified": true,
-            "latencyMs": 548
+            "latencyMs": 1328
           },
           {
             "provider": "moviebox",
             "ok": false,
             "reason": "no_stream",
-            "latencyMs": 3037
+            "latencyMs": 3100
           },
           {
             "provider": "netmirror",
             "ok": false,
             "reason": "no_stream",
-            "latencyMs": 329
+            "latencyMs": 248
           },
           {
             "provider": "moviesdrive",
             "ok": false,
             "reason": "no_stream",
-            "latencyMs": 1491
+            "latencyMs": 1586
           },
           {
             "provider": "4khdhub",
             "ok": false,
             "reason": "no_stream",
-            "latencyMs": 1176
+            "latencyMs": 1052
           },
           {
             "provider": "dahmer",
             "ok": false,
             "reason": "no_stream",
-            "latencyMs": 127
+            "latencyMs": 81
           },
           {
             "provider": "hicine",
             "ok": false,
             "reason": "no_stream",
-            "latencyMs": 238
+            "latencyMs": 326
           },
           {
             "provider": "hianime",
             "ok": false,
             "reason": "no_stream",
-            "latencyMs": 547
+            "latencyMs": 536
           }
         ],
-        "streamHost": "img1.klnwm.com"
+        "streamHost": "img1.hlnom.com"
       },
       "error": null
     },
@@ -1308,8 +1536,8 @@
           "lang": "hi",
           "label": "Hindi — filename hint; plays default track",
           "type": "dub",
-          "streamUrl": "https://video-downloads.googleusercontent.com/ADGPM2kTR-x6HNAo7IkPlQL32-cCng5wZgIuCqHCSbd3a7vxFSRz0Ka_O4o4MTYdrEnhxbQ2rTuwVyCn3YxnTdbtGTGiOaD19_RjmrXi8Bx0LnPQlg3mNWr_rBKkJESAVIY9hbGDCdNh0Q5sEw8ho7Pba9108LMvFDBilur4cUX9mWdIsaLqD5BhGXbTcQ_IhTyF1vzsUh2TfxjFBdFmkTdGb7q1TJG61GiCtRPNzrLvzPTPTQKUeegqPxrwpbprb2rWGGq6cP2ao4JJzCXCZKkbB-_P5kHQDjUjolhBxLaBFZylh-b8hXaywYsrv-Ohni-DRRkxzA8p7iDtN0hYcuDCnvPuDFOroIi0MIS6UdCYIhV5dkOrwZA1X8EthqoaQ8VCcGDpzQACB7O-q8wS3DesJGWc0_LmFxfx_MCVkVj2h_Giz1XekFT1h7FJ1MgfO0KEveZfsU_y20XpuhhI4PcDK0WpEXi1aaoqkrVn-9lOGJ-DjcK89Uanrr9_KSGmq2mlUkxPY2zeq3kqTTad2ZpoxVERCBGGB3SLup7lhFQqcI5ywehKDOl7ojNIe7PPNMuPrPfb4rm9tSHYF9QD4zfTcMuUh_yWuv7UAVjFIP3v_-pIj6IJXSo1UdJI1wzlPnHKLiuio3hGFccrARywl2ABpTdFfdHSK9Wu4BHKzZ7N7q8vWQWiMvKa-jCHyTB_xFbze8tzsHRh8wccgJPbdWMvCAeerPLq9VV4WjB5L8Z5fi0-vmrKfRaeRE0am5oddt_lvX3mfedi6VOtTZ3eia5OKl6PsaO5X1bo_Gfva0yKDjb4bNXXkQ7-vP5KQM9xet39PWa0NZ_3uMW6vF4aVlQbS0v6iGpQjvGa3_Ro7_0sYzxU16z1xZ9iKLt2mczeWAhVdpS3QmEbeIiZfFMgCnz9lSD2oybSfZZMF23-khu6u15GCciPr7W9onD0Gk06j0xYdeL8b0PCWvPpSRMPG7S7c_cWYF0iNOgwNpitlukU7FT66RsuTw0BqNxvye3oVIbpSYn6SWz8qHAnytcP-1TfSNDx2pHkD3uokyhB5OlbY-4H35XLYXX9lk-Vux7ET5icC1hnIJsMJPQqDkfhPbIVOGvUkpt1bo0cI6OYdXZi-s3Jt7gny-iGDqxwkeExzai_rbBA10RYWEhT8gPN6xAd_GZi2RdV_A",
-          "rawUrl": "https://video-downloads.googleusercontent.com/ADGPM2kTR-x6HNAo7IkPlQL32-cCng5wZgIuCqHCSbd3a7vxFSRz0Ka_O4o4MTYdrEnhxbQ2rTuwVyCn3YxnTdbtGTGiOaD19_RjmrXi8Bx0LnPQlg3mNWr_rBKkJESAVIY9hbGDCdNh0Q5sEw8ho7Pba9108LMvFDBilur4cUX9mWdIsaLqD5BhGXbTcQ_IhTyF1vzsUh2TfxjFBdFmkTdGb7q1TJG61GiCtRPNzrLvzPTPTQKUeegqPxrwpbprb2rWGGq6cP2ao4JJzCXCZKkbB-_P5kHQDjUjolhBxLaBFZylh-b8hXaywYsrv-Ohni-DRRkxzA8p7iDtN0hYcuDCnvPuDFOroIi0MIS6UdCYIhV5dkOrwZA1X8EthqoaQ8VCcGDpzQACB7O-q8wS3DesJGWc0_LmFxfx_MCVkVj2h_Giz1XekFT1h7FJ1MgfO0KEveZfsU_y20XpuhhI4PcDK0WpEXi1aaoqkrVn-9lOGJ-DjcK89Uanrr9_KSGmq2mlUkxPY2zeq3kqTTad2ZpoxVERCBGGB3SLup7lhFQqcI5ywehKDOl7ojNIe7PPNMuPrPfb4rm9tSHYF9QD4zfTcMuUh_yWuv7UAVjFIP3v_-pIj6IJXSo1UdJI1wzlPnHKLiuio3hGFccrARywl2ABpTdFfdHSK9Wu4BHKzZ7N7q8vWQWiMvKa-jCHyTB_xFbze8tzsHRh8wccgJPbdWMvCAeerPLq9VV4WjB5L8Z5fi0-vmrKfRaeRE0am5oddt_lvX3mfedi6VOtTZ3eia5OKl6PsaO5X1bo_Gfva0yKDjb4bNXXkQ7-vP5KQM9xet39PWa0NZ_3uMW6vF4aVlQbS0v6iGpQjvGa3_Ro7_0sYzxU16z1xZ9iKLt2mczeWAhVdpS3QmEbeIiZfFMgCnz9lSD2oybSfZZMF23-khu6u15GCciPr7W9onD0Gk06j0xYdeL8b0PCWvPpSRMPG7S7c_cWYF0iNOgwNpitlukU7FT66RsuTw0BqNxvye3oVIbpSYn6SWz8qHAnytcP-1TfSNDx2pHkD3uokyhB5OlbY-4H35XLYXX9lk-Vux7ET5icC1hnIJsMJPQqDkfhPbIVOGvUkpt1bo0cI6OYdXZi-s3Jt7gny-iGDqxwkeExzai_rbBA10RYWEhT8gPN6xAd_GZi2RdV_A",
+          "streamUrl": "https://video-downloads.googleusercontent.com/ADGPM2maY5_UfQuxhPHT-iZiOMP9r8bpfHHy59sLMXXqR3Zb1l0EasNnMMo37D3FNOilPqPaktvtuJ6FX4rEolZqyeCFVV25jAEV6sGwz5xtO8TTXfDmTyk0twKUuQrxZaAI525NqA3F01etguyxdvKlnBDQ_O9rsqWRQ-nGrYGi8cAUUKgBBXDT_wFSEMQ2ZzzLFvO_jSwjhx9Bv2W4JQ4iQLaJuHD4kg7_h2Jw50w-V2wMN9LNbpVERMuDWspjOGLVGT3eYIleJQtTIFJ5CqbS01up7v6-a_F7DiJztdmXXUHPVrefUMLgKW2w_kdmwrT8X-lXTZlZubtfKk4gsNCdTsO63V7h5Z12kTf-x6U3ETtav4k4VzWcT1_XnjdUZX6ZUht3M6AQpeIG8WO_mmfN9XsobjnJnpABquMGPryjyDxzwXUeS4JRidW0A6wH-eCABQAJGw2WWzfYpvGpVev4cikxwh4R3N5yFESVFmIqNU2YIKUH3ky2eEWmcZymp1m-jvPF8QtPI-tFXP-m65mVUnQiqyWGni9OBaB0exCI-tYg8vqnUv28m_V2-2VmmD3tjnO4MvTMfZCWGOGa7vnW3Mre6IP2saKdZPnKcJ1OWQZty3Jfdiy8n-vE7k-z0gE9QTrtiU3cBcQsTjEWFM0rfm_KtDG4q8GiWLS6IkVPNw5F3LyjCWw0Oiaj5v_oYHDno8-eR2Z5b2novuraCZcApBwi6WMgyilhiAwHWT-8sj-_1li-08UOD0JO2pJ7sobm5Bw5LwnjBwBtsdWGzr6dNNfFmyX5A08Vp8t-KscELyp0PKszQLXFYfqk-p8x9cnYFumgGLR7bb5N3o0CeVtdreZexcUAQgDQTXICPs1dL9WKTtGczHHX0GORSIa2eLDN5yRQfOQ6niY-i5JU7fVB3Ol8drX_lvI8e0iYlktWae4owoF3Y_qq2N8Ef5BhuSzX6RsQE9jFpbGAROrrEkCfXPqlTlSvz_6HwhiCuEspf6tfZoyKSa2tGNladVWCThvyy_vM6ovgndjGihWFT4o71pYR_LVLqzzAc-i--SWMw7ToN1eq9E12XURrz_rrogxnnuB3KCNWubeSzqK1jDCL018yjdOf_mv2T4wjjuGmWD9YKfoc9-y8G8t4ljiYM6BsidPFxpgJnk2Pty4_zcB6RBDGDjRqoQ",
+          "rawUrl": "https://video-downloads.googleusercontent.com/ADGPM2maY5_UfQuxhPHT-iZiOMP9r8bpfHHy59sLMXXqR3Zb1l0EasNnMMo37D3FNOilPqPaktvtuJ6FX4rEolZqyeCFVV25jAEV6sGwz5xtO8TTXfDmTyk0twKUuQrxZaAI525NqA3F01etguyxdvKlnBDQ_O9rsqWRQ-nGrYGi8cAUUKgBBXDT_wFSEMQ2ZzzLFvO_jSwjhx9Bv2W4JQ4iQLaJuHD4kg7_h2Jw50w-V2wMN9LNbpVERMuDWspjOGLVGT3eYIleJQtTIFJ5CqbS01up7v6-a_F7DiJztdmXXUHPVrefUMLgKW2w_kdmwrT8X-lXTZlZubtfKk4gsNCdTsO63V7h5Z12kTf-x6U3ETtav4k4VzWcT1_XnjdUZX6ZUht3M6AQpeIG8WO_mmfN9XsobjnJnpABquMGPryjyDxzwXUeS4JRidW0A6wH-eCABQAJGw2WWzfYpvGpVev4cikxwh4R3N5yFESVFmIqNU2YIKUH3ky2eEWmcZymp1m-jvPF8QtPI-tFXP-m65mVUnQiqyWGni9OBaB0exCI-tYg8vqnUv28m_V2-2VmmD3tjnO4MvTMfZCWGOGa7vnW3Mre6IP2saKdZPnKcJ1OWQZty3Jfdiy8n-vE7k-z0gE9QTrtiU3cBcQsTjEWFM0rfm_KtDG4q8GiWLS6IkVPNw5F3LyjCWw0Oiaj5v_oYHDno8-eR2Z5b2novuraCZcApBwi6WMgyilhiAwHWT-8sj-_1li-08UOD0JO2pJ7sobm5Bw5LwnjBwBtsdWGzr6dNNfFmyX5A08Vp8t-KscELyp0PKszQLXFYfqk-p8x9cnYFumgGLR7bb5N3o0CeVtdreZexcUAQgDQTXICPs1dL9WKTtGczHHX0GORSIa2eLDN5yRQfOQ6niY-i5JU7fVB3Ol8drX_lvI8e0iYlktWae4owoF3Y_qq2N8Ef5BhuSzX6RsQE9jFpbGAROrrEkCfXPqlTlSvz_6HwhiCuEspf6tfZoyKSa2tGNladVWCThvyy_vM6ovgndjGihWFT4o71pYR_LVLqzzAc-i--SWMw7ToN1eq9E12XURrz_rrogxnnuB3KCNWubeSzqK1jDCL018yjdOf_mv2T4wjjuGmWD9YKfoc9-y8G8t4ljiYM6BsidPFxpgJnk2Pty4_zcB6RBDGDjRqoQ",
           "default": true
         },
         "audioTracks": [
@@ -1324,37 +1552,37 @@
             "provider": "castletv",
             "ok": false,
             "reason": "no_stream",
-            "latencyMs": 164
+            "latencyMs": 1095
           },
           {
             "provider": "moviebox",
             "ok": false,
             "reason": "no_stream",
-            "latencyMs": 5215
+            "latencyMs": 4323
           },
           {
             "provider": "netmirror",
             "ok": false,
             "reason": "no_stream",
-            "latencyMs": 338
+            "latencyMs": 249
           },
           {
             "provider": "moviesdrive",
             "ok": false,
             "reason": "no_stream",
-            "latencyMs": 675
+            "latencyMs": 587
           },
           {
             "provider": "4khdhub",
             "ok": false,
             "reason": "no_stream",
-            "latencyMs": 931
+            "latencyMs": 1173
           },
           {
             "provider": "dahmer",
             "ok": false,
             "reason": "no_stream",
-            "latencyMs": 124
+            "latencyMs": 85
           },
           {
             "provider": "hicine",
@@ -1362,13 +1590,13 @@
             "hindi": true,
             "identityMethod": "title-hint",
             "identityVerified": false,
-            "latencyMs": 7296
+            "latencyMs": 6002
           },
           {
             "provider": "hianime",
             "ok": false,
             "reason": "no_stream",
-            "latencyMs": 603
+            "latencyMs": 492
           }
         ],
         "streamHost": "video-downloads.googleusercontent.com"
@@ -1376,5 +1604,5 @@
       "error": null
     }
   },
-  "finishedAt": "2026-10-04T07:02:28.016Z"
+  "finishedAt": "2026-10-04T07:05:28.831Z"
 }
