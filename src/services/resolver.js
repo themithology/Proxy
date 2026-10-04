@@ -7,6 +7,7 @@ const { prepareMultiTrackStream, normalizeAudioLanguage } = require('./multitrac
 const { telemetry } = require('./telemetry');
 const identity = require('./identity');
 const { resolveHamsterWheelServer } = require('./hamsterWheel');
+const serverCatalog = require('./serverCatalog');
 
 const USER_AGENT =
   'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36';
@@ -4571,37 +4572,38 @@ async function resolveStreamForServer(metadata, requestedServerId = 'andromeda',
         }
       ],
       qualities: [{ label: 'Auto', height: 0, url: proxied }],
-      servers: config.servers.map((s) => ({ ...s, active: false }))
+      servers: serverCatalog.buildServerPayload(config.servers, null)
     };
   }
 
-  const enabledServers = config.servers.filter((s) => s.enabled !== false);
-  const normalizedServerId = ['4k', 'uhd', '2160p'].includes(String(requestedServerId || '').toLowerCase())
-    ? 'ursa'
-    : String(requestedServerId || 'andromeda').toLowerCase();
-  const validServer =
-    enabledServers.find((s) => s.id === normalizedServerId)?.id ||
-    enabledServers[0]?.id ||
-    'andromeda';
+  // Catalog order is authoritative: the player renders the array in this order,
+  // so a re-prioritised server must never linger in its old slot.
+  const enabledServers = serverCatalog.sortByPriority(
+    config.servers.filter((s) => s.enabled !== false)
+  );
+  const validServer = serverCatalog.resolveServerId(config.servers, requestedServerId);
 
   const cacheKey = `resolve:v3:${metadata.type}:${metadata.tmdbId}:s${metadata.season || 1}:e${metadata.episode || 1}:${validServer}`;
   const cached = await cache.get(cacheKey);
-  if (cached) return applyPreferredAudio(cached, preferredAudio);
+  // Stream payloads are cached for 15 minutes, but the displayed server list is
+  // not: rebuilding it here means a rebrand is visible immediately instead of
+  // being replayed from cache.
+  if (cached) {
+    const payload = await applyPreferredAudio(cached, preferredAudio);
+    return {
+      ...payload,
+      servers: serverCatalog.buildServerPayload(config.servers, payload.server)
+    };
+  }
 
-  // Build ordered waterfall starting with the user's selected server, then the
-  // premier multi-audio cascade: Andromeda (Server 1) -> Ursa (Server 2: 4K UHD) -> Centaurus -> Atlas -> Strings.
-  const WATERFALL_PRIORITY = ['andromeda', 'centaurus', 'ursa', 'hamster', 'atlas'];
-  const enabledIds = enabledServers.map((s) => s.id);
-  const isImplicitFallback = (id) => {
-    const server = config.servers.find((s) => s.id === id);
-    return !server || server.fallback !== false;
-  };
-  const prioritized = [
-    ...WATERFALL_PRIORITY.filter((id) => enabledIds.includes(id)),
-    // Opt-in servers (e.g. the TMDB-id keyed "hindi" server) are only used
-    // when explicitly requested, keeping the default waterfall unchanged.
-    ...enabledIds.filter((id) => !WATERFALL_PRIORITY.includes(id) && isImplicitFallback(id))
-  ];
+  // Build the ordered waterfall starting with the user's selected server, then
+  // the live priority order. Reading it from config.servers (instead of a frozen
+  // constant) is what makes an owner re-prioritisation via /api/admin/upstreams
+  // show up in the player immediately; opt-in servers such as `hindi` are
+  // excluded so they are only ever used when explicitly requested.
+  const prioritized = enabledServers
+    .filter((s) => s.fallback !== false)
+    .map((s) => s.id);
   const serverOrder = [validServer, ...prioritized.filter((id) => id !== validServer)];
   const serverAttempts = [];
 
@@ -4633,10 +4635,7 @@ async function resolveStreamForServer(metadata, requestedServerId = 'andromeda',
         serverAttempts,
         activeAudioTrack:
           (resolved.audioTracks || []).find((t) => t.default) || (resolved.audioTracks || [])[0] || null,
-        servers: enabledServers.map((s) => ({
-          ...s,
-          active: s.id === resolved.server
-        }))
+        servers: serverCatalog.buildServerPayload(config.servers, resolved.server)
       };
 
       // Cache the canonical source selection; apply each caller's audio preference
@@ -4657,9 +4656,11 @@ async function resolveStreamForServer(metadata, requestedServerId = 'andromeda',
   return {
     server: null,
     streamUrl: null,
+    // The normalized id, so an error body never echoes a removed/legacy server.
+    requestedServer: validServer,
     reason: 'all_servers_failed',
     serverAttempts,
-    servers: enabledServers.map((s) => ({ ...s, active: false }))
+    servers: serverCatalog.buildServerPayload(config.servers, null)
   };
 }
 

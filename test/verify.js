@@ -1725,16 +1725,31 @@ async function runTests() {
     assert.strictEqual(blockedCheck.status, 403, 'Blocked domain must receive HTTP 403 Forbidden');
 
     // Test Live Upstream Source Replacement
-    const replaceRes = await httpRequest(baseUrl, '/api/admin/upstreams', {
-      method: 'POST',
-      headers: adminHeaders,
-      body: JSON.stringify({
-        upstreams: { hicineApiBase: 'https://api-new.hicine.sbs' },
-        servers: [{ id: 'ursa', priority: 1, enabled: true }]
-      })
-    });
-    assert.strictEqual(replaceRes.status, 200);
-    assert.strictEqual(replaceRes.json.snapshot.upstreams.hicineApiBase, 'https://api-new.hicine.sbs');
+    const savedServers = config.servers.map((s) => ({ ...s }));
+    try {
+      const replaceRes = await httpRequest(baseUrl, '/api/admin/upstreams', {
+        method: 'POST',
+        headers: adminHeaders,
+        body: JSON.stringify({
+          upstreams: { hicineApiBase: 'https://api-new.hicine.sbs' },
+          servers: [{ id: 'ursa', priority: 1, enabled: true }]
+        })
+      });
+      assert.strictEqual(replaceRes.status, 200);
+      assert.strictEqual(replaceRes.json.snapshot.upstreams.hicineApiBase, 'https://api-new.hicine.sbs');
+
+      // Re-prioritising a server must reach the player immediately: /api/info
+      // feeds the same array the servers modal renders.
+      const infoAfterPromotion = await httpRequest(baseUrl, '/api/info/tv/94605');
+      assert.strictEqual(infoAfterPromotion.status, 200);
+      assert.ok(
+        infoAfterPromotion.json.servers.findIndex((s) => s.id === 'ursa') <
+          infoAfterPromotion.json.servers.findIndex((s) => s.id === 'centaurus'),
+        'a promoted server must move ahead of lower-priority servers in the player list'
+      );
+    } finally {
+      config.servers = savedServers;
+    }
 
     // Test Custom TMDB Stream Override
     const overrideRes = await httpRequest(baseUrl, '/api/admin/overrides', {
@@ -1820,6 +1835,27 @@ async function runTests() {
     );
     assert.ok(!embedHtml.includes('<!--LOL_EMBED_CONFIG-->'), 'Config placeholder must be replaced');
     assert.ok(!/vidstuck/i.test(embedHtml), 'Player page must be rebranded to LOL Embed');
+
+    // 10a-2. The player bundle must revalidate so a server rebrand (or any player
+    // fix) reaches viewers on their next load, while vendor libraries keep the
+    // long TTL. Stale player JS is what made earlier rebrands invisible.
+    const playerJsRes = await callWorker('http://player.test/js/embed.js');
+    assert.strictEqual(playerJsRes.status, 200, '/js/embed.js must be served');
+    assert.strictEqual(
+      playerJsRes.headers.get('cache-control'),
+      'no-cache',
+      'the player bundle must revalidate instead of being pinned for a day'
+    );
+    assert.match(playerJsRes.headers.get('content-type') || '', /javascript/i);
+    const playerJsBody = await playerJsRes.text();
+    assert.match(playerJsBody, /server: 'andromeda'/, 'the served player bundle must carry the priority-1 default server');
+    const vendorJsRes = await callWorker('http://player.test/vendor/hls.min.js');
+    assert.strictEqual(vendorJsRes.status, 200);
+    assert.match(
+      vendorJsRes.headers.get('cache-control') || '',
+      /max-age=86400/,
+      'vendor libraries keep the long cache TTL'
+    );
 
     // 10b. Without API_BASE_URL the player defaults to same-origin API calls.
     const embedDefaultRes = await callWorker('http://player.test/embed?type=movie&tmdb=693134');
@@ -2602,8 +2638,322 @@ async function runTests() {
     }
     console.log('  ✔ Passed 4KHDHub, MoviesDrive 4K, HiCine 4K, DahmerMovies 4K & ?server=4k tests.');
 
+    // 13. Server catalog: a rebrand / re-prioritisation must reach BOTH backends
+    // and the player's server modal, with no stale names, slots, or order.
+    console.log('[13/13] Testing shared server catalog, worker servers array & player defaults...');
+    {
+      const catalog = require('../src/services/serverCatalog');
+      const expected = [
+        ['andromeda', 'Fiber Optic Speedrun', 'Multi-Audio • Primary', 1],
+        ['centaurus', 'Gigachad Node', 'Adaptive • Multi-Quality', 2],
+        ['ursa', 'FBI Surveillance Van', '4K UHD • Multi-Audio', 3],
+        ['hamster', 'Hamster Wheel', 'Multi-Language • OMSS Cascade', 4],
+        ['atlas', 'Atlas', 'Adaptive • Backup', 5]
+      ];
+
+      // 13a. The Node backend serves the catalog order verbatim; the opt-in Hindi
+      // cascade stays resolvable but is never rendered as a server row.
+      assert.deepStrictEqual(
+        config.servers.filter((s) => s.listed !== false).map((s) => [s.id, s.name, s.badge, s.priority]),
+        expected,
+        'Node config must expose the catalog names/badges/priorities in order'
+      );
+      const hindiEntry = config.servers.find((s) => s.id === 'hindi');
+      assert.ok(hindiEntry, 'the opt-in Hindi cascade must stay resolvable on the Node backend');
+      assert.strictEqual(hindiEntry.listed, false, 'Hindi must never be rendered as a player server row');
+      assert.strictEqual(hindiEntry.fallback, false, 'Hindi must stay out of the implicit waterfall');
+      assert.deepStrictEqual(
+        catalog.WATERFALL_PRIORITY,
+        expected.map((e) => e[0]),
+        'waterfall order must always follow the catalog priorities'
+      );
+
+      // 13b. A runtime re-prioritisation must reorder the player's server array:
+      // sortByPriority is applied to the live list, not to a frozen constant.
+      const promoted = catalog.allServers().map((s) => ({ ...s }));
+      promoted.find((s) => s.id === 'atlas').priority = 0;
+      assert.deepStrictEqual(
+        catalog.buildServerPayload(promoted, null).map((s) => s.id)[0],
+        'atlas',
+        'a promoted server must lead the player-facing array'
+      );
+
+      // 13c. The API payload the player renders: priority order, one active row,
+      // opt-in/removed servers never listed.
+      const payload = catalog.buildServerPayload(catalog.workerServerList(), 'ursa');
+      assert.deepStrictEqual(
+        payload.map((s) => s.id),
+        expected.map((e) => e[0]),
+        'player payload must list servers in priority order'
+      );
+      assert.deepStrictEqual(
+        payload.find((s) => s.id === 'ursa').active,
+        true,
+        'the server that answered must be flagged active'
+      );
+      assert.strictEqual(
+        payload.filter((s) => s.active).length,
+        1,
+        'exactly one server may ever be active'
+      );
+      assert.ok(!payload.some((s) => s.id === 'hindi'), 'opt-in Hindi must stay out of the player list');
+      assert.ok(!payload.some((s) => s.id === 'strings'), 'the removed Strings slot must not be listed');
+
+      // 13d. The player must default to priority 1 and order rows defensively.
+      const embedJs = fs.readFileSync(path.join(__dirname, '..', 'public', 'js', 'embed.js'), 'utf8');
+      assert.match(embedJs, /server: 'andromeda'/, 'player default server must be the priority-1 server');
+      assert.ok(!/server: 'atlas'/.test(embedJs), 'player must not default to the backup server');
+      assert.ok(
+        /\.sort\(\(a, b\) => \(Number\(a\.priority\) \|\| 999\)/.test(embedJs),
+        'player must re-sort the API server array by priority before rendering'
+      );
+      const embedHtml = fs.readFileSync(path.join(__dirname, '..', 'public', 'embed.html'), 'utf8');
+      assert.ok(!/Connecting to Atlas/.test(embedHtml), 'player page must not greet viewers with a removed server name');
+
+      // 13e. Cloudflare Worker (the deployment that serves /embed) reports the
+      // same list through /api/health, /api/info and the resolve payload.
+      const catalogWorkerEnv = {
+        CASTLETV_BASE_URL: `${mockUpstream.url}/castletv`,
+        NETMIRROR_BASE_URL: `${mockUpstream.url}/netmirror`,
+        NETMIRROR_WEB_MIRRORS: `${mockUpstream.url}/netmirror`,
+        VIDSTUCK_BASE_URL: '',
+        TMDB_BASE_URL: `${mockUpstream.url}/tmdb`,
+        VIDSRC_DATA_URL: `${mockUpstream.url}/vidsrc/api.php`
+      };
+
+      const healthRes = await callWorker('http://player.test/api/health');
+      assert.strictEqual(healthRes.status, 200);
+      const healthJson = await healthRes.json();
+      assert.deepStrictEqual(
+        healthJson.servers.slice(0, expected.length),
+        expected.map((e) => e[0]),
+        'worker /api/health must list the catalog ids in priority order first'
+      );
+      assert.ok(
+        healthJson.servers.includes('hindi'),
+        'worker /api/health must still report the opt-in Hindi capability'
+      );
+
+      const infoRes = await callWorker('http://player.test/api/info/tv/94605', catalogWorkerEnv);
+      assert.strictEqual(infoRes.status, 200);
+      const infoJson = await infoRes.json();
+      assert.deepStrictEqual(
+        infoJson.servers.map((s) => [s.id, s.name, s.priority]),
+        expected.map((e) => [e[0], e[1], e[3]]),
+        'worker /api/info must expose the rebranded server objects'
+      );
+
+      const resolveRes = await callWorker(
+        'http://player.test/api/resolve/movie/693134?server=andromeda',
+        catalogWorkerEnv
+      );
+      assert.strictEqual(resolveRes.status, 200);
+      const resolveJson = await resolveRes.json();
+      assert.strictEqual(resolveJson.ok, true);
+      assert.deepStrictEqual(
+        resolveJson.servers.map((s) => s.id),
+        expected.map((e) => e[0]),
+        'the worker payload rendered by the player must be the catalog list'
+      );
+      assert.deepStrictEqual(
+        resolveJson.servers.map((s) => s.name),
+        expected.map((e) => e[1]),
+        'the player must receive the rebranded names, not the legacy ones'
+      );
+      assert.strictEqual(
+        resolveJson.servers.find((s) => s.active).id,
+        resolveJson.stream.server,
+        'the active flag must match the server that produced the stream'
+      );
+      assert.ok(
+        !JSON.stringify(resolveJson.servers).includes('Strings'),
+        'worker payload must not leak removed servers'
+      );
+
+      // 13f. Hamster Wheel must run on the worker too (same shared cascade).
+      const workerSrc = fs.readFileSync(path.join(__dirname, '..', 'cloudflare-worker', 'worker.js'), 'utf8');
+      assert.ok(
+        /serverCatalog\.workerServerList\(\)/.test(workerSrc),
+        'worker must build its server list from the shared catalog'
+      );
+      assert.ok(
+        /hamsterCore\.configureHamsterCore\(/.test(workerSrc) && /resolveHamsterWheelUpstream/.test(workerSrc),
+        'worker must wire the shared Hamster Wheel cascade'
+      );
+      assert.ok(!/srvId === 'strings'/.test(workerSrc), "the dead Strings waterfall branch must be gone");
+    }
+    console.log('  ✔ Passed shared server catalog, worker servers array & player default tests.');
+
+    // 14. Hamster Wheel (Multi-Language • OMSS Cascade): the priority-4 server
+    // runs the SAME module on the Node backend and the Worker, so it is verified
+    // once with provider-accurate fixtures: Videasy (plain + enc-dec encrypted),
+    // Peachify (AES-256-CBC envelope) and VidSrc (three-hop vsembed scrape).
+    console.log('[14/14] Testing Hamster Wheel OMSS cascade (Videasy, Peachify, VidSrc)...');
+    {
+      const hamsterWheel = require('../src/services/hamsterWheel');
+      const realFetch = globalThis.fetch;
+      const calls = [];
+      const jsonRes = (body) =>
+        new Response(JSON.stringify(body), { status: 200, headers: { 'Content-Type': 'application/json' } });
+      const htmlRes = (body) =>
+        new Response(body, { status: 200, headers: { 'Content-Type': 'text/html' } });
+
+      // Peachify ships an AES-256-CBC envelope: base64 blob with a 16-byte IV
+      // prefix and the key carried (hex) beside it in the JSON response.
+      const peachKey = crypto.randomBytes(32).toString('hex');
+      const peachIv = crypto.randomBytes(16);
+      const peachCipher = crypto.createCipheriv('aes-256-cbc', Buffer.from(peachKey, 'hex').slice(0, 32), peachIv);
+      const peachBody = Buffer.concat([
+        peachIv,
+        peachCipher.update(
+          JSON.stringify({
+            sources: [
+              { url: 'https://cdn.peachify.test/english/master.m3u8', quality: '720p', dub: 'English' },
+              { url: 'https://cdn.peachify.test/hindi/master.m3u8', quality: '1080p', dub: 'Hindi' }
+            ]
+          }),
+          'utf8'
+        ),
+        peachCipher.final()
+      ]);
+
+      const metadata = { type: 'movie', tmdbId: '693134', title: 'Dune: Part Two', releaseYear: 2024, season: 1, episode: 1 };
+
+      const routeFetch = async (input, init = {}) => {
+        const u = String(typeof input === 'string' ? input : input.url);
+        calls.push(u);
+        if (u.startsWith('https://api.videasy.net/') || u.startsWith('https://api2.videasy.net/')) {
+          if (/fail-all/.test(JSON.stringify(videasyMode))) return new Response('nope', { status: 500 });
+          if (u.includes('/hdmovie/')) {
+            return jsonRes({ sources: [{ url: 'https://cdn.videasy.test/hindi/master.m3u8', quality: '1080p' }] });
+          }
+          if (u.startsWith('https://api2.videasy.net/')) {
+            // Encrypted provider answer: the core must round-trip it via enc-dec.app.
+            return new Response('ENCRYPTED_BLOB_PAYLOAD', { status: 200 });
+          }
+          return jsonRes({ sources: [{ url: 'https://cdn.videasy.test/english/master.m3u8', quality: '1080p' }] });
+        }
+        if (u === 'https://enc-dec.app/api/decrypt') {
+          return new Response(JSON.stringify({ sources: [{ url: 'https://cdn.videasy.test/spanish/master.m3u8', quality: '720p' }] }), { status: 200 });
+        }
+        if (u.includes('eat-peach.sbs')) {
+          return jsonRes({ isEncrypted: true, data: peachBody.toString('base64'), key: peachKey });
+        }
+        if (u === 'https://vsembed.ru/embed/movie?tmdb=693134') {
+          return htmlRes(`<script>fetch('https://cloudnestra.com/api/embed?id=1')</script>`);
+        }
+        if (u === 'https://cloudnestra.com/api/embed?id=1') {
+          return htmlRes(`<script>fetch('https://cloudnestra.com/api/source/2')</script>`);
+        }
+        if (u === 'https://cloudnestra.com/api/source/2') {
+          return htmlRes(`<script>player.setup({ file: "https://{v1}/hls/master.m3u8" })</script>`);
+        }
+        return realFetch(input, init);
+      };
+      let videasyMode = 'ok';
+
+      globalThis.fetch = routeFetch;
+      try {
+        // 14a. Videasy primary: multi-language tracks, proxied playback URLs,
+        // preferred audio first, and the encrypted provider round-tripped.
+        calls.length = 0;
+        const videasy = await hamsterWheel.resolveVideasy(metadata, 'hindi');
+        assert.strictEqual(videasy.provider, 'videasy');
+        assert.strictEqual(videasy.server, 'hamster');
+        assert.strictEqual(videasy.language, 'hindi', 'the requested language must lead the track list');
+        assert.ok(videasy.streamUrl.includes('/api/proxy?'), 'playback URLs must be routed through the proxy');
+        assert.ok(
+          videasy.audioTracks.length >= 3,
+          `every Videasy server that answered must become an audio track (got ${videasy.audioTracks.length})`
+        );
+        assert.ok(
+          videasy.backupUrls.every((u) => u.includes('/api/proxy?')),
+          'backup URLs must be proxied too'
+        );
+        assert.ok(
+          calls.some((u) => u === 'https://enc-dec.app/api/decrypt'),
+          'encrypted Videasy answers must be decrypted through enc-dec.app'
+        );
+
+        // 14b. Peachify fallback: the AES envelope must decrypt to real sources.
+        const peachify = await hamsterWheel.resolvePeachify(metadata, 'hi');
+        assert.strictEqual(peachify.provider, 'peachify');
+        assert.strictEqual(peachify.dub, 'Hindi', 'preferred dub must lead the Peachify track list');
+        assert.ok(peachify.streamUrl.includes('/api/proxy?'));
+        assert.ok(
+          peachify.audioTracks.some((t) => t.label.includes('Hindi')),
+          'decrypted dub labels must surface as selectable tracks'
+        );
+
+        // 14c. VidSrc last resort: three-hop scrape with {v1} domain substitution.
+        const vidsrc = await hamsterWheel.resolveVidsrc(metadata, 'en');
+        assert.strictEqual(vidsrc.provider, 'vidsrc');
+        assert.strictEqual(vidsrc.rawUrl, 'https://neonhorizonworkshops.com/hls/master.m3u8');
+        assert.ok(vidsrc.streamUrl.includes('/api/proxy?'));
+
+        // 14d. Orchestrator order: Videasy wins without touching the fallbacks.
+        calls.length = 0;
+        const primary = await hamsterWheel.resolveHamsterWheelServer(metadata, 'hamster', 'en');
+        assert.strictEqual(primary.provider, 'videasy');
+        assert.ok(!calls.some((u) => u.includes('eat-peach.sbs')), 'fallbacks must not run once Videasy answers');
+
+        // 14e. Provider failure cascades to the next provider, not to the player.
+        videasyMode = 'fail-all';
+        const fallback = await hamsterWheel.resolveHamsterWheelServer(metadata, 'hamster', 'hi');
+        assert.strictEqual(fallback.provider, 'peachify', 'a dead Videasy must cascade to Peachify');
+        videasyMode = 'ok';
+
+        // 14f. A fully dead cascade reports every provider attempt instead of throwing.
+        globalThis.fetch = async (input, init = {}) => {
+          const u = String(typeof input === 'string' ? input : input.url);
+          calls.push(u);
+          if (/videasy|eat-peach|vsembed|cloudnestra/.test(u)) return new Response('down', { status: 503 });
+          return realFetch(input, init);
+        };
+        const dead = await hamsterWheel.resolveHamsterWheelServer(metadata, 'hamster', 'en');
+        assert.strictEqual(dead.streamUrl, undefined);
+        assert.ok(
+          dead.reason === 'hamster_all_sources_exhausted' || dead.reason === 'circuit_open',
+          `a dead cascade must explain itself (got ${dead.reason})`
+        );
+        assert.ok(Array.isArray(dead.diag.steps) && dead.diag.steps.length >= 3, 'diagnostics must list every provider hop');
+        assert.ok(!JSON.stringify(dead).includes('cdn.videasy.test'), 'failures must not leak stale stream URLs');
+
+        // 14g. The Worker runs the same cascade: ?server=hamster resolves end-to-end
+        // and the player payload flags the Hamster Wheel row as active.
+        globalThis.fetch = routeFetch;
+        calls.length = 0;
+        const cfHamsterRes = await callWorker(
+          'http://player.test/api/resolve/movie/693134?server=hamster&audio=hindi',
+          {
+            CASTLETV_BASE_URL: `${mockUpstream.url}/castletv`,
+            NETMIRROR_BASE_URL: `${mockUpstream.url}/netmirror`,
+            NETMIRROR_WEB_MIRRORS: `${mockUpstream.url}/netmirror`,
+            VIDSTUCK_BASE_URL: '',
+            TMDB_BASE_URL: `${mockUpstream.url}/tmdb`,
+            VIDSRC_DATA_URL: `${mockUpstream.url}/vidsrc/api.php`
+          }
+        );
+        assert.strictEqual(cfHamsterRes.status, 200, 'Worker ?server=hamster must answer');
+        const cfHamsterJson = await cfHamsterRes.json();
+        assert.strictEqual(cfHamsterJson.ok, true);
+        assert.strictEqual(cfHamsterJson.stream.server, 'hamster');
+        assert.strictEqual(cfHamsterJson.stream.provider, 'videasy');
+        const cfHamsterRow = cfHamsterJson.servers.find((s) => s.id === 'hamster');
+        assert.ok(cfHamsterRow && cfHamsterRow.active, 'the Hamster Wheel row must be flagged active for the player');
+        assert.strictEqual(
+          cfHamsterJson.servers.filter((s) => s.active).length,
+          1,
+          'exactly one server row may be active'
+        );
+      } finally {
+        globalThis.fetch = realFetch;
+      }
+    }
+    console.log('  ✔ Passed Hamster Wheel OMSS cascade tests (Node + Worker).');
+
     console.log('\n==========================================================');
-    console.log('  ALL 12 PRODUCTION VERIFICATION SUITES PASSED (0 TEST VIDEOS)');
+    console.log('  ALL 14 PRODUCTION VERIFICATION SUITES PASSED (0 TEST VIDEOS)');
     console.log('==========================================================');
   } finally {
     server.close();
