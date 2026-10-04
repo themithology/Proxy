@@ -1298,6 +1298,7 @@ async function resolveNetmirrorUpstream(metadata, preferredAudio = '', env = nul
     [...mirrorEnv, 'https://net27.cc', 'https://net52.cc', 'https://net77.cc', 'https://netmiror.com'].forEach(pushWebBase);
 
     for (const effectiveWebBase of webBases.slice(0, 5)) {
+      try {
       const netflixUrl = isTv
         ? `${effectiveWebBase}/api/embed-tmdb/${encodeURIComponent(metadata.tmdbId)}?type=tv&se=${metadata.season || 1}&ep=${metadata.episode || 1}`
         : `${effectiveWebBase}/api/embed-tmdb/${encodeURIComponent(metadata.tmdbId)}`;
@@ -1324,6 +1325,13 @@ async function resolveNetmirrorUpstream(metadata, preferredAudio = '', env = nul
       const data = await res.json().catch(() => null);
       if (data && data.ok) {
         const streamUrl = data.streams?.[0]?.url || data.mp4;
+        // NetMirror's primary CDN can rate-limit (HTTP 429); it also hands out
+        // an HLS fallback and direct links, which are kept as backups.
+        const alternateUrls = [
+          typeof data.fallbackHls === 'string' ? data.fallbackHls : data.fallbackHls?.url,
+          typeof data.direct === 'string' ? data.direct : data.direct?.url,
+          data.cdn
+        ].filter((value) => typeof value === 'string' && /^https?:/i.test(value));
         if (streamUrl) {
           const referer = `${workerCachedNetmirrorReferer}/`;
           const proxiedUrl = buildWorkerProxyUrl(streamUrl, referer, 'full');
@@ -1359,12 +1367,16 @@ async function resolveNetmirrorUpstream(metadata, preferredAudio = '', env = nul
             referer,
             headers: { Referer: referer },
             backupUrls: [
-              buildWorkerProxyUrl(streamUrl, referer, 'manifest')
+              buildWorkerProxyUrl(streamUrl, referer, 'manifest'),
+              ...alternateUrls.map((alt) => buildWorkerProxyUrl(alt, referer, 'full'))
             ],
             audioTracks,
             qualities
           };
         }
+      }
+      } catch {
+        // dead mirror: try the next one
       }
     }
     return null;

@@ -664,6 +664,7 @@ async function resolveNetmirror(metadata, preferredAudio = '', parentSignal = nu
     (config.upstreams.netmirrorWebMirrors || []).forEach(pushBase);
 
     for (const effectiveWebBase of webBases.slice(0, 5)) {
+      try {
       const netflixUrl = isTv
         ? `${effectiveWebBase}/api/embed-tmdb/${encodeURIComponent(metadata.tmdbId)}?type=tv&se=${metadata.season || 1}&ep=${metadata.episode || 1}`
         : `${effectiveWebBase}/api/embed-tmdb/${encodeURIComponent(metadata.tmdbId)}`;
@@ -690,6 +691,13 @@ async function resolveNetmirror(metadata, preferredAudio = '', parentSignal = nu
       const data = await res.json().catch(() => null);
       if (data && data.ok) {
         const streamUrl = data.streams?.[0]?.url || data.mp4;
+        // NetMirror's primary CDN can rate-limit (HTTP 429); it also hands out
+        // an HLS fallback and direct links, which are kept as backups.
+        const alternateUrls = [
+          typeof data.fallbackHls === 'string' ? data.fallbackHls : data.fallbackHls?.url,
+          typeof data.direct === 'string' ? data.direct : data.direct?.url,
+          data.cdn
+        ].filter((value) => typeof value === 'string' && /^https?:/i.test(value));
         if (streamUrl) {
           const referer = `${cachedNetmirrorActiveReferer}/`;
           const proxiedUrl = buildProxyStreamUrl(streamUrl, referer, '', { mode: 'full' });
@@ -725,12 +733,16 @@ async function resolveNetmirror(metadata, preferredAudio = '', parentSignal = nu
             referer,
             headers: { Referer: referer },
             backupUrls: [
-              buildProxyStreamUrl(streamUrl, referer, '', { mode: 'manifest' })
+              buildProxyStreamUrl(streamUrl, referer, '', { mode: 'manifest' }),
+              ...alternateUrls.map((alt) => buildProxyStreamUrl(alt, referer, '', { mode: 'full' }))
             ],
             audioTracks,
             qualities
           };
         }
+      }
+      } catch {
+        // dead mirror: try the next one
       }
     }
     return null;

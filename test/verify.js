@@ -747,9 +747,12 @@ function startUpstreamMockServer() {
             streams: [
               {
                 resolution: 1080,
-                url: `${mockOrigin}/cdn/hls/netmirror-master.m3u8`
+                url: `${mockOrigin}/cdn/hls/netmirror-embed.m3u8`
               }
-            ]
+            ],
+            // NetMirror hands out alternates for its rate-limiting CDN.
+            fallbackHls: `${mockOrigin}/cdn/hls/netmirror-fallback.m3u8`,
+            direct: `${mockOrigin}/cdn/mp4/netmirror-direct.mp4`
           })
         );
       }
@@ -2143,14 +2146,24 @@ async function runTests() {
       config.upstreams.netmirrorDiscoveryUrls = [];
       config.upstreams.netmirrorWebMirrors = ['http://127.0.0.1:1', `${mockUpstream.url}/netmirror`];
       const nmRotated = await resolveNetmirror(
-        { tmdbId: '693134', title: 'Dune: Part Two', type: 'movie' },
+        // "fail-netmirror" makes the mocked NewTV search return no results, so
+        // the resolver must fall through to the /api/embed-tmdb mirror pool.
+        { tmdbId: '693134', title: 'fail-netmirror Dune: Part Two', type: 'movie' },
         'hi'
       );
       assert.ok(nmRotated, 'NetMirror must rotate to a working web mirror');
       assert.ok(nmRotated.streamUrl.startsWith('/api/proxy?url='));
       assert.ok(
-        nmRotated.rawUrl.includes('netmirror-master.m3u8'),
-        'rotated mirror must return the mocked mirror stream'
+        nmRotated.rawUrl.includes('netmirror-embed.m3u8'),
+        'rotated mirror must serve the embed-tmdb payload'
+      );
+      assert.ok(
+        (nmRotated.backupUrls || []).some((url) => String(url).includes('netmirror-fallback.m3u8')),
+        'NetMirror fallbackHls must be exposed as a backup URL'
+      );
+      assert.ok(
+        (nmRotated.backupUrls || []).some((url) => String(url).includes('netmirror-direct.mp4')),
+        'NetMirror direct link must be exposed as a backup URL'
       );
       config.upstreams.netmirrorWebMirrors = [`${mockUpstream.url}/netmirror`];
 
