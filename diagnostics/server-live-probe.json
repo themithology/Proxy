@@ -1,5 +1,5 @@
 {
-  "startedAt": "2026-10-04T10:02:34.663Z",
+  "startedAt": "2026-10-04T10:17:20.555Z",
   "runner": "github-actions",
   "node": "v22.23.3",
   "serversRequested": [
@@ -81,7 +81,7 @@
       "servers": {
         "ursa": {
           "workerEndToEnd": {
-            "latencyMs": 6877,
+            "latencyMs": 7172,
             "status": 200,
             "ok": true,
             "error": null,
@@ -94,26 +94,26 @@
               "provider": null,
               "tier": "4khdhub",
               "format": "mp4",
-              "streamUrl": "https://video-downloads.googleusercontent.com/ADGPM2nnYDU-svHld6wt8hIyEq48LsZ_tG8EimiU5ElUDe_XH6rZ-_K-eTcvGVyQKCiTfvJeUwkIlgBtN8HBAWEbJ1m-unw-uz-4ptxR8ZzCmjfcbSHU5g_nWbwhoiHX1QP11BM_PKB5bzbG0VZ7hJmyXkZh16oXS1IP1PuyS_xJ_iMw0iW3MRa9emCTEIjZ5uIVMnZxBrjslfq1TYqydfKkGA9UUWBVHv1N100N2-8cDa3Gisglzj4",
+              "streamUrl": "https://flat-glade-7058.welikap1127100.workers.dev/6508560c838ac8abd6286214a47b79ea153d744511de44cbbcc2bfd1813d19843c24cfd37e9b6e2095af214b7c23c300::bb14bd452033f88d86a7789a7b495d4c/1398009276/Dune%20-%20Part%20Two%20(2024)%201080p%20UHD%20DV%20HDR%2010bit%20HEVC%20[Hindi%20DDP%205.1%20+%20English%20DDP%207.1]%20x265%20(c0kE-LUMiX)%204KHDHub.com.mkv",
               "streamUrlIsRelative": false,
-              "rawUrl": "https://video-downloads.googleusercontent.com/ADGPM2nnYDU-svHld6wt8hIyEq48LsZ_tG8EimiU5ElUDe_XH6rZ-_K-eTcvGVyQKCiTfvJeUwkIlgBtN8HBAWEbJ1m-unw-uz-4ptxR8ZzCmjfcbSHU5g_nWbwhoiHX1QP11BM_PKB5bzbG0VZ7hJmyXkZh16oXS1IP1PuyS_xJ_iMw0iW3MRa9emCTEIjZ5uIVMnZxBrjslfq1TYqydfKkGA9UUWBVHv1N100N2-8cDa3Gisglzj4",
-              "rawUrlKind": "other",
+              "rawUrl": "https://flat-glade-7058.welikap1127100.workers.dev/6508560c838ac8abd6286214a47b79ea153d744511de44cbbcc2bfd1813d19843c24cfd37e9b6e2095af214b7c23c300::bb14bd452033f88d86a7789a7b495d4c/1398009276/Dune%20-%20Part%20Two%20(2024)%201080p%20UHD%20DV%20HDR%2010bit%20HEVC%20[Hindi%20DDP%205.1%20+%20English%20DDP%207.1]%20x265%20(c0kE-LUMiX)%204KHDHub.com.mkv",
+              "rawUrlKind": "progressive",
               "qualityDegraded": false,
               "qualities": [
                 {
                   "label": "2160p (4K)",
                   "height": 2160,
-                  "url": "https://video-downloads.googleusercontent.com/ADGPM2nnYDU-svHld6wt8hIyEq48LsZ_tG8EimiU5ElUDe_XH6rZ-_K-eTcvGVyQKCiTfvJeUwkIlgBtN8HBAWEbJ1m-unw-uz-4ptxR8ZzCmjfcbSHU5g_nWbwhoiHX1QP11BM_PKB5bzbG0VZ7hJmyXkZh16oXS1IP1PuyS_xJ_iMw0iW3MRa9emCTEIjZ5uIVMnZxBrjslfq1TYqydfKkGA9UUWBVHv1N100N2-8cDa3Gisglzj4"
+                  "url": "https://flat-glade-7058.welikap1127100.workers.dev/6508560c838ac8abd6286214a47b79ea153d744511de44cbbcc2bfd1813d19843c24cfd37e9b6e2095af214b7c23c300::bb14bd452033f88d86a7789a7b495d4c/1398009276/Dune%20-%20Part%20Two%20(2024)%201080p%20UHD%20DV%20HDR%2010bit%20HEVC%20[Hindi%20DDP%205.1%20+%20English%20DDP%207.1]%20x265%20(c0kE-LUMiX)%204KHDHub.com.mkv"
                 },
                 {
                   "label": "2160p (4K DV HDR)",
                   "height": 2160,
-                  "url": "https://myfiles.directfile.workers.dev/ae62d80343bc912f0e34f0e90a773aaf78d0045e3e23085e57b666c53d410151e028ef139050bf69634035daf1d49f90::0ea07149002ef1b7c1d7a6e426802992/1398009276/Dune%20-%20Part%20Two%20(2024)%202160p%20UHD%20BluRay%20DV%20HDR%2010bit%20HEVC%20[Hindi%20DDP%205.1%20+%20English%20TrueHD%20Atmos%207.1]%20x265%20(W4NK3R-LUMiX)%204KHDHub.com.mkv"
+                  "url": "https://files.workers-cf.workers.dev/d2a666f3c4d7884aad1b326a3f2e8046162f94f9cf601c77eb39bfb936276002bda96fe2b97e8c7e87079a0b04f23d1a::185d76fb0397d55ac2a5f4a9a7257e81/1398009276/Dune%20-%20Part%20Two%20(2024)%202160p%20UHD%20BluRay%20DV%20HDR%2010bit%20HEVC%20[Hindi%20DDP%205.1%20+%20English%20TrueHD%20Atmos%207.1]%20x265%20(W4NK3R-LUMiX)%204KHDHub.com.mkv"
                 },
                 {
                   "label": "1080p",
                   "height": 1080,
-                  "url": "https://hubloud-downloadcdn.vi-isp.workers.dev/a053551cd6fc68491e2ffc76dda49b7a69c4f88524a48835d866891e6f6bfe35092237d351ebc53d0781883a1352c8ac::58bc1e066c68a58ddc4b0bb7d4447eb1/1398009276/Dune%20-%20Part%20Two%20(2024)%201080p%20Hybrid%20BluRay%20[Hindi%20DDP%205.1%20+%20English%20DDP%207.1]%20x264%20(c0kE-LUMiX)%204KHDHub.com.mkv"
+                  "url": "https://drive.hubfilesserver2.workers.dev/2d49a4e170b4f2dac85f4a051939df012531fa282a39d070db3963c4ba5b18d774ca49e7cc51455e295db82777a7f759::3131154d7335ac70d0923792f3157a4b/1398009276/Dune%20-%20Part%20Two%20(2024)%201080p%20Hybrid%20BluRay%20[Hindi%20DDP%205.1%20+%20English%20DDP%207.1]%20x264%20(c0kE-LUMiX)%204KHDHub.com.mkv"
                 },
                 {
                   "label": "1080p (SDR)",
@@ -170,8 +170,8 @@
               }
             ],
             "playback": {
-              "resolvedTarget": "https://video-downloads.googleusercontent.com/ADGPM2nnYDU-svHld6wt8hIyEq48LsZ_tG8EimiU5ElUDe_XH6rZ-_K-eTcvGVyQKCiTfvJeUwkIlgBtN8HBAWEbJ1m-unw-uz-4ptxR8ZzCmjfcbSHU5g_nWbwhoiHX1QP11BM_PKB5bzbG0VZ7hJmyXkZh16oXS1IP1PuyS_xJ_iMw0iW3MRa9emCTEIjZ5uIVMnZxBrjslfq1TYqydfKkGA9UUWBVHv1N100N2-8cDa3Gisglzj4",
-              "proxyTarget": "https://video-downloads.googleusercontent.com/ADGPM2nnYDU-svHld6wt8hIyEq48LsZ_tG8EimiU5ElUDe_XH6rZ-_K-eTcvGVyQKCiTfvJeUwkIlgBtN8HBAWEbJ1m-unw-uz-4ptxR8ZzCmjfcbSHU5g_nWbwhoiHX1QP11BM_PKB5bzbG0VZ7hJmyXkZh16oXS1IP1PuyS_xJ_iMw0iW3MRa9emCTEIjZ5uIVMnZxBrjslfq1TYqydfKkGA9UUWBVHv1N100N2-8cDa3Gisglzj4",
+              "resolvedTarget": "https://flat-glade-7058.welikap1127100.workers.dev/6508560c838ac8abd6286214a47b79ea153d744511de44cbbcc2bfd1813d19843c24cfd37e9b6e2095af214b7c23c300::bb14bd452033f88d86a7789a7b495d4c/1398009276/Dune%20-%20Part%20Two%20(2024)%201080p%20UHD%20DV%20HDR%2010bit%20HEVC%20[Hindi%20DDP%205.1%20+%20English%2",
+              "proxyTarget": "https://flat-glade-7058.welikap1127100.workers.dev/6508560c838ac8abd6286214a47b79ea153d744511de44cbbcc2bfd1813d19843c24cfd37e9b6e2095af214b7c23c300::bb14bd452033f88d86a7789a7b495d4c/1398009276/Dune%20-%20Part%20Two%20(2024)%201080p%20UHD%20DV%20HDR%2010bit%20HEVC%20[Hindi%20DDP%205.1%20+%20English%2",
               "proxy": {
                 "ok": false,
                 "status": 404,
@@ -185,15 +185,21 @@
                 "latencyMs": 1
               },
               "direct": {
-                "ok": false,
-                "status": 0,
-                "error": "This operation was aborted",
-                "latencyMs": 20001
+                "ok": true,
+                "status": 206,
+                "contentType": "video/x-matroska",
+                "contentLengthHeader": "2048",
+                "firstBytes": 2048,
+                "magic": "1a45dfa3a34286810142f7810142f281",
+                "headText": ".E..B...B...B.",
+                "looksLikeHtml": false,
+                "looksLikeScript": false,
+                "latencyMs": 541
               }
             }
           },
           "nodeDirect": {
-            "latencyMs": 5602,
+            "latencyMs": 5752,
             "ok": true,
             "reason": null,
             "selectedTier": "4khdhub",
@@ -213,26 +219,26 @@
               "provider": null,
               "tier": "4khdhub",
               "format": "mp4",
-              "streamUrl": "https://video-downloads.googleusercontent.com/ADGPM2nnYDU-svHld6wt8hIyEq48LsZ_tG8EimiU5ElUDe_XH6rZ-_K-eTcvGVyQKCiTfvJeUwkIlgBtN8HBAWEbJ1m-unw-uz-4ptxR8ZzCmjfcbSHU5g_nWbwhoiHX1QP11BM_PKB5bzbG0VZ7hJmyXkZh16oXS1IP1PuyS_xJ_iMw0iW3MRa9emCTEIjZ5uIVMnZxBrjslfq1TYqydfKkGA9UUWBVHv1N100N2-8cDa3Gisglzj4",
+              "streamUrl": "https://flat-glade-7058.welikap1127100.workers.dev/6508560c838ac8abd6286214a47b79ea153d744511de44cbbcc2bfd1813d19843c24cfd37e9b6e2095af214b7c23c300::bb14bd452033f88d86a7789a7b495d4c/1398009276/Dune%20-%20Part%20Two%20(2024)%201080p%20UHD%20DV%20HDR%2010bit%20HEVC%20[Hindi%20DDP%205.1%20+%20English%20DDP%207.1]%20x265%20(c0kE-LUMiX)%204KHDHub.com.mkv",
               "streamUrlIsRelative": false,
-              "rawUrl": "https://video-downloads.googleusercontent.com/ADGPM2nnYDU-svHld6wt8hIyEq48LsZ_tG8EimiU5ElUDe_XH6rZ-_K-eTcvGVyQKCiTfvJeUwkIlgBtN8HBAWEbJ1m-unw-uz-4ptxR8ZzCmjfcbSHU5g_nWbwhoiHX1QP11BM_PKB5bzbG0VZ7hJmyXkZh16oXS1IP1PuyS_xJ_iMw0iW3MRa9emCTEIjZ5uIVMnZxBrjslfq1TYqydfKkGA9UUWBVHv1N100N2-8cDa3Gisglzj4",
-              "rawUrlKind": "other",
+              "rawUrl": "https://flat-glade-7058.welikap1127100.workers.dev/6508560c838ac8abd6286214a47b79ea153d744511de44cbbcc2bfd1813d19843c24cfd37e9b6e2095af214b7c23c300::bb14bd452033f88d86a7789a7b495d4c/1398009276/Dune%20-%20Part%20Two%20(2024)%201080p%20UHD%20DV%20HDR%2010bit%20HEVC%20[Hindi%20DDP%205.1%20+%20English%20DDP%207.1]%20x265%20(c0kE-LUMiX)%204KHDHub.com.mkv",
+              "rawUrlKind": "progressive",
               "qualityDegraded": false,
               "qualities": [
                 {
                   "label": "2160p (4K)",
                   "height": 2160,
-                  "url": "https://video-downloads.googleusercontent.com/ADGPM2nnYDU-svHld6wt8hIyEq48LsZ_tG8EimiU5ElUDe_XH6rZ-_K-eTcvGVyQKCiTfvJeUwkIlgBtN8HBAWEbJ1m-unw-uz-4ptxR8ZzCmjfcbSHU5g_nWbwhoiHX1QP11BM_PKB5bzbG0VZ7hJmyXkZh16oXS1IP1PuyS_xJ_iMw0iW3MRa9emCTEIjZ5uIVMnZxBrjslfq1TYqydfKkGA9UUWBVHv1N100N2-8cDa3Gisglzj4"
+                  "url": "https://flat-glade-7058.welikap1127100.workers.dev/6508560c838ac8abd6286214a47b79ea153d744511de44cbbcc2bfd1813d19843c24cfd37e9b6e2095af214b7c23c300::bb14bd452033f88d86a7789a7b495d4c/1398009276/Dune%20-%20Part%20Two%20(2024)%201080p%20UHD%20DV%20HDR%2010bit%20HEVC%20[Hindi%20DDP%205.1%20+%20English%20DDP%207.1]%20x265%20(c0kE-LUMiX)%204KHDHub.com.mkv"
                 },
                 {
                   "label": "2160p (4K DV HDR)",
                   "height": 2160,
-                  "url": "https://myfiles.directfile.workers.dev/ae62d80343bc912f0e34f0e90a773aaf78d0045e3e23085e57b666c53d410151e028ef139050bf69634035daf1d49f90::0ea07149002ef1b7c1d7a6e426802992/1398009276/Dune%20-%20Part%20Two%20(2024)%202160p%20UHD%20BluRay%20DV%20HDR%2010bit%20HEVC%20[Hindi%20DDP%205.1%20+%20English%20TrueHD%20Atmos%207.1]%20x265%20(W4NK3R-LUMiX)%204KHDHub.com.mkv"
+                  "url": "https://files.workers-cf.workers.dev/d2a666f3c4d7884aad1b326a3f2e8046162f94f9cf601c77eb39bfb936276002bda96fe2b97e8c7e87079a0b04f23d1a::185d76fb0397d55ac2a5f4a9a7257e81/1398009276/Dune%20-%20Part%20Two%20(2024)%202160p%20UHD%20BluRay%20DV%20HDR%2010bit%20HEVC%20[Hindi%20DDP%205.1%20+%20English%20TrueHD%20Atmos%207.1]%20x265%20(W4NK3R-LUMiX)%204KHDHub.com.mkv"
                 },
                 {
                   "label": "1080p",
                   "height": 1080,
-                  "url": "https://hubloud-downloadcdn.vi-isp.workers.dev/a053551cd6fc68491e2ffc76dda49b7a69c4f88524a48835d866891e6f6bfe35092237d351ebc53d0781883a1352c8ac::58bc1e066c68a58ddc4b0bb7d4447eb1/1398009276/Dune%20-%20Part%20Two%20(2024)%201080p%20Hybrid%20BluRay%20[Hindi%20DDP%205.1%20+%20English%20DDP%207.1]%20x264%20(c0kE-LUMiX)%204KHDHub.com.mkv"
+                  "url": "https://drive.hubfilesserver2.workers.dev/2d49a4e170b4f2dac85f4a051939df012531fa282a39d070db3963c4ba5b18d774ca49e7cc51455e295db82777a7f759::3131154d7335ac70d0923792f3157a4b/1398009276/Dune%20-%20Part%20Two%20(2024)%201080p%20Hybrid%20BluRay%20[Hindi%20DDP%205.1%20+%20English%20DDP%207.1]%20x264%20(c0kE-LUMiX)%204KHDHub.com.mkv"
                 },
                 {
                   "label": "1080p (SDR)",
@@ -252,7 +258,7 @@
             }
           },
           "nodeWaterfall": {
-            "latencyMs": 2391,
+            "latencyMs": 4251,
             "ok": true,
             "reason": null,
             "requestedServer": "ursa",
@@ -262,26 +268,26 @@
               "provider": null,
               "tier": "4khdhub",
               "format": "mp4",
-              "streamUrl": "https://video-downloads.googleusercontent.com/ADGPM2nnYDU-svHld6wt8hIyEq48LsZ_tG8EimiU5ElUDe_XH6rZ-_K-eTcvGVyQKCiTfvJeUwkIlgBtN8HBAWEbJ1m-unw-uz-4ptxR8ZzCmjfcbSHU5g_nWbwhoiHX1QP11BM_PKB5bzbG0VZ7hJmyXkZh16oXS1IP1PuyS_xJ_iMw0iW3MRa9emCTEIjZ5uIVMnZxBrjslfq1TYqydfKkGA9UUWBVHv1N100N2-8cDa3Gisglzj4",
+              "streamUrl": "https://flat-glade-7058.welikap1127100.workers.dev/6508560c838ac8abd6286214a47b79ea153d744511de44cbbcc2bfd1813d19843c24cfd37e9b6e2095af214b7c23c300::bb14bd452033f88d86a7789a7b495d4c/1398009276/Dune%20-%20Part%20Two%20(2024)%201080p%20UHD%20DV%20HDR%2010bit%20HEVC%20[Hindi%20DDP%205.1%20+%20English%20DDP%207.1]%20x265%20(c0kE-LUMiX)%204KHDHub.com.mkv",
               "streamUrlIsRelative": false,
-              "rawUrl": "https://video-downloads.googleusercontent.com/ADGPM2nnYDU-svHld6wt8hIyEq48LsZ_tG8EimiU5ElUDe_XH6rZ-_K-eTcvGVyQKCiTfvJeUwkIlgBtN8HBAWEbJ1m-unw-uz-4ptxR8ZzCmjfcbSHU5g_nWbwhoiHX1QP11BM_PKB5bzbG0VZ7hJmyXkZh16oXS1IP1PuyS_xJ_iMw0iW3MRa9emCTEIjZ5uIVMnZxBrjslfq1TYqydfKkGA9UUWBVHv1N100N2-8cDa3Gisglzj4",
-              "rawUrlKind": "other",
+              "rawUrl": "https://flat-glade-7058.welikap1127100.workers.dev/6508560c838ac8abd6286214a47b79ea153d744511de44cbbcc2bfd1813d19843c24cfd37e9b6e2095af214b7c23c300::bb14bd452033f88d86a7789a7b495d4c/1398009276/Dune%20-%20Part%20Two%20(2024)%201080p%20UHD%20DV%20HDR%2010bit%20HEVC%20[Hindi%20DDP%205.1%20+%20English%20DDP%207.1]%20x265%20(c0kE-LUMiX)%204KHDHub.com.mkv",
+              "rawUrlKind": "progressive",
               "qualityDegraded": false,
               "qualities": [
                 {
                   "label": "2160p (4K)",
                   "height": 2160,
-                  "url": "https://video-downloads.googleusercontent.com/ADGPM2nnYDU-svHld6wt8hIyEq48LsZ_tG8EimiU5ElUDe_XH6rZ-_K-eTcvGVyQKCiTfvJeUwkIlgBtN8HBAWEbJ1m-unw-uz-4ptxR8ZzCmjfcbSHU5g_nWbwhoiHX1QP11BM_PKB5bzbG0VZ7hJmyXkZh16oXS1IP1PuyS_xJ_iMw0iW3MRa9emCTEIjZ5uIVMnZxBrjslfq1TYqydfKkGA9UUWBVHv1N100N2-8cDa3Gisglzj4"
+                  "url": "https://flat-glade-7058.welikap1127100.workers.dev/6508560c838ac8abd6286214a47b79ea153d744511de44cbbcc2bfd1813d19843c24cfd37e9b6e2095af214b7c23c300::bb14bd452033f88d86a7789a7b495d4c/1398009276/Dune%20-%20Part%20Two%20(2024)%201080p%20UHD%20DV%20HDR%2010bit%20HEVC%20[Hindi%20DDP%205.1%20+%20English%20DDP%207.1]%20x265%20(c0kE-LUMiX)%204KHDHub.com.mkv"
                 },
                 {
                   "label": "2160p (4K DV HDR)",
                   "height": 2160,
-                  "url": "https://myfiles.directfile.workers.dev/ae62d80343bc912f0e34f0e90a773aaf78d0045e3e23085e57b666c53d410151e028ef139050bf69634035daf1d49f90::0ea07149002ef1b7c1d7a6e426802992/1398009276/Dune%20-%20Part%20Two%20(2024)%202160p%20UHD%20BluRay%20DV%20HDR%2010bit%20HEVC%20[Hindi%20DDP%205.1%20+%20English%20TrueHD%20Atmos%207.1]%20x265%20(W4NK3R-LUMiX)%204KHDHub.com.mkv"
+                  "url": "https://files.workers-cf.workers.dev/d2a666f3c4d7884aad1b326a3f2e8046162f94f9cf601c77eb39bfb936276002bda96fe2b97e8c7e87079a0b04f23d1a::185d76fb0397d55ac2a5f4a9a7257e81/1398009276/Dune%20-%20Part%20Two%20(2024)%202160p%20UHD%20BluRay%20DV%20HDR%2010bit%20HEVC%20[Hindi%20DDP%205.1%20+%20English%20TrueHD%20Atmos%207.1]%20x265%20(W4NK3R-LUMiX)%204KHDHub.com.mkv"
                 },
                 {
                   "label": "1080p",
                   "height": 1080,
-                  "url": "https://hubloud-downloadcdn.vi-isp.workers.dev/a053551cd6fc68491e2ffc76dda49b7a69c4f88524a48835d866891e6f6bfe35092237d351ebc53d0781883a1352c8ac::58bc1e066c68a58ddc4b0bb7d4447eb1/1398009276/Dune%20-%20Part%20Two%20(2024)%201080p%20Hybrid%20BluRay%20[Hindi%20DDP%205.1%20+%20English%20DDP%207.1]%20x264%20(c0kE-LUMiX)%204KHDHub.com.mkv"
+                  "url": "https://drive.hubfilesserver2.workers.dev/2d49a4e170b4f2dac85f4a051939df012531fa282a39d070db3963c4ba5b18d774ca49e7cc51455e295db82777a7f759::3131154d7335ac70d0923792f3157a4b/1398009276/Dune%20-%20Part%20Two%20(2024)%201080p%20Hybrid%20BluRay%20[Hindi%20DDP%205.1%20+%20English%20DDP%207.1]%20x264%20(c0kE-LUMiX)%204KHDHub.com.mkv"
                 },
                 {
                   "label": "1080p (SDR)",
@@ -302,32 +308,12 @@
             "serverAttempts": []
           },
           "tiers": {
-            "latencyMs": 21475,
+            "latencyMs": 5493,
             "4khdhub": {
               "ok": true,
               "reason": null,
-              "rawUrl": "https://video-downloads.googleusercontent.com/ADGPM2nnYDU-svHld6wt8hIyEq48LsZ_tG8EimiU5ElUDe_XH6rZ-_K-eTcvGVyQKCiTfvJeUwkIlgBtN8HBAWEbJ1m-unw-uz-4ptxR8ZzCmjfcbSHU5g_nWbwhoiHX1QP11BM_PKB5bzbG0VZ7hJmyXkZh16oXS1IP1PuyS_xJ_iMw0iW3MRa9emCTEIjZ5uIVMnZxBrjslfq1TYqydfKkGA9UUWBVHv1N100N2-8cDa3Gisglzj4",
-              "rawUrlFull": "https://video-downloads.googleusercontent.com/ADGPM2nnYDU-svHld6wt8hIyEq48LsZ_tG8EimiU5ElUDe_XH6rZ-_K-eTcvGVyQKCiTfvJeUwkIlgBtN8HBAWEbJ1m-unw-uz-4ptxR8ZzCmjfcbSHU5g_nWbwhoiHX1QP11BM_PKB5bzbG0VZ7hJmyXkZh16oXS1IP1PuyS_xJ_iMw0iW3MRa9emCTEIjZ5uIVMnZxBrjslfq1TYqydfKkGA9UUWBVHv1N100N2-8cDa3Gisglzj4",
-              "score": 100,
-              "qualifiesViaScoreOnly": true,
-              "playback": {
-                "ok": false,
-                "status": 0,
-                "error": "This operation was aborted",
-                "latencyMs": 20001
-              },
-              "qualities": [
-                "2160p (4K)",
-                "2160p (4K DV HDR)",
-                "1080p",
-                "1080p (SDR)"
-              ]
-            },
-            "moviesdrive4k": {
-              "ok": true,
-              "reason": null,
-              "rawUrl": "https://fancy-mountain-7dfb.terapiyo232.workers.dev/a2c68228ce0b7da387b26b929830d2317251c895b2dc92bcd177e6a385108e1e7915fc82f87dd9ee40cc14f772bc4fed::22d90364f02c15a6104e65ebf0ce2f2d/1398009276/[Moviesdrives.com]-Dune.Part.Two.2024.2160p.4K.AMZN.WEB-DL.SDR.[Hindi.DDP5.1+English.DDPA5.1].H.265.[moviesdrives.com].mkv",
-              "rawUrlFull": "https://fancy-mountain-7dfb.terapiyo232.workers.dev/a2c68228ce0b7da387b26b929830d2317251c895b2dc92bcd177e6a385108e1e7915fc82f87dd9ee40cc14f772bc4fed::22d90364f02c15a6104e65ebf0ce2f2d/1398009276/[Moviesdrives.com]-Dune.Part.Two.2024.2160p.4K.AMZN.WEB-DL.SDR.[Hindi.DDP5.1+English.DDPA5.1].H.265.[movie",
+              "rawUrl": "https://flat-glade-7058.welikap1127100.workers.dev/6508560c838ac8abd6286214a47b79ea153d744511de44cbbcc2bfd1813d19843c24cfd37e9b6e2095af214b7c23c300::bb14bd452033f88d86a7789a7b495d4c/1398009276/Dune%20-%20Part%20Two%20(2024)%201080p%20UHD%20DV%20HDR%2010bit%20HEVC%20[Hindi%20DDP%205.1%20+%20English%20DDP%207.1]%20x265%20(c0kE-LUMiX)%204KHDHub.com.mkv",
+              "rawUrlFull": "https://flat-glade-7058.welikap1127100.workers.dev/6508560c838ac8abd6286214a47b79ea153d744511de44cbbcc2bfd1813d19843c24cfd37e9b6e2095af214b7c23c300::bb14bd452033f88d86a7789a7b495d4c/1398009276/Dune%20-%20Part%20Two%20(2024)%201080p%20UHD%20DV%20HDR%2010bit%20HEVC%20[Hindi%20DDP%205.1%20+%20English%2",
               "score": 60,
               "qualifiesViaScoreOnly": true,
               "playback": {
@@ -340,7 +326,33 @@
                 "headText": ".E..B...B...B.",
                 "looksLikeHtml": false,
                 "looksLikeScript": false,
-                "latencyMs": 559
+                "latencyMs": 512
+              },
+              "qualities": [
+                "2160p (4K)",
+                "2160p (4K DV HDR)",
+                "1080p",
+                "1080p (SDR)"
+              ]
+            },
+            "moviesdrive4k": {
+              "ok": true,
+              "reason": null,
+              "rawUrl": "https://cdn.primevideos.workers.dev/80478715a1b68f6cab5cbb167f5ecbd2e7c265ee181abbc5fa6987acfa1ddb838b0102c6b76a66b1f192d1e2f49ce78c::3bfed4ba3186b630edb457befbb9aca8/1398009276/[Moviesdrives.com]-Dune.Part.Two.2024.2160p.4K.AMZN.WEB-DL.SDR.[Hindi.DDP5.1+English.DDPA5.1].H.265.[moviesdrives.com].mkv",
+              "rawUrlFull": "https://cdn.primevideos.workers.dev/80478715a1b68f6cab5cbb167f5ecbd2e7c265ee181abbc5fa6987acfa1ddb838b0102c6b76a66b1f192d1e2f49ce78c::3bfed4ba3186b630edb457befbb9aca8/1398009276/[Moviesdrives.com]-Dune.Part.Two.2024.2160p.4K.AMZN.WEB-DL.SDR.[Hindi.DDP5.1+English.DDPA5.1].H.265.[moviesdrives.com].mkv",
+              "score": 60,
+              "qualifiesViaScoreOnly": true,
+              "playback": {
+                "ok": true,
+                "status": 206,
+                "contentType": "video/x-matroska",
+                "contentLengthHeader": "2048",
+                "firstBytes": 2048,
+                "magic": "1a45dfa3a34286810142f7810142f281",
+                "headText": ".E..B...B...B.",
+                "looksLikeHtml": false,
+                "looksLikeScript": false,
+                "latencyMs": 488
               },
               "qualities": [
                 "2160p (4K)",
@@ -351,15 +363,21 @@
             "hicine4k": {
               "ok": true,
               "reason": null,
-              "rawUrl": "https://video-downloads.googleusercontent.com/ADGPM2mvKFKCoJpCnJ9KDCNwMHbWFvaJPmS9WLX705MBIlRfi-nsvSgJ2Hb3uqzryjsEwM9goi9FGNBULpLd0mS1ILrbEksR2jEssK2fWpfk--jTYa7LaN8ysXXalDQ85qLavRbRs3y4W90hUrJbCoxV7idU5zJ2aj0LVWvAwKu6ALjJ5HbsZFdiyEOXQhkail0yxSsNteBT4HOttTru3ds7zWXwdYsHeAIOm0IAiPM_fix_GXqPURbkNeTZq1uIQtyfuW6SoDPXF_JYBtritsJXMkVMb7WQssXQub-gZ8fuMQhY4AxeG0RK95pakl7fYFnf4MPWQwq54wnV84-c39QaAk99Fo-3FVgzSqh9rHs-2ESNreHnMxqJOmOsEiY22rD3EbgeCSYs5FyPcG4c7MxvWwHpigPcH2zzCQ9ZwvAwkb7sV41nDbqyYB5h4lGw_Ggt0K2ApMUMW9N4X7vY6i39EVvqF6rnPRXWhaPCPk6WzhAXJXrM0YMhtt-Tjc9VsFVDA9dYomz00yAA5NKK1RrenvmLzy822q8f8Qx6YqXlKWlwbQohR1xTXkegBsxNsQ_Xg3-oQkiZj-GE-tf-QqoQt92x0dzPQGa--U6mg6CZXnQ1Iwfog77kVINr9WC1vkWBDw6FJB3UefGVdIBPmOtctbmmnSUh8wx72XKRt-mHuQgjLfHFrUNKIktQh3JLOHzWnLzM6J-JTMdLEAGK6dyOr8p7Cgsu0fe0hhb7ntZU-rX3g8TAjKZJY5IHs_sSOowABonUdP1RPra2T41ofFZf9kJVwMB3o5-O7dGeZgf85rgI4RWv7H9XvjUR_NheGqCAaTfsPmaJ2MANRHZORYWCGTiPDlad8BJcW9B5tk66h6EEDxUsPD3SEmSq0a4i2iioeeo9ShzEZGAXtQYCSMIKpFBr60W4gEbCh0LzylgFquHEEaEME2GYzp9XIU1xxDd7uD1DP5YO4znFaLF1NRh8vJAMa140DZQCT8-BVSCsk4nVUFezgOZuT3zjKFe1TN-z3SCzT5LXUuHU-VbkeNleg-qK9sC2kjtS6a3luQjcm-sZlepw8ROQim3SpIrLHRATSDx_8E2O1i6dTxoHYWQAc2nJEqQmHYPiDA4PrtPTzflbxgcibdBx3QVx43JG2LRkikMyHbfahiPSMuVNjfzA28V36uZGQA",
-              "rawUrlFull": "https://video-downloads.googleusercontent.com/ADGPM2mvKFKCoJpCnJ9KDCNwMHbWFvaJPmS9WLX705MBIlRfi-nsvSgJ2Hb3uqzryjsEwM9goi9FGNBULpLd0mS1ILrbEksR2jEssK2fWpfk--jTYa7LaN8ysXXalDQ85qLavRbRs3y4W90hUrJbCoxV7idU5zJ2aj0LVWvAwKu6ALjJ5HbsZFdiyEOXQhkail0yxSsNteBT4HOttTru3ds7zWXwdYsHeAIOm0IAiPM_fix_GXqPURbkNeTZq1",
-              "score": 100,
+              "rawUrl": "https://556138dca7367763ed46eecaa4284eca.r2.cloudflarestorage.com/hub2/Dune.Part.Two.2024.2160p.4K.AMZN.WEB-DL.SDR.%5BHindi.DDP5.1%2BEnglish.DDPA5.1%5D.H.265.Vegamovies.To.mkv",
+              "rawUrlFull": "https://556138dca7367763ed46eecaa4284eca.r2.cloudflarestorage.com/hub2/Dune.Part.Two.2024.2160p.4K.AMZN.WEB-DL.SDR.%5BHindi.DDP5.1%2BEnglish.DDPA5.1%5D.H.265.Vegamovies.To.mkv?X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Credential=26b6cf8a0399b5880643f585c8c3dbe5%2F20261004%2Fauto%2Fs3%2Faws4_request&X-A",
+              "score": 92,
               "qualifiesViaScoreOnly": true,
               "playback": {
-                "ok": false,
-                "status": 0,
-                "error": "This operation was aborted",
-                "latencyMs": 20001
+                "ok": true,
+                "status": 206,
+                "contentType": "application/octet-stream",
+                "contentLengthHeader": "2048",
+                "firstBytes": 2048,
+                "magic": "1a45dfa3a34286810142f7810142f281",
+                "headText": ".E..B...B...B.",
+                "looksLikeHtml": false,
+                "looksLikeScript": false,
+                "latencyMs": 117
               },
               "qualities": [
                 "2160p (4K)",
@@ -381,7 +399,7 @@
         },
         "hamster": {
           "workerEndToEnd": {
-            "latencyMs": 10384,
+            "latencyMs": 10728,
             "status": 200,
             "ok": true,
             "error": null,
@@ -396,7 +414,7 @@
               "format": "hls",
               "streamUrl": "server-live-probe.test/api/proxy",
               "streamUrlIsRelative": true,
-              "rawUrl": "https://img1.flowxn.com/myhls_mps/2024/8yue/Dune2/Hindi_720/index_375.m3u8",
+              "rawUrl": "https://img1.klnwm.com/myhls_mps/2024/8yue/Dune2/Hindi_720/index_364.m3u8",
               "rawUrlKind": "hls",
               "qualityDegraded": false,
               "qualities": [
@@ -473,19 +491,19 @@
               }
             ],
             "playback": {
-              "resolvedTarget": "https://img1.flowxn.com/myhls_mps/2024/8yue/Dune2/Hindi_720/index_375.m3u8?auth_key=UbKPiYp4j2hLPk92H77usr%2FbGSMdk9P4%2FDIy4Ip%2BSgI%3D&expire=1791119021364",
-              "proxyTarget": "/api/proxy?url=https%3A%2F%2Fimg1.flowxn.com%2Fmyhls_mps%2F2024%2F8yue%2FDune2%2FHindi_720%2Findex_375.m3u8%3Fauth_key%3DUbKPiYp4j2hLPk92H77usr%252FbGSMdk9P4%252FDIy4Ip%252BSgI%253D%26expire%3D1791119021364&mode=full&referer=https%3A%2F%2Fapi.hlowb.com%2F",
+              "resolvedTarget": "https://img1.klnwm.com/myhls_mps/2024/8yue/Dune2/Hindi_720/index_364.m3u8?auth_key=AEF5D2oO8IHSeZw%2B0a58ApEBn5O9e%2FJrCtNYB6XMMwc%3D&expire=1791119874628",
+              "proxyTarget": "/api/proxy?url=https%3A%2F%2Fimg1.klnwm.com%2Fmyhls_mps%2F2024%2F8yue%2FDune2%2FHindi_720%2Findex_364.m3u8%3Fauth_key%3DAEF5D2oO8IHSeZw%252B0a58ApEBn5O9e%252FJrCtNYB6XMMwc%253D%26expire%3D1791119874628&mode=full&referer=https%3A%2F%2Fapi.hlowb.com%2F",
               "proxy": {
                 "ok": true,
                 "status": 200,
                 "contentType": "application/vnd.apple.mpegurl; charset=utf-8",
                 "contentLengthHeader": null,
-                "firstBytes": 4470,
+                "firstBytes": 4476,
                 "magic": "234558544d33550a234558542d582d56",
                 "headText": "#EXTM3U.#EXT-X-V",
                 "looksLikeHtml": false,
                 "looksLikeScript": false,
-                "latencyMs": 263
+                "latencyMs": 407
               },
               "direct": {
                 "ok": true,
@@ -497,12 +515,12 @@
                 "headText": "#EXTM3U.#EXT-X-V",
                 "looksLikeHtml": false,
                 "looksLikeScript": false,
-                "latencyMs": 328
+                "latencyMs": 296
               }
             }
           },
           "nodeDirect": {
-            "latencyMs": 10441,
+            "latencyMs": 10250,
             "ok": false,
             "reason": "hamster_all_sources_exhausted",
             "selectedTier": null,
@@ -532,7 +550,7 @@
             }
           },
           "nodeWaterfall": {
-            "latencyMs": 11252,
+            "latencyMs": 11576,
             "ok": true,
             "reason": null,
             "requestedServer": "hamster",
@@ -544,7 +562,7 @@
               "format": "hls",
               "streamUrl": "server-live-probe.test/api/proxy",
               "streamUrlIsRelative": true,
-              "rawUrl": "https://img1.hlnom.com/myhls_mps/2024/8yue/Dune2/Hindi_720/index_363.m3u8",
+              "rawUrl": "https://img1.flcwuk.com/myhls_mps/2024/8yue/Dune2/Hindi_720/index_374.m3u8",
               "rawUrlKind": "hls",
               "qualityDegraded": false,
               "qualities": [
@@ -585,14 +603,14 @@
             "serverAttempts": [
               {
                 "server": "hamster",
-                "latencyMs": 10187,
+                "latencyMs": 10191,
                 "reason": "hamster_all_sources_exhausted",
                 "diagMessage": "All Hamster Wheel providers (Videasy, Peachify, VidSrc) failed to resolve a stream."
               }
             ]
           },
           "providers": {
-            "latencyMs": 9502,
+            "latencyMs": 9501,
             "videasy": {
               "ok": false,
               "reason": "videasy_no_sources",
@@ -618,7 +636,7 @@
         }
       },
       "fourKChain": {
-        "latencyMs": 587,
+        "latencyMs": 3735,
         "host": "https://4khdhub.one",
         "searchUrl": null,
         "cards": [
@@ -1108,6 +1126,107 @@
         "searchStatus": 200,
         "detailUrl": "https://4khdhub.one/dune-part-two-movie-199/",
         "detailStatus": 200
+      },
+      "hamsterRaw": {
+        "latencyMs": 73214,
+        "query": "tmdb=693134",
+        "videasy": [
+          {
+            "url": "https://api.videasy.net/mb-flix/sources-with-title",
+            "status": 0,
+            "error": "This operation was aborted",
+            "latencyMs": 12000
+          },
+          {
+            "url": "https://api.videasy.net/1movies/sources-with-title",
+            "status": 0,
+            "error": "This operation was aborted",
+            "latencyMs": 12001
+          },
+          {
+            "url": "https://api.videasy.net/cdn/sources-with-title",
+            "status": 0,
+            "error": "This operation was aborted",
+            "latencyMs": 12000
+          },
+          {
+            "url": "https://api.videasy.net/superflix/sources-with-title",
+            "status": 0,
+            "error": "This operation was aborted",
+            "latencyMs": 12000
+          },
+          {
+            "url": "https://api.videasy.net/lamovie/sources-with-title",
+            "status": 0,
+            "error": "This operation was aborted",
+            "latencyMs": 12001
+          },
+          {
+            "url": "https://api2.videasy.net/cuevana/sources-with-title",
+            "status": 0,
+            "error": "fetch failed",
+            "latencyMs": 12
+          },
+          {
+            "url": "https://api.videasy.net/hdmovie/sources-with-title",
+            "status": 0,
+            "error": "This operation was aborted",
+            "latencyMs": 12000
+          }
+        ],
+        "peachify": [
+          {
+            "url": "https://uwu.eat-peach.sbs/moviebox/api",
+            "status": 0,
+            "error": "fetch failed",
+            "latencyMs": 27
+          },
+          {
+            "url": "https://usa.eat-peach.sbs/holly/api",
+            "status": 0,
+            "error": "fetch failed",
+            "latencyMs": 23
+          },
+          {
+            "url": "https://usa.eat-peach.sbs/air/api",
+            "status": 0,
+            "error": "fetch failed",
+            "latencyMs": 14
+          },
+          {
+            "url": "https://usa.eat-peach.sbs/multi/api",
+            "status": 0,
+            "error": "fetch failed",
+            "latencyMs": 23
+          },
+          {
+            "url": "https://uwu.eat-peach.sbs/net/api",
+            "status": 0,
+            "error": "fetch failed",
+            "latencyMs": 15
+          },
+          {
+            "url": "https://uwu.eat-peach.sbs/bmb/api",
+            "status": 0,
+            "error": "fetch failed",
+            "latencyMs": 11
+          }
+        ],
+        "vidsrc": {
+          "embedUrl": "https://vsembed.ru/embed/movie?tmdb=693134",
+          "status": 200,
+          "contentType": "text/html; charset=UTF-8",
+          "bytes": 54110,
+          "head": "<!DOCTYPE html> <html lang=\"en\"> <head> <meta charset=\"UTF-8\"> <meta name=\"viewport\" content=\"width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no\"> <meta name=\"referrer\" content=\"origin\"> <title>Player</title> <script src",
+          "latencyMs": 801,
+          "fetchMatches": [],
+          "scriptSrcs": [
+            "/assets/sbx.js?v=1786671805",
+            "/assets/disable-devtool.js?v=1785879645"
+          ],
+          "iframeSrcs": [],
+          "bodyHead": "<!DOCTYPE html> <html lang=\"en\"> <head> <meta charset=\"UTF-8\"> <meta name=\"viewport\" content=\"width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no\"> <meta name=\"referrer\" content=\"origin\"> <title>Player</title> <script src=\"/assets/sbx.js?v=1786671805\"></script> <style>*{margin:0;padding:0;box-sizing:border-box}html,body{width:100%;height:100%;overflow:hidden;background:#000}ifra"
+        }
       }
     },
     "movie:550": {
@@ -1129,7 +1248,7 @@
       "servers": {
         "ursa": {
           "workerEndToEnd": {
-            "latencyMs": 4558,
+            "latencyMs": 6099,
             "status": 200,
             "ok": true,
             "error": null,
@@ -1156,7 +1275,7 @@
                 {
                   "label": "2160p (4K HDR)",
                   "height": 2160,
-                  "url": "https://shiny-scene-663c.terapiyo246.workers.dev/8ffe38b39d9c8102c9aa6b5f7d93babdf39307864161c6bad9fcc9380c3cf0572f1b00eb4d73002b1439d02990f0889f::ff6e80abe4a0a6f12294895e68e5da9b/1398009276/Fight%20Club%20(1999)%202160p%20UHD%20BluRay%20HDR%2010bit%20HEVC%20[Hindi%20DDP%202.0%20+%20English%20DTS-HD%20MA%205.1]%20x265%20(j3rico-LUMiX).mkv"
+                  "url": "https://empty-waterfall-5c90.pojitet1356748.workers.dev/0d02cfe72d37f52b12f0e87a5bb366ac5a22aa841aece67ac9c742472abf7a3aeb826823081282d8549a519020f1504c::5087a3fd89676e256b4c43acfc9490db/1398009276/Fight%20Club%20(1999)%202160p%20UHD%20BluRay%20HDR%2010bit%20HEVC%20[Hindi%20DDP%202.0%20+%20English%20DTS-HD%20MA%205.1]%20x265%20(j3rico-LUMiX).mkv"
                 },
                 {
                   "label": "1080p",
@@ -1213,8 +1332,8 @@
               }
             ],
             "playback": {
-              "resolvedTarget": "https://c6b1e8c93683bdde581e2164cb9657c9.r2.cloudflarestorage.com/hub/bc953c1f1cee5b851b6a0a9112531074?X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Credential=ce3806fdca997f65e356f3b6fc2f735d%2F20261004%2Fauto%2Fs3%2Faws4_request&X-Amz-Date=20261004T100414Z&X-Amz-Expires=28800&X-Amz-SignedHeaders=host&res",
-              "proxyTarget": "https://c6b1e8c93683bdde581e2164cb9657c9.r2.cloudflarestorage.com/hub/bc953c1f1cee5b851b6a0a9112531074?X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Credential=ce3806fdca997f65e356f3b6fc2f735d%2F20261004%2Fauto%2Fs3%2Faws4_request&X-Amz-Date=20261004T100414Z&X-Amz-Expires=28800&X-Amz-SignedHeaders=host&res",
+              "resolvedTarget": "https://c6b1e8c93683bdde581e2164cb9657c9.r2.cloudflarestorage.com/hub/bc953c1f1cee5b851b6a0a9112531074?X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Credential=ce3806fdca997f65e356f3b6fc2f735d%2F20261004%2Fauto%2Fs3%2Faws4_request&X-Amz-Date=20261004T101945Z&X-Amz-Expires=28800&X-Amz-SignedHeaders=host&res",
+              "proxyTarget": "https://c6b1e8c93683bdde581e2164cb9657c9.r2.cloudflarestorage.com/hub/bc953c1f1cee5b851b6a0a9112531074?X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Credential=ce3806fdca997f65e356f3b6fc2f735d%2F20261004%2Fauto%2Fs3%2Faws4_request&X-Amz-Date=20261004T101945Z&X-Amz-Expires=28800&X-Amz-SignedHeaders=host&res",
               "proxy": {
                 "ok": false,
                 "status": 404,
@@ -1225,7 +1344,7 @@
                 "headText": "{\"ok\":false,\"err",
                 "looksLikeHtml": false,
                 "looksLikeScript": false,
-                "latencyMs": 1
+                "latencyMs": 0
               },
               "direct": {
                 "ok": true,
@@ -1237,12 +1356,12 @@
                 "headText": ".E..B...B...B.",
                 "looksLikeHtml": false,
                 "looksLikeScript": false,
-                "latencyMs": 165
+                "latencyMs": 550
               }
             }
           },
           "nodeDirect": {
-            "latencyMs": 4574,
+            "latencyMs": 4835,
             "ok": true,
             "reason": null,
             "selectedTier": "4khdhub",
@@ -1276,7 +1395,7 @@
                 {
                   "label": "2160p (4K HDR)",
                   "height": 2160,
-                  "url": "https://shiny-scene-663c.terapiyo246.workers.dev/8ffe38b39d9c8102c9aa6b5f7d93babdf39307864161c6bad9fcc9380c3cf0572f1b00eb4d73002b1439d02990f0889f::ff6e80abe4a0a6f12294895e68e5da9b/1398009276/Fight%20Club%20(1999)%202160p%20UHD%20BluRay%20HDR%2010bit%20HEVC%20[Hindi%20DDP%202.0%20+%20English%20DTS-HD%20MA%205.1]%20x265%20(j3rico-LUMiX).mkv"
+                  "url": "https://empty-waterfall-5c90.pojitet1356748.workers.dev/0d02cfe72d37f52b12f0e87a5bb366ac5a22aa841aece67ac9c742472abf7a3aeb826823081282d8549a519020f1504c::5087a3fd89676e256b4c43acfc9490db/1398009276/Fight%20Club%20(1999)%202160p%20UHD%20BluRay%20HDR%2010bit%20HEVC%20[Hindi%20DDP%202.0%20+%20English%20DTS-HD%20MA%205.1]%20x265%20(j3rico-LUMiX).mkv"
                 },
                 {
                   "label": "1080p",
@@ -1296,7 +1415,7 @@
             }
           },
           "nodeWaterfall": {
-            "latencyMs": 1855,
+            "latencyMs": 1541,
             "ok": true,
             "reason": null,
             "requestedServer": "ursa",
@@ -1320,7 +1439,7 @@
                 {
                   "label": "2160p (4K HDR)",
                   "height": 2160,
-                  "url": "https://shiny-scene-663c.terapiyo246.workers.dev/8ffe38b39d9c8102c9aa6b5f7d93babdf39307864161c6bad9fcc9380c3cf0572f1b00eb4d73002b1439d02990f0889f::ff6e80abe4a0a6f12294895e68e5da9b/1398009276/Fight%20Club%20(1999)%202160p%20UHD%20BluRay%20HDR%2010bit%20HEVC%20[Hindi%20DDP%202.0%20+%20English%20DTS-HD%20MA%205.1]%20x265%20(j3rico-LUMiX).mkv"
+                  "url": "https://empty-waterfall-5c90.pojitet1356748.workers.dev/0d02cfe72d37f52b12f0e87a5bb366ac5a22aa841aece67ac9c742472abf7a3aeb826823081282d8549a519020f1504c::5087a3fd89676e256b4c43acfc9490db/1398009276/Fight%20Club%20(1999)%202160p%20UHD%20BluRay%20HDR%2010bit%20HEVC%20[Hindi%20DDP%202.0%20+%20English%20DTS-HD%20MA%205.1]%20x265%20(j3rico-LUMiX).mkv"
                 },
                 {
                   "label": "1080p",
@@ -1341,12 +1460,12 @@
             "serverAttempts": []
           },
           "tiers": {
-            "latencyMs": 21260,
+            "latencyMs": 21851,
             "4khdhub": {
               "ok": true,
               "reason": null,
               "rawUrl": "https://c6b1e8c93683bdde581e2164cb9657c9.r2.cloudflarestorage.com/hub/bc953c1f1cee5b851b6a0a9112531074",
-              "rawUrlFull": "https://c6b1e8c93683bdde581e2164cb9657c9.r2.cloudflarestorage.com/hub/bc953c1f1cee5b851b6a0a9112531074?X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Credential=ce3806fdca997f65e356f3b6fc2f735d%2F20261004%2Fauto%2Fs3%2Faws4_request&X-Amz-Date=20261004T100414Z&X-Amz-Expires=28800&X-Amz-SignedHeaders=host&res",
+              "rawUrlFull": "https://c6b1e8c93683bdde581e2164cb9657c9.r2.cloudflarestorage.com/hub/bc953c1f1cee5b851b6a0a9112531074?X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Credential=ce3806fdca997f65e356f3b6fc2f735d%2F20261004%2Fauto%2Fs3%2Faws4_request&X-Amz-Date=20261004T101945Z&X-Amz-Expires=28800&X-Amz-SignedHeaders=host&res",
               "score": 92,
               "qualifiesViaScoreOnly": true,
               "playback": {
@@ -1359,7 +1478,7 @@
                 "headText": ".E..B...B...B.",
                 "looksLikeHtml": false,
                 "looksLikeScript": false,
-                "latencyMs": 187
+                "latencyMs": 144
               },
               "qualities": [
                 "2160p (4K)",
@@ -1380,8 +1499,8 @@
             "hicine4k": {
               "ok": true,
               "reason": null,
-              "rawUrl": "https://video-downloads.googleusercontent.com/ADGPM2k4bGrYFvHS1fxh--tV-3jUAAb78FBVtLEJAjiaq2BnUbxO8SVAIeUt7WhybUaZX_WOgytls9qJvi1yVVYkD5iCweVE7JWo-CUwxHEGUCyAD3Yx94UMnf6-p3uhaIlzGei_2KW1nzGxDNuKp5gcmu0tQ4P_zFVZgQpAQEfW3iPsZGbM9WiwRszELCrtrM8M4QmfINV4wqZmYrUhxsVv6-QqS3lgdTdWjTxHYjHlJhBMpWAZrtcEzhEeidIZGuwnFPbpShczABmp0qILvGNXy6hSo8Z_aEjztvfORNoXcv95Wg4mh9Q0OXSDZOWIs1tL5SnvdSC5AtGy2Lm_ZcS9FhLVrohGtgnvj2HOtqIqGu9s2Xa-uFoRfHJEcMkZSe89wPiN9tu7ENL4aKx7KvmHaSdf8P3cnGzJ0bysMytv09TICXT7AQhRFULWNvjhDqmEKinhrrCNpZDhxjdS8haoJaKn3nR5Yayq_ZKH3-ALkuWebCmb9An9QQKPsjifo_JNtakP70ycWt5OdrLXPRQ23YiQ6_-fKL3nbz4GvuRQUgDXDM_hvMBA15yMGoY3n2wTGeMIvbFDE_j7dSV3UtnwrWiftQCevUb6XoWC-pIdx_lvoPyvreGKn40uAXt0bJrqFh3XHaM-Qy2WggRFmJ57KaXHNZoCsaKCEJ9pgxsHDtsBMZ1e4D5YKoGl6DtcTWVXnV_3YoRiP0jg6xcCU8pZAj9VR7YFWptr1nsVwT74JWyaSTWFpMUuhrLW4CXyCRCg0hkTTiaajoTD474x1_hAoZJYs8pJnaXPu576roLJQ4rfjFQPFycOYJ0jclLbpKvKJ0rxBD1Ix9cGWHxMbapr7HggLDaSTMAkiL5tvDQkh2nudvjTwIiB801yOVMNaOOsA5It5vAbcxoflqhHUbjd6P6AmqWBdFF2qRcOy8HYE24cF0rgdImuMWOPwhL0Rv5cFkBbF5BQ8II8m8ub34F9DKUs5qgBohx160XeNNvY2-nGu6Tj0VDRzb4y5it3cO-RgfwL81IRye5opeqy-C6XFzXPqsIZR-2271CuLkv7Bovq8aMqPfsTQMRpsRfb6CTWi7_rgRjQbJ5z6Y8XQNnHDePBv2qtFaRBlY_Q9RLFPGWhTjXwAnEvnBIB_LwzJEiLYjFCd5RqtRYiXma5G6X7M8YnA3u8Ng",
-              "rawUrlFull": "https://video-downloads.googleusercontent.com/ADGPM2k4bGrYFvHS1fxh--tV-3jUAAb78FBVtLEJAjiaq2BnUbxO8SVAIeUt7WhybUaZX_WOgytls9qJvi1yVVYkD5iCweVE7JWo-CUwxHEGUCyAD3Yx94UMnf6-p3uhaIlzGei_2KW1nzGxDNuKp5gcmu0tQ4P_zFVZgQpAQEfW3iPsZGbM9WiwRszELCrtrM8M4QmfINV4wqZmYrUhxsVv6-QqS3lgdTdWjTxHYjHlJhBMpWAZrtcEzhEeid",
+              "rawUrl": "https://video-downloads.googleusercontent.com/ADGPM2kK8KJw60U4Yu_BMNa5DQLFnJcrmwnRtBRnQ5Ly_eXCahuPOjHvZll_jSB-rBGUAkOhqK1dPVXUG1VXSwwtf3A341A4NZBs_Dg5pYWNCkSlfOF4WROxnx7Fx3TzVAzyESISNflODzzmmKcNID-1KYtG4tclnUgbACixthQ7jWnO_qZDnWmUHAxwDDqDpyWct3KM-iyw5N6EXMjYQOteW5uArDWpUGK38s0rh8hi3YnBe36Hl5SbVjnaJF6de8zbSB77BN4nYt_emVnb0KL3iotvyxBPr9SzNR8gt7A9NpwzfU8maTHq5BTIi9P1Rqrn5sRKv5z9mG1zhxQP4wLn11g9LfB-N5mf3KVhp2qnCTwfMy8wSk-M8VId9VzicOqMgWtrIKuitvLAvQO96Acnh1gj66OXiilXzl5GOxXpH0_ybQZBJJvTsStmSAn2tSMR546uSqPxs-VO5_KqS7VJ6Wuhpe_IgVFpAHnNgzeUQKOyZtZTJwP8IHp5zAp1LPVc6HGCfOJsloExQ-vjY4RYlh3nLyTiDgWO8toD3LXmzWcYmqLOvXidHkJd8_vjKrlp2Ns8nPWX8fVtJ1RbglP6q--lhYgzSZgdqirLqGx9SIxVrZCZdzAZZhVyG8rXMAoGSizuPcp6hOpq_1wmkgNDBY8B3M9LpcR_DHjQytTHLtw8UktY6GFYeRMqvezy7OjW8AJpBU9R9MJgKvS_fX--p4G9orq8j7kxZitJMxg6xxgFQ468Lck_kekahkTYOIR_IL94Xtsv9tJwHIFJpEdgG92C8ovzjpCxDKRgTMki4pi7vlOnMZZnLKnSehf6Dq-DS2C_-I6_syofGVGc2ZB3odL-huliR7M96e6JwpTXRhddVeHPv7K0osxyi1xVHYL6ZQoGYcJ7Faj3uLKz76-Bd0zX64yfHKRYXPCbYPVaGvPmvYV_yEln-HarU8VRqvIPyVV6_AmWRzDdIdXIYRXLku2BRPdAKVPeVt71vrtpFoHeeppv9v7i0Fli578glxpY4w-1z0uz-YH1d6NvPUnUSCfIwvBcLHwNxpw2eZT0hWxpr8zw3KdCfwSBaLNJFlCmV5VoNlym9YIf1xmya3GQJGRb7_uemSNLcN06itAYPH7bKmn1qCCLixj9BMFNaxCDhzcJo66P-anzenwWZtY-xFRYf2UjhA",
+              "rawUrlFull": "https://video-downloads.googleusercontent.com/ADGPM2kK8KJw60U4Yu_BMNa5DQLFnJcrmwnRtBRnQ5Ly_eXCahuPOjHvZll_jSB-rBGUAkOhqK1dPVXUG1VXSwwtf3A341A4NZBs_Dg5pYWNCkSlfOF4WROxnx7Fx3TzVAzyESISNflODzzmmKcNID-1KYtG4tclnUgbACixthQ7jWnO_qZDnWmUHAxwDDqDpyWct3KM-iyw5N6EXMjYQOteW5uArDWpUGK38s0rh8hi3YnBe36Hl5SbVjnaJF",
               "score": 100,
               "qualifiesViaScoreOnly": true,
               "playback": {
@@ -1411,7 +1530,7 @@
         },
         "hamster": {
           "workerEndToEnd": {
-            "latencyMs": 1074,
+            "latencyMs": 10289,
             "status": 200,
             "ok": true,
             "error": null,
@@ -1426,7 +1545,7 @@
               "format": "hls",
               "streamUrl": "server-live-probe.test/api/proxy",
               "streamUrlIsRelative": true,
-              "rawUrl": "https://img1.klnwm.com/hls/78164859/720/index_364.m3u8",
+              "rawUrl": "https://img1.hlnom.com/hls/78164859/720/index_363.m3u8",
               "rawUrlKind": "hls",
               "qualityDegraded": false,
               "qualities": [
@@ -1485,8 +1604,8 @@
               }
             ],
             "playback": {
-              "resolvedTarget": "https://img1.klnwm.com/hls/78164859/720/index_364.m3u8?auth_key=bg7gdOXlLcdW1rnYwpMmT9jNILuO0NRhnZXsk0r%2BDcQ%3D&expire=1791119087281",
-              "proxyTarget": "/api/proxy?url=https%3A%2F%2Fimg1.klnwm.com%2Fhls%2F78164859%2F720%2Findex_364.m3u8%3Fauth_key%3Dbg7gdOXlLcdW1rnYwpMmT9jNILuO0NRhnZXsk0r%252BDcQ%253D%26expire%3D1791119087281&mode=full&referer=https%3A%2F%2Fapi.hlowb.com%2F",
+              "resolvedTarget": "https://img1.hlnom.com/hls/78164859/720/index_363.m3u8?auth_key=Yb7hCR1czERB9JcSRXVxa1w9cp7vToGrbVuA6nsx8Z8%3D&expire=1791120029081",
+              "proxyTarget": "/api/proxy?url=https%3A%2F%2Fimg1.hlnom.com%2Fhls%2F78164859%2F720%2Findex_363.m3u8%3Fauth_key%3DYb7hCR1czERB9JcSRXVxa1w9cp7vToGrbVuA6nsx8Z8%253D%26expire%3D1791120029081&mode=full&referer=https%3A%2F%2Fapi.hlowb.com%2F",
               "proxy": {
                 "ok": true,
                 "status": 200,
@@ -1497,7 +1616,7 @@
                 "headText": "#EXTM3U.#EXT-X-V",
                 "looksLikeHtml": false,
                 "looksLikeScript": false,
-                "latencyMs": 259
+                "latencyMs": 402
               },
               "direct": {
                 "ok": true,
@@ -1509,12 +1628,12 @@
                 "headText": "#EXTM3U.#EXT-X-V",
                 "looksLikeHtml": false,
                 "looksLikeScript": false,
-                "latencyMs": 217
+                "latencyMs": 312
               }
             }
           },
           "nodeDirect": {
-            "latencyMs": 0,
+            "latencyMs": 10135,
             "ok": false,
             "reason": "hamster_all_sources_exhausted",
             "selectedTier": null,
@@ -1544,7 +1663,7 @@
             }
           },
           "nodeWaterfall": {
-            "latencyMs": 856,
+            "latencyMs": 11455,
             "ok": true,
             "reason": null,
             "requestedServer": "hamster",
@@ -1556,7 +1675,7 @@
               "format": "hls",
               "streamUrl": "server-live-probe.test/api/proxy",
               "streamUrlIsRelative": true,
-              "rawUrl": "https://img1.klnwm.com/hls/78164859/720/index_364.m3u8",
+              "rawUrl": "https://img1.hlnom.com/hls/78164859/720/index_363.m3u8",
               "rawUrlKind": "hls",
               "qualityDegraded": false,
               "qualities": [
@@ -1579,31 +1698,31 @@
             "serverAttempts": [
               {
                 "server": "hamster",
-                "latencyMs": 0,
+                "latencyMs": 10193,
                 "reason": "hamster_all_sources_exhausted",
                 "diagMessage": "All Hamster Wheel providers (Videasy, Peachify, VidSrc) failed to resolve a stream."
               }
             ]
           },
           "providers": {
-            "latencyMs": 0,
+            "latencyMs": 9501,
             "videasy": {
               "ok": false,
-              "reason": "circuit_open",
+              "reason": "videasy_no_sources",
               "provider": null,
               "rawUrl": null,
               "audioTracks": []
             },
             "peachify": {
               "ok": false,
-              "reason": "circuit_open",
+              "reason": "peachify_no_sources",
               "provider": null,
               "rawUrl": null,
               "audioTracks": []
             },
             "vidsrc": {
               "ok": false,
-              "reason": "circuit_open",
+              "reason": "vidsrc_no_second_url",
               "provider": null,
               "rawUrl": null,
               "audioTracks": []
@@ -1612,7 +1731,7 @@
         }
       },
       "fourKChain": {
-        "latencyMs": 509,
+        "latencyMs": 1728,
         "host": "https://4khdhub.one",
         "searchUrl": null,
         "cards": [
@@ -2132,6 +2251,107 @@
         "searchStatus": 200,
         "detailUrl": "https://4khdhub.one/fight-club-movie-540/",
         "detailStatus": 200
+      },
+      "hamsterRaw": {
+        "latencyMs": 73446,
+        "query": "tmdb=550",
+        "videasy": [
+          {
+            "url": "https://api.videasy.net/mb-flix/sources-with-title",
+            "status": 0,
+            "error": "This operation was aborted",
+            "latencyMs": 12000
+          },
+          {
+            "url": "https://api.videasy.net/1movies/sources-with-title",
+            "status": 0,
+            "error": "This operation was aborted",
+            "latencyMs": 12001
+          },
+          {
+            "url": "https://api.videasy.net/cdn/sources-with-title",
+            "status": 0,
+            "error": "This operation was aborted",
+            "latencyMs": 12000
+          },
+          {
+            "url": "https://api.videasy.net/superflix/sources-with-title",
+            "status": 0,
+            "error": "This operation was aborted",
+            "latencyMs": 12001
+          },
+          {
+            "url": "https://api.videasy.net/lamovie/sources-with-title",
+            "status": 0,
+            "error": "This operation was aborted",
+            "latencyMs": 12000
+          },
+          {
+            "url": "https://api2.videasy.net/cuevana/sources-with-title",
+            "status": 0,
+            "error": "fetch failed",
+            "latencyMs": 76
+          },
+          {
+            "url": "https://api.videasy.net/hdmovie/sources-with-title",
+            "status": 0,
+            "error": "This operation was aborted",
+            "latencyMs": 12000
+          }
+        ],
+        "peachify": [
+          {
+            "url": "https://uwu.eat-peach.sbs/moviebox/api",
+            "status": 0,
+            "error": "fetch failed",
+            "latencyMs": 80
+          },
+          {
+            "url": "https://usa.eat-peach.sbs/holly/api",
+            "status": 0,
+            "error": "fetch failed",
+            "latencyMs": 81
+          },
+          {
+            "url": "https://usa.eat-peach.sbs/air/api",
+            "status": 0,
+            "error": "fetch failed",
+            "latencyMs": 36
+          },
+          {
+            "url": "https://usa.eat-peach.sbs/multi/api",
+            "status": 0,
+            "error": "fetch failed",
+            "latencyMs": 92
+          },
+          {
+            "url": "https://uwu.eat-peach.sbs/net/api",
+            "status": 0,
+            "error": "fetch failed",
+            "latencyMs": 62
+          },
+          {
+            "url": "https://uwu.eat-peach.sbs/bmb/api",
+            "status": 0,
+            "error": "fetch failed",
+            "latencyMs": 60
+          }
+        ],
+        "vidsrc": {
+          "embedUrl": "https://vsembed.ru/embed/movie?tmdb=550",
+          "status": 200,
+          "contentType": "text/html; charset=UTF-8",
+          "bytes": 54107,
+          "head": "<!DOCTYPE html> <html lang=\"en\"> <head> <meta charset=\"UTF-8\"> <meta name=\"viewport\" content=\"width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no\"> <meta name=\"referrer\" content=\"origin\"> <title>Player</title> <script src",
+          "latencyMs": 626,
+          "fetchMatches": [],
+          "scriptSrcs": [
+            "/assets/sbx.js?v=1786671805",
+            "/assets/disable-devtool.js?v=1785879645"
+          ],
+          "iframeSrcs": [],
+          "bodyHead": "<!DOCTYPE html> <html lang=\"en\"> <head> <meta charset=\"UTF-8\"> <meta name=\"viewport\" content=\"width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no\"> <meta name=\"referrer\" content=\"origin\"> <title>Player</title> <script src=\"/assets/sbx.js?v=1786671805\"></script> <style>*{margin:0;padding:0;box-sizing:border-box}html,body{width:100%;height:100%;overflow:hidden;background:#000}ifra"
+        }
       }
     },
     "tv:94605": {
@@ -2153,7 +2373,7 @@
       "servers": {
         "ursa": {
           "workerEndToEnd": {
-            "latencyMs": 4738,
+            "latencyMs": 6875,
             "status": 200,
             "ok": true,
             "error": null,
@@ -2254,7 +2474,7 @@
                 "headText": "{\"ok\":false,\"err",
                 "looksLikeHtml": false,
                 "looksLikeScript": false,
-                "latencyMs": 1
+                "latencyMs": 0
               },
               "direct": {
                 "ok": true,
@@ -2266,12 +2486,12 @@
                 "headText": ".E..B...B...B.",
                 "looksLikeHtml": false,
                 "looksLikeScript": false,
-                "latencyMs": 739
+                "latencyMs": 699
               }
             }
           },
           "nodeDirect": {
-            "latencyMs": 4459,
+            "latencyMs": 5900,
             "ok": true,
             "reason": null,
             "selectedTier": "4khdhub",
@@ -2330,7 +2550,7 @@
             }
           },
           "nodeWaterfall": {
-            "latencyMs": 1463,
+            "latencyMs": 1823,
             "ok": true,
             "reason": null,
             "requestedServer": "ursa",
@@ -2380,7 +2600,7 @@
             "serverAttempts": []
           },
           "tiers": {
-            "latencyMs": 10311,
+            "latencyMs": 9623,
             "4khdhub": {
               "ok": true,
               "reason": null,
@@ -2398,7 +2618,7 @@
                 "headText": ".E..B...B...B.",
                 "looksLikeHtml": false,
                 "looksLikeScript": false,
-                "latencyMs": 718
+                "latencyMs": 626
               },
               "qualities": [
                 "2160p (4K)",
@@ -2420,8 +2640,8 @@
             "hicine4k": {
               "ok": true,
               "reason": null,
-              "rawUrl": "https://video-downloads.googleusercontent.com/ADGPM2muLCiJWKsOBUM7Pq4LLy4bQP9ItySVh6KsSd9qleyLYhsHgmRW0ZFBfPG_JT8JNbR30uFCapFQPQJEsdqZwyHRa6MinEBpzNqfwfGAID0NQAy0lbaIHmVmqNsolSmrOWlyAxibJBvgbgYbkFewBlpzas55CVqEtLpD2qXoSIn7UFnXE6TCHnpCpM7DY_uSY0qKJ5UYOFR4HqMkencG-kvPsws79piOKGxzjJhNwSTKJePgYNtegwmIdl-DoBwwlGWlqgTPUJK0X6CJtGVA-T1Qm2XRsk_q7f5bb1sXB7EFb-CMPcWHoHvP007ix1UJY9srFoj-pRa1x32q2NRxM11Yp8mW5UehzcAX6cs9L1-Hg5en8W4oF3QRsX50AyNj6EhsMbJAh7kU0SK9sSK-ktxQAMojMjjq25deiOIifXbUlwENfFa5KqjogQmlT2Ip8stM5QSM8sCdiqfq2t56XNHbXEdxl_EyXlWDyNj3J9lvVzbGd7a3NFEdazaUACjN9pNtA047ssYNahxc4NMQhPMyB0xLplcqlQiZzC8swMnwIqF3hE_Siz-5OkQowt8hz2mknxpgwlJwN3la9slqMjhOx6ghqMfOMkRrOH1Tn1k5XN7fyP39i-haXcaJrs1aFfDLcNpgx0lp_qD9r-GrQUK-slU1SwTcTGF2NotpHpsUVDq5Yl7IRz7IVl6KuOS1QQ_G38mB0N8t8Bs2jYeyXl_95FZBso0wXtA_H3iqx2iN5-NtqwvqnU1TZ5h5u7BVU_85yy-DB8P_lmBb5Sw0V0tdSopYo6O8RG22F8DIgSgy1oMZDuAVR6LTYYpHybVr5TtQJOFfTkBMj4V3MzY0Xcjj37vLB7Pt26af5EJFNi8-8S-fsxTk3827hiUcoF-Wtp7kFF_KstbruLbbFu21en2NNmAKnmadv1-vi7lfaiIHJ0V2WM-7JEm78oLrEEbKg3MCFj8Otv7P5jeYc_mCEMBvw19aWLXPL9WNXjCFEHW-3chUX-yqGhnjn3TOEnJ5vfEG4-d8tp9nmXQWk9gvv9AN6IIP-HtgBXX-ZEtLyU4TjRUyigKjVX2tuJN7Br7qknhwkN4GIwFcIYxr6b9edfr0FZJzypMK5sBbQrAit6PPUU-c7wcQaz5PJxobmHWyPMOTX0MdAHWPWdd9w13Qn0c4dQS_fQ",
-              "rawUrlFull": "https://video-downloads.googleusercontent.com/ADGPM2muLCiJWKsOBUM7Pq4LLy4bQP9ItySVh6KsSd9qleyLYhsHgmRW0ZFBfPG_JT8JNbR30uFCapFQPQJEsdqZwyHRa6MinEBpzNqfwfGAID0NQAy0lbaIHmVmqNsolSmrOWlyAxibJBvgbgYbkFewBlpzas55CVqEtLpD2qXoSIn7UFnXE6TCHnpCpM7DY_uSY0qKJ5UYOFR4HqMkencG-kvPsws79piOKGxzjJhNwSTKJePgYNtegwmIdl",
+              "rawUrl": "https://video-downloads.googleusercontent.com/ADGPM2nlr7zcVvuE6I_PYoR_loJ49mN5escb0F3O6m0PFYhu0dS_KU6eT5BH6YmvR06P7Br8utP0vpW2Ls-JLL-0gJrsl0gKgzHurOw-JUA0rRTIeGuNhG37HPkudHeRFGE0aGeybjDl1y5MD5BTTlO6PmVPz6zK8MVZysoHUzDcYqv1LX-GNrBIPtA9P7TRJTCNgplHdGU0Q5muBa2W_VYracy9cnqWS0rqWUc3OBgqhOcuGdDVJ7urQr5JzXQfMhi7lkjvrf_lAQv2-8mYnaS6vsCAuXUlamtBlhFL2aJwbZhcTm45YV7kfjxt6lA0iiHyeHksFjK74BMSfJOoz0DeJwrBPE4MEzJNRGhoyXZLZPAWylF85A6VCZ913N5A2yFPXnRAacLQmQ4AiEz5wsk-_j5xuomIADs-XNHwEkvapf0cl_QQvcri_ZjGiqc3zXfaQq3hfElQa6D8q9G38AHy0HdUkLMuGWU2MugzEkxI2pIzmuEapQ6BjM9Rdk7KXkaZKtgZ5dV_NJx_GjN2dNVCTw1hHzs5QaFruVHFMHtzH7o8zBPdIVyuo8-KeKPs6iowkVhwBRksG1qMRM-fFxN5H_wwWaZ3FSgqstKtvkPIOy0xNvvA85jISQFhk5SH3cLvezwXLxogFXdWKxWcOzFq9TXCgeL04lTKHKV5CVoqgFFF0YxHrjuBnUwuRXZ8Le5oMGdxubouacfew8uv62SiQ4MTkaBsNTl2MiqxaFy4Xa22Yq5PGv4ZylrRnRwRNJ9HUexs1KYoy25Y8uo-SOIBN8hDMrbnrRw8gOZQuj9KTNOwmJgwL-eNBxik4EbOL2de8VDHXBhFZlYLP4uevJRLfc4HgxNbElURl1R0Y44w3ND2-7roOdDM2kNUyOQBR30vSmaMstD5OhsFqNewnHGO3z1RUqXXtiVXH1bMRn7uLsz0ozAiecTQ9HOkBJokB5w-BRMgA4u4LMZqHLpiBl_7mXUwoaSgRw3lmWpXx_PAtUIMNpyJG2zfsj-1r1jrVe3IIaH59ihMmfNrkbvGss4x9FkVJ8POfASJxxOzbXp9rZ9esfCAN6UOpE3RCA_ZIeQ9QH2HUNp0fjEATxyUg7PUWSYDhEJ9s5qyQpI3EiHDxctJQLMg3ecGwtaiJt-l4KKE1EnLLIs8Qqx3Gx9sOx-rLCFkjwwORg",
+              "rawUrlFull": "https://video-downloads.googleusercontent.com/ADGPM2nlr7zcVvuE6I_PYoR_loJ49mN5escb0F3O6m0PFYhu0dS_KU6eT5BH6YmvR06P7Br8utP0vpW2Ls-JLL-0gJrsl0gKgzHurOw-JUA0rRTIeGuNhG37HPkudHeRFGE0aGeybjDl1y5MD5BTTlO6PmVPz6zK8MVZysoHUzDcYqv1LX-GNrBIPtA9P7TRJTCNgplHdGU0Q5muBa2W_VYracy9cnqWS0rqWUc3OBgqhOcuGdDVJ7urQr5JzX",
               "score": 100,
               "qualifiesViaScoreOnly": true,
               "playback": {
@@ -2434,7 +2654,7 @@
                 "headText": ".E..B...B...B.",
                 "looksLikeHtml": false,
                 "looksLikeScript": false,
-                "latencyMs": 9478
+                "latencyMs": 8768
               },
               "qualities": [
                 "720p",
@@ -2455,7 +2675,7 @@
         },
         "hamster": {
           "workerEndToEnd": {
-            "latencyMs": 2083,
+            "latencyMs": 10519,
             "status": 200,
             "ok": true,
             "error": null,
@@ -2470,7 +2690,7 @@
               "format": "hls",
               "streamUrl": "server-live-probe.test/api/proxy",
               "streamUrlIsRelative": true,
-              "rawUrl": "https://img1.klnwm.com/hls_mps/244490619/720/index_364.m3u8",
+              "rawUrl": "https://img1.hlnom.com/hls_mps/244490619/720/index_363.m3u8",
               "rawUrlKind": "hls",
               "qualityDegraded": false,
               "qualities": [
@@ -2529,8 +2749,8 @@
               }
             ],
             "playback": {
-              "resolvedTarget": "https://img1.klnwm.com/hls_mps/244490619/720/index_364.m3u8?auth_key=2HjY58UokZ%2FEFUmDAxttEEwW5kW1RGzzJgi%2FXfORzvk%3D&expire=1791119113197",
-              "proxyTarget": "/api/proxy?url=https%3A%2F%2Fimg1.klnwm.com%2Fhls_mps%2F244490619%2F720%2Findex_364.m3u8%3Fauth_key%3D2HjY58UokZ%252FEFUmDAxttEEwW5kW1RGzzJgi%252FXfORzvk%253D%26expire%3D1791119113197&mode=full&referer=https%3A%2F%2Fapi.hlowb.com%2F",
+              "resolvedTarget": "https://img1.hlnom.com/hls_mps/244490619/720/index_363.m3u8?auth_key=KvGfdnslyHYW2H4UzLWt6pTcvaR8DxCHsLynA%2BHMkmo%3D&expire=1791120172163",
+              "proxyTarget": "/api/proxy?url=https%3A%2F%2Fimg1.hlnom.com%2Fhls_mps%2F244490619%2F720%2Findex_363.m3u8%3Fauth_key%3DKvGfdnslyHYW2H4UzLWt6pTcvaR8DxCHsLynA%252BHMkmo%253D%26expire%3D1791120172163&mode=full&referer=https%3A%2F%2Fapi.hlowb.com%2F",
               "proxy": {
                 "ok": true,
                 "status": 200,
@@ -2541,7 +2761,7 @@
                 "headText": "#EXTM3U.#EXT-X-V",
                 "looksLikeHtml": false,
                 "looksLikeScript": false,
-                "latencyMs": 236
+                "latencyMs": 312
               },
               "direct": {
                 "ok": true,
@@ -2553,12 +2773,12 @@
                 "headText": "#EXTM3U.#EXT-X-V",
                 "looksLikeHtml": false,
                 "looksLikeScript": false,
-                "latencyMs": 204
+                "latencyMs": 300
               }
             }
           },
           "nodeDirect": {
-            "latencyMs": 9997,
+            "latencyMs": 10354,
             "ok": false,
             "reason": "hamster_all_sources_exhausted",
             "selectedTier": null,
@@ -2588,7 +2808,7 @@
             }
           },
           "nodeWaterfall": {
-            "latencyMs": 11494,
+            "latencyMs": 11720,
             "ok": true,
             "reason": null,
             "requestedServer": "hamster",
@@ -2600,7 +2820,7 @@
               "format": "hls",
               "streamUrl": "server-live-probe.test/api/proxy",
               "streamUrlIsRelative": true,
-              "rawUrl": "https://img1.klnwm.com/hls_mps/244490619/720/index_364.m3u8",
+              "rawUrl": "https://img1.hlnom.com/hls_mps/244490619/720/index_363.m3u8",
               "rawUrlKind": "hls",
               "qualityDegraded": false,
               "qualities": [
@@ -2623,7 +2843,7 @@
             "serverAttempts": [
               {
                 "server": "hamster",
-                "latencyMs": 10220,
+                "latencyMs": 10162,
                 "reason": "hamster_all_sources_exhausted",
                 "diagMessage": "All Hamster Wheel providers (Videasy, Peachify, VidSrc) failed to resolve a stream."
               }
@@ -2656,7 +2876,7 @@
         }
       },
       "fourKChain": {
-        "latencyMs": 554,
+        "latencyMs": 4325,
         "host": "https://4khdhub.one",
         "searchUrl": null,
         "cards": [
@@ -3176,9 +3396,110 @@
         "searchStatus": 200,
         "detailUrl": "https://4khdhub.one/arcane-series-4294/",
         "detailStatus": 200
+      },
+      "hamsterRaw": {
+        "latencyMs": 73383,
+        "query": "tmdb=94605&s=1&e=1",
+        "videasy": [
+          {
+            "url": "https://api.videasy.net/mb-flix/sources-with-title",
+            "status": 0,
+            "error": "This operation was aborted",
+            "latencyMs": 12000
+          },
+          {
+            "url": "https://api.videasy.net/1movies/sources-with-title",
+            "status": 0,
+            "error": "This operation was aborted",
+            "latencyMs": 12000
+          },
+          {
+            "url": "https://api.videasy.net/cdn/sources-with-title",
+            "status": 0,
+            "error": "This operation was aborted",
+            "latencyMs": 12000
+          },
+          {
+            "url": "https://api.videasy.net/superflix/sources-with-title",
+            "status": 0,
+            "error": "This operation was aborted",
+            "latencyMs": 12001
+          },
+          {
+            "url": "https://api.videasy.net/lamovie/sources-with-title",
+            "status": 0,
+            "error": "This operation was aborted",
+            "latencyMs": 12000
+          },
+          {
+            "url": "https://api2.videasy.net/cuevana/sources-with-title",
+            "status": 0,
+            "error": "fetch failed",
+            "latencyMs": 70
+          },
+          {
+            "url": "https://api.videasy.net/hdmovie/sources-with-title",
+            "status": 0,
+            "error": "This operation was aborted",
+            "latencyMs": 12000
+          }
+        ],
+        "peachify": [
+          {
+            "url": "https://uwu.eat-peach.sbs/moviebox/api",
+            "status": 0,
+            "error": "fetch failed",
+            "latencyMs": 12
+          },
+          {
+            "url": "https://usa.eat-peach.sbs/holly/api",
+            "status": 0,
+            "error": "fetch failed",
+            "latencyMs": 19
+          },
+          {
+            "url": "https://usa.eat-peach.sbs/air/api",
+            "status": 0,
+            "error": "fetch failed",
+            "latencyMs": 37
+          },
+          {
+            "url": "https://usa.eat-peach.sbs/multi/api",
+            "status": 0,
+            "error": "fetch failed",
+            "latencyMs": 37
+          },
+          {
+            "url": "https://uwu.eat-peach.sbs/net/api",
+            "status": 0,
+            "error": "fetch failed",
+            "latencyMs": 24
+          },
+          {
+            "url": "https://uwu.eat-peach.sbs/bmb/api",
+            "status": 0,
+            "error": "fetch failed",
+            "latencyMs": 20
+          }
+        ],
+        "vidsrc": {
+          "embedUrl": "https://vsembed.ru/embed/tv?tmdb=94605&season=1&episode=1",
+          "status": 200,
+          "contentType": "text/html; charset=UTF-8",
+          "bytes": 54133,
+          "head": "<!DOCTYPE html> <html lang=\"en\"> <head> <meta charset=\"UTF-8\"> <meta name=\"viewport\" content=\"width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no\"> <meta name=\"referrer\" content=\"origin\"> <title>Player</title> <script src",
+          "latencyMs": 591,
+          "fetchMatches": [],
+          "scriptSrcs": [
+            "/assets/sbx.js?v=1786671805",
+            "/assets/disable-devtool.js?v=1785879645"
+          ],
+          "iframeSrcs": [],
+          "bodyHead": "<!DOCTYPE html> <html lang=\"en\"> <head> <meta charset=\"UTF-8\"> <meta name=\"viewport\" content=\"width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no\"> <meta name=\"referrer\" content=\"origin\"> <title>Player</title> <script src=\"/assets/sbx.js?v=1786671805\"></script> <style>*{margin:0;padding:0;box-sizing:border-box}html,body{width:100%;height:100%;overflow:hidden;background:#000}ifra"
+        }
       }
     }
   },
-  "finishedAt": "2026-10-04T10:05:45.318Z",
-  "durationMs": 190655
+  "finishedAt": "2026-10-04T10:24:42.207Z",
+  "durationMs": 441652
 }
