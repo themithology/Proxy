@@ -55,12 +55,23 @@ The page is served with `Content-Security-Policy: frame-ancestors *` so any site
 | `source`   | Optional pin to one source of a multi-source server: `centaurus&source=hicine` (pinned requests do not fall through to other servers) |
 | `api`      | Absolute API base URL override (see below)                               |
 | `lang`     | Preferred audio language (e.g. `hi`, `en`, `ta`)                         |
-| `sub`      | Preferred subtitle language (e.g. `en`)                                  |
+| `sub`      | Preferred subtitle language (e.g. `en`); matched against the resolved tracks' language codes |
 | `color`    | Optional accent override (e.g. `e50914`); default styling is monochrome  |
 | `branding` | Player branding text (defaults to `LOL Embed`)                           |
 | `back`     | `false`/`0` hides the back button                                        |
 
-All of these routes serve the same player page; once loaded, the player rewrites only the query string when the episode changes, so no additional routes are needed on the player Worker.
+All of these routes serve the same player page. When the episode changes, the player rewrites the URL in place (`history.replaceState`) using whichever form it was opened with — the query string for `/embed?…`, the path segments for `/embed/tv/:id/:s/:e` — so a reload resumes the episode that is actually playing and no additional routes are needed on the player Worker.
+
+### Player UI behaviour
+
+- **Playback state:** a centre play button appears while paused (and persistently on touch devices); a small spinner shows during buffering/seeks; the HUD and cursor hide after ~3 s of inactivity during playback and come back on pause.
+- **Errors:** when a server fails the player tries the next one automatically; when every server fails it shows an error card with **Retry** and **Change server** instead of an endless spinner.
+- **Skip button & timeline:** only shown for real intro/recap/outro segments returned by the API; the timeline is split at those segments (no invented chapters). Hovering the timeline shows the time and the segment name.
+- **Episodes drawer:** the season dropdown browses another season (`/api/info?season=`) without interrupting playback; cards show a "Now playing" badge and the viewer's watched progress.
+- **Up next:** at the end of a TV episode an 8-second countdown card offers *Play now* / *Cancel*; the last available episode ends without a redirect.
+- **Resume:** progress is saved per episode in `localStorage`; anything past 95 % is treated as finished and restarts from the beginning.
+- **Subtitles:** rendered by the player (multi-line cues, HTML entities decoded, RTL languages right-aligned); style and volume preferences persist.
+- **Keyboard:** `Space`/`K` play-pause · `←`/`→`/`J`/`L` ±15 s · `↑`/`↓` volume · `M` mute · `C` captions · `F` fullscreen · `0–9` seek to 0–90 % · `Shift+N` next episode · `Esc` close menus. Touch: double-tap left/right to seek ±15 s, double-tap centre for fullscreen.
 
 > Easter egg: a human opening the Worker **root URL** in a browser gets rickrolled. API clients keep receiving the JSON service descriptor at `/` unchanged (the redirect is only served when the request advertises `Accept: text/html`).
 
@@ -180,6 +191,19 @@ Audio behavior is intentionally truthful:
 The generated Node multitrack package is cached locally (default two hours), starts serving once initial segments are ready, and is protected by HMAC-signed playlist and asset URLs (the signed master also carries the resolver's trust decision, so a provider-resolved file on a release CDN can be remuxed without opening the endpoint to arbitrary hosts). The built-in HTTPS source allowlist includes `r2.dev`, `cloudflarestorage.com`, `cloudfront.net`, `googleusercontent.com`, `workers.dev`, Pixeldrain, and the HubCloud/GDFlix release chains (`hubcloud.ist`, `hubdrive.pics`, `gdflix.dev`, `gdflix.io`, `busycdn.xyz`, `indexserver.site`). Add trusted suffixes with `MULTITRACK_ALLOWED_HOSTS`; do not allow untrusted hosts. Tune job count and cache limits with the `MULTITRACK_*` settings in `.env.example`.
 
 Codec/device combinations such as HEVC/AV1 profiles, HDR/Dolby Vision, AC-3/E-AC-3, and progressive MKV may not work in every browser. Use a compatible source/server when necessary; the backend does not transcode video to conceal these limitations.
+
+## Player UI harness (optional local/dev tooling)
+
+`scripts/dev-player-mock.mjs` serves `public/` exactly like the Worker does but answers `/api/*` from an in-memory mock (a public HLS demo stream, fake episodes, segments and subtitles), so the player UI can be iterated on without TMDB keys or reachable upstreams:
+
+```bash
+node scripts/dev-player-mock.mjs
+# http://localhost:8790/embed?type=tv&tmdb=94605&s=1&e=1                   happy path
+# http://localhost:8790/embed?type=tv&tmdb=94605&s=1&e=1&server=centaurus  server 2 fails -> automatic failover
+# http://localhost:8790/embed?type=movie&tmdb=0                            every server fails -> error state
+```
+
+`scripts/dev-worker.mjs` runs the real Worker code (`cloudflare-worker/worker.js`) against the live upstreams instead.
 
 ## Run the Node backend (optional local/dev tooling)
 
