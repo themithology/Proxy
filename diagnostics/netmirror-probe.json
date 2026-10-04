@@ -1,0 +1,138 @@
+{
+  "startedAt": "2026-10-04T07:25:41.176Z",
+  "discovery": [
+    {
+      "domain": "https://net27.cc",
+      "status": 404,
+      "latencyMs": 667,
+      "error": null,
+      "bodySample": "<!DOCTYPE html><html lang=\"en\"> <head><meta charset=\"UTF-8\"><meta name=\"clckd\" content=\"502623715d0616ada312531d38452d6c\"><meta name=\"viewport\" content=\"width=device-width, initial-scale=1, viewport-f",
+      "parse": "not-json"
+    },
+    {
+      "domain": "https://net52.cc",
+      "status": 404,
+      "latencyMs": 419,
+      "error": null,
+      "bodySample": "File not found.\n",
+      "parse": "not-json"
+    },
+    {
+      "domain": "https://net77.cc",
+      "status": 404,
+      "latencyMs": 634,
+      "error": null,
+      "bodySample": "File not found.\n",
+      "parse": "not-json"
+    },
+    {
+      "domain": "https://mobiledetect.app",
+      "status": 200,
+      "latencyMs": 199,
+      "error": null,
+      "bodySample": "{\"token_hash\":\"aHR0cHM6Ly90di5pbWdjZG4ua2lt\",\"doms\":\"false\",\"mwin\":\"true\",\"popwin\":\"true\",\"var\":\"1.0\"}",
+      "token_hash": "aHR0cHM6Ly90di5pbWdjZG4ua2lt",
+      "decoded": "https://tv.imgcdn.kim"
+    },
+    {
+      "domain": "https://mobiledetects.com",
+      "status": 200,
+      "latencyMs": 461,
+      "error": null,
+      "bodySample": "{\"token_hash\":\"aHR0cHM6Ly90di5pbWdjZG4ua2lt\",\"doms\":\"false\",\"mwin\":\"true\",\"popwin\":\"true\",\"var\":\"1.0\"}",
+      "token_hash": "aHR0cHM6Ly90di5pbWdjZG4ua2lt",
+      "decoded": "https://tv.imgcdn.kim"
+    },
+    {
+      "domain": "https://mobidetect.cc",
+      "status": 200,
+      "latencyMs": 109,
+      "error": null,
+      "bodySample": "{\"token_hash\":\"aHR0cHM6Ly90di5pbWdjZG4ua2lt\",\"doms\":\"false\",\"mwin\":\"true\",\"popwin\":\"true\",\"var\":\"1.0\"}",
+      "token_hash": "aHR0cHM6Ly90di5pbWdjZG4ua2lt",
+      "decoded": "https://tv.imgcdn.kim"
+    },
+    {
+      "domain": "https://mobidetects.top",
+      "status": 0,
+      "latencyMs": 10221,
+      "error": "fetch failed"
+    },
+    {
+      "domain": "https://getimgcdn.com",
+      "status": 0,
+      "latencyMs": 101,
+      "error": "fetch failed"
+    },
+    {
+      "domain": "https://mobidetect.art",
+      "status": 200,
+      "latencyMs": 125,
+      "error": null,
+      "bodySample": "{\"token_hash\":\"aHR0cHM6Ly90di5pbWdjZG4ua2lt\",\"doms\":\"false\",\"mwin\":\"true\",\"popwin\":\"true\",\"var\":\"1.0\"}",
+      "token_hash": "aHR0cHM6Ly90di5pbWdjZG4ua2lt",
+      "decoded": "https://tv.imgcdn.kim"
+    },
+    {
+      "domain": "https://mobidetect.click",
+      "status": 0,
+      "latencyMs": 10269,
+      "error": "fetch failed"
+    }
+  ],
+  "apiBase": "https://tv.imgcdn.kim",
+  "endpoints": {
+    "newtvSearch": {
+      "status": 403,
+      "latencyMs": 110,
+      "sample": "Page Not Found"
+    },
+    "embedMovie": {
+      "status": 403,
+      "latencyMs": 22,
+      "sample": "Page Not Found"
+    },
+    "embedTv": {
+      "status": 403,
+      "latencyMs": 7,
+      "sample": "Page Not Found"
+    }
+  },
+  "resolver": [
+    {
+      "title": "Dune: Part Two",
+      "latencyMs": 157,
+      "ok": false,
+      "sourceName": null,
+      "server": null,
+      "rawUrl": null,
+      "audioTracks": null,
+      "reason": null,
+      "error": null
+    },
+    {
+      "title": "Fight Club",
+      "latencyMs": 119,
+      "ok": false,
+      "sourceName": null,
+      "server": null,
+      "rawUrl": null,
+      "audioTracks": null,
+      "reason": null,
+      "error": null
+    },
+    {
+      "title": "Breaking Bad",
+      "latencyMs": 120,
+      "ok": false,
+      "sourceName": null,
+      "server": null,
+      "rawUrl": null,
+      "audioTracks": null,
+      "reason": null,
+      "error": null
+    }
+  ],
+  "apiBaseSource": "checknewtv token_hash",
+  "finishedAt": "2026-10-04T07:26:04.933Z"
+}
