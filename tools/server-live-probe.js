@@ -402,7 +402,118 @@ async function probeFourKChain(metadata) {
   return out;
 }
 
-/** Per-provider Hamster detail. */
+/**
+ * Raw upstream capture for the Hamster Wheel providers. The structured
+ * `providers` section says *that* they failed; this says *what* they returned
+ * (HTTP status, content type, body head) so a changed upstream contract can be
+ * fixed from the report instead of guesswork.
+ *
+ * Endpoint lists mirror `src/services/hamsterCore.js` on purpose — this is a
+ * diagnostic, and it must be able to show a *stale* list next to the live
+ * upstream.
+ */
+const HAMSTER_RAW_ENDPOINTS = {
+  videasy: [
+    'https://api.videasy.net/mb-flix/sources-with-title',
+    'https://api.videasy.net/1movies/sources-with-title',
+    'https://api.videasy.net/cdn/sources-with-title',
+    'https://api.videasy.net/superflix/sources-with-title',
+    'https://api.videasy.net/lamovie/sources-with-title',
+    'https://api2.videasy.net/cuevana/sources-with-title',
+    'https://api.videasy.net/hdmovie/sources-with-title'
+  ],
+  peachify: [
+    'https://uwu.eat-peach.sbs/moviebox',
+    'https://usa.eat-peach.sbs/holly',
+    'https://usa.eat-peach.sbs/air',
+    'https://usa.eat-peach.sbs/multi',
+    'https://uwu.eat-peach.sbs/net',
+    'https://uwu.eat-peach.sbs/bmb'
+  ]
+};
+const HAMSTER_UA =
+  'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36';
+
+async function fetchRaw(url, { headers = {}, timeoutMs = 12000 } = {}) {
+  const started = Date.now();
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    const res = await fetch(url, { headers: { 'User-Agent': HAMSTER_UA, Accept: '*/*', ...headers }, signal: controller.signal });
+    const contentType = res.headers.get('content-type') || '';
+    const body = await res.text();
+    return {
+      status: res.status,
+      contentType,
+      bytes: body.length,
+      head: body.slice(0, 240).replace(/\s+/g, ' '),
+      latencyMs: Date.now() - started
+    };
+  } catch (error) {
+    return { status: 0, error: String(error && error.message), latencyMs: Date.now() - started };
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+async function probeHamsterRaw(metadata) {
+  const qs = new URLSearchParams({ tmdb: String(metadata.tmdbId) });
+  if (metadata.type === 'tv') {
+    qs.set('s', String(metadata.season || 1));
+    qs.set('e', String(metadata.episode || 1));
+  }
+  const out = { query: qs.toString(), videasy: [], peachify: [], vidsrc: {} };
+
+  for (const endpoint of HAMSTER_RAW_ENDPOINTS.videasy) {
+    out.videasy.push({
+      url: endpoint,
+      ...(await fetchRaw(`${endpoint}?${qs.toString()}`, {
+        headers: { Accept: 'application/json, */*; q=0.01', Referer: 'https://player.videasy.net/', Origin: 'https://player.videasy.net' }
+      }))
+    });
+  }
+  for (const host of HAMSTER_RAW_ENDPOINTS.peachify) {
+    out.peachify.push({
+      url: `${host}/api`,
+      ...(await fetchRaw(`${host}/api?${qs.toString()}`, {
+        headers: { Accept: 'application/json', Referer: 'https://peachify.top/', Origin: 'https://peachify.top' }
+      }))
+    });
+  }
+
+  // VidSrc: capture the embed page and the `fetch('<url>')` the code greps for.
+  const embedPath =
+    metadata.type === 'tv'
+      ? `/embed/tv?tmdb=${metadata.tmdbId}&season=${metadata.season || 1}&episode=${metadata.episode || 1}`
+      : `/embed/movie?tmdb=${metadata.tmdbId}`;
+  const embedUrl = `https://vsembed.ru${embedPath}`;
+  const embed = await fetchRaw(embedUrl, { headers: { Referer: 'https://vsembed.ru/' } });
+  let embedBody = '';
+  try {
+    const res = await fetch(embedUrl, {
+      headers: { 'User-Agent': HAMSTER_UA, Referer: 'https://vsembed.ru/' }
+    });
+    embedBody = await res.text();
+  } catch {
+    embedBody = '';
+  }
+  const fetchMatches = [...embedBody.matchAll(/fetch\(['"]([^'"]+)['"]/g)].map((m) => m[1]);
+  const scriptSrcs = [...embedBody.matchAll(/<script[^>]+src=['"]([^'"]+)['"]/gi)].map((m) => m[1]);
+  const iframeSrcs = [...embedBody.matchAll(/<iframe[^>]+src=['"]([^'"]+)['"]/gi)].map((m) => m[1]);
+  out.vidsrc = {
+    embedUrl,
+    ...embed,
+    fetchMatches: fetchMatches.slice(0, 5),
+    scriptSrcs: scriptSrcs.slice(0, 6),
+    iframeSrcs: iframeSrcs.slice(0, 6),
+    bodyHead: embedBody.slice(0, 400).replace(/\s+/g, ' ')
+  };
+  if (fetchMatches.length) {
+    const second = fetchMatches[0].startsWith('//') ? `https:${fetchMatches[0]}` : fetchMatches[0];
+    out.vidsrc.second = { url: second, ...(await fetchRaw(second, { headers: { Referer: 'https://vsembed.ru/' } })) };
+  }
+  return out;
+}
 async function probeHamsterProviders(metadata) {
   const providers = [
     ['videasy', () => resolveVideasy(metadata, '')],
@@ -483,6 +594,9 @@ async function probeTitle(title) {
     // One title is enough to fingerprint the 4KHDHub chain; more titles only
     // re-fetch the same redirector pages.
     entry.fourKChain = await safe('ursa:chain', () => probeFourKChain(metadata));
+  }
+  if (SERVERS.includes('hamster')) {
+    entry.hamsterRaw = await safe('hamster:raw', () => probeHamsterRaw(metadata));
   }
   return entry;
 }
