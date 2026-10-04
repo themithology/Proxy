@@ -136,6 +136,16 @@ function startUpstreamMockServer() {
       const u = new URL(req.url, `http://${req.headers.host}`);
       const mockOrigin = `http://${req.headers.host}`;
 
+      // 0. TMDB /find — IMDb id translation (movie + tv fixtures)
+      if (u.pathname === '/tmdb/find/tt15239678') {
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        return res.end(JSON.stringify({ movie_results: [{ id: 693134, title: 'Dune: Part Two' }], tv_results: [] }));
+      }
+      if (u.pathname === '/tmdb/find/tt11126994') {
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        return res.end(JSON.stringify({ movie_results: [], tv_results: [{ id: 94605, name: 'Arcane' }] }));
+      }
+
       // 1. TMDB v3 TV Details
       if (u.pathname === '/tmdb/tv/94605') {
         res.writeHead(200, { 'Content-Type': 'application/json' });
@@ -770,7 +780,7 @@ async function runTests() {
   console.log('==========================================================\n');
 
   // 1. Cryptographic Unit Tests (AES-256-CBC + HMAC-SHA256 + Handshake Token)
-  console.log('[1/12] Testing HMAC proxy signing & handshake tokens...');
+  console.log('[1/13] Testing HMAC proxy signing & handshake tokens...');
   const exp = Math.floor(Date.now() / 1000) + 3600;
   const sig = signProxyParams('https://cdn.example.com/hls/master.m3u8', 'https://vidstuck.xyz/', exp);
   assert.strictEqual(
@@ -790,7 +800,7 @@ async function runTests() {
   console.log('  ✔ Passed cryptographic verification.');
 
   // 2. HiCine Multi-Quality Link Parser Unit Tests
-  console.log('[2/12] Testing HiCine Multi-Quality Link Parser...');
+  console.log('[2/13] Testing HiCine Multi-Quality Link Parser...');
   const sampleHicineSeason1 = [
     'Episode 1 : ',
     '480p : https://frosty-snowflake-407a.renker2364.workers.dev/?vcloud=https://vcloud.fit/ep1_480, https://pixeldrain.dev/u/AbCdEf123',
@@ -1049,7 +1059,7 @@ async function runTests() {
   console.log('  ✔ Passed HiCine language parsing and multi-track payload tests.');
 
   // 3. SRT -> WebVTT Converter Unit Test
-  console.log('[3/12] Testing SubRip (.srt) to WebVTT (.vtt) Converter...');
+  console.log('[3/13] Testing SubRip (.srt) to WebVTT (.vtt) Converter...');
   const sampleSrt = `1\r\n00:00:02,500 --> 00:00:05,800\r\nWelcome to Piltover.\r\n\r\n2\r\n00:00:06,100 --> 00:00:09,450\r\nThe City of Progress.\r\n`;
   const convertedVtt = srtToVtt(sampleSrt);
   assert.ok(convertedVtt.startsWith('WEBVTT'), 'Output must start with WEBVTT header');
@@ -1060,7 +1070,7 @@ async function runTests() {
   console.log('  ✔ Passed SRT -> VTT conversion.');
 
   // 4. M3U8 Manifest Rewriter Unit Test
-  console.log('[4/12] Testing M3U8 Master & Media Playlist Rewriter...');
+  console.log('[4/13] Testing M3U8 Master & Media Playlist Rewriter...');
   const sampleMasterM3u8 = [
     '#EXTM3U',
     '#EXT-X-VERSION:3',
@@ -1403,7 +1413,7 @@ async function runTests() {
 
   try {
     // 5. Health & Handshake Endpoints
-    console.log('[5/12] Testing /api/health & /api/handshake...');
+    console.log('[5/13] Testing /api/health & /api/handshake...');
     const health = await httpRequest(baseUrl, '/api/health');
     assert.strictEqual(health.status, 200);
     assert.strictEqual(health.json.ok, true);
@@ -1457,7 +1467,7 @@ async function runTests() {
     console.log('  ✔ Passed /api/health & /api/handshake.');
 
     // 6. TMDB-ID Metadata & Real IntroDB Skip Segments Resolution
-    console.log('[6/12] Testing TMDB ID -> External IDs (IMDb/TVDB) & IntroDB Skip Intro Segments...');
+    console.log('[6/13] Testing TMDB ID -> External IDs (IMDb/TVDB) & IntroDB Skip Intro Segments...');
     const infoRes = await httpRequest(baseUrl, '/api/info/tv/94605?season=1&episode=1');
     assert.strictEqual(infoRes.status, 200);
     assert.strictEqual(infoRes.json.ok, true);
@@ -1542,7 +1552,7 @@ async function runTests() {
     console.log('  ✔ Passed TMDB -> IMDb/TVDB bridging & TheIntroDB/IntroDB/AniSkip segments.');
 
     // 7. Full Production Stream Resolution + OpenSubtitles .srt.gz Decompression + M3U8 Proxy
-    console.log('[7/12] Testing /api/resolve/movie/693134, OpenSubtitles .srt.gz -> .vtt, & /api/proxy...');
+    console.log('[7/13] Testing /api/resolve/movie/693134, OpenSubtitles .srt.gz -> .vtt, & /api/proxy...');
     const resolveRes = await httpRequest(
       baseUrl,
       '/api/resolve/movie/693134?server=andromeda'
@@ -1625,7 +1635,7 @@ async function runTests() {
     // 8. Backend-only public surface: service metadata + social image, no web UI.
     // 8. Node API public surface: service metadata + social image, JSON-only.
     // (The /embed player page ships with the Cloudflare Worker; suite 10 covers it.)
-    console.log('[8/12] Testing LOL Embed branding, meta image, and JSON-only Node surface...');
+    console.log('[8/13] Testing LOL Embed branding, meta image, and JSON-only Node surface...');
     const rootInfo = await httpRequest(baseUrl, '/');
     assert.strictEqual(rootInfo.status, 200);
     assert.strictEqual(rootInfo.json.brand, 'LOL Embed');
@@ -1648,7 +1658,7 @@ async function runTests() {
     console.log('  ✔ Passed backend-only root, metadata image, and JSON-only Node surface checks.');
 
     // 9. Owner Admin Panel (/admin, Domain Telemetry, Source Replacer, Domain Blocking, Custom Overrides)
-    console.log('[9/12] Testing JSON Admin API, Domain Telemetry, Source Replacement & Firewall...');
+    console.log('[9/13] Testing JSON Admin API, Domain Telemetry, Source Replacement & Firewall...');
 
     // Simulate API requests from an external client domain (there is no embed page).
     await httpRequest(baseUrl, '/api/resolve/tv/94605?season=1&episode=1&parent=https://partner-cinema.to', {
@@ -1664,6 +1674,23 @@ async function runTests() {
     const overview = await httpRequest(baseUrl, '/api/admin/overview', { headers: adminHeaders });
     assert.strictEqual(overview.status, 200);
     assert.strictEqual(overview.json.ok, true);
+    // Dashboard feed on the Node backend (same contract as the Worker's /api/admin/stats).
+    assert.strictEqual((await httpRequest(baseUrl, '/api/admin/stats')).status, 401);
+    const nodeStats = await httpRequest(baseUrl, '/api/admin/stats?limit=5', { headers: adminHeaders });
+    assert.strictEqual(nodeStats.status, 200);
+    assert.strictEqual(nodeStats.json.stats.storage, 'process-memory');
+    assert.ok(nodeStats.json.stats.totals.resolves >= 1, 'successful resolves must be counted');
+    assert.ok(
+      nodeStats.json.stats.domains.some((d) => d.domain === 'partner-cinema.to' && d.resolves >= 1),
+      'the embedding site must be attributed from ?parent=/Referer'
+    );
+    assert.ok(nodeStats.json.stats.topTitles.some((t) => t.tmdbId === '94605' && t.label.startsWith('Arcane')));
+    assert.ok(nodeStats.json.stats.servers.some((srv) => srv.id === 'andromeda' && srv.ok >= 1), 'server attempts must feed the dashboard');
+    assert.deepStrictEqual(nodeStats.json.catalog.map((c) => c.id), ['andromeda', 'centaurus']);
+    assert.ok(overview.json.stats && overview.json.stats.totals, 'overview must embed the stats block too');
+    const nodeServers = await httpRequest(baseUrl, '/api/servers');
+    assert.strictEqual(nodeServers.status, 200);
+    assert.deepStrictEqual(nodeServers.json.servers.map((s) => [s.id, s.name]), [['andromeda', 'Fiber Optic Speedrun'], ['centaurus', 'Gigachad Node']]);
     assert.ok(
       overview.json.domains.some((d) => d.domain === 'partner-cinema.to' && d.resolves >= 1),
       'Admin API must track external API client domain stats'
@@ -1739,7 +1766,7 @@ async function runTests() {
     // the API base URL is configurable for a separate API Worker, `/` stays
     // JSON for API clients (with a browser-only rickroll easter egg), and the
     // portal/admin UI stays removed.
-    console.log('[10/12] Testing Worker /embed player page, assets, API base config & root behavior...');
+    console.log('[10/13] Testing Worker /embed player page, assets, API base config & root behavior...');
     const workerModule = await import('../cloudflare-worker/worker.js');
     const workerFetch = workerModule.default.fetch;
 
@@ -1907,7 +1934,8 @@ async function runTests() {
       assert.ok(!pathHtml.includes('<!--LOL_EMBED_CONFIG-->'), `${playerPath} config placeholder must be replaced`);
     }
 
-    // 10g. Portal, admin dashboard UI, and non-player routes stay removed on the Worker.
+    // 10g. The old portal / `/admin` UI and raw asset paths stay removed on the
+    // Worker (the owner dashboard lives at /reze, the docs at /docs — tested in 13).
     for (const removedPath of [
       '/index.html',
       '/admin.html',
@@ -1938,7 +1966,7 @@ async function runTests() {
     // Priority 1: CastleTV (South Indian, Asian, Hollywood dubs)
     // Priority 2: NetMirror (Official OTT platform mirrors)
     // Waterfall Failover: When both tiers miss, cleanly hand off to Server 2 (Centaurus)
-    console.log('[11/12] Testing Server Andromeda Multi-Tier Architecture & Waterfall Failover...');
+    console.log('[11/13] Testing Server Andromeda Multi-Tier Architecture & Waterfall Failover...');
 
     // 11a. CastleTV Unit & Sub-resolver: Security key handshake, AES-128-CBC encryption, multi-audio tracks
     const castleKey = buildCastleKey('MTIzNDU2Nzg5MA==');
@@ -2252,7 +2280,7 @@ async function runTests() {
 
     // 13. Server catalog: a rebrand / re-prioritisation must reach BOTH backends
     // and the player's server modal, with no stale names, slots, or order.
-    console.log('[12/12] Testing shared server catalog, worker servers array & player defaults...');
+    console.log('[12/13] Testing shared server catalog, worker servers array & player defaults...');
     {
       const catalog = require('../src/services/serverCatalog');
       const expected = [
@@ -2420,6 +2448,238 @@ async function runTests() {
       assert.ok(!/srvId === 'strings'/.test(workerSrc), "the dead Strings waterfall branch must be gone");
     }
     console.log('  ✔ Passed shared server catalog, worker servers array & player default tests.');
+
+    // 13. Documentation page, owner dashboard (/reze), usage statistics & persistence
+    console.log('[13/13] Testing /docs, the /reze dashboard, usage statistics, blocking & stats persistence...');
+    {
+      const adminKey = { 'X-Admin-Key': 'admin123' };
+      const callWorkerWith = (target, env = {}, init = {}) =>
+        workerFetch(new Request(target, init), { ASSETS: mockAssets, ...env }, { waitUntil() {} });
+      const statsEnv = {
+        CASTLETV_BASE_URL: `${mockUpstream.url}/castletv`,
+        NETMIRROR_BASE_URL: `${mockUpstream.url}/netmirror`,
+        NETMIRROR_WEB_MIRRORS: `${mockUpstream.url}/netmirror`,
+        HICINE_API_BASE: `${mockUpstream.url}/hicine`,
+        VIDSTUCK_BASE_URL: '',
+        TMDB_BASE_URL: `${mockUpstream.url}/tmdb`,
+        THEINTRODB_URL: `${mockUpstream.url}/theintrodb/v3`,
+        INTRODB_URL: `${mockUpstream.url}/introdb`,
+        OPENSUBTITLES_STREMIO_URL: `${mockUpstream.url}/stremio`
+      };
+      const allDownEnv = {
+        ...statsEnv,
+        CASTLETV_BASE_URL: `${mockUpstream.url}/castletv-down`,
+        NETMIRROR_BASE_URL: `${mockUpstream.url}/castletv-down`,
+        NETMIRROR_WEB_MIRRORS: `${mockUpstream.url}/castletv-down`,
+        HICINE_API_BASE: `${mockUpstream.url}/castletv-down`
+      };
+
+      // 13g. /docs (+ /documentation, trailing slash) serve public/docs.html with the runtime config injected.
+      for (const docsPath of ['/docs', '/documentation', '/docs/']) {
+        const docsRes = await callWorker(`http://player.test${docsPath}`, { API_BASE_URL: 'https://api.player.test/' });
+        assert.strictEqual(docsRes.status, 200, `${docsPath} must serve the documentation`);
+        assert.match(docsRes.headers.get('content-type') || '', /^text\/html/);
+        const docsHtml = await docsRes.text();
+        assert.ok(docsHtml.includes('<h2>Documentation</h2>'), 'docs page must render the reference');
+        assert.ok(docsHtml.includes('/embed/tv/') && docsHtml.includes('/embed/movie/'), 'docs must document both embed endpoints');
+        assert.ok(docsHtml.includes('LOL_EMBED_PLAYER_COMMAND') && docsHtml.includes('LOL_EMBED_PLAYER_EVENT'), 'docs must cover the postMessage API');
+        assert.ok(!docsHtml.includes('<!--LOL_EMBED_CONFIG-->'), 'docs config placeholder must be replaced');
+        assert.ok(docsHtml.includes('"apiBaseUrl":"https://api.player.test"'), 'docs must receive the normalized API base');
+        assert.ok(docsHtml.includes('"servers":[{"id":"andromeda"'), 'docs must receive the player-visible server catalog');
+        for (const provider of ['CastleTV', 'HiCine', 'NetMirror', 'hlowb', 'net27', 'hicine.sbs', 'vcloud']) {
+          assert.ok(!docsHtml.includes(provider), `docs must not leak the upstream provider ${provider}`);
+        }
+      }
+
+      // 13h. /reze: the dashboard shell is served privately; every number comes from the key-protected API.
+      const rezeRes = await callWorker('http://player.test/reze');
+      assert.strictEqual(rezeRes.status, 200, '/reze must serve the dashboard');
+      assert.strictEqual(rezeRes.headers.get('x-robots-tag'), 'noindex, nofollow');
+      assert.strictEqual(rezeRes.headers.get('x-frame-options'), 'DENY');
+      const rezeHtml = await rezeRes.text();
+      for (const heading of ['Most requested titles', 'Most failing titles', 'Who is using the API (sites)', 'Countries']) {
+        assert.ok(rezeHtml.includes(heading), `dashboard must render the "${heading}" card`);
+      }
+      assert.ok(rezeHtml.includes('/api/admin/stats'), 'dashboard must load its numbers from the admin API');
+      assert.ok(!rezeHtml.includes('admin123'), 'dashboard must not embed the admin key');
+      for (const removedPath of ['/docs.html', '/reze.html', '/admin', '/admin.html', '/reze/x']) {
+        const removedRes = await callWorker(`http://player.test${removedPath}`);
+        assert.strictEqual(removedRes.status, 404, `${removedPath} must stay unreachable`);
+      }
+      const rootStill = await callWorker('http://player.test/', {}, { Accept: 'text/html' });
+      assert.ok((await rootStill.text()).includes('dQw4w9WgXcQ'), '/ must still rickroll browsers');
+
+      // 13h-2. IMDb ids are accepted wherever a TMDB id is (docs: "TMDB or IMDb id").
+      const imdbInfo = await callWorker('http://player.test/api/info/movie/tt15239678', statsEnv);
+      assert.strictEqual(imdbInfo.status, 200);
+      const imdbInfoJson = await imdbInfo.json();
+      assert.strictEqual(imdbInfoJson.metadata.tmdbId, 693134, 'worker must translate IMDb ids through TMDB /find');
+      assert.strictEqual(imdbInfoJson.metadata.title, 'Dune: Part Two');
+      const imdbTv = await (await callWorker('http://player.test/api/info/tv/TT11126994?season=1&episode=1', statsEnv)).json();
+      assert.strictEqual(imdbTv.metadata.tmdbId, 94605);
+      const imdbEmbed = await callWorker('http://player.test/embed/movie/tt15239678', statsEnv);
+      assert.strictEqual(imdbEmbed.status, 200, 'the player page must accept IMDb ids in the path');
+      const nodeImdb = await httpRequest(baseUrl, '/api/info/movie/tt15239678');
+      assert.strictEqual(nodeImdb.status, 200);
+      assert.strictEqual(nodeImdb.json.metadata.tmdbId, 693134, 'node backend must translate IMDb ids too');
+
+      // 13i. Public server list without provider names (what the docs render).
+      const serversRes = await callWorker('http://player.test/api/servers');
+      assert.strictEqual(serversRes.status, 200);
+      const serversJson = await serversRes.json();
+      assert.deepStrictEqual(serversJson.servers.map((s) => s.id), ['andromeda', 'centaurus']);
+      assert.ok(serversJson.servers.every((s) => s.name && s.badge && Object.keys(s).length === 4), 'server list must be id/name/badge/priority only');
+
+      // 13j. Usage statistics (in-isolate fallback when no STATS Durable Object is bound).
+      assert.strictEqual((await callWorker('http://player.test/api/admin/stats')).status, 401, 'stats need the admin key');
+      const embedHit = await callWorker('http://player.test/embed/tv/94605/1/1', statsEnv, { Referer: 'https://fan-site.example/watch/arcane', 'CF-IPCountry': 'IN' });
+      assert.strictEqual(embedHit.status, 200);
+      const okResolve = await callWorker('http://player.test/api/resolve/movie/693134?server=andromeda&parent=https://fan-site.example', statsEnv, { 'CF-IPCountry': 'IN' });
+      assert.strictEqual(okResolve.status, 200);
+      const failT0 = Date.now();
+      const failResolve = await callWorker('http://player.test/api/resolve/movie/550?server=andromeda&parent=https://fan-site.example', allDownEnv, { 'CF-IPCountry': 'PK' });
+      assert.strictEqual(failResolve.status, 502, 'all-down upstreams must produce a failed resolve');
+      assert.ok(Date.now() - failT0 < 8000, 'down upstreams must fail fast');
+      await callWorker(`http://player.test/api/proxy?url=${encodeURIComponent(`${mockUpstream.url}/castletv-down`)}`, statsEnv, { Referer: 'http://player.test/embed/tv/94605/1/1' });
+
+      const statsRes = await callWorker('http://player.test/api/admin/stats?limit=10', statsEnv, adminKey);
+      assert.strictEqual(statsRes.status, 200);
+      const statsJson = await statsRes.json();
+      assert.strictEqual(statsJson.ok, true);
+      assert.strictEqual(statsJson.stats.persistent, false, 'without the STATS binding the dashboard must say the counters are in-memory');
+      const totals = statsJson.stats.totals;
+      assert.ok(totals.embeds >= 1 && totals.resolves >= 1 && totals.resolveErrors >= 1 && totals.proxyHits >= 1, `totals must count every kind: ${JSON.stringify(totals)}`);
+      assert.strictEqual(totals.requests, totals.embeds + totals.resolves + totals.resolveErrors);
+      const dune = statsJson.stats.topTitles.find((t) => t.tmdbId === '693134');
+      assert.ok(dune && dune.requests >= 1 && dune.label.startsWith('Dune: Part Two'), 'most requested titles must carry TMDB titles');
+      const arcane = statsJson.stats.topTitles.find((t) => t.tmdbId === '94605');
+      assert.ok(arcane && arcane.type === 'tv', 'embed loads must count towards the title');
+      const failing = statsJson.stats.failingTitles.find((t) => t.tmdbId === '550');
+      assert.ok(failing && failing.fails >= 1 && failing.label.startsWith('Fight Club'), 'failed resolves must rank the title under most failing');
+      const site = statsJson.stats.domains.find((d) => d.domain === 'fan-site.example');
+      assert.ok(site && site.embeds >= 1 && site.resolves >= 1 && site.fails >= 1 && site.requests === site.embeds + site.resolves + site.fails, `site attribution: ${JSON.stringify(site)}`);
+      assert.ok(!statsJson.stats.domains.some((d) => d.domain === 'player.test'), 'the worker host itself must never be listed as a site');
+      assert.ok(statsJson.stats.countries.some((c) => c.code === 'IN') && statsJson.stats.countries.some((c) => c.code === 'PK'), 'viewer countries must be counted from CF-IPCountry');
+      const latestError = statsJson.stats.errors[0];
+      assert.ok(latestError && latestError.reason && latestError.title.startsWith('Fight Club') && latestError.domain === 'fan-site.example' && latestError.country === 'PK', `recent failures: ${JSON.stringify(latestError)}`);
+      const andromedaStats = statsJson.stats.servers.find((srv) => srv.id === 'andromeda');
+      assert.ok(andromedaStats && andromedaStats.ok >= 1 && andromedaStats.fails >= 1 && andromedaStats.successRate !== null, `server health: ${JSON.stringify(andromedaStats)}`);
+      assert.ok(statsJson.stats.days.length >= 1 && statsJson.stats.days[statsJson.stats.days.length - 1].fails >= 1);
+      assert.deepStrictEqual(statsJson.catalog.map((c) => c.id), ['andromeda', 'centaurus'], 'dashboard feed must carry the live catalog for server names');
+      const overviewRes = await callWorker('http://player.test/api/admin/overview', statsEnv, adminKey);
+      assert.ok((await overviewRes.json()).stats.totals.requests >= 3, 'legacy overview must include the stats block');
+
+      // 13k. Blocking a site from the dashboard: player + API answer 403 until it is unblocked.
+      const blockRes = await callWorkerWith('http://player.test/api/admin/domains/block', statsEnv, {
+        method: 'POST', headers: { ...adminKey, 'Content-Type': 'application/json' }, body: JSON.stringify({ domain: 'https://Leech.example/some/page', blocked: true })
+      });
+      assert.strictEqual(blockRes.status, 200);
+      assert.deepStrictEqual((await blockRes.json()).blockedDomains, ['leech.example']);
+      const blockedResolve = await callWorker('http://player.test/api/resolve/movie/693134?server=andromeda&parent=https://www.leech.example', statsEnv);
+      assert.strictEqual(blockedResolve.status, 403, 'blocked sites must not resolve streams');
+      const blockedEmbed = await callWorker('http://player.test/embed/movie/693134', statsEnv, { Referer: 'https://leech.example/watch' });
+      assert.strictEqual(blockedEmbed.status, 403, 'blocked sites must not get the player page');
+      assert.ok((await blockedEmbed.text()).includes('leech.example'));
+      const otherEmbed = await callWorker('http://player.test/embed/movie/693134', statsEnv, { Referer: 'https://fan-site.example/' });
+      assert.strictEqual(otherEmbed.status, 200, 'other sites keep working');
+      const unblockRes = await callWorkerWith('http://player.test/api/admin/domains/block', statsEnv, {
+        method: 'POST', headers: { ...adminKey, 'Content-Type': 'application/json' }, body: JSON.stringify({ domain: 'leech.example', blocked: false })
+      });
+      assert.deepStrictEqual((await unblockRes.json()).blockedDomains, []);
+      assert.strictEqual((await callWorker('http://player.test/api/resolve/movie/693134?server=andromeda&parent=https://leech.example', statsEnv)).status, 200);
+      const blockedSiteRow = (await (await callWorker('http://player.test/api/admin/stats', statsEnv, adminKey)).json()).stats.domains.find((d) => d.domain === 'leech.example');
+      assert.ok(blockedSiteRow && blockedSiteRow.blocked === false);
+
+      // 13l. Stats persistence: the StatsStore Durable Object over real SQLite (node:sqlite), restart included.
+      let DatabaseSync = null;
+      try {
+        ({ DatabaseSync } = require('node:sqlite'));
+      } catch {}
+      if (DatabaseSync) {
+        const db = new DatabaseSync(':memory:');
+        const makeState = () => {
+          let alarm = null;
+          return {
+            storage: {
+              sql: {
+                exec: (query, ...params) => {
+                  const stmt = db.prepare(query);
+                  if (/^\s*(SELECT|PRAGMA)/i.test(query)) return { toArray: () => stmt.all(...params) };
+                  stmt.run(...params);
+                  return { toArray: () => [] };
+                }
+              },
+              getAlarm: async () => alarm,
+              setAlarm: async (ts) => { alarm = ts; },
+              transactionSync: (fn) => { db.exec('BEGIN'); try { const out = fn(); db.exec('COMMIT'); return out; } catch (e) { db.exec('ROLLBACK'); throw e; } }
+            },
+            blockConcurrencyWhile: (fn) => fn(),
+            get alarm() { return alarm; }
+          };
+        };
+        const { StatsStore } = workerModule;
+        assert.strictEqual(typeof StatsStore, 'function', 'worker must export the StatsStore Durable Object class');
+        const state1 = makeState();
+        const store1 = new StatsStore(state1);
+        const doPost = (store, path, body) => store.fetch(new Request(`https://stats.internal${path}`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) }));
+        const rec = await doPost(store1, '/record', [
+          { kind: 'embed', domain: 'watch.example', country: 'IN', type: 'tv', tmdbId: 94605 },
+          { kind: 'resolve', domain: 'watch.example', country: 'IN', type: 'tv', tmdbId: 94605, title: 'Arcane', year: 2021, season: 1, episode: 1, server: 'andromeda' },
+          { kind: 'resolve_error', domain: 'other.example', country: 'US', type: 'movie', tmdbId: 1, title: 'Nope', server: 'centaurus', reason: 'servers_no_link' },
+          { kind: 'server_attempt', server: 'andromeda', ok: true, latencyMs: 210 },
+          { kind: 'proxy', domain: '' }
+        ]);
+        assert.strictEqual(rec.status, 200);
+        assert.ok(state1.alarm, 'a record must schedule the flush alarm');
+        assert.strictEqual(db.prepare('SELECT COUNT(*) AS n FROM stats_rows').get().n, 0, 'events are batched: nothing is written before the alarm fires');
+        await store1.alarm();
+        assert.ok(db.prepare('SELECT COUNT(*) AS n FROM stats_rows').get().n >= 6, 'the alarm must persist the touched rows');
+        await doPost(store1, '/block', { domain: 'other.example', blocked: true }); // block-list changes are written immediately
+        assert.strictEqual(db.prepare("SELECT data FROM stats_meta WHERE key = 'blocked'").get().data, '["other.example"]');
+        const snap1 = await (await store1.fetch(new Request('https://stats.internal/snapshot?limit=10'))).json();
+        assert.strictEqual(snap1.totals.requests, 3);
+        assert.strictEqual(snap1.topTitles[0].label, 'Arcane (2021)');
+        assert.deepStrictEqual(snap1.blockedDomains, ['other.example']);
+        // "Restart": a fresh object over the same database must come back with identical numbers.
+        const store2 = new StatsStore(makeState());
+        const snap2 = await (await store2.fetch(new Request('https://stats.internal/snapshot?limit=10'))).json();
+        assert.deepStrictEqual(snap2.totals, snap1.totals, 'totals must survive a Durable Object restart');
+        assert.deepStrictEqual(snap2.topTitles, snap1.topTitles);
+        assert.deepStrictEqual(snap2.domains, snap1.domains);
+        assert.deepStrictEqual(snap2.countries, snap1.countries);
+        assert.deepStrictEqual(snap2.errors, snap1.errors);
+        assert.deepStrictEqual(snap2.blockedDomains, ['other.example']);
+        assert.deepStrictEqual((await (await store2.fetch(new Request('https://stats.internal/blocked'))).json()).blockedDomains, ['other.example']);
+        // Incremental flush: only the rows touched since the last flush are rewritten.
+        await doPost(store2, '/record', [{ kind: 'proxy', domain: '' }]);
+        await store2.alarm();
+        assert.strictEqual((await (await new StatsStore(makeState()).fetch(new Request('https://stats.internal/snapshot'))).json()).totals.proxyHits, 2);
+        // Reset wipes the tables but keeps the block-list.
+        await doPost(store2, '/reset', {});
+        const snap3 = await (await new StatsStore(makeState()).fetch(new Request('https://stats.internal/snapshot'))).json();
+        assert.strictEqual(snap3.totals.requests, 0);
+        assert.deepStrictEqual(snap3.blockedDomains, ['other.example']);
+
+        // The Worker talks to the object through the binding: events arrive in the background, the dashboard says "persistent".
+        const stub = { fetch: (input, init) => store2.fetch(input instanceof Request ? input : new Request(input, init)) };
+        const pending = [];
+        const doEnv = { ...statsEnv, STATS: { idFromName: (name) => name, get: () => stub } };
+        const doCtx = { waitUntil: (p) => pending.push(p) };
+        const doEmbed = await workerFetch(new Request('http://player.test/embed/movie/693134', { headers: { Referer: 'https://durable.example/' } }), { ASSETS: mockAssets, ...doEnv }, doCtx);
+        assert.strictEqual(doEmbed.status, 200);
+        await Promise.all(pending);
+        const doStats = await (await workerFetch(new Request('http://player.test/api/admin/stats', { headers: adminKey }), { ASSETS: mockAssets, ...doEnv }, doCtx)).json();
+        assert.strictEqual(doStats.stats.persistent, true, 'with the binding the dashboard must report durable storage');
+        assert.ok(doStats.stats.domains.some((d) => d.domain === 'durable.example' && d.embeds === 1), 'embed events must reach the Durable Object');
+        assert.ok(!doStats.stats.domains.some((d) => d.domain === 'fan-site.example'), 'the durable snapshot must not mix in the in-isolate fallback counters');
+        const doBlocked = await workerFetch(new Request('http://player.test/api/resolve/movie/693134?server=andromeda&parent=https://other.example'), { ASSETS: mockAssets, ...doEnv }, doCtx);
+        assert.strictEqual(doBlocked.status, 403, 'the block-list persisted in the object must gate resolves');
+        db.close();
+      } else {
+        console.log('  (node:sqlite unavailable — skipped the Durable Object persistence checks)');
+      }
+    }
+    console.log('  ✔ Passed documentation, dashboard, statistics, blocking & persistence tests.');
 
     console.log('\n==========================================================');
     console.log('  ALL PRODUCTION VERIFICATION SUITES PASSED (0 TEST VIDEOS)');

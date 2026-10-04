@@ -70,9 +70,34 @@ async function resolveMalId(title, releaseYear, type) {
  * Resolve TMDB ID -> Unified Metadata + External IDs (IMDb, TVDB, MAL) + Season/Episode Details.
  * Users only pass TMDB ID; this service bridges every external ID automatically.
  */
+/**
+ * IMDb ids (`tt1234567`) are accepted wherever a TMDB id is: translated once
+ * through TMDB's /find endpoint and cached for a day.
+ */
+async function translateImdbId(normalizedType, rawId) {
+  if (!/^tt\d{5,10}$/i.test(rawId)) return rawId;
+  const imdbId = rawId.toLowerCase();
+  const cacheKey = `tmdb:find:${normalizedType}:${imdbId}`;
+  const cached = await cache.get(cacheKey);
+  if (cached) return cached;
+  const apiKeyParam = config.tmdbApiKey ? `api_key=${encodeURIComponent(config.tmdbApiKey)}&` : '';
+  const data = await safeFetchJson(`${config.tmdbBaseUrl}/find/${encodeURIComponent(imdbId)}?${apiKeyParam}external_source=imdb_id`, {}, 5000);
+  if (data) {
+    const preferred = normalizedType === 'tv' ? data.tv_results : data.movie_results;
+    const other = normalizedType === 'tv' ? data.movie_results : data.tv_results;
+    const hit = (Array.isArray(preferred) && preferred[0]) || (Array.isArray(other) && other[0]) || null;
+    if (hit && hit.id) {
+      const resolved = String(hit.id);
+      await cache.set(cacheKey, resolved, 86400);
+      return resolved;
+    }
+  }
+  return rawId;
+}
+
 async function resolveTmdbMetadata(type, tmdbId, season = 1, episode = 1) {
   const normalizedType = type === 'tv' || type === 'series' ? 'tv' : 'movie';
-  const cleanId = String(tmdbId).trim();
+  const cleanId = await translateImdbId(normalizedType, String(tmdbId).trim());
   const sNum = Math.max(1, parseInt(season || 1, 10));
   const eNum = Math.max(1, parseInt(episode || 1, 10));
 

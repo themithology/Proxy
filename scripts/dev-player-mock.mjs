@@ -18,10 +18,16 @@
 //   /embed?type=tv&tmdb=94605&s=1&e=1&color=e50914    accent override (contrast-aware pills)
 //   /embed?type=tv&tmdb=94605&s=1&e=1&t=1m30s&autoskip=1  start offset + auto-skip on
 //   /host                                             host page: the player in an iframe + the postMessage control API
+//   /docs  (alias /documentation)                     public documentation page
+//   /reze?key=admin123                                owner dashboard fed with seeded demo statistics
 
 import http from 'http';
 import fs from 'fs';
 import path from 'path';
+import { createRequire } from 'module';
+
+const require = createRequire(import.meta.url);
+const statsAggregate = require('../src/services/statsAggregate.js');
 
 const PORT = parseInt(process.env.PLAYER_PORT || '8790', 10);
 const HOST = process.env.HOST || '0.0.0.0';
@@ -40,6 +46,48 @@ const SERVERS = [
   { id: 'andromeda', name: 'Fiber Optic Speedrun', badge: 'Multi-Audio • Primary', priority: 1, enabled: true },
   { id: 'centaurus', name: 'Gigachad Node', badge: 'Adaptive • Multi-Quality', priority: 2, enabled: true }
 ];
+
+// Seeded demo statistics for /reze (deterministic, so the dashboard looks the
+// same on every start). Mirrors what the Worker's StatsStore accumulates.
+const demoStats = statsAggregate.createStatsAggregate();
+(function seedDemoStats() {
+  let seed = 42;
+  const rand = () => (seed = (seed * 1664525 + 1013904223) % 4294967296) / 4294967296;
+  const pick = (weights) => {
+    const total = weights.reduce((a, w) => a + w[1], 0);
+    let r = rand() * total;
+    for (const [value, weight] of weights) {
+      r -= weight;
+      if (r <= 0) return value;
+    }
+    return weights[0][0];
+  };
+  const titles = [
+    ['tv', 94605, 'Arcane', 2021, 40], ['tv', 1396, 'Breaking Bad', 2008, 30], ['movie', 693134, 'Dune: Part Two', 2024, 26],
+    ['tv', 66732, 'Stranger Things', 2016, 18], ['movie', 533535, 'Deadpool & Wolverine', 2024, 15], ['tv', 1399, 'Game of Thrones', 2011, 12],
+    ['movie', 1184918, 'The Wild Robot', 2024, 8], ['tv', 95396, 'Severance', 2022, 7], ['movie', 912649, 'Venom: The Last Dance', 2024, 4], ['tv', 60625, 'Rick and Morty', 2013, 3]
+  ];
+  const sites = [['theogpiratebot.online', 70], ['honeymovies.onrender.com', 8], ['localhost:5173', 6], ['livetgtv.lovable.app', 5], ['iris-3.vercel.app', 4], ['100.89.36.110:45267', 3], ['watch.example', 2], ['cinema.test', 2]];
+  const countries = [['IN', 60], ['PK', 10], ['BD', 8], ['US', 6], ['NP', 4], ['SG', 3], ['AE', 3], ['GB', 2], ['DE', 2], ['ZZ', 2]];
+  const reasons = ['servers_no_link', 'upstream_timeout', 'hicine_no_stream', 'meow_403'];
+  for (let i = 0; i < 1400; i += 1) {
+    const title = pick(titles.map((t) => [t, t[4]]));
+    const at = new Date(Date.now() - rand() * 13 * 86400000).toISOString();
+    const base = {
+      at, domain: pick(sites), country: pick(countries), type: title[0], tmdbId: title[1], title: title[2], year: title[3],
+      season: title[0] === 'tv' ? 1 + Math.floor(rand() * 3) : null, episode: title[0] === 'tv' ? 1 + Math.floor(rand() * 9) : null
+    };
+    demoStats.record({ kind: 'embed', ...base });
+    const failed = rand() < (title[1] === 912649 ? 0.6 : title[1] === 60625 ? 0.5 : 0.07);
+    const server = rand() < 0.75 ? 'andromeda' : 'centaurus';
+    const reason = failed ? reasons[Math.floor(rand() * reasons.length)] : null;
+    demoStats.record({ kind: 'server_attempt', at, server, ok: !failed, latencyMs: 300 + rand() * 900, reason });
+    if (failed) demoStats.record({ kind: 'resolve_error', ...base, server, reason });
+    else demoStats.record({ kind: 'resolve', ...base, server });
+    for (let p = 0; p < 6; p += 1) demoStats.record({ kind: 'proxy', at, domain: '' });
+  }
+  demoStats.setBlocked('leecher.example', true);
+})();
 
 const SHOW = {
   title: 'Mock Show',
@@ -246,6 +294,57 @@ const server = http.createServer((req, res) => {
     });
     res.end(html);
     return;
+  }
+
+  // Documentation + owner dashboard, served like the Worker does (same config
+  // placeholder, same server list).
+  const ownerPage = { '/docs': 'docs.html', '/documentation': 'docs.html', '/reze': 'reze.html' }[pathname.replace(/\/+$/, '') || '/'];
+  if (ownerPage) {
+    let html = fs.readFileSync(path.join(PUBLIC_DIR, ownerPage), 'utf8');
+    const config = { apiBaseUrl: '', adsEnabled: process.env.ADS !== '0', servers: SERVERS.map(({ id, name, badge }) => ({ id, name, badge })) };
+    html = html.replace('<!--LOL_EMBED_CONFIG-->', `<script>window.__LOL_EMBED_CONFIG__=${JSON.stringify(config)};</script>`);
+    res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-cache' });
+    res.end(html);
+    return;
+  }
+
+  if (pathname === '/api/health') {
+    return json(res, 200, { ok: true, brand: 'LOL Embed', runtime: 'player-mock', servers: SERVERS.map((s) => s.id) });
+  }
+  if (pathname === '/api/servers') {
+    return json(res, 200, { ok: true, servers: SERVERS.map(({ id, name, badge, priority }) => ({ id, name, badge, priority })) });
+  }
+
+  if (pathname.startsWith('/api/admin/')) {
+    const provided = req.headers['x-admin-key'] || url.searchParams.get('key') || '';
+    if (provided !== 'admin123') return json(res, 401, { ok: false, error: 'Unauthorized: Invalid Admin Key' });
+    const adminPayload = () => ({
+      ok: true,
+      stats: { persistent: false, ...demoStats.snapshot({ limit: 25 }) },
+      catalog: SERVERS.map(({ id, name, badge, priority }) => ({ id, name, badge, priority, enabled: true })),
+      servers: SERVERS.map((s) => ({ ...s, status: s.id === 'centaurus' ? 'degraded' : 'online' })),
+      runtime: { startedAt: demoStats.startedAt, version: 'mock' }
+    });
+    if (pathname === '/api/admin/stats' && req.method === 'GET') return json(res, 200, adminPayload());
+    if (pathname === '/api/admin/stats/reset' && req.method === 'POST') {
+      demoStats.reset();
+      return json(res, 200, adminPayload());
+    }
+    if (pathname === '/api/admin/probe' && req.method === 'POST') {
+      return json(res, 200, { ok: true, probeResults: SERVERS.map((s) => ({ serverId: s.id, ok: s.id !== 'centaurus', latencyMs: 120 })) });
+    }
+    if (pathname === '/api/admin/domains/block' && req.method === 'POST') {
+      let body = '';
+      req.on('data', (chunk) => { body += chunk; });
+      req.on('end', () => {
+        let parsed = {};
+        try { parsed = JSON.parse(body || '{}'); } catch {}
+        if (!demoStats.setBlocked(parsed.domain, parsed.blocked !== false)) return json(res, 400, { ok: false, error: 'domain is required' });
+        json(res, 200, { ok: true, blockedDomains: demoStats.blockedDomains() });
+      });
+      return;
+    }
+    return json(res, 404, { ok: false, error: 'Not found' });
   }
 
   if (pathname === '/host') {

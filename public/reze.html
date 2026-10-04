@@ -1,0 +1,515 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex, nofollow">
+<title>LOL Embed — Dashboard</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%23000'/%3E%3Cpath d='M12 9.5v13l10-6.5z' fill='%23fff'/%3E%3C/svg%3E">
+<!--LOL_EMBED_CONFIG-->
+<style>
+  :root {
+    --bg: #0b0d13;
+    --card: #10131b;
+    --card-2: #151925;
+    --line: #1e2231;
+    --line-2: #2a2f42;
+    --fg: #f1f3f8;
+    --fg-2: #c3c8d6;
+    --muted: #7d8498;
+    --bar: #4a1b2d;
+    --bar-2: #5c2238;
+    --bar-fail: #5a1b1b;
+    --bar-ok: #1b4a33;
+    --ok: #4ade80;
+    --warn: #eab308;
+    --bad: #f87171;
+    --radius: 12px;
+    --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    --sans: Inter, system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--fg); font-family: var(--sans); font-size: 14px; line-height: 1.5; -webkit-font-smoothing: antialiased; }
+  a { color: inherit; }
+  button { font: inherit; }
+  code { font-family: var(--mono); font-size: 0.9em; }
+  .wrap { width: min(1480px, calc(100% - 32px)); margin: 0 auto; padding: 18px 0 60px; }
+
+  /* Header */
+  .head { display: flex; flex-wrap: wrap; align-items: center; gap: 12px 18px; margin-bottom: 18px; }
+  .brand { display: flex; align-items: center; gap: 10px; font-weight: 700; font-size: 15px; }
+  .brand .logo { width: 26px; height: 26px; border-radius: 7px; background: #fff; display: grid; place-items: center; }
+  .brand .logo svg { width: 14px; height: 14px; fill: #000; }
+  .brand .tag { font-size: 11px; font-weight: 600; letter-spacing: 0.14em; text-transform: uppercase; color: var(--muted); border-left: 1px solid var(--line-2); padding-left: 10px; }
+  .head .right { margin-left: auto; display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+  .meta { font-size: 12px; color: var(--muted); }
+  .badge { display: inline-flex; align-items: center; gap: 6px; font-size: 11px; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; color: var(--fg-2); border: 1px solid var(--line-2); border-radius: 999px; padding: 3px 9px; }
+  .badge .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--muted); }
+  .badge.on .dot { background: var(--ok); }
+  .badge.off .dot { background: var(--warn); }
+  .btn { display: inline-flex; align-items: center; gap: 6px; padding: 7px 12px; border-radius: 9px; border: 1px solid var(--line-2); background: var(--card-2); color: var(--fg); font-size: 13px; font-weight: 600; cursor: pointer; }
+  .btn:hover { background: #1b2030; }
+  .btn.ghost { background: transparent; }
+  .btn.danger { color: var(--bad); border-color: rgba(248, 113, 113, 0.35); }
+  .btn.danger:hover { background: rgba(248, 113, 113, 0.08); }
+  .btn.tiny { padding: 3px 8px; font-size: 11px; border-radius: 7px; }
+  input[type="password"], input[type="text"], select {
+    padding: 8px 11px; border-radius: 9px; border: 1px solid var(--line-2); background: var(--bg); color: var(--fg); font: inherit; font-size: 13px;
+  }
+  input:focus, select:focus { outline: none; border-color: #fff; }
+  .switch { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; color: var(--fg-2); cursor: pointer; }
+  .switch input { accent-color: #fff; }
+
+  /* Login */
+  .gate { max-width: 420px; margin: 12vh auto 0; background: var(--card); border: 1px solid var(--line); border-radius: var(--radius); padding: 26px; }
+  .gate h1 { margin: 0 0 6px; font-size: 18px; }
+  .gate p { margin: 0 0 16px; color: var(--muted); font-size: 13px; }
+  .gate form { display: flex; gap: 8px; }
+  .gate input { flex: 1; }
+  .gate .err { color: var(--bad); font-size: 12px; margin-top: 10px; min-height: 1em; }
+
+  /* KPIs */
+  .kpis { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 12px; margin-bottom: 16px; }
+  .kpi { background: var(--card); border: 1px solid var(--line); border-radius: var(--radius); padding: 14px 16px; }
+  .kpi .l { font-size: 11px; font-weight: 600; letter-spacing: 0.1em; text-transform: uppercase; color: var(--muted); }
+  .kpi .v { font-size: 24px; font-weight: 700; letter-spacing: -0.02em; margin-top: 4px; font-variant-numeric: tabular-nums; }
+  .kpi .s { font-size: 12px; color: var(--muted); margin-top: 2px; }
+  .kpi .s.bad { color: var(--bad); }
+
+  /* Cards grid */
+  .grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; }
+  .card { background: var(--card); border: 1px solid var(--line); border-radius: var(--radius); padding: 18px 20px 20px; min-width: 0; }
+  .card.wide { grid-column: 1 / -1; }
+  .card h2 { margin: 0 0 14px; font-size: 15px; font-weight: 700; display: flex; align-items: center; gap: 10px; }
+  .card h2 .meta { font-weight: 500; }
+  .card h2 .act { margin-left: auto; display: flex; gap: 6px; }
+  .empty { color: var(--muted); font-size: 13px; padding: 18px 0 6px; }
+
+  /* Bar rows (the screenshot look) */
+  .rows { display: grid; gap: 8px; }
+  .row { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 12px; }
+  .row .track { position: relative; height: 34px; border-radius: 6px; background: transparent; overflow: hidden; min-width: 0; }
+  .row .fill { position: absolute; inset: 0 auto 0 0; width: 0; background: var(--bar); border-radius: 6px; transition: width 0.4s ease; min-width: 4px; }
+  .row.fail .fill { background: var(--bar-fail); }
+  .row.ok .fill { background: var(--bar-ok); }
+  .row .label { position: relative; z-index: 1; display: flex; align-items: center; gap: 8px; height: 100%; padding: 0 10px; font-size: 14px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .row .label .sub { color: var(--muted); font-size: 12px; }
+  .row .label .chip { font-size: 10px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; color: var(--fg-2); border: 1px solid var(--line-2); border-radius: 5px; padding: 0 5px; line-height: 16px; }
+  .row .count { font-variant-numeric: tabular-nums; font-size: 14px; min-width: 2.2em; text-align: right; padding-right: 4px; }
+  .row .count small { color: var(--muted); font-size: 11px; margin-left: 4px; }
+  .row .actions { display: none; gap: 4px; margin-left: 6px; }
+  .row:hover .actions { display: inline-flex; }
+  .row .blocked { color: var(--bad); font-size: 11px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; }
+  .flag { font-size: 16px; line-height: 1; }
+
+  /* Servers */
+  .servers { display: grid; gap: 10px; }
+  .server { display: grid; grid-template-columns: minmax(0, 1.3fr) auto minmax(120px, 1fr) auto; align-items: center; gap: 12px; padding: 10px 12px; border: 1px solid var(--line); border-radius: 10px; background: var(--card-2); }
+  .server .n { font-weight: 650; }
+  .server .b { font-size: 12px; color: var(--muted); }
+  .server .st { font-size: 11px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; }
+  .server .st.online { color: var(--ok); } .server .st.degraded { color: var(--warn); } .server .st.dead, .server .st.disabled { color: var(--bad); }
+  .server .rate { height: 8px; border-radius: 4px; background: #0d1018; overflow: hidden; border: 1px solid var(--line); }
+  .server .rate i { display: block; height: 100%; background: var(--ok); }
+  .server .num { font-variant-numeric: tabular-nums; font-size: 12px; color: var(--fg-2); text-align: right; white-space: nowrap; }
+  .server .err { grid-column: 1 / -1; font-size: 12px; color: var(--bad); font-family: var(--mono); overflow-wrap: anywhere; }
+
+  /* Day chart */
+  .chart { display: grid; grid-template-columns: repeat(auto-fit, minmax(14px, 1fr)); align-items: end; gap: 6px; height: 150px; padding-top: 8px; }
+  .chart .col { position: relative; height: 100%; display: flex; flex-direction: column; justify-content: flex-end; border-radius: 4px 4px 0 0; }
+  .chart .col .bar { background: var(--bar-2); border-radius: 4px 4px 0 0; min-height: 2px; }
+  .chart .col .bar.f { background: var(--bar-fail); border-radius: 0; }
+  .chart .col:hover .tip { opacity: 1; }
+  .chart .tip { position: absolute; bottom: calc(100% + 6px); left: 50%; transform: translateX(-50%); background: #fff; color: #000; font-size: 11px; font-weight: 600; padding: 4px 7px; border-radius: 6px; white-space: nowrap; opacity: 0; pointer-events: none; transition: opacity 0.15s; z-index: 2; }
+  .chart-x { display: grid; grid-template-columns: repeat(auto-fit, minmax(14px, 1fr)); gap: 6px; margin-top: 6px; font-size: 10px; color: var(--muted); text-align: center; font-variant-numeric: tabular-nums; }
+  .legend { display: flex; gap: 14px; font-size: 12px; color: var(--muted); margin-top: 10px; }
+  .legend i { display: inline-block; width: 10px; height: 10px; border-radius: 3px; vertical-align: -1px; margin-right: 5px; }
+
+  /* Failures table */
+  table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  th, td { text-align: left; padding: 8px 10px; border-top: 1px solid var(--line); vertical-align: top; }
+  th { font-size: 11px; font-weight: 700; letter-spacing: 0.1em; text-transform: uppercase; color: var(--muted); border-top: 0; }
+  td.mono { font-family: var(--mono); font-size: 12px; color: var(--fg-2); }
+  td .reason { color: var(--bad); font-family: var(--mono); font-size: 12px; }
+  .table-wrap { overflow-x: auto; }
+
+  /* Blocked */
+  .blocklist { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 4px; }
+  .blocklist .item { display: inline-flex; align-items: center; gap: 8px; padding: 5px 8px 5px 11px; border: 1px solid rgba(248, 113, 113, 0.35); border-radius: 999px; font-size: 13px; font-family: var(--mono); }
+  .blockform { display: flex; gap: 8px; margin-top: 12px; flex-wrap: wrap; }
+  .blockform input { flex: 1; min-width: 200px; }
+
+  .toast { position: fixed; left: 50%; bottom: 24px; transform: translate(-50%, 20px); background: #fff; color: #000; padding: 9px 14px; border-radius: 10px; font-size: 13px; font-weight: 600; opacity: 0; pointer-events: none; transition: opacity 0.2s, transform 0.2s; z-index: 50; }
+  .toast.show { opacity: 1; transform: translate(-50%, 0); }
+  .hidden { display: none !important; }
+
+  @media (max-width: 960px) {
+    .grid { grid-template-columns: 1fr; }
+    .server { grid-template-columns: 1fr auto; }
+    .server .rate { grid-column: 1 / -1; }
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header class="head">
+    <div class="brand">
+      <span class="logo" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg></span>
+      <span>LOL Embed</span>
+      <span class="tag">Dashboard</span>
+    </div>
+    <div class="right" id="head-right">
+      <span class="badge" id="store-badge"><span class="dot"></span><span>—</span></span>
+      <span class="meta" id="updated"></span>
+      <label class="switch"><input type="checkbox" id="auto" checked> Auto-refresh</label>
+      <button class="btn" id="refresh" type="button">Refresh</button>
+      <a class="btn ghost" href="/docs" target="_blank" rel="noopener">Docs ↗</a>
+      <button class="btn ghost" id="logout" type="button" title="Forget the admin key on this browser">Sign out</button>
+    </div>
+  </header>
+
+  <section class="gate" id="gate">
+    <h1>Owner dashboard</h1>
+    <p>Enter the admin key (<code>ADMIN_SECRET</code> of the Worker). It is kept in this tab's session storage only.</p>
+    <form id="gate-form" autocomplete="off">
+      <input type="password" id="gate-key" placeholder="Admin key" autofocus>
+      <button class="btn" type="submit">Open</button>
+    </form>
+    <div class="err" id="gate-err"></div>
+  </section>
+
+  <main id="dash" class="hidden">
+    <section class="kpis" id="kpis"></section>
+
+    <section class="grid">
+      <div class="card">
+        <h2>Most requested titles <span class="meta" id="titles-meta"></span></h2>
+        <div class="rows" id="titles"></div>
+      </div>
+      <div class="card">
+        <h2>Most failing titles <span class="meta" id="failing-meta"></span></h2>
+        <div class="rows" id="failing"></div>
+      </div>
+      <div class="card">
+        <h2>Who is using the API (sites) <span class="meta" id="sites-meta"></span></h2>
+        <div class="rows" id="sites"></div>
+      </div>
+      <div class="card">
+        <h2>Countries <span class="meta" id="countries-meta"></span></h2>
+        <div class="rows" id="countries"></div>
+      </div>
+      <div class="card">
+        <h2>Servers <span class="act"><button class="btn tiny" id="probe" type="button">Probe now</button></span></h2>
+        <div class="servers" id="servers"></div>
+      </div>
+      <div class="card">
+        <h2>Requests per day <span class="meta">last 14 days</span></h2>
+        <div class="chart" id="chart"></div>
+        <div class="chart-x" id="chart-x"></div>
+        <div class="legend"><span><i style="background:var(--bar-2)"></i>embeds + resolves</span><span><i style="background:var(--bar-fail)"></i>failed resolves</span></div>
+      </div>
+      <div class="card wide">
+        <h2>Recent failures <span class="meta" id="errors-meta"></span></h2>
+        <div class="table-wrap"><table id="errors"></table></div>
+      </div>
+      <div class="card wide">
+        <h2>Blocked sites <span class="meta">blocked sites get a 403 from the player and the API</span>
+          <span class="act"><button class="btn tiny danger" id="reset" type="button">Reset statistics</button></span></h2>
+        <div class="blocklist" id="blocked"></div>
+        <form class="blockform" id="block-form" autocomplete="off">
+          <input type="text" id="block-domain" placeholder="leecher.example">
+          <button class="btn" type="submit">Block domain</button>
+        </form>
+      </div>
+    </section>
+  </main>
+</div>
+<div class="toast" id="toast" role="status" aria-live="polite"></div>
+
+<script>
+(function () {
+  'use strict';
+  var cfg = window.__LOL_EMBED_CONFIG__ || {};
+  var apiBase = (cfg.apiBaseUrl || '').replace(/\/+$/, '');
+  var KEY_STORE = 'lol_embed_admin_key';
+  var REFRESH_MS = 30000;
+  var key = '';
+  var timer = null;
+  var lastData = null;
+
+  function $(s) { return document.querySelector(s); }
+  function esc(s) { return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]; }); }
+  function fmt(n) { n = Number(n) || 0; return n >= 1e6 ? (n / 1e6).toFixed(1) + 'M' : n >= 1e4 ? (n / 1e3).toFixed(1) + 'k' : String(n); }
+  function ago(iso) {
+    if (!iso) return '—';
+    var s = Math.max(0, (Date.now() - new Date(iso).getTime()) / 1000);
+    if (s < 45) return 'just now';
+    if (s < 3600) return Math.round(s / 60) + ' min ago';
+    if (s < 86400) return Math.round(s / 3600) + ' h ago';
+    return Math.round(s / 86400) + ' d ago';
+  }
+  var toastEl = $('#toast'), toastTimer;
+  function toast(msg) { toastEl.textContent = msg; toastEl.classList.add('show'); clearTimeout(toastTimer); toastTimer = setTimeout(function () { toastEl.classList.remove('show'); }, 1800); }
+
+  var regionNames = null;
+  try { regionNames = new Intl.DisplayNames(['en'], { type: 'region' }); } catch (e) {}
+  function countryName(code) {
+    if (!code || code === 'ZZ') return 'Unknown';
+    try { return (regionNames && regionNames.of(code)) || code; } catch (e) { return code; }
+  }
+  function flag(code) {
+    if (!code || code === 'ZZ' || !/^[A-Z]{2}$/.test(code)) return '🌐';
+    return String.fromCodePoint.apply(null, code.split('').map(function (c) { return 127397 + c.charCodeAt(0); }));
+  }
+
+  // --- Key handling -------------------------------------------------------------
+  var params = new URLSearchParams(location.search);
+  if (params.get('key')) {
+    key = params.get('key');
+    try { sessionStorage.setItem(KEY_STORE, key); } catch (e) {}
+    params.delete('key');
+    var clean = location.pathname + (params.toString() ? '?' + params.toString() : '') + location.hash;
+    history.replaceState(null, '', clean);
+  } else {
+    try { key = sessionStorage.getItem(KEY_STORE) || ''; } catch (e) {}
+  }
+
+  function api(path, opts) {
+    opts = opts || {};
+    var headers = Object.assign({ 'X-Admin-Key': key }, opts.headers || {});
+    if (opts.body && typeof opts.body !== 'string') { opts.body = JSON.stringify(opts.body); headers['Content-Type'] = 'application/json'; }
+    return fetch(apiBase + path, Object.assign({}, opts, { headers: headers, cache: 'no-store' })).then(function (r) {
+      return r.json().catch(function () { return {}; }).then(function (j) { j.__status = r.status; return j; });
+    });
+  }
+
+  function showGate(err) {
+    $('#gate').classList.remove('hidden');
+    $('#dash').classList.add('hidden');
+    $('#head-right').classList.add('hidden');
+    $('#gate-err').textContent = err || '';
+    clearInterval(timer); timer = null;
+  }
+  function showDash() {
+    $('#gate').classList.add('hidden');
+    $('#dash').classList.remove('hidden');
+    $('#head-right').classList.remove('hidden');
+    schedule();
+  }
+  $('#gate-form').addEventListener('submit', function (e) {
+    e.preventDefault();
+    key = $('#gate-key').value.trim();
+    if (!key) return;
+    try { sessionStorage.setItem(KEY_STORE, key); } catch (err) {}
+    load(true);
+  });
+  $('#logout').addEventListener('click', function () {
+    key = '';
+    try { sessionStorage.removeItem(KEY_STORE); } catch (e) {}
+    showGate('');
+  });
+  $('#refresh').addEventListener('click', function () { load(false); });
+  $('#auto').addEventListener('change', schedule);
+  function schedule() {
+    clearInterval(timer); timer = null;
+    if ($('#auto').checked) timer = setInterval(function () { load(false); }, REFRESH_MS);
+  }
+  document.addEventListener('visibilitychange', function () { if (!document.hidden && !$('#dash').classList.contains('hidden')) load(false); });
+
+  // --- Rendering ------------------------------------------------------------------
+  function bars(el, items, opts) {
+    opts = opts || {};
+    if (!items || !items.length) { el.innerHTML = '<div class="empty">' + esc(opts.empty || 'Nothing recorded yet.') + '</div>'; return; }
+    var max = Math.max.apply(null, items.map(function (i) { return i.value; })) || 1;
+    el.innerHTML = items.map(function (i) {
+      var pct = Math.max(2, Math.round((i.value / max) * 100));
+      return '<div class="row ' + (i.cls || '') + '" ' + (i.title ? 'title="' + esc(i.title) + '"' : '') + '>' +
+        '<div class="track"><div class="fill" style="width:' + pct + '%"></div><div class="label">' + i.label + (i.actions || '') + '</div></div>' +
+        '<div class="count">' + fmt(i.value) + (i.suffix ? '<small>' + esc(i.suffix) + '</small>' : '') + '</div></div>';
+    }).join('');
+  }
+
+  function render(data) {
+    lastData = data;
+    var s = data.stats || {};
+    var t = s.totals || {};
+    var catalog = {};
+    (data.catalog || []).forEach(function (c) { catalog[c.id] = c; });
+    var serverName = function (id) { return catalog[id] ? catalog[id].name : (id || '—'); };
+
+    // store badge
+    var badge = $('#store-badge');
+    badge.className = 'badge ' + (s.persistent ? 'on' : 'off');
+    var storeLabel = s.persistent ? 'Durable storage' : s.storage === 'process-memory' ? 'Process memory' : 'In-memory (per isolate)';
+    badge.innerHTML = '<span class="dot"></span><span>' + storeLabel + '</span>';
+    badge.title = s.persistent
+      ? 'Counters live in the STATS Durable Object and survive restarts.'
+      : s.storage === 'process-memory'
+        ? 'Counters live in the backend process and reset when it restarts.'
+        : 'No STATS Durable Object bound — counters reset whenever the isolate recycles.';
+    $('#updated').textContent = 'Updated ' + new Date().toLocaleTimeString() + ' · counting since ' + (s.startedAt ? new Date(s.startedAt).toLocaleDateString() : '—');
+
+    // KPIs
+    var fails = t.resolveErrors || 0;
+    var attempts = (t.resolves || 0) + fails;
+    $('#kpis').innerHTML = [
+      ['Requests', fmt(t.requests), 'embeds + resolves'],
+      ['Embeds', fmt(t.embeds), 'player loads'],
+      ['Resolves', fmt(t.resolves), attempts ? fmt(fails) + ' failed · ' + (t.failureRate || 0) + ' %' : 'no attempts yet', fails && t.failureRate >= 20 ? 'bad' : ''],
+      ['Proxy hits', fmt(t.proxyHits), 'segments & manifests'],
+      ['Sites', fmt(t.uniqueDomains), 'distinct domains'],
+      ['Countries', fmt(t.uniqueCountries), 'distinct'],
+      ['Titles', fmt(t.uniqueTitles), 'distinct'],
+      ['Last event', ago(t.lastEventAt), t.lastEventAt ? new Date(t.lastEventAt).toLocaleString() : '']
+    ].map(function (k) {
+      return '<div class="kpi"><div class="l">' + esc(k[0]) + '</div><div class="v">' + esc(k[1]) + '</div><div class="s ' + (k[3] || '') + '">' + esc(k[2]) + '</div></div>';
+    }).join('');
+
+    // titles
+    var typeChip = function (x) { return '<span class="chip">' + (x.type === 'movie' ? 'Movie' : 'TV') + '</span>'; };
+    bars($('#titles'), (s.topTitles || []).map(function (x) {
+      return { label: '<span>' + esc(x.label) + '</span>' + typeChip(x), value: x.requests, suffix: x.fails ? x.fails + ' ✕' : '', title: 'TMDB #' + x.tmdbId + ' · last ' + ago(x.lastSeen) };
+    }), { empty: 'No titles requested yet.' });
+    $('#titles-meta').textContent = s.topTitles && s.topTitles.length ? 'by requests' : '';
+    bars($('#failing'), (s.failingTitles || []).map(function (x) {
+      var rate = x.requests ? Math.round((x.fails / x.requests) * 100) : 100;
+      return { cls: 'fail', label: '<span>' + esc(x.label) + '</span>' + typeChip(x) + '<span class="sub">' + rate + ' % of ' + x.requests + '</span>', value: x.fails, title: 'TMDB #' + x.tmdbId };
+    }), { empty: 'No failed resolves. Nice.' });
+    $('#failing-meta').textContent = s.failingTitles && s.failingTitles.length ? 'by failed resolves' : '';
+
+    // sites
+    bars($('#sites'), (s.domains || []).map(function (d) {
+      var act = '<span class="actions"><button class="btn tiny ' + (d.blocked ? '' : 'danger') + '" data-block="' + esc(d.domain) + '" data-blocked="' + (d.blocked ? '1' : '0') + '" type="button">' + (d.blocked ? 'Unblock' : 'Block') + '</button></span>';
+      return {
+        label: '<span>' + esc(d.domain) + '</span>' + (d.blocked ? '<span class="blocked">blocked</span>' : '') + '<span class="sub">' + fmt(d.embeds) + ' embeds · ' + fmt(d.resolves) + ' resolves' + (d.fails ? ' · ' + fmt(d.fails) + ' failed' : '') + (d.proxyHits ? ' · ' + fmt(d.proxyHits) + ' proxy' : '') + '</span>',
+        value: d.requests, actions: act, title: 'first seen ' + (d.firstSeen ? new Date(d.firstSeen).toLocaleString() : '—') + ' · last ' + ago(d.lastSeen)
+      };
+    }), { empty: 'No embedding sites seen yet. Direct opens of the player are not attributed to a site.' });
+    $('#sites-meta').textContent = s.domains && s.domains.length ? 'by requests' : '';
+
+    // countries
+    bars($('#countries'), (s.countries || []).map(function (c) {
+      return { label: '<span class="flag">' + flag(c.code) + '</span><span>' + esc(c.code === 'ZZ' ? 'Unknown' : c.code) + '</span><span class="sub">' + esc(countryName(c.code)) + '</span>', value: c.count };
+    }), { empty: 'No viewer countries yet (needs Cloudflare geo headers).' });
+    $('#countries-meta').textContent = s.countries && s.countries.length ? 'by requests' : '';
+
+    // servers: merge global stats (ok/fails/latency) with the isolate's live status
+    var live = {};
+    (data.servers || []).forEach(function (x) { live[x.id] = x; });
+    var statsServers = {};
+    (s.servers || []).forEach(function (x) { statsServers[x.id] = x; });
+    var ids = (data.catalog || []).map(function (c) { return c.id; });
+    Object.keys(statsServers).forEach(function (id) { if (ids.indexOf(id) < 0) ids.push(id); });
+    $('#servers').innerHTML = ids.length ? ids.map(function (id) {
+      var c = catalog[id] || {}; var l = live[id] || {}; var g = statsServers[id] || {};
+      var total = (g.ok || 0) + (g.fails || 0);
+      var rate = total ? Math.round((g.ok / total) * 100) : null;
+      var status = c.enabled === false ? 'disabled' : (l.status || (rate === null ? 'online' : rate < 25 ? 'dead' : rate < 75 ? 'degraded' : 'online'));
+      return '<div class="server">' +
+        '<div><div class="n">' + esc(c.name || id) + ' <span class="b">' + esc(id) + '</span></div><div class="b">' + esc(c.badge || '') + '</div></div>' +
+        '<div class="st ' + status + '">' + status + '</div>' +
+        '<div><div class="rate"><i style="width:' + (rate === null ? 0 : rate) + '%"></i></div></div>' +
+        '<div class="num">' + (rate === null ? 'no attempts' : rate + ' % · ' + fmt(g.ok) + ' ok / ' + fmt(g.fails) + ' failed') + '<br>' + (g.avgLatencyMs ? 'avg ' + g.avgLatencyMs + ' ms' : '') + (g.lastLatencyMs ? ' · last ' + g.lastLatencyMs + ' ms' : '') + '</div>' +
+        (g.lastError ? '<div class="err">' + esc(g.lastError) + ' <span style="color:var(--muted)">· ' + ago(g.lastErrorAt) + '</span></div>' : '') +
+        '</div>';
+    }).join('') : '<div class="empty">No servers in the catalog.</div>';
+
+    // chart (last 14 days, fill gaps)
+    var byDay = {};
+    (s.days || []).forEach(function (d) { byDay[d.day] = d; });
+    var days = [];
+    for (var i = 13; i >= 0; i--) {
+      var dt = new Date(Date.now() - i * 86400000).toISOString().slice(0, 10);
+      days.push(byDay[dt] || { day: dt, embeds: 0, resolves: 0, fails: 0, proxyHits: 0 });
+    }
+    var max = Math.max.apply(null, days.map(function (d) { return d.embeds + d.resolves + d.fails; })) || 1;
+    $('#chart').innerHTML = days.map(function (d) {
+      var total = d.embeds + d.resolves + d.fails;
+      var hOk = Math.round(((d.embeds + d.resolves) / max) * 100);
+      var hFail = Math.round((d.fails / max) * 100);
+      return '<div class="col"><div class="tip">' + d.day.slice(5) + ' · ' + total + ' req · ' + d.fails + ' failed</div><div class="bar f" style="height:' + hFail + '%"></div><div class="bar" style="height:' + hOk + '%"></div></div>';
+    }).join('');
+    $('#chart-x').innerHTML = days.map(function (d, idx) { return '<div>' + (idx % 2 === 1 || days.length <= 7 ? d.day.slice(8) : '') + '</div>'; }).join('');
+
+    // errors
+    var errs = s.errors || [];
+    $('#errors-meta').textContent = errs.length ? 'latest ' + errs.length : '';
+    $('#errors').innerHTML = errs.length
+      ? '<thead><tr><th>When</th><th>Title</th><th>Server</th><th>Reason</th><th>Site</th><th>Country</th></tr></thead><tbody>' + errs.map(function (e) {
+          var ep = e.season != null && e.episode != null ? ' <span style="color:var(--muted)">S' + e.season + ' E' + e.episode + '</span>' : '';
+          return '<tr><td class="mono" title="' + esc(e.at) + '">' + esc(ago(e.at)) + '</td><td>' + esc(e.title || e.key || '—') + ep + '</td><td>' + esc(serverName(e.server)) + '</td><td><span class="reason">' + esc(e.reason) + '</span></td><td class="mono">' + esc(e.domain || '—') + '</td><td>' + (e.country ? flag(e.country) + ' ' + esc(e.country) : '—') + '</td></tr>';
+        }).join('') + '</tbody>'
+      : '<tbody><tr><td class="empty" style="border:0;padding-left:0">No failures recorded.</td></tr></tbody>';
+
+    // blocked
+    var blocked = s.blockedDomains || [];
+    $('#blocked').innerHTML = blocked.length
+      ? blocked.map(function (d) { return '<span class="item">' + esc(d) + '<button class="btn tiny" data-block="' + esc(d) + '" data-blocked="1" type="button">Unblock</button></span>'; }).join('')
+      : '<div class="empty" style="padding:4px 0">No blocked sites.</div>';
+  }
+
+  // --- Actions ---------------------------------------------------------------------
+  document.addEventListener('click', function (e) {
+    var b = e.target.closest('[data-block]');
+    if (!b) return;
+    var domain = b.getAttribute('data-block');
+    var blocked = b.getAttribute('data-blocked') !== '1';
+    if (blocked && !confirm('Block ' + domain + '? The player and the API will answer 403 to that site.')) return;
+    api('/api/admin/domains/block', { method: 'POST', body: { domain: domain, blocked: blocked } }).then(function (j) {
+      if (!j.ok) return toast(j.error || 'Failed');
+      toast((blocked ? 'Blocked ' : 'Unblocked ') + domain);
+      load(false);
+    });
+  });
+  $('#block-form').addEventListener('submit', function (e) {
+    e.preventDefault();
+    var domain = $('#block-domain').value.trim();
+    if (!domain) return;
+    api('/api/admin/domains/block', { method: 'POST', body: { domain: domain, blocked: true } }).then(function (j) {
+      if (!j.ok) return toast(j.error || 'Failed');
+      $('#block-domain').value = '';
+      toast('Blocked ' + domain);
+      load(false);
+    });
+  });
+  $('#reset').addEventListener('click', function () {
+    if (!confirm('Reset ALL statistics? Blocked sites are kept.')) return;
+    api('/api/admin/stats/reset', { method: 'POST' }).then(function (j) {
+      if (!j.ok) return toast(j.error || 'Failed');
+      toast('Statistics reset');
+      load(false);
+    });
+  });
+  $('#probe').addEventListener('click', function () {
+    var btn = $('#probe'); btn.disabled = true; btn.textContent = 'Probing…';
+    api('/api/admin/probe', { method: 'POST' }).then(function (j) {
+      btn.disabled = false; btn.textContent = 'Probe now';
+      if (!j.ok) return toast(j.error || 'Probe failed');
+      var okCount = (j.probeResults || []).filter(function (p) { return p.ok; }).length;
+      toast('Probe: ' + okCount + '/' + (j.probeResults || []).length + ' upstreams answered');
+      load(false);
+    });
+  });
+
+  // --- Load ------------------------------------------------------------------------
+  var loading = false;
+  function load(fromGate) {
+    if (!key) return showGate('');
+    if (loading) return;
+    loading = true;
+    api('/api/admin/stats?limit=25').then(function (j) {
+      loading = false;
+      if (j.__status === 401) return showGate(fromGate ? 'Wrong key.' : 'Session expired — enter the key again.');
+      if (!j.ok) { toast(j.error || 'Could not load statistics'); return; }
+      render(j);
+      if ($('#dash').classList.contains('hidden')) showDash();
+    }).catch(function () {
+      loading = false;
+      toast('Network error while loading statistics');
+    });
+  }
+  if (key) load(false); else showGate('');
+})();
+</script>
+</body>
+</html>

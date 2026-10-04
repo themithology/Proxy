@@ -56,6 +56,21 @@ router.get('/health', (req, res) => {
 });
 
 /**
+ * GET /api/servers
+ * Public, cacheable list of the player-visible servers (ids are what
+ * `?server=` accepts). Never carries upstream/provider names.
+ */
+router.get('/servers', (req, res) => {
+  res.setHeader('Cache-Control', 'public, max-age=300');
+  res.json({
+    ok: true,
+    servers: serverCatalog
+      .listableServers(config.servers)
+      .map((s) => ({ id: s.id, name: s.name, badge: s.badge, priority: s.priority }))
+  });
+});
+
+/**
  * GET /api/catalog
  * Returns a small list of popular TMDB titles for API clients and smoke tests
  */
@@ -310,6 +325,12 @@ router.get('/resolve/:type/:tmdbId', async (req, res) => {
         ? reasonMap[firstFailed.reason] || firstFailed.reason
         : 'No working server in the waterfall.';
       const humanDiag = firstFailed && firstFailed.diag ? firstFailed.diag.message : null;
+      telemetry.recordResolveOutcome(req, metadata, false, {
+        server: firstFailed ? firstFailed.server : server,
+        reason: firstFailed ? firstFailed.reason : (streamData && streamData.reason) || 'no_stream',
+        season,
+        episode
+      });
       return res.status(502).json({
         ok: false,
         error: 'Unable to resolve stream from upstream providers for this title.',
@@ -325,6 +346,7 @@ router.get('/resolve/:type/:tmdbId', async (req, res) => {
       });
     }
 
+    telemetry.recordResolveOutcome(req, metadata, true, { server: streamData.server || server, season, episode });
     return res.json({
       ok: true,
       metadata,
@@ -393,6 +415,30 @@ router.get('/admin/overview', requireAdminAuth, (req, res) => {
     ok: true,
     ...telemetry.getDashboardSnapshot()
   });
+});
+
+/**
+ * GET /api/admin/stats
+ * Dashboard feed (same shape as the Worker's): usage statistics + live catalog.
+ */
+router.get('/admin/stats', requireAdminAuth, (req, res) => {
+  const limit = parseInt(req.query.limit || '25', 10);
+  const snapshot = telemetry.getDashboardSnapshot();
+  res.json({
+    ok: true,
+    stats: telemetry.getStatsSnapshot(Number.isFinite(limit) ? limit : 25),
+    catalog: config.servers.map((s) => ({ id: s.id, name: s.name, badge: s.badge, priority: s.priority, enabled: s.enabled !== false })),
+    servers: snapshot.servers,
+    runtime: { startedAt: telemetry.startedAt, version: '2.0.0' }
+  });
+});
+
+/**
+ * POST /api/admin/stats/reset
+ */
+router.post('/admin/stats/reset', requireAdminAuth, (req, res) => {
+  telemetry.resetStats();
+  res.json({ ok: true, stats: telemetry.getStatsSnapshot() });
 });
 
 /**

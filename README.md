@@ -1,6 +1,6 @@
 # LOL Embed — Player Worker & Backend
 
-LOL Embed is the **player Worker**: it serves the embeddable player page at exactly `/embed` and the JSON/stream backend API (TMDB metadata, source resolution, edge stream proxy). The main frontend website is a **separate project** and embeds this Worker with an iframe; it is intentionally not built in this repository. The old landing/developer portal, demo page, and admin dashboard UI remain removed — `/` is a JSON service descriptor, not a website.
+LOL Embed is the **player Worker**: it serves the embeddable player page at `/embed`, the JSON/stream backend API (TMDB metadata, source resolution, edge stream proxy), the public **documentation** at `/docs` (alias `/documentation`) and the owner **dashboard** at `/reze`. The main frontend website is a **separate project** and embeds this Worker with an iframe; it is intentionally not built in this repository. There is no landing page — `/` is a JSON service descriptor for API clients (and a rickroll for browsers).
 
 ## Brand
 
@@ -170,10 +170,13 @@ The value must be an absolute `http(s)` URL (a path prefix is allowed and traili
 
 ## Backend surface
 
-- `GET /` — JSON service information; no HTML landing page.
+- `GET /` — JSON service information; no HTML landing page (browsers get the rickroll).
 - `GET /embed` — the embeddable player page (Worker only; the Node API runtime stays JSON-only).
+- `GET /docs` (alias `/documentation`) — public documentation page (Worker only; see *Documentation page*).
+- `GET /reze` — owner dashboard shell (Worker only; every number on it comes from `/api/admin/stats`, see *Owner dashboard*).
 - `GET /meta-image.gif` — the LOL Embed social/meta image.
 - `GET /api/health` — service, runtime, and upstream health summary.
+- `GET /api/servers` — public, cacheable list of the player-visible servers (`id`, `name`, `badge`, `priority`); the ids are what `?server=` accepts. Never carries upstream/provider names.
 - `GET /api/catalog` — small sample catalog for API clients and smoke tests.
 - `POST /api/handshake` — short-lived request token.
 - `GET /api/info/:type/:tmdbId` — TMDB metadata and skip segments.
@@ -183,9 +186,25 @@ The value must be an absolute `http(s)` URL (a path prefix is allowed and traili
 - `GET /api/resolve/:type/:tmdbId` — resolves a source and returns stream, audio, subtitle, and segment metadata.
 - `GET /api/proxy?url=...` — HLS/MP4 stream proxy.
 - `GET /api/multitrack/master.m3u8` and `/api/multitrack/file/:jobId/:filename` — signed Node-side audio-remux output.
-- `/api/admin/*` — JSON-only owner operations for health probes, domain blocks, upstream configuration, and source overrides; requires `X-Admin-Key`. There is no admin web UI.
+- `/api/admin/*` — owner operations, all requiring `X-Admin-Key` (or `?key=`): `GET /api/admin/stats` (dashboard feed), `POST /api/admin/stats/reset`, `POST /api/admin/domains/block` (`{ domain, blocked }`), `GET /api/admin/overview`, `POST /api/admin/probe`, plus upstream configuration and source overrides. The `/reze` page is the UI for these.
 
-Supported media types are `movie`, `tv`, and `series` where applicable. TV requests accept `season` and `episode` query parameters.
+Supported media types are `movie`, `tv`, and `series` where applicable. TV requests accept `season` and `episode` query parameters. Ids are TMDB ids; IMDb ids (`tt…`) are accepted everywhere a TMDB id is and translated once through TMDB's `/find` endpoint (cached for a day) — the responses and the host API always report the TMDB id.
+
+### Documentation page
+
+`/docs` (and `/documentation`) is a self-contained page (`public/docs.html`, inline CSS/JS, no extra asset routes) written for people who embed the player — the same kind of reference the big embed services publish: endpoints for movies and TV with required/optional parameters and examples, implementation snippets (plain iframe, responsive wrapper, React), the customization parameters, the host events, the postMessage commands, an **embed builder** that generates a URL + iframe code and previews it on demand, a live status strip (`/api/health` + `/api/servers`) and an FAQ. Everything host-specific is filled in at runtime from `location.origin` and the injected config (`apiBaseUrl`, the server catalog), so the page is correct on any domain without editing. It deliberately documents only the player surface: `/api/resolve` and the upstream providers are never mentioned.
+
+### Owner dashboard (`/reze`) and usage statistics
+
+`/reze` is the operator's page (`public/reze.html`): a dark dashboard with **Most requested titles**, **Most failing titles**, **Who is using the API (sites)**, **Countries**, per-server health (success rate, latency, last error, a *Probe now* button), **Requests per day**, the latest failures (title, server, reason, site, country) and the **blocked sites** list with block/unblock actions and a *Reset statistics* button. The shell is public but anonymous — it holds no numbers and no key; it asks for the admin key (`ADMIN_SECRET`), keeps it in `sessionStorage` and calls `GET /api/admin/stats` with `X-Admin-Key`. `/reze?key=…` signs in and strips the key from the URL. The page is served with `X-Robots-Tag: noindex` and `X-Frame-Options: DENY`.
+
+What is counted, and where:
+
+- **Events.** `embed` (player page load), `resolve` (successful stream resolve), `resolve_error` (failed one, with the upstream reason), `proxy` (segment/manifest hit, totals only) and `server_attempt` (per-server success/failure/latency). A site is the host page's domain (`?parent=`, `Origin` or `Referer` of the request; the Worker host itself and direct opens are never listed as a site). Countries come from `request.cf.country` (`CF-IPCountry`). TV episodes roll up into their show.
+- **Storage.** On the Worker the counters live in **one SQLite-backed Durable Object** (`STATS` binding, class `StatsStore`, declared in `wrangler.toml` with a `new_sqlite_classes` migration) so they are global across Cloudflare's edge and survive isolate recycling. Requests enqueue events in isolate memory and ship them to the object in the background (`ctx.waitUntil`); embed/resolve outcomes flush immediately, proxy hits in batches of 50 / 30 s. The object applies events in memory and writes only the rows that changed, ten seconds after a burst (one alarm), which keeps row writes far below the free plan's allowance. Works on the Workers Free plan; nothing to create by hand — `wrangler deploy` applies the migration. Without the binding (or if the object is unreachable) the same aggregate runs in-isolate and the dashboard badge says *In-memory (per isolate)* instead of *Durable storage*. The Node backend keeps the counters in process memory (*Process memory*).
+- **Blocking.** Blocked domains are persisted in the same object (cached per isolate for a minute). A blocked site gets a 403 page instead of the player and a 403 from `/api/resolve`; the dashboard shows it as *blocked* and offers *Unblock*. A reset of the statistics keeps the block-list.
+- **Shape.** `GET /api/admin/stats?limit=25` → `{ ok, stats: { persistent, storage, startedAt, totals, topTitles[], failingTitles[], domains[], countries[], servers[], days[], errors[], blockedDomains[] }, catalog[], servers[], runtime }`. The same `stats` block is included in `GET /api/admin/overview`. The aggregation model is shared (`src/services/statsAggregate.js`) between the Worker, the Durable Object and the Node backend.
+- **Dev.** `node scripts/dev-player-mock.mjs` serves `/docs` and `/reze?key=admin123` with seeded demo statistics.
 
 ### Skip segments
 
@@ -335,16 +354,16 @@ docker compose up -d --build
 
 ## Deploy the Cloudflare Worker
 
-`cloudflare-worker/worker.js` runs the player page, the backend API, and the edge proxy. The `public/` directory contains the `/embed` player page, its CSS/JS/vendor assets, and the social/meta GIF — no landing page, portal, or admin dashboard.
+`cloudflare-worker/worker.js` runs the player page, the backend API, the edge proxy, the documentation page and the owner dashboard. The `public/` directory contains the `/embed` player page with its CSS/JS/vendor assets, `docs.html`, `reze.html` and the social/meta GIF; nothing in it is served unless the Worker routes to it (`run_worker_first`), so `/docs.html`, `/reze.html` or `/index.html` stay 404.
 
 ```bash
 npx wrangler login
 npx wrangler deploy
 ```
 
-Configure production secrets and variables in Cloudflare Worker settings. Set a strong `ADMIN_SECRET` and `PROXY_SECRET` before deployment; do not use the sample values in `wrangler.toml` for a public service. If the API runs on a separate Worker or Node deployment, set `API_BASE_URL` to its absolute URL (see above).
+Configure production secrets and variables in Cloudflare Worker settings. Set a strong `ADMIN_SECRET` (it is also the `/reze` dashboard key) and `PROXY_SECRET` before deployment; do not use the sample values in `wrangler.toml` for a public service. If the API runs on a separate Worker or Node deployment, set `API_BASE_URL` to its absolute URL (see above). The statistics Durable Object is created by the `[[migrations]]` block on the first deploy; to run without it, delete the `[[durable_objects.bindings]]` and `[[migrations]]` blocks (counters then live in isolate memory only).
 
-Branch pushes run `wrangler preview` via Workers Builds, using the preview-safe values in the `[previews]` block of `wrangler.toml`; only merges to the production branch deploy the production configuration.
+Branch pushes run `wrangler preview` via Workers Builds, using the preview-safe values in the `[previews]` block of `wrangler.toml`; only merges to the production branch deploy the production configuration. Durable Object migrations are atomic and cannot be shipped by a preview/version upload, so the `v1` migration that creates the statistics object must land through a production `wrangler deploy` first (branch previews built before that fail with a migration error; afterwards they share the already-migrated class). If you ever rename `StatsStore`, add a new migration tag instead of editing `v1`.
 
 ### Ads
 
