@@ -1,10 +1,10 @@
 {
-  "startedAt": "2026-10-04T11:17:35.136Z",
+  "startedAt": "2026-10-04T12:07:02.344Z",
   "discovery": [
     {
       "domain": "https://net27.cc",
       "status": 404,
-      "latencyMs": 720,
+      "latencyMs": 626,
       "error": null,
       "bodySample": "<!DOCTYPE html><html lang=\"en\"> <head><meta charset=\"UTF-8\"><meta name=\"clckd\" content=\"502623715d0616ada312531d38452d6c\"><meta name=\"viewport\" content=\"width=device-width, initial-scale=1, viewport-f",
       "parse": "not-json"
@@ -12,7 +12,7 @@
     {
       "domain": "https://net52.cc",
       "status": 404,
-      "latencyMs": 510,
+      "latencyMs": 356,
       "error": null,
       "bodySample": "File not found.\n",
       "parse": "not-json"
@@ -20,7 +20,7 @@
     {
       "domain": "https://net77.cc",
       "status": 404,
-      "latencyMs": 865,
+      "latencyMs": 449,
       "error": null,
       "bodySample": "File not found.\n",
       "parse": "not-json"
@@ -28,7 +28,7 @@
     {
       "domain": "https://mobiledetect.app",
       "status": 200,
-      "latencyMs": 162,
+      "latencyMs": 127,
       "error": null,
       "bodySample": "{\"token_hash\":\"aHR0cHM6Ly90di5pbWdjZG4ua2lt\",\"doms\":\"false\",\"mwin\":\"true\",\"popwin\":\"true\",\"var\":\"1.0\"}",
       "token_hash": "aHR0cHM6Ly90di5pbWdjZG4ua2lt",
@@ -37,7 +37,7 @@
     {
       "domain": "https://mobiledetects.com",
       "status": 200,
-      "latencyMs": 181,
+      "latencyMs": 203,
       "error": null,
       "bodySample": "{\"token_hash\":\"aHR0cHM6Ly90di5pbWdjZG4ua2lt\",\"doms\":\"false\",\"mwin\":\"true\",\"popwin\":\"true\",\"var\":\"1.0\"}",
       "token_hash": "aHR0cHM6Ly90di5pbWdjZG4ua2lt",
@@ -46,7 +46,7 @@
     {
       "domain": "https://mobidetect.cc",
       "status": 200,
-      "latencyMs": 328,
+      "latencyMs": 243,
       "error": null,
       "bodySample": "{\"token_hash\":\"aHR0cHM6Ly90di5pbWdjZG4ua2lt\",\"doms\":\"false\",\"mwin\":\"true\",\"popwin\":\"true\",\"var\":\"1.0\"}",
       "token_hash": "aHR0cHM6Ly90di5pbWdjZG4ua2lt",
@@ -55,19 +55,19 @@
     {
       "domain": "https://mobidetects.top",
       "status": 0,
-      "latencyMs": 10322,
+      "latencyMs": 10072,
       "error": "fetch failed"
     },
     {
       "domain": "https://getimgcdn.com",
       "status": 0,
-      "latencyMs": 43,
+      "latencyMs": 51,
       "error": "fetch failed"
     },
     {
       "domain": "https://mobidetect.art",
       "status": 200,
-      "latencyMs": 386,
+      "latencyMs": 272,
       "error": null,
       "bodySample": "{\"token_hash\":\"aHR0cHM6Ly90di5pbWdjZG4ua2lt\",\"doms\":\"false\",\"mwin\":\"true\",\"popwin\":\"true\",\"var\":\"1.0\"}",
       "token_hash": "aHR0cHM6Ly90di5pbWdjZG4ua2lt",
@@ -76,7 +76,7 @@
     {
       "domain": "https://mobidetect.click",
       "status": 0,
-      "latencyMs": 10067,
+      "latencyMs": 10172,
       "error": "fetch failed"
     }
   ],
@@ -84,24 +84,24 @@
   "endpoints": {
     "newtvSearch": {
       "status": 403,
-      "latencyMs": 119,
+      "latencyMs": 137,
       "sample": "Page Not Found"
     },
     "embedMovie": {
       "status": 403,
-      "latencyMs": 64,
+      "latencyMs": 47,
       "sample": "Page Not Found"
     },
     "embedTv": {
       "status": 403,
-      "latencyMs": 21,
+      "latencyMs": 12,
       "sample": "Page Not Found"
     }
   },
   "resolver": [
     {
       "title": "Dune: Part Two",
-      "latencyMs": 1730,
+      "latencyMs": 2932,
       "ok": false,
       "sourceName": null,
       "server": null,
@@ -120,12 +120,12 @@
     },
     {
       "title": "Fight Club",
-      "latencyMs": 1735,
-      "ok": true,
-      "sourceName": "NetMirror",
-      "server": "andromeda",
-      "rawUrl": "https://bcdnxw.hakunaymatata.com/convert-h264/302da107f7b496c741394c6f1ecdddfd.mp4?sign=9d47d7fbec8c096634bc2f5b241104a4&t=1791109990",
-      "resolvedReferer": "https://net27.cc/",
+      "latencyMs": 4501,
+      "ok": false,
+      "sourceName": null,
+      "server": null,
+      "rawUrl": null,
+      "resolvedReferer": null,
       "metadata": {
         "tmdbId": 550,
         "title": "Fight Club",
@@ -133,25 +133,17 @@
         "releaseYear": 1999,
         "type": "movie"
       },
-      "audioTracks": [
-        {
-          "id": "nm-default",
-          "lang": "en",
-          "label": "Original Audio (Multi-Track HLS)",
-          "type": "dub",
-          "streamUrl": "/api/proxy?url=https%3A%2F%2Fbcdnxw.hakunaymatata.com%2Fconvert-h264%2F302da107f7b496c741394c6f1ecdddfd.mp4%3Fsign%3D9d47d7fbec8c096634bc2f5b241104a4%26t%3D1791109990&referer=https%3A%2F%2Fnet27.cc%2F&exp=1791127086&sig=fb14c090900fd15a4163f27588522ff9&mode=full",
-          "rawUrl": "https://bcdnxw.hakunaymatata.com/convert-h264/302da107f7b496c741394c6f1ecdddfd.mp4?sign=9d47d7fbec8c096634bc2f5b241104a4&t=1791109990",
-          "default": true
-        }
-      ]
+      "audioTracks": null,
+      "reason": null,
+      "error": null
     },
     {
       "title": "Breaking Bad",
-      "latencyMs": 90,
+      "latencyMs": 103,
       "ok": true,
       "sourceName": "NetMirror",
       "server": "andromeda",
-      "rawUrl": "https://bcdnxw.hakunaymatata.com/bt/ad047603b18afe1d194d5b9adb0c21a7.mp4?sign=7cdc11b86c6fde9dcad6818a0072e6ad&t=1791110078",
+      "rawUrl": "https://bcdnxw.hakunaymatata.com/bt/ad047603b18afe1d194d5b9adb0c21a7.mp4?sign=99b660e6049cacda3da0344c273d4195&t=1791113485",
       "resolvedReferer": "https://net27.cc/",
       "metadata": {
         "tmdbId": 1396,
@@ -168,8 +160,8 @@
           "lang": "en",
           "label": "Original Audio (Multi-Track HLS)",
           "type": "dub",
-          "streamUrl": "/api/proxy?url=https%3A%2F%2Fbcdnxw.hakunaymatata.com%2Fbt%2Fad047603b18afe1d194d5b9adb0c21a7.mp4%3Fsign%3D7cdc11b86c6fde9dcad6818a0072e6ad%26t%3D1791110078&referer=https%3A%2F%2Fnet27.cc%2F&exp=1791127086&sig=87f3ad7cf790135f181626efa1460d1e&mode=full",
-          "rawUrl": "https://bcdnxw.hakunaymatata.com/bt/ad047603b18afe1d194d5b9adb0c21a7.mp4?sign=7cdc11b86c6fde9dcad6818a0072e6ad&t=1791110078",
+          "streamUrl": "/api/proxy?url=https%3A%2F%2Fbcdnxw.hakunaymatata.com%2Fbt%2Fad047603b18afe1d194d5b9adb0c21a7.mp4%3Fsign%3D99b660e6049cacda3da0344c273d4195%26t%3D1791113485&referer=https%3A%2F%2Fnet27.cc%2F&exp=1791130057&sig=8f388010012ba4ab711dc79c1d732eaf&mode=full",
+          "rawUrl": "https://bcdnxw.hakunaymatata.com/bt/ad047603b18afe1d194d5b9adb0c21a7.mp4?sign=99b660e6049cacda3da0344c273d4195&t=1791113485",
           "default": true
         }
       ]
@@ -180,7 +172,7 @@
     "https://net27.cc": {
       "movie": {
         "status": 200,
-        "latencyMs": 978,
+        "latencyMs": 1020,
         "ok": true,
         "error": "We couldn't find this title on NetMirror yet. Try a different one.",
         "streams": 0,
@@ -208,7 +200,7 @@
       },
       "tv": {
         "status": 200,
-        "latencyMs": 377,
+        "latencyMs": 2313,
         "ok": true,
         "error": null,
         "streams": 4,
@@ -238,7 +230,7 @@
           "captions",
           "fallbackHls"
         ],
-        "firstStream": "https://bcdnxw.hakunaymatata.com/bt/ad047603b18afe1d194d5b9adb0c21a7.mp4?sign=7cdc11b86c6fde9dcad6818a0072e6ad",
+        "firstStream": "https://bcdnxw.hakunaymatata.com/bt/ad047603b18afe1d194d5b9adb0c21a7.mp4?sign=99b660e6049cacda3da0344c273d4195",
         "firstStreamKeys": [
           "url",
           "resolution",
@@ -249,19 +241,19 @@
           {
             "lang": "ar",
             "name": "اَلْعَرَبِيَّةُ",
-            "url": "/api/proxy/video?url=https%3A%2F%2Fcacdn.hakunaymatata.com%2Fsubtitle%2Fb99f4c385b2078d34058db8c3d993781.srt%3FPolicy%3DeyJTdGF0ZW1lbnQiOlt7IlJlc291cmNlIjoiaHR0cHM6Ly9jYWNkbi5oYWt1bmF5bWF0YXRhLmNvbS9zdWJ0aXRsZS8qIiwiQ29uZGl0aW9uIjp7IkRhdGVMZXNzVGhhbiI6eyJBV1M6RXBvY2hUaW1lIjoxNzkxNzE3MDU0fX19XX0_%26Signature%3DatdxvQytXkeQAPbe~jJye-rITh1MiY77eWi0jGpYdADWLq31dNytFqJLIHSVYeAUvFcLpDrGiT4KLUzAB5tlqBzsoM0YAJqtws9XCKZOZnJJLnLXBhjtwOtFGLA2Tu~LYxSjlYFKcNMoa4Hz6D7VGJs3ppRB6F1NpyhcYjoQW8CLUXOFBpqQ1OA662uTW3DS1xX8bq9nWKznLYMiiwkAYa9gGWBhXb1XxjY0kGvyrvdE6U83nqtHmCDKl-m5nwJTiYj1VlV3kf2C3yt3FEPGBDhMmzsu5x86C1hHcRUB1lD4EwHQm1F5Y7z1ZmVYytzicxjYobK4BOd04iwOwKVqQA__%26Key-Pair-Id%3DKMHN1LQ1HEUPL",
+            "url": "/api/proxy/video?url=https%3A%2F%2Fcacdn.hakunaymatata.com%2Fsubtitle%2Fb99f4c385b2078d34058db8c3d993781.srt%3FPolicy%3DeyJTdGF0ZW1lbnQiOlt7IlJlc291cmNlIjoiaHR0cHM6Ly9jYWNkbi5oYWt1bmF5bWF0YXRhLmNvbS9zdWJ0aXRsZS8qIiwiQ29uZGl0aW9uIjp7IkRhdGVMZXNzVGhhbiI6eyJBV1M6RXBvY2hUaW1lIjoxNzkxNzE5ODU3fX19XX0_%26Signature%3DsY8CwevESxfkgb8KZCUSx49SgsejG19044U7~S9-1tXMYoJUi7qROuKfrr54Hn~EOhEo1zayAJi7Ks2~KY~rk9O2er81pG-a~gIBYQZYzOxGYqRJnTYvj5YRJpaCQks8XGX8bCtg2WeBUxXnhyf39PcX9aKtyf2H~lSJOUbTx5cwmbA3Wx7Bka5qGAI7t7o7jt4Vj5mu7WnZw7zI1o6~GXpbfNPddVUCTS1BVcL20fIiAh70YlRJF-qeOuOaO1ZQ8qpYByx6UTiwLznNcWHQk-QhQ5TIM7Esth8gMiIZ5pK~4gJO0X-AXMvZRfIVT4gkO1YpspBglYaugFBFj8AibQ__%26Key-Pair-Id%3DKMHN1LQ1HEUPL",
             "source": "moviebox"
           },
           {
             "lang": "bn",
             "name": "বাংলা",
-            "url": "/api/proxy/video?url=https%3A%2F%2Fcacdn.hakunaymatata.com%2Fmsubt%2F1be29d06ca4781a957388bdbabe446f0.srt%3FPolicy%3DeyJTdGF0ZW1lbnQiOlt7IlJlc291cmNlIjoiaHR0cHM6Ly9jYWNkbi5oYWt1bmF5bWF0YXRhLmNvbS9tc3VidC8qIiwiQ29uZGl0aW9uIjp7IkRhdGVMZXNzVGhhbiI6eyJBV1M6RXBvY2hUaW1lIjoxNzkxNzE3MDU0fX19XX0_%26Signature%3DRZqRMhgi6Dx0cyv8FD3UmzmHrU7CoTjbiMBMO~qfYjKrJRwttJVdkUpLcdYss-cx2GIABPjDDjYtUKSgg0t7AdcPVwIGrYtL0O0YHQ3oX6t-oIsv7HLa78bMOc~1Nu~tyvxRVitgOyKyPZteqPn-0IxUlSjx~9QsZfZ~fuudi0kCXsEJiM4W3ETk5aQdh02~H1nt3HZpOZukIMESI-TJAFCwcQIlqSc~s1eg9sRTeyjwhxGar6b2nwsgnP4jq9FkpngudZAEZmQ6AYgbcRDlIkcs3oyE-6KNsXPu6VSPFL~R2cT6HviWOpo5Q6j0pH4brkj-ZFBxGhsyBGdrjNtBQQ__%26Key-Pair-Id%3DKMHN1LQ1HEUPL",
+            "url": "/api/proxy/video?url=https%3A%2F%2Fcacdn.hakunaymatata.com%2Fmsubt%2F1be29d06ca4781a957388bdbabe446f0.srt%3FPolicy%3DeyJTdGF0ZW1lbnQiOlt7IlJlc291cmNlIjoiaHR0cHM6Ly9jYWNkbi5oYWt1bmF5bWF0YXRhLmNvbS9tc3VidC8qIiwiQ29uZGl0aW9uIjp7IkRhdGVMZXNzVGhhbiI6eyJBV1M6RXBvY2hUaW1lIjoxNzkxNzE5ODU3fX19XX0_%26Signature%3DMCe0BQH1pZbclwCG1JGBvx7Z7bPQSHO4H9DTUuKcnZt9cYkm0PmJ6q5ojqyPxK64a4v1odDkQxHhcEHjLla1Vq586Cbs30ddIYuA5CDGuD1ZrRLsOFkyc79kUUwJCeuRxJ5C75e4P1-q7T0MC99wN1mFpWdC~ktzco6BLVt-Wb8zYrvllds1qKSYN~rWvymbiZgT-qAlq72dR~hSmbYjFoaBH7xYUxqZBQUTsvrDBB~t4SnXGgr~2r6sXo3VK8QgEZrrheDaevPfVsUQud3hBu0Imhu11gPg8MtU0nSBPYMZ2m044W5J5iL3Xu9DakpqAphluQX0mSDVjib~LhHAiQ__%26Key-Pair-Id%3DKMHN1LQ1HEUPL",
             "source": "moviebox"
           },
           {
             "lang": "en",
             "name": "English",
-            "url": "/api/proxy/video?url=https%3A%2F%2Fcacdn.hakunaymatata.com%2Fsubtitle%2F3d4c0c73a56f51f6a618b68b10b7907e.srt%3FPolicy%3DeyJTdGF0ZW1lbnQiOlt7IlJlc291cmNlIjoiaHR0cHM6Ly9jYWNkbi5oYWt1bmF5bWF0YXRhLmNvbS9zdWJ0aXRsZS8qIiwiQ29uZGl0aW9uIjp7IkRhdGVMZXNzVGhhbiI6eyJBV1M6RXBvY2hUaW1lIjoxNzkxNzE3MDU0fX19XX0_%26Signature%3DatdxvQytXkeQAPbe~jJye-rITh1MiY77eWi0jGpYdADWLq31dNytFqJLIHSVYeAUvFcLpDrGiT4KLUzAB5tlqBzsoM0YAJqtws9XCKZOZnJJLnLXBhjtwOtFGLA2Tu~LYxSjlYFKcNMoa4Hz6D7VGJs3ppRB6F1NpyhcYjoQW8CLUXOFBpqQ1OA662uTW3DS1xX8bq9nWKznLYMiiwkAYa9gGWBhXb1XxjY0kGvyrvdE6U83nqtHmCDKl-m5nwJTiYj1VlV3kf2C3yt3FEPGBDhMmzsu5x86C1hHcRUB1lD4EwHQm1F5Y7z1ZmVYytzicxjYobK4BOd04iwOwKVqQA__%26Key-Pair-Id%3DKMHN1LQ1HEUPL",
+            "url": "/api/proxy/video?url=https%3A%2F%2Fcacdn.hakunaymatata.com%2Fsubtitle%2F3d4c0c73a56f51f6a618b68b10b7907e.srt%3FPolicy%3DeyJTdGF0ZW1lbnQiOlt7IlJlc291cmNlIjoiaHR0cHM6Ly9jYWNkbi5oYWt1bmF5bWF0YXRhLmNvbS9zdWJ0aXRsZS8qIiwiQ29uZGl0aW9uIjp7IkRhdGVMZXNzVGhhbiI6eyJBV1M6RXBvY2hUaW1lIjoxNzkxNzE5ODU3fX19XX0_%26Signature%3DsY8CwevESxfkgb8KZCUSx49SgsejG19044U7~S9-1tXMYoJUi7qROuKfrr54Hn~EOhEo1zayAJi7Ks2~KY~rk9O2er81pG-a~gIBYQZYzOxGYqRJnTYvj5YRJpaCQks8XGX8bCtg2WeBUxXnhyf39PcX9aKtyf2H~lSJOUbTx5cwmbA3Wx7Bka5qGAI7t7o7jt4Vj5mu7WnZw7zI1o6~GXpbfNPddVUCTS1BVcL20fIiAh70YlRJF-qeOuOaO1ZQ8qpYByx6UTiwLznNcWHQk-QhQ5TIM7Esth8gMiIZ5pK~4gJO0X-AXMvZRfIVT4gkO1YpspBglYaugFBFj8AibQ__%26Key-Pair-Id%3DKMHN1LQ1HEUPL",
             "source": "moviebox"
           }
         ]
@@ -270,73 +262,41 @@
     "https://net52.cc": {
       "movie": {
         "status": 404,
-        "latencyMs": 182,
+        "latencyMs": 183,
         "bodySample": "<!DOCTYPE HTML PUBLIC \"-//W3C//DTD HTML 4.01//EN\" \"http://www.w3.org/TR/html4/strict.dtd\">\n<html><head>\n<title>404 Not Found</title>\n</head>"
       },
       "tv": {
         "status": 404,
-        "latencyMs": 140,
+        "latencyMs": 158,
         "bodySample": "<!DOCTYPE HTML PUBLIC \"-//W3C//DTD HTML 4.01//EN\" \"http://www.w3.org/TR/html4/strict.dtd\">\n<html><head>\n<title>404 Not Found</title>\n</head>"
       }
     },
     "https://net77.cc": {
       "movie": {
         "status": 404,
-        "latencyMs": 710,
+        "latencyMs": 281,
         "bodySample": "<!DOCTYPE HTML PUBLIC \"-//W3C//DTD HTML 4.01//EN\" \"http://www.w3.org/TR/html4/strict.dtd\">\n<html><head>\n<title>404 Not Found</title>\n</head>"
       },
       "tv": {
         "status": 404,
-        "latencyMs": 238,
+        "latencyMs": 251,
         "bodySample": "<!DOCTYPE HTML PUBLIC \"-//W3C//DTD HTML 4.01//EN\" \"http://www.w3.org/TR/html4/strict.dtd\">\n<html><head>\n<title>404 Not Found</title>\n</head>"
       }
     },
     "https://netmiror.com": {
       "movie": {
         "status": 404,
-        "latencyMs": 742,
+        "latencyMs": 689,
         "bodySample": "<html>\r\n<head><title>404 Not Found</title></head>\r\n<body>\r\n<center><h1>404 Not Found</h1></center>\r\n<hr><center>nginx</center>\r\n</body>\r\n</h"
       },
       "tv": {
         "status": 404,
-        "latencyMs": 576,
+        "latencyMs": 162,
         "bodySample": "<html>\r\n<head><title>404 Not Found</title></head>\r\n<body>\r\n<center><h1>404 Not Found</h1></center>\r\n<hr><center>nginx</center>\r\n</body>\r\n</h"
       }
     }
   },
   "playback": [
-    {
-      "title": "Fight Club",
-      "referer": "https://net27.cc/",
-      "attempts": {
-        "plain": {
-          "status": 429,
-          "contentType": "text/html",
-          "retryAfter": null,
-          "server": "nginx",
-          "bodySample": "<html>\r\n<head><title>429 Too Many Requests</title></head>\r\n<body>\r\n<center><h1>429 Too Many Requests</h1></center>\r\n<hr>"
-        },
-        "ranged": {
-          "status": 429,
-          "contentType": "text/html",
-          "retryAfter": null,
-          "server": "nginx",
-          "bodySample": "<html>\r\n<head><title>429 Too Many Requests</title></head>\r\n<body>\r\n<center><h1>429 Too Many Requests</h1></center>\r\n<hr>"
-        },
-        "no-referer": {
-          "status": 429,
-          "contentType": "text/html",
-          "retryAfter": null,
-          "server": "nginx",
-          "bodySample": "<html>\r\n<head><title>429 Too Many Requests</title></head>\r\n<body>\r\n<center><h1>429 Too Many Requests</h1></center>\r\n<hr>"
-        }
-      },
-      "fresh": {
-        "status": 429,
-        "contentType": "text/html",
-        "sameUrl": true
-      }
-    },
     {
       "title": "Breaking Bad",
       "referer": "https://net27.cc/",
@@ -370,5 +330,5 @@
       }
     }
   ],
-  "finishedAt": "2026-10-04T11:18:07.469Z"
+  "finishedAt": "2026-10-04T12:07:38.390Z"
 }
