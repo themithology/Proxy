@@ -1450,6 +1450,50 @@ async function runTests() {
     'Range preflight must reject 200 JSON/hotlink responses'
   );
 
+  // The 4KHDHub redirector chain answers with a JavaScript landing page and no
+  // Content-Type. It used to pass the "not HTML, not JSON" check, which made
+  // Server 3 (ursa) return that page as a "verified 4K" stream. Only positive
+  // media evidence may pass now.
+  assert.strictEqual(
+    await probePlayableMediaUrl('https://d33f51dyacx7bd.cloudfront.net/?aydfd=1015073', {
+      deadline: Date.now() + 1000,
+      fetchImpl: async () => new Response('(function(){var t=document.createElement("script");})();', { status: 206 })
+    }),
+    false,
+    'Range preflight must reject a JavaScript landing page served without a Content-Type'
+  );
+  assert.strictEqual(
+    await probePlayableMediaUrl('https://cdn.example.org/guard.js', {
+      deadline: Date.now() + 1000,
+      fetchImpl: async () => new Response('var go=1;', { status: 200, headers: { 'Content-Type': 'application/javascript' } })
+    }),
+    false,
+    'Range preflight must reject JavaScript content types'
+  );
+  assert.strictEqual(
+    await probePlayableMediaUrl('https://cdn.example.org/real.mkv', {
+      deadline: Date.now() + 1000,
+      fetchImpl: async () => new Response(Buffer.concat([Buffer.from([0x1a, 0x45, 0xdf, 0xa3]), Buffer.alloc(512)]), { status: 206 })
+    }),
+    true,
+    'Range preflight must accept a Matroska header even without a Content-Type'
+  );
+  assert.strictEqual(
+    await probePlayableMediaUrl('https://cdn.example.org/master.m3u8', {
+      deadline: Date.now() + 1000,
+      fetchImpl: async () => new Response('#EXTM3U\n#EXT-X-VERSION:3\n', { status: 200, headers: { 'Content-Type': 'text/plain' } })
+    }),
+    true,
+    'Range preflight must accept an HLS playlist body served as text/plain'
+  );
+  // A CDN host alone is not a "playable" score: a bare host with only a query
+  // string must rank below real file candidates (4KHDHub gate-page regression).
+  assert.ok(
+    scorePlayableUrl('https://pub-abc.r2.dev/movies/RRR.mkv') >
+      scorePlayableUrl('https://d33f51dyacx7bd.cloudfront.net/?aydfd=1015073'),
+    'Object paths on CDN hosts must outrank bare-host gate pages'
+  );
+
   // (e) countdown page with no reachable target → null (caller keeps old URL)
   const noLinks = await unrollHubcloudUrl(`${mockUpstream.url}/hubcloud/no-links`);
   assert.strictEqual(

@@ -2113,14 +2113,22 @@ function scorePlayableUrl(u) {
   if (isHubcloudGeneratorUrl(href)) return -1;
   if (HUBCLOUD_UNPLAYABLE_HOST_RE.test(host)) return -1;
 
+  // CDN hosts only earn their bonus when the URL points at a real object: a
+  // media extension or at least one non-root path segment. A bare host plus a
+  // query string — `https://d33f51dyacx7bd.cloudfront.net/?aydfd=1015073`,
+  // which is what 4KHDHub's redirector chain returns — is a landing/gate page,
+  // not media. It used to score 90 and outrank every real file candidate, so
+  // Server 3 reported a JavaScript page as its "verified 4K" stream.
+  const hasObjectPath = pathname.replace(/\/+$/, '') !== '';
+  const cdnScore = (base) => (hasObjectPath ? base : 25);
   if (/(^|\.)workers\.dev$/i.test(host) && /[?&]vcloud=/i.test(href)) return -1;
-  if (/(^|\.)googleusercontent\.com$/i.test(host)) return 100;
-  if (/(^|\.)r2\.dev$/i.test(host)) return 95;
-  if (/(^|\.)r2\.cloudflarestorage\.com$/i.test(host) || /(^|\.)cloudflarestorage\.com$/i.test(host)) return 92;
-  if (/(^|\.)cloudfront\.net$/i.test(host)) return 90;
-  if (/(^|\.)storage\.googleapis\.com$/i.test(host)) return 88;
+  if (/(^|\.)googleusercontent\.com$/i.test(host)) return cdnScore(100);
+  if (/(^|\.)r2\.dev$/i.test(host)) return cdnScore(95);
+  if (/(^|\.)r2\.cloudflarestorage\.com$/i.test(host) || /(^|\.)cloudflarestorage\.com$/i.test(host)) return cdnScore(92);
+  if (/(^|\.)cloudfront\.net$/i.test(host)) return cdnScore(90);
+  if (/(^|\.)storage\.googleapis\.com$/i.test(host)) return cdnScore(88);
   if (/(^|\.)pixeldrain\.(?:com|dev)$/i.test(host) && /^\/(?:u|api\/file)\/[A-Za-z0-9_-]+/i.test(pathname)) return 75;
-  if (/(^|\.)workers\.dev$/i.test(host)) return 60;
+  if (/(^|\.)workers\.dev$/i.test(host)) return cdnScore(60);
   if (!/(^|\.)workers\.dev$/i.test(host) && /\.(?:mp4|mkv|webm|m4v|m3u8|mpd)$/i.test(pathname)) return 80;
   return -1;
 }
@@ -2159,15 +2167,68 @@ function isLocalTestMediaUrl(rawUrl) {
   }
 }
 
-async function readProbePrefix(response, maxBytes = 4096) {
+/**
+ * Media sniffing for the Range preflight.
+ *
+ * A 200/206 response is NOT proof of media. 4KHDHub's redirector chain answers
+ * with a JavaScript landing page (no Content-Type, body starting with
+ * `(function(){`), which the old "not HTML and not JSON" test accepted — so
+ * Server 3 (ursa) returned that page as its "verified 4K" stream and every
+ * playback attempt failed. Accept a candidate only when the response carries a
+ * real media Content-Type, or when the first bytes match a known container.
+ */
+const MEDIA_CONTENT_TYPE_RE =
+  /^(?:video|audio)\/|application\/(?:vnd\.apple\.mpegurl|x-mpegurl|dash\+xml|mp4|matroska|x-matroska|ogg|mp2t|x-flv)/i;
+const JS_BODY_RE =
+  /^\s*(?:<script|<!--|\(function|!function|function\s*\(|var\s|let\s|const\s|window\.|document\.|eval\()/i;
+const MEDIA_MAGIC_HEADERS = [
+  [0x23, 0x45, 0x58, 0x54, 0x4d, 0x33, 0x55], // #EXTM3U (HLS playlist)
+  [0x1a, 0x45, 0xdf, 0xa3], // EBML header (Matroska / WebM)
+  [0x4f, 0x67, 0x67, 0x53], // OggS
+  [0x66, 0x4c, 0x61, 0x43], // fLaC
+  [0x49, 0x44, 0x33], // ID3-tagged MP3
+  [0x52, 0x49, 0x46, 0x46], // RIFF (WAV / AVI)
+  [0x00, 0x00, 0x01, 0xba], // MPEG program stream
+  [0x00, 0x00, 0x01, 0xb3] // MPEG video elementary stream
+];
+
+function bytesStartWith(bytes, magic, offset = 0) {
+  if (!bytes || bytes.length < offset + magic.length) return false;
+  for (let index = 0; index < magic.length; index += 1) {
+    if (bytes[offset + index] !== magic[index]) return false;
+  }
+  return true;
+}
+
+function looksLikeMediaSample(bytes, text) {
+  if (!bytes || bytes.length < 8) return false;
+  if (bytesStartWith(bytes, [0x66, 0x74, 0x79, 0x70], 4)) return true; // `….ftyp` (MP4 / MOV)
+  for (const magic of MEDIA_MAGIC_HEADERS) {
+    if (bytesStartWith(bytes, magic)) return true;
+  }
+  // MPEG-TS: the 0x47 sync byte repeats every 188 bytes.
+  if (bytes[0] === 0x47 && (bytes.length < 189 || bytes[188] === 0x47)) return true;
+  if (!text) return false;
+  if (/#extm3u/.test(text)) return true;
+  if (/<(?:mpd|manifest)[\s>]/.test(text)) return true;
+  return false;
+}
+
+/**
+ * First chunk of the body as raw bytes (container magic) and lowercased text.
+ * Binary container headers never survive a UTF-8 round-trip, so the byte view
+ * is what makes MP4/MKV/TS detection reliable.
+ */
+async function readProbeSample(response, maxBytes = 4096) {
   const reader = response?.body?.getReader?.();
-  if (!reader) return '';
+  if (!reader) return { bytes: null, text: '' };
   try {
     const { value } = await reader.read();
-    if (!value) return '';
-    return new TextDecoder('utf-8', { fatal: false }).decode(value.subarray(0, maxBytes)).toLowerCase();
+    if (!value) return { bytes: null, text: '' };
+    const bytes = value.subarray(0, maxBytes);
+    return { bytes, text: new TextDecoder('utf-8', { fatal: false }).decode(bytes).toLowerCase() };
   } catch {
-    return '';
+    return { bytes: null, text: '' };
   } finally {
     try { await reader.cancel(); } catch {}
   }
@@ -2218,16 +2279,21 @@ async function probePlayableMediaUrl(rawUrl, options = {}) {
     if (
       response.status >= 400 ||
       ![200, 206].includes(response.status) ||
-      /text\/html|application\/(?:xhtml\+xml|json)/i.test(contentType)
+      /text\/html|application\/(?:xhtml\+xml|json)|javascript/i.test(contentType)
     ) {
       try { await response.body?.cancel?.(); } catch {}
       return false;
     }
-    const prefix = await readProbePrefix(response);
+    const sample = await readProbeSample(response);
+    const prefix = sample.text;
     if (
       /<\s*!doctype\s+html|<\s*html\b|<\s*body\b|download\s*quota\s*exceeded|downloadquotaexceeded|access\s+denied|token\s+expired|file\s+not\s+found/i.test(prefix)
     ) return false;
-    return true;
+    if (JS_BODY_RE.test(prefix)) return false;
+    // Positive evidence only: a media Content-Type, or a real container magic.
+    // Anything else (bare JavaScript landing pages, bot walls without a
+    // Content-Type) must never be handed to <video>.
+    return MEDIA_CONTENT_TYPE_RE.test(contentType) || looksLikeMediaSample(sample.bytes, prefix);
   } catch {
     return false;
   } finally {
