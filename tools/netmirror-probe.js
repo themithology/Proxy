@@ -144,8 +144,11 @@ async function probeWebMirrors() {
           summary.error = json.error || null;
           summary.streams = (json.streams || []).length;
           summary.mp4 = json.mp4 ? 'yes' : null;
+          summary.topLevelKeys = Object.keys(json);
           summary.firstStream = json.streams && json.streams[0] ? String(json.streams[0].url).slice(0, 110) : null;
+          summary.firstStreamKeys = json.streams && json.streams[0] ? Object.keys(json.streams[0]) : null;
           summary.captions = (json.captions || []).length;
+          summary.captionSample = (json.captions || []).slice(0, 3);
         } catch {
           summary.bodySample = res.text.slice(0, 140);
         }
@@ -181,6 +184,7 @@ async function probeResolver() {
       sourceName: resolved && resolved.sourceName,
       server: resolved && resolved.server,
       rawUrl: resolved && resolved.rawUrl,
+      resolvedReferer: resolved && resolved.referer,
       audioTracks: resolved && resolved.audioTracks,
       reason: resolved && resolved.reason,
       error: resolved && resolved.__error
@@ -188,6 +192,23 @@ async function probeResolver() {
   }
   config.upstreams.netmirrorBase = prevBase;
   report.resolver = results;
+
+  // Prove the resolved stream is actually playable: NetMirror's CDN is
+  // Referer-gated, so fetch it the way /api/proxy does.
+  report.playback = [];
+  for (const entry of results.filter((r) => r.ok && r.rawUrl)) {
+    const res = await fetch(entry.rawUrl, {
+      headers: { Referer: entry.resolvedReferer || 'https://net27.cc/', 'User-Agent': UA, Range: 'bytes=0-1023' },
+      redirect: 'follow'
+    }).catch((error) => ({ status: 0, error }));
+    report.playback.push({
+      title: entry.title,
+      status: res.status,
+      error: res.error ? String(res.error.message || res.error) : null,
+      contentType: res.headers ? res.headers.get('content-type') : null,
+      contentLength: res.headers ? res.headers.get('content-length') : null
+    });
+  }
 }
 
 async function main() {
@@ -222,6 +243,9 @@ async function main() {
   }
   for (const entry of report.resolver || []) {
     console.log(`  RESOLVE ${entry.title.padEnd(16)} ok=${entry.ok} ${entry.sourceName || entry.reason || entry.error || ''}`);
+  }
+  for (const entry of report.playback || []) {
+    console.log(`  PLAYBACK ${entry.title.padEnd(15)} status=${entry.status} type=${entry.contentType} ${entry.error || ''}`);
   }
   console.log(`report: ${OUT}`);
 }
