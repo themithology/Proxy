@@ -46,6 +46,7 @@ const runtimeState = {
   externalProxyPool: [],
   domains: new Map(),
   blockedDomains: new Set(),
+  adFreeDomains: new Set(),
   customOverrides: new Map(),
   serverMetrics: new Map(
     SERVERS.map((s) => [
@@ -179,9 +180,10 @@ function getWorkerAdminSnapshot() {
 // Usage statistics — owner dashboard at /reze, `GET /api/admin/stats`
 // ---------------------------------------------------------------------------
 // The counters (most requested / failing titles, sites using the API,
-// viewer countries, per-server health, per-day activity, latest failures,
-// blocked domains) live in ONE SQLite-backed Durable Object (`STATS` binding,
-// class `StatsStore` below) so they are global and survive isolate recycling.
+// viewer countries, per-server health, per-day activity, latest failures) and
+// owner settings (blocked domains, per-site ad-free list) live in ONE
+// SQLite-backed Durable Object (`STATS` binding, class `StatsStore` below) so
+// they are global and survive isolate recycling.
 // Requests enqueue events in isolate memory and ship them to the object in
 // the background (`ctx.waitUntil`): embed / resolve outcomes flush at once,
 // per-segment proxy hits are batched. Without the binding (`wrangler dev`
@@ -197,6 +199,7 @@ const STATS_BLOCKLIST_TTL_MS = 60000;
 const localStats = statsAggregate.createStatsAggregate();
 const statsQueue = { enabled: false, events: [], lastFlush: 0 };
 const blockedDomainsCache = { domains: new Set(), fetchedAt: 0, pending: null };
+const adFreeDomainsCache = { domains: new Set(), fetchedAt: 0, pending: null };
 
 function statsStub(env) {
   const ns = env && env.STATS;
@@ -284,6 +287,23 @@ async function fetchStatsSnapshot(env, limit = 25) {
   return { persistent: false, storage: 'isolate-memory', ...localStats.snapshot({ limit }) };
 }
 
+/** Normalize an owner-entered website host (a URL or hostname) for exact host matching. */
+function normalizeSiteDomain(raw) {
+  const value = String(raw || '').trim();
+  if (!value || (/^[a-z][a-z0-9+.-]*:\/\//i.test(value) && !/^https?:\/\//i.test(value))) return '';
+  try {
+    const parsed = new URL(/^https?:\/\//i.test(value) ? value : `https://${value}`);
+    if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') return '';
+    const host = parsed.hostname.toLowerCase().replace(/^www\./, '').replace(/\.$/, '');
+    if (!host || host.length > 253 || host.split('.').some((label) =>
+      !label || label.length > 63 || !/^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?$/i.test(label)
+    )) return '';
+    return host;
+  } catch {
+    return '';
+  }
+}
+
 /** Owner block-list: persisted in the stats object, cached per isolate for a minute. */
 async function getBlockedDomains(env) {
   const stub = statsStub(env);
@@ -304,6 +324,37 @@ async function getBlockedDomains(env) {
   }
   await blockedDomainsCache.pending;
   return blockedDomainsCache.domains;
+}
+
+/** Per-site ad exceptions are persisted with the dashboard's StatsStore and cached per isolate. */
+async function getAdFreeDomains(env) {
+  const stub = statsStub(env);
+  if (!stub) return runtimeState.adFreeDomains;
+  if (Date.now() - adFreeDomainsCache.fetchedAt < STATS_BLOCKLIST_TTL_MS) return adFreeDomainsCache.domains;
+  if (!adFreeDomainsCache.pending) {
+    adFreeDomainsCache.pending = stub
+      .fetch('https://stats.internal/ad-free')
+      .then((res) => (res.ok ? res.json() : null))
+      .then((data) => {
+        if (data && Array.isArray(data.adFreeDomains)) {
+          adFreeDomainsCache.domains = new Set(data.adFreeDomains.map(normalizeSiteDomain).filter(Boolean));
+        }
+      })
+      .catch(() => undefined)
+      .finally(() => {
+        adFreeDomainsCache.fetchedAt = Date.now();
+        adFreeDomainsCache.pending = null;
+      });
+  }
+  await adFreeDomainsCache.pending;
+  return adFreeDomainsCache.domains;
+}
+
+async function isCallerAdFree(request, url, env) {
+  const callerDomain = normalizeSiteDomain(extractCallerDomain(request, url));
+  if (!callerDomain) return false;
+  const adFreeDomains = await getAdFreeDomains(env);
+  return adFreeDomains.has(callerDomain);
 }
 
 async function isCallerBlocked(request, url, env) {
@@ -337,6 +388,32 @@ async function setDomainBlocked(env, domain, blocked) {
   return Array.from(runtimeState.blockedDomains).sort();
 }
 
+async function setDomainAdFree(env, domain, adFree) {
+  const clean = normalizeSiteDomain(domain);
+  if (!clean || typeof adFree !== 'boolean') return null;
+  if (adFree) runtimeState.adFreeDomains.add(clean);
+  else runtimeState.adFreeDomains.delete(clean);
+
+  const stub = statsStub(env);
+  if (stub) {
+    try {
+      const res = await stub.fetch('https://stats.internal/ad-free', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ domain: clean, adFree })
+      });
+      const data = res.ok ? await res.json() : null;
+      if (data && Array.isArray(data.adFreeDomains)) {
+        adFreeDomainsCache.domains = new Set(data.adFreeDomains.map(normalizeSiteDomain).filter(Boolean));
+        adFreeDomainsCache.fetchedAt = Date.now();
+        return Array.from(adFreeDomainsCache.domains).sort();
+      }
+    } catch {}
+  }
+
+  return Array.from(runtimeState.adFreeDomains).sort();
+}
+
 async function resetStats(env) {
   localStats.reset();
   statsQueue.events.length = 0;
@@ -353,15 +430,16 @@ async function resetStats(env) {
  *   [[migrations]]                tag = "v1", new_sqlite_classes = ["StatsStore"]
  * Events are applied to the in-memory aggregate immediately; only the rows
  * that changed are written to SQLite ten seconds later (one alarm per burst),
- * which keeps row writes far below the free plan's daily allowance. Written
- * in the plain-class form (no `cloudflare:workers` import) so the module still
- * loads under Node for the test-suite.
+ * which keeps row writes far below the free plan's daily allowance. Ad-free
+ * site settings are small and written immediately. Written in the plain-class
+ * form (no `cloudflare:workers` import) so the module still loads under Node.
  */
 export class StatsStore {
   constructor(state) {
     this.state = state;
     this.sql = state.storage.sql;
     this.agg = statsAggregate.createStatsAggregate();
+    this.adFreeDomains = new Set();
     this.ready = state.blockConcurrencyWhile(() => this.load());
   }
 
@@ -372,6 +450,13 @@ export class StatsStore {
     this.sql.exec('CREATE TABLE IF NOT EXISTS stats_meta (key TEXT PRIMARY KEY, data TEXT NOT NULL)');
     const rows = this.sql.exec('SELECT dim, key, data FROM stats_rows').toArray();
     const meta = this.sql.exec('SELECT key, data FROM stats_meta').toArray();
+    const adFreeMeta = meta.find((entry) => entry.key === 'ad_free_domains');
+    if (adFreeMeta) {
+      try {
+        const domains = JSON.parse(adFreeMeta.data);
+        if (Array.isArray(domains)) this.adFreeDomains = new Set(domains.map(normalizeSiteDomain).filter(Boolean));
+      } catch {}
+    }
     this.agg.load({ rows, meta });
   }
 
@@ -392,6 +477,25 @@ export class StatsStore {
     if (url.pathname === '/blocked') {
       return Response.json({ blockedDomains: this.agg.blockedDomains() });
     }
+    if (url.pathname === '/ad-free' && method === 'GET') {
+      return Response.json({ adFreeDomains: Array.from(this.adFreeDomains).sort() });
+    }
+    if (url.pathname === '/ad-free' && method === 'POST') {
+      const body = (await request.json().catch(() => null)) || {};
+      const domain = normalizeSiteDomain(body.domain);
+      if (!domain || typeof body.adFree !== 'boolean') {
+        return Response.json({ ok: false, error: 'domain and boolean adFree are required' }, { status: 400 });
+      }
+      if (body.adFree) this.adFreeDomains.add(domain);
+      else this.adFreeDomains.delete(domain);
+      const domains = Array.from(this.adFreeDomains).sort();
+      this.sql.exec(
+        'INSERT INTO stats_meta (key, data) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET data = excluded.data',
+        'ad_free_domains',
+        JSON.stringify(domains)
+      );
+      return Response.json({ ok: true, adFreeDomains: domains });
+    }
     if (method === 'POST' && url.pathname === '/block') {
       const body = (await request.json().catch(() => null)) || {};
       this.agg.setBlocked(body.domain, body.blocked !== false);
@@ -401,7 +505,8 @@ export class StatsStore {
     if (method === 'POST' && url.pathname === '/reset') {
       this.agg.reset();
       this.sql.exec('DELETE FROM stats_rows');
-      this.sql.exec('DELETE FROM stats_meta');
+      // Configuration is independent from usage counters; keep ad-free sites on reset.
+      this.sql.exec("DELETE FROM stats_meta WHERE key != 'ad_free_domains'");
       this.flush();
       return Response.json({ ok: true });
     }
@@ -3639,7 +3744,12 @@ export default {
       }
 
       if (pathname === '/api/admin/overview' && request.method === 'GET') {
-        return jsonResponse({ ok: true, ...getWorkerAdminSnapshot(), stats: await fetchStatsSnapshot(env) });
+        return jsonResponse({
+          ok: true,
+          ...getWorkerAdminSnapshot(),
+          adFreeDomains: Array.from(await getAdFreeDomains(env)).sort(),
+          stats: await fetchStatsSnapshot(env)
+        });
       }
 
       // Dashboard feed for /reze: global counters + the live server catalog
@@ -3652,8 +3762,27 @@ export default {
           stats,
           catalog: SERVERS.map((s) => ({ id: s.id, name: s.name, badge: s.badge, priority: s.priority, enabled: s.enabled !== false })),
           servers: getWorkerAdminSnapshot().servers,
+          adFreeDomains: Array.from(await getAdFreeDomains(env)).sort(),
           runtime: { startedAt: runtimeState.startedAt, version: '2.3.0', adsEnabled: adsEnabled(env) }
         });
+      }
+
+      if (pathname === '/api/admin/domains/ad-free' && request.method === 'GET') {
+        return jsonResponse({
+          ok: true,
+          adFreeDomains: Array.from(await getAdFreeDomains(env)).sort(),
+          adsEnabled: adsEnabled(env)
+        });
+      }
+
+      if (pathname === '/api/admin/domains/ad-free' && request.method === 'POST') {
+        const body = (await request.json().catch(() => null)) || {};
+        if (typeof body.adFree !== 'boolean') {
+          return jsonResponse({ ok: false, error: 'adFree must be a boolean' }, 400);
+        }
+        const adFreeDomains = await setDomainAdFree(env, body.domain, body.adFree);
+        if (!adFreeDomains) return jsonResponse({ ok: false, error: 'Enter a valid website domain' }, 400);
+        return jsonResponse({ ok: true, domain: normalizeSiteDomain(body.domain), adFree: body.adFree, adFreeDomains });
       }
 
       if (pathname === '/api/admin/stats/reset' && request.method === 'POST') {
@@ -3983,8 +4112,8 @@ export default {
         return jsonResponse({ ok: false, error: 'Player page is unavailable' }, assetRes.status);
       }
       let html = injectPageConfig(await assetRes.text(), { apiBaseUrl: normalizeApiBaseUrl(env.API_BASE_URL) });
-      // Ads ship by default; ADS_ENABLED = "false" serves an ad-free player.
-      if (!adsEnabled(env)) html = stripAdBlock(html);
+      // ADS_ENABLED is the global switch; ad-free domains are scoped exceptions.
+      if (!adsEnabled(env) || await isCallerAdFree(request, url, env)) html = stripAdBlock(html);
       const headers = new Headers({
         'Content-Type': 'text/html; charset=utf-8',
         'Cache-Control': 'no-cache',

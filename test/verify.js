@@ -1842,6 +1842,41 @@ async function runTests() {
     const adsOnRes = await callWorker('http://player.test/embed?type=tv&tmdb=94605&s=1&e=1', { ADS_ENABLED: 'true' });
     assert.ok((await adsOnRes.text()).includes(AD_TAG), 'ADS_ENABLED=true keeps the ad tag');
 
+    // Per-site ad settings are admin-only and use the host page domain.
+    const adsAdminKey = { 'X-Admin-Key': 'admin123' };
+    assert.strictEqual((await callWorker('http://player.test/api/admin/domains/ad-free')).status, 401, 'ad settings need the admin key');
+    const addAdFree = await workerFetch(new Request('http://player.test/api/admin/domains/ad-free', {
+      method: 'POST',
+      headers: { ...adsAdminKey, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ domain: 'https://WWW.PARTNER-ADFREE.EXAMPLE/watch', adFree: true })
+    }), { ASSETS: mockAssets }, { waitUntil() {} });
+    assert.strictEqual(addAdFree.status, 200);
+    assert.deepStrictEqual((await addAdFree.json()).adFreeDomains, ['partner-adfree.example'], 'ad-free domains should normalize URLs and www');
+    const partnerAdFreeEmbed = await callWorker(
+      'http://player.test/embed?type=tv&tmdb=94605&s=1&e=1',
+      {},
+      { Referer: 'https://www.partner-adfree.example/watch' }
+    );
+    assert.ok(!(await partnerAdFreeEmbed.text()).includes(AD_TAG), 'listed host sites should receive an ad-free page');
+    const unrelatedAdsEmbed = await callWorker(
+      'http://player.test/embed?type=tv&tmdb=94605&s=1&e=1',
+      {},
+      { Referer: 'https://other-partner.example/watch' }
+    );
+    assert.ok((await unrelatedAdsEmbed.text()).includes(AD_TAG), 'unlisted sites should keep ads');
+    const removeAdFree = await workerFetch(new Request('http://player.test/api/admin/domains/ad-free', {
+      method: 'POST',
+      headers: { ...adsAdminKey, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ domain: 'partner-adfree.example', adFree: false })
+    }), { ASSETS: mockAssets }, { waitUntil() {} });
+    assert.deepStrictEqual((await removeAdFree.json()).adFreeDomains, [], 'turning the exception off should restore ads');
+    const restoredAdsEmbed = await callWorker(
+      'http://player.test/embed?type=tv&tmdb=94605&s=1&e=1',
+      {},
+      { Referer: 'https://partner-adfree.example/watch' }
+    );
+    assert.ok((await restoredAdsEmbed.text()).includes(AD_TAG), 'removed domains should receive ads again');
+
     // 10a-2. The player bundle must revalidate so a server rebrand (or any player
     // fix) reaches viewers on their next load, while vendor libraries keep the
     // long TTL. Stale player JS is what made earlier rebrands invisible.
@@ -2450,7 +2485,7 @@ async function runTests() {
     console.log('  ✔ Passed shared server catalog, worker servers array & player default tests.');
 
     // 13. Documentation page, owner dashboard (/reze), usage statistics & persistence
-    console.log('[13/13] Testing /docs, the /reze dashboard, usage statistics, blocking & stats persistence...');
+    console.log('[13/13] Testing /docs, the /reze dashboard, usage statistics, blocking, ad-free sites & persistence...');
     {
       const adminKey = { 'X-Admin-Key': 'admin123' };
       const callWorkerWith = (target, env = {}, init = {}) =>
@@ -2497,10 +2532,11 @@ async function runTests() {
       assert.strictEqual(rezeRes.headers.get('x-robots-tag'), 'noindex, nofollow');
       assert.strictEqual(rezeRes.headers.get('x-frame-options'), 'DENY');
       const rezeHtml = await rezeRes.text();
-      for (const heading of ['Most requested titles', 'Most failing titles', 'Who is using the API (sites)', 'Countries']) {
+      for (const heading of ['Most requested titles', 'Most failing titles', 'Who is using the API (sites)', 'Countries', 'Ad-free sites']) {
         assert.ok(rezeHtml.includes(heading), `dashboard must render the "${heading}" card`);
       }
       assert.ok(rezeHtml.includes('/api/admin/stats'), 'dashboard must load its numbers from the admin API');
+      assert.ok(rezeHtml.includes('/api/admin/domains/ad-free'), 'dashboard must load and update per-site ad settings');
       assert.ok(!rezeHtml.includes('admin123'), 'dashboard must not embed the admin key');
       for (const removedPath of ['/docs.html', '/reze.html', '/admin', '/admin.html', '/reze/x']) {
         const removedRes = await callWorker(`http://player.test${removedPath}`);
@@ -2636,6 +2672,11 @@ async function runTests() {
         assert.ok(db.prepare('SELECT COUNT(*) AS n FROM stats_rows').get().n >= 6, 'the alarm must persist the touched rows');
         await doPost(store1, '/block', { domain: 'other.example', blocked: true }); // block-list changes are written immediately
         assert.strictEqual(db.prepare("SELECT data FROM stats_meta WHERE key = 'blocked'").get().data, '["other.example"]');
+        await doPost(store1, '/ad-free', { domain: 'https://www.partner.example/watch', adFree: true });
+        assert.deepStrictEqual(
+          (await (await store1.fetch(new Request('https://stats.internal/ad-free'))).json()).adFreeDomains,
+          ['partner.example']
+        );
         const snap1 = await (await store1.fetch(new Request('https://stats.internal/snapshot?limit=10'))).json();
         assert.strictEqual(snap1.totals.requests, 3);
         assert.strictEqual(snap1.topTitles[0].label, 'Arcane (2021)');
@@ -2650,6 +2691,11 @@ async function runTests() {
         assert.deepStrictEqual(snap2.errors, snap1.errors);
         assert.deepStrictEqual(snap2.blockedDomains, ['other.example']);
         assert.deepStrictEqual((await (await store2.fetch(new Request('https://stats.internal/blocked'))).json()).blockedDomains, ['other.example']);
+        assert.deepStrictEqual(
+          (await (await store2.fetch(new Request('https://stats.internal/ad-free'))).json()).adFreeDomains,
+          ['partner.example'],
+          'per-site ad settings must survive a Durable Object restart'
+        );
         // Incremental flush: only the rows touched since the last flush are rewritten.
         await doPost(store2, '/record', [{ kind: 'proxy', domain: '' }]);
         await store2.alarm();
@@ -2659,6 +2705,11 @@ async function runTests() {
         const snap3 = await (await new StatsStore(makeState()).fetch(new Request('https://stats.internal/snapshot'))).json();
         assert.strictEqual(snap3.totals.requests, 0);
         assert.deepStrictEqual(snap3.blockedDomains, ['other.example']);
+        assert.deepStrictEqual(
+          (await (await new StatsStore(makeState()).fetch(new Request('https://stats.internal/ad-free'))).json()).adFreeDomains,
+          ['partner.example'],
+          'resetting statistics must preserve the ad-free list'
+        );
 
         // The Worker talks to the object through the binding: events arrive in the background, the dashboard says "persistent".
         const stub = { fetch: (input, init) => store2.fetch(input instanceof Request ? input : new Request(input, init)) };
@@ -2667,6 +2718,10 @@ async function runTests() {
         const doCtx = { waitUntil: (p) => pending.push(p) };
         const doEmbed = await workerFetch(new Request('http://player.test/embed/movie/693134', { headers: { Referer: 'https://durable.example/' } }), { ASSETS: mockAssets, ...doEnv }, doCtx);
         assert.strictEqual(doEmbed.status, 200);
+        const doAdFreeEmbed = await workerFetch(new Request('http://player.test/embed/movie/693134', { headers: { Referer: 'https://www.partner.example/watch' } }), { ASSETS: mockAssets, ...doEnv }, doCtx);
+        assert.ok(!(await doAdFreeEmbed.text()).includes(AD_TAG), 'Durable Object settings must suppress ads after an isolate restart');
+        const doAdFreeSettings = await workerFetch(new Request('http://player.test/api/admin/domains/ad-free', { headers: adminKey }), { ASSETS: mockAssets, ...doEnv }, doCtx);
+        assert.deepStrictEqual((await doAdFreeSettings.json()).adFreeDomains, ['partner.example']);
         await Promise.all(pending);
         const doStats = await (await workerFetch(new Request('http://player.test/api/admin/stats', { headers: adminKey }), { ASSETS: mockAssets, ...doEnv }, doCtx)).json();
         assert.strictEqual(doStats.stats.persistent, true, 'with the binding the dashboard must report durable storage');
@@ -2679,7 +2734,7 @@ async function runTests() {
         console.log('  (node:sqlite unavailable — skipped the Durable Object persistence checks)');
       }
     }
-    console.log('  ✔ Passed documentation, dashboard, statistics, blocking & persistence tests.');
+    console.log('  ✔ Passed documentation, dashboard, statistics, blocking, per-site ads & persistence tests.');
 
     console.log('\n==========================================================');
     console.log('  ALL PRODUCTION VERIFICATION SUITES PASSED (0 TEST VIDEOS)');

@@ -12,11 +12,11 @@ binding = "ASSETS"
 html_handling = "none"
 run_worker_first = true
 
-# Usage statistics behind the owner dashboard (/reze): one SQLite-backed
-# Durable Object keeps the global counters (titles, sites, countries, server
-# health, blocked domains). Works on the Workers Free plan; nothing to create
-# by hand — `wrangler deploy` applies the migration. Remove both blocks to run
-# with in-memory (per-isolate, non-persistent) counters instead.
+# Usage statistics and owner settings behind the dashboard (/reze): one
+# SQLite-backed Durable Object keeps global counters, blocked sites, and the
+# per-site ad-free list. Works on the Workers Free plan; nothing to create by
+# hand — `wrangler deploy` applies the migration. Remove both blocks to run
+# with in-memory (per-isolate, non-persistent) state instead.
 [[durable_objects.bindings]]
 name = "STATS"
 class_name = "StatsStore"
