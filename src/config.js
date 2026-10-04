@@ -149,28 +149,28 @@ const config = {
       id: 'ursa',
       name: 'FBI Surveillance Van',
       badge: '4K UHD • Multi-Audio',
-      priority: 2,
+      priority: 3,
       supportsMultiAudio: true
     },
     {
       id: 'centaurus',
       name: 'Gigachad Node',
       badge: 'Adaptive • Multi-Quality',
-      priority: 3,
+      priority: 2,
       supportsMultiAudio: true
     },
     {
       id: 'atlas',
       name: 'Atlas',
       badge: 'Adaptive • Backup',
-      priority: 4,
+      priority: 5,
       supportsMultiAudio: true
     },
     {
       id: 'hamster',
       name: 'Hamster Wheel',
       badge: 'Multi-Language • OMSS Cascade',
-      priority: 5,
+      priority: 4,
       supportsMultiAudio: true
     }
   ]

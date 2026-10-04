@@ -4590,7 +4590,7 @@ async function resolveStreamForServer(metadata, requestedServerId = 'andromeda',
 
   // Build ordered waterfall starting with the user's selected server, then the
   // premier multi-audio cascade: Andromeda (Server 1) -> Ursa (Server 2: 4K UHD) -> Centaurus -> Atlas -> Strings.
-  const WATERFALL_PRIORITY = ['andromeda', 'ursa', 'centaurus', 'atlas', 'hamster'];
+  const WATERFALL_PRIORITY = ['andromeda', 'centaurus', 'ursa', 'hamster', 'atlas'];
   const enabledIds = enabledServers.map((s) => s.id);
   const isImplicitFallback = (id) => {
     const server = config.servers.find((s) => s.id === id);
