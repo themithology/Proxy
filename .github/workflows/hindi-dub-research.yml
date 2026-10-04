@@ -1,6 +1,14 @@
 name: Hindi Dub Accuracy Research
 
 on:
+  # Push trigger is what actually registers/runs this on arena/** branches; the
+  # dispatch form is a convenience once GitHub has indexed the workflow.
+  push:
+    branches:
+      - 'arena/**'
+    paths:
+      - 'tools/hindi-dub-research.js'
+      - '.github/workflows/hindi-dub-research.yml'
   workflow_dispatch:
     inputs:
       quick:
