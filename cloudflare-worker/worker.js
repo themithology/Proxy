@@ -831,6 +831,11 @@ function castleRowToCandidateWorker(row) {
     year: row.publishTime || row.releaseDate || row.year || null,
     movieType: row.movieType,
     movieTypeName: row.movieTypeName,
+    // Season/episode metadata lets the identity gate tell an anime film from
+    // an anime series when the provider tags both as "anime".
+    seasonDescription: row.seasonDescription || null,
+    lastEpisodeCount: row.lastEpisodeCount != null ? row.lastEpisodeCount : null,
+    isSeries: row.seasonDescription != null || Number(row.lastEpisodeCount) > 0 || null,
     languages: Array.isArray(row.languages) ? row.languages : [],
     tags: Array.isArray(row.tags) ? row.tags : [],
     rating: row.rating,

@@ -2199,6 +2199,35 @@ async function runTests() {
         'no identity proof must yield no winner'
       );
 
+      // Anime movies are tagged as "anime" by CastleTV; that classification is
+      // orthogonal to movie/series, so anime films must still match a movie
+      // request while anime *series* must not.
+      assert.ok(
+        identity.pickIdentityMatch(
+          [{ title: 'Spirited Away', year: 2001, movieType: 5, movieTypeName: 'Anime', isSeries: null }],
+          { title: 'Spirited Away', releaseYear: 2001, type: 'movie' }
+        ).winner,
+        'an anime film must be able to match a movie request'
+      );
+      assert.strictEqual(
+        identity.pickIdentityMatch(
+          [
+            {
+              title: 'Spirited Away',
+              year: 2001,
+              movieType: 5,
+              movieTypeName: 'Anime',
+              seasonDescription: 'Season 1',
+              lastEpisodeCount: 12,
+              isSeries: true
+            }
+          ],
+          { title: 'Spirited Away', releaseYear: 2001, type: 'movie' }
+        ).winner,
+        null,
+        'an anime series must not match a movie request'
+      );
+
       // 11b-3. Dub inventory endpoint (/api/dubs) + the "hindi" server must
       // report the verified 1999 film and never the 2023 film's Hindi dub.
       const dubsRes = await httpRequest(baseUrl, '/api/dubs/movie/550?audio=hi');

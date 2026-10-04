@@ -140,11 +140,29 @@ function normalizeTypeToken(rawType, rawTypeName) {
   return 'unknown';
 }
 
-function isTypeCompatible(candidateType, wantedType) {
+function candidateHasSeriesSignals(candidate) {
+  if (!candidate) return false;
+  if (candidate.isSeries === true) return true;
+  if (candidate.seasonDescription != null && String(candidate.seasonDescription).trim()) return true;
+  if (candidate.lastEpisodeCount != null && Number(candidate.lastEpisodeCount) > 0) return true;
+  if (candidate.seasonCount != null && Number(candidate.seasonCount) > 0) return true;
+  if (candidate.episodeCount != null && Number(candidate.episodeCount) > 0) return true;
+  return false;
+}
+
+function isTypeCompatible(candidateType, wantedType, candidate) {
   if (!candidateType || candidateType === 'unknown') return true;
   if (!wantedType) return true;
   const wanted = wantedType === 'series' ? 'tv' : wantedType;
-  if (wanted === 'tv') return candidateType === 'tv' || candidateType === 'anime';
+  if (candidateType === 'anime') {
+    // "Anime" is a catalog classification, not a movie/series type: providers
+    // tag both anime films and anime series this way, so accept both request
+    // types - but a movie request must reject an anime entry that carries
+    // episode/season evidence.
+    if (wanted === 'movie') return !candidateHasSeriesSignals(candidate);
+    return true;
+  }
+  if (wanted === 'tv') return candidateType === 'tv';
   return candidateType === 'movie';
 }
 
@@ -241,7 +259,7 @@ function scoreIdentityCandidate(candidate = {}, metadata = {}, options = {}) {
     candidate.movieTypeName || candidate.typeName || candidate.type
   );
 
-  const typeOk = isTypeCompatible(candidateType, wantedType);
+  const typeOk = isTypeCompatible(candidateType, wantedType, candidate);
   const yearOk = isYearCompatible(candidateYear, tmdbYear, wantedType === 'series' ? 'tv' : wantedType);
 
   const reasons = [];
@@ -344,6 +362,7 @@ module.exports = {
   isYearCompatible,
   normalizeTypeToken,
   isTypeCompatible,
+  candidateHasSeriesSignals,
   buildTitleVariants,
   scoreTitleMatch,
   scoreIdentityCandidate,
