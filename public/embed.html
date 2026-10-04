@@ -123,10 +123,14 @@
           <span id="loading-source-label"></span>
         </div>
 
+        <!-- Error state: a friendlier headline, the technical reason, and the
+             servers to pick from right below it. -->
+        <div class="connect-error-title" aria-hidden="true">Ouu shii… can't find it here.</div>
+        <div class="connect-error-hint" aria-hidden="true">Maybe change the server from below :)</div>
         <div id="loading-status-detail" class="loading-status-detail hidden" role="alert"></div>
+        <div id="loading-servers" class="connect-servers hidden" role="group" aria-label="Servers"></div>
         <div id="loading-actions" class="loading-actions hidden">
           <button id="btn-retry-load" class="loading-action-btn primary" type="button">Retry</button>
-          <button id="btn-error-servers" class="loading-action-btn" type="button">Change server</button>
         </div>
       </div>
 

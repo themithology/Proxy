@@ -130,7 +130,7 @@
   const loadingStatusDetail = document.getElementById('loading-status-detail');
   const loadingActions = document.getElementById('loading-actions');
   const btnRetryLoad = document.getElementById('btn-retry-load');
-  const btnErrorServers = document.getElementById('btn-error-servers');
+  const loadingServers = document.getElementById('loading-servers');
   const bufferingIndicator = document.getElementById('buffering-indicator');
   const playerToast = document.getElementById('player-toast');
   const playerToastText = document.getElementById('player-toast-text');
@@ -321,6 +321,9 @@
     loadingHideTimer: null,
     tipTimer: null,
     tipIndex: 0,
+    // Host control API: only talk to this origin when the embed names it.
+    hostOrigin: null,
+    attachedStreamUrl: null,
     _triedStreamUrls: new Set()
   };
 
@@ -393,6 +396,17 @@
     if (params.get('back') === 'false' || params.get('back') === '0') {
       btnBack.classList.add('hidden');
     }
+
+    // ?origin=https://host.example — the host page's origin. When present,
+    // commands from any other origin are ignored and events are only
+    // delivered there (recommended for watch-party / sync integrations).
+    const originParam = params.get('origin');
+    if (originParam) {
+      try {
+        const parsed = new URL(originParam);
+        if (/^https?:$/.test(parsed.protocol)) state.hostOrigin = parsed.origin;
+      } catch (_) {}
+    }
   }
 
   // --- Format Seconds into M:SS or H:MM:SS ---
@@ -425,21 +439,98 @@
   }
 
   // --- Emit postMessage to Parent Host ---
-  function emitHostEvent(eventName, data = {}) {
+  // --- Host control API (postMessage), protocol 1 ---
+  // Every event and every command response carries the same snapshot, so a
+  // host never has to poll or merge: `state` is one of loading | ready |
+  // playing | buffering | paused | ended | error, and buffering is *never*
+  // reported as paused. See README "Host control API".
+  const HOST_PROTOCOL_VERSION = 1;
+  const HOST_SOURCE = 'lol-embed-player';
+  const HOST_EVENT_TYPE = 'LOL_EMBED_PLAYER_EVENT';
+  const HOST_COMMAND_TYPE = 'LOL_EMBED_PLAYER_COMMAND';
+  const HOST_RESPONSE_TYPE = 'LOL_EMBED_PLAYER_RESPONSE';
+  let hostBuffering = false;
+  let lastHostState = null;
+
+  function fnv1a(str) {
+    let h = 0x811c9dc5;
+    for (let i = 0; i < str.length; i += 1) {
+      h ^= str.charCodeAt(i);
+      h = Math.imul(h, 0x01000193) >>> 0;
+    }
+    return h.toString(16).padStart(8, '0');
+  }
+
+  function playbackState() {
+    if (playerRoot.classList.contains('is-loading')) {
+      return loadingOverlay.classList.contains('is-error') ? 'error' : 'loading';
+    }
+    if (video.ended) return 'ended';
+    if (video.paused) return state.hasPlaybackStarted ? 'paused' : 'ready';
+    if (hostBuffering || video.seeking || video.readyState < 3) return 'buffering';
+    return 'playing';
+  }
+
+  function hostSnapshot() {
+    const sources = state.stream ? sourcesFromStream(state.stream) : [];
+    const attached = state.attachedStreamUrl;
+    const idx = attached ? sources.indexOf(attached) : -1;
+    const audio = state.audioTracks.find((a) => a.id === state.activeAudioId) || null;
+    const subtitle = state.activeSubtitleId !== 'off' ? state.subtitles.find((t) => t.id === state.activeSubtitleId) || null : null;
+    const playback = playbackState();
+    return {
+      protocol: HOST_PROTOCOL_VERSION,
+      tmdbId: state.tmdbId,
+      mediaType: state.type,
+      season: state.season,
+      episode: state.episode,
+      title: state.media ? state.media.displayTitle : '',
+      state: playback,
+      paused: !!video.paused,
+      buffering: playback === 'buffering',
+      seeking: !!video.seeking,
+      ended: !!video.ended,
+      currentTime: video.currentTime || 0,
+      // `duration` keeps its historical meaning (real duration, else the TMDB
+      // runtime); `mediaDuration` is only ever the real one — use it for cut
+      // detection.
+      duration: getEffectiveDuration(),
+      mediaDuration: hasRealDuration() ? video.duration : null,
+      playbackRate: video.playbackRate || 1,
+      volume: typeof video.volume === 'number' ? video.volume : 1,
+      muted: !!video.muted,
+      server: state.server,
+      sourceIndex: idx >= 0 ? idx + 1 : null,
+      // Same server + same source slot => same cut for everyone in a party.
+      sourceId: state.stream && attached ? `${state.server}/${idx >= 0 ? idx + 1 : 0}` : null,
+      // Changes whenever this client is attached to a different stream URL.
+      sourceHash: attached ? fnv1a(attached) : null,
+      audio: audio ? { id: audio.id, lang: audio.lang || null, label: audio.label || '' } : null,
+      subtitle: subtitle ? { id: subtitle.id, lang: subtitle.lang || null, label: subtitle.label || '' } : null,
+      fullscreen: isFullscreen()
+    };
+  }
+
+  function postToHost(payload, targetWindow, targetOrigin) {
     try {
-      window.parent.postMessage({
-        source: 'lol-embed-player',
-        type: 'LOL_EMBED_PLAYER_EVENT',
-        event: eventName,
-        tmdbId: state.tmdbId,
-        mediaType: state.type,
-        season: state.season,
-        episode: state.episode,
-        currentTime: video.currentTime || 0,
-        duration: getEffectiveDuration(),
-        ...data
-      }, '*');
+      const win = targetWindow || window.parent;
+      if (!win) return;
+      win.postMessage(payload, state.hostOrigin || targetOrigin || '*');
     } catch (_) {}
+  }
+
+  function emitHostEvent(eventName, data = {}) {
+    postToHost({ source: HOST_SOURCE, type: HOST_EVENT_TYPE, event: eventName, ...hostSnapshot(), ...data });
+  }
+
+  // `statechange` fires once per transition of the derived state, so a host
+  // can drive its whole UI from this single event.
+  function emitStateChange() {
+    const next = playbackState();
+    if (next === lastHostState) return;
+    const previousState = lastHostState;
+    lastHostState = next;
+    emitHostEvent('statechange', { previousState });
   }
 
   // Real media duration when known; TMDB runtime as a placeholder until then.
@@ -653,11 +744,13 @@
     void loadingProgressFill.offsetWidth;
     loadingProgressFill.style.transition = '';
     setConnectProgress(42, true);
+    emitStateChange();
   }
 
   function hideLoading() {
     playerRoot.classList.remove('is-loading');
     stopConnectTips();
+    emitStateChange();
     if (loadingOverlay.classList.contains('hidden') || state.loadingHideTimer) return;
     // Let the bar complete and the screen fade before it is removed.
     setConnectProgress(100, false);
@@ -683,12 +776,48 @@
       loadingStatusDetail.classList.add('hidden');
     }
     loadingActions.classList.remove('hidden');
-    btnErrorServers.classList.toggle('hidden', state.servers.length < 2);
+    renderErrorServers();
     loadingBranding.textContent = state.branding || '';
     renderScreenArtwork();
     playerRoot.classList.add('is-loading');
     playerRoot.classList.remove('controls-idle');
     hideBuffering();
+    // Find out which of the other servers actually work while the viewer
+    // looks at the list.
+    probeUnknownServers();
+    emitStateChange();
+  }
+
+  // "Maybe change the server from below": every known server as a button
+  // under the error message, with what we learned about it (✓ / — / ✕).
+  // Provider names are never shown here either — only the server names.
+  function renderErrorServers() {
+    loadingServers.innerHTML = '';
+    const servers = state.servers;
+    loadingServers.classList.toggle('hidden', servers.length === 0);
+    servers.forEach((srv) => {
+      const info = serverInfoFor(srv.id);
+      const status = STATE_ICONS[info.status] ? info.status : 'unknown';
+      const btn = document.createElement('button');
+      btn.type = 'button';
+      btn.className = `connect-server-btn is-${status}${srv.id === state.server ? ' is-current' : ''}`;
+      btn.setAttribute('aria-label', `${srv.name}: ${STATE_LABELS[status]}${srv.id === state.server ? ' (current)' : ''}`);
+      btn.innerHTML = `
+        <span class="server-state is-${status}" aria-hidden="true">${STATE_ICONS[status]}</span>
+        <span><span class="connect-server-name">${escapeHtml(srv.name)}</span><small>${escapeHtml(
+          status === 'failed' ? 'Unavailable right now — tap to retry' : srv.description || ''
+        )}</small></span>
+      `;
+      btn.addEventListener('click', () => {
+        if (srv.id === state.server) {
+          triedServers.clear();
+          loadMediaBundle(true);
+        } else {
+          selectServer(srv.id);
+        }
+      });
+      loadingServers.appendChild(btn);
+    });
   }
 
   // Blurred backdrop + title logo (or the plain title) + genres shared by the
@@ -873,6 +1002,9 @@
     if (!preserveTime) clearActiveSkip();
     playerRoot.classList.remove('is-ended');
     showLoading(`Connecting to ${serverDisplayName(requestedServer)}`);
+    // Nothing is attached while a new bundle loads (see hostSnapshot()).
+    state.attachedStreamUrl = null;
+    emitHostEvent('loadstart', { server: requestedServer });
     // First open: the upstream resolve can take seconds, while the TMDB
     // metadata is one cached call away. Fetch it in parallel so the connect
     // screen shows the artwork almost immediately.
@@ -1011,6 +1143,7 @@
       // Nothing is playing from this server now: do not keep listing the
       // previous stream's sources as if they were.
       state.stream = null;
+      state.attachedStreamUrl = null;
       renderServersPopover();
       const detail = apiData
         ? [apiData.serverExplanation, apiData.explanation && apiData.requestedServer ? `${apiData.explanation} (${apiData.requestedServer})` : apiData.explanation]
@@ -1141,6 +1274,10 @@
   async function attachStreamToVideo(streamUrl, resumeTime = 0) {
     video.onerror = null;
     video.onloadedmetadata = null;
+    const sourceChanged = state.attachedStreamUrl !== streamUrl;
+    state.attachedStreamUrl = streamUrl;
+    hostBuffering = false;
+    if (sourceChanged) emitHostEvent('sourcechange');
     if (state.hlsInstance) {
       state.hlsInstance.destroy();
       state.hlsInstance = null;
@@ -1347,9 +1484,6 @@
     loadMediaBundle(true);
   });
 
-  btnErrorServers.addEventListener('click', () => {
-    openServersPopover();
-  });
   // The connect screen covers the HUD, so it carries its own Back / Servers.
   btnLoadingBack.addEventListener('click', () => btnBack.click());
   btnLoadingServers.addEventListener('click', () => {
@@ -1855,6 +1989,9 @@
   function setServerInfo(id, patch) {
     if (!id) return;
     state.serverInfo[id] = { ...serverInfoFor(id), ...patch };
+    if (loadingOverlay.classList.contains('is-error') && !loadingOverlay.classList.contains('hidden')) {
+      renderErrorServers();
+    }
   }
 
   function sourcesFromStream(stream) {
@@ -1889,8 +2026,16 @@
   }
 
   // Servers we know nothing about yet are checked one at a time while the
-  // list is open, so every row can show a real state instead of a guess.
+  // list is open (or the error screen lists them), so every row can show a
+  // real state instead of a guess.
   let serverProbeChain = Promise.resolve();
+  function serverStatesWanted() {
+    return (
+      !popoverServers.classList.contains('hidden') ||
+      (loadingOverlay.classList.contains('is-error') && !loadingOverlay.classList.contains('hidden'))
+    );
+  }
+
   function probeUnknownServers() {
     const token = state.loadToken;
     state.servers
@@ -1898,7 +2043,7 @@
       .forEach((srv) => {
         serverProbeChain = serverProbeChain.then(async () => {
           if (token !== state.loadToken) return;
-          if (popoverServers.classList.contains('hidden')) return;
+          if (!serverStatesWanted()) return;
           if (serverInfoFor(srv.id).status !== 'unknown') return;
           setServerInfo(srv.id, { status: 'checking' });
           renderServersPopover();
@@ -2413,7 +2558,6 @@
     }
     video.currentTime = state.scrubSeconds;
     updateTimelineAndSkipState();
-    emitHostEvent('seeked');
   }
 
   timelineSlider.addEventListener('pointerdown', (e) => {
@@ -2683,13 +2827,17 @@
     hidePausedInfo();
     resetIdleTimer();
     emitHostEvent('play');
+    emitStateChange();
   });
 
   video.addEventListener('playing', () => {
     state.progressLocked = false;
+    hostBuffering = false;
     hideBuffering();
     hideLoading();
     startRenderLoop();
+    emitHostEvent('playing');
+    emitStateChange();
   });
 
   video.addEventListener('pause', () => {
@@ -2703,17 +2851,41 @@
     playerRoot.classList.remove('controls-idle');
     schedulePausedInfo();
     emitHostEvent('pause');
+    emitStateChange();
   });
 
-  video.addEventListener('waiting', showBuffering);
+  // Buffering is its own state for the host: a stalled guest must never look
+  // like a deliberate pause.
+  video.addEventListener('waiting', () => {
+    hostBuffering = true;
+    showBuffering();
+    emitHostEvent('waiting');
+    emitStateChange();
+  });
+  video.addEventListener('stalled', () => {
+    if (video.paused) return;
+    hostBuffering = true;
+    emitStateChange();
+  });
   video.addEventListener('seeking', () => {
     if (state.hasPlaybackStarted) showBuffering();
+    emitHostEvent('seeking');
+    emitStateChange();
   });
   video.addEventListener('seeked', () => {
     hideBuffering();
     updateTimelineAndSkipState();
+    emitHostEvent('seeked');
+    emitStateChange();
   });
-  video.addEventListener('canplay', hideBuffering);
+  video.addEventListener('canplay', () => {
+    hostBuffering = false;
+    hideBuffering();
+    emitStateChange();
+  });
+  video.addEventListener('volumechange', () => {
+    emitHostEvent('volumechange');
+  });
 
   video.addEventListener('timeupdate', () => {
     if (!state.rafId) updateTimelineAndSkipState();
@@ -2724,11 +2896,13 @@
     state.progressLocked = false;
     renderSegmentedTimeline();
     updateTimelineAndSkipState();
+    emitHostEvent('loadedmetadata');
   });
 
   video.addEventListener('durationchange', () => {
     renderSegmentedTimeline();
     updateTimelineAndSkipState();
+    if (hasRealDuration()) emitHostEvent('durationchange');
   });
 
   video.addEventListener('ratechange', () => {
@@ -2736,6 +2910,7 @@
       state.playbackSpeed = video.playbackRate;
       updateSettingsSummaryValues();
     }
+    emitHostEvent('ratechange');
   });
 
   video.addEventListener('ended', () => {
@@ -2754,6 +2929,7 @@
       storageRemove(progressKey(state.type, state.tmdbId, state.season, state.episode));
     }
     emitHostEvent('ended');
+    emitStateChange();
     if (state.type === 'tv') {
       if (!startUpNextCountdown()) {
         showToast('You have reached the last available episode', 3000);
@@ -2863,8 +3039,12 @@
   }
 
   btnFullscreen.addEventListener('click', toggleFullscreen);
-  document.addEventListener('fullscreenchange', updateFullscreenUI);
-  document.addEventListener('webkitfullscreenchange', updateFullscreenUI);
+  const onFullscreenChange = () => {
+    updateFullscreenUI();
+    emitHostEvent('fullscreenchange');
+  };
+  document.addEventListener('fullscreenchange', onFullscreenChange);
+  document.addEventListener('webkitfullscreenchange', onFullscreenChange);
 
   // Back Button
   btnBack.addEventListener('click', () => {
@@ -3160,21 +3340,141 @@
   });
 
   // Listen for remote control commands from parent page via postMessage
+  // Commands: `{ type: 'LOL_EMBED_PLAYER_COMMAND', command, requestId?, ...args }`
+  // (the bare legacy `{ command: 'play' }` and VIDBOLT_* forms still work).
+  // A `requestId` always gets a `LOL_EMBED_PLAYER_RESPONSE` with the snapshot;
+  // query commands answer even without one.
+  const HOST_QUERY_COMMANDS = new Set(['getState', 'getTime', 'getDuration', 'ping']);
+  const LEGACY_COMMANDS = { VIDBOLT_PLAY: 'play', VIDBOLT_PAUSE: 'pause' };
+
+  function jumpToEpisode(season, episode) {
+    saveProgress(true);
+    cancelUpNext();
+    state.season = season;
+    state.episode = episode;
+    state.browseSeason = season;
+    closeAllModals();
+    syncUrlWithState();
+    loadMediaBundle(false);
+    emitHostEvent('episodechange', { season: state.season, episode: state.episode });
+  }
+
+  async function runHostCommand(command, msg) {
+    const num = (v) => (typeof v === 'number' && Number.isFinite(v) ? v : typeof v === 'string' && v.trim() !== '' && Number.isFinite(Number(v)) ? Number(v) : null);
+    switch (command) {
+      case 'play': {
+        if (video.ended) cancelUpNext();
+        try {
+          await video.play();
+        } catch (err) {
+          return { ok: false, error: (err && err.name) || 'PlayFailed' };
+        }
+        return { ok: true };
+      }
+      case 'pause':
+        video.pause();
+        return { ok: true };
+      case 'togglePlay':
+        togglePlay();
+        return { ok: true };
+      case 'seek': {
+        const t = num(msg.time !== undefined ? msg.time : msg.seconds);
+        if (t === null) return { ok: false, error: 'seek needs a numeric `time` (seconds)' };
+        const total = getEffectiveDuration();
+        video.currentTime = clamp(t, 0, total > 0 ? total : Infinity);
+        updateTimelineAndSkipState();
+        return { ok: true };
+      }
+      case 'seekBy': {
+        const d = num(msg.delta !== undefined ? msg.delta : msg.seconds);
+        if (d === null) return { ok: false, error: 'seekBy needs a numeric `delta` (seconds)' };
+        seekBy(d);
+        return { ok: true };
+      }
+      case 'setVolume': {
+        const v = num(msg.volume);
+        if (v === null) return { ok: false, error: 'setVolume needs a numeric `volume` (0..1)' };
+        video.volume = clamp(v, 0, 1);
+        if (typeof msg.muted === 'boolean') video.muted = msg.muted;
+        else if (video.volume > 0 && video.muted) video.muted = false;
+        volumeRange.value = String(video.volume);
+        updateVolumeUI();
+        persistVolume();
+        return { ok: true };
+      }
+      case 'setMuted':
+        video.muted = msg.muted !== false;
+        updateVolumeUI();
+        persistVolume();
+        return { ok: true };
+      case 'setPlaybackRate': {
+        const r = num(msg.rate !== undefined ? msg.rate : msg.playbackRate);
+        if (r === null || r < 0.25 || r > 4) return { ok: false, error: 'setPlaybackRate needs `rate` between 0.25 and 4' };
+        state.playbackSpeed = r;
+        video.playbackRate = r;
+        updateSettingsSummaryValues();
+        return { ok: true };
+      }
+      case 'setSubtitle': {
+        const wanted = msg.id || msg.lang || msg.subtitle;
+        if (!wanted || String(wanted).toLowerCase() === 'off') {
+          disableSubtitles({ remember: true });
+          return { ok: true };
+        }
+        const lang = String(wanted).toLowerCase();
+        const track = state.subtitles.find((t) => t.id === wanted) || state.subtitles.find((t) => String(t.lang || '').toLowerCase() === lang);
+        if (!track) return { ok: false, error: `No subtitle track matches "${wanted}"` };
+        loadSubtitleTrack(track, { silent: true });
+        return { ok: true };
+      }
+      case 'setAudio': {
+        const wanted = msg.id || msg.lang || msg.audio;
+        if (!wanted) return { ok: false, error: 'setAudio needs `id` or `lang`' };
+        const lang = String(wanted).toLowerCase();
+        const track = state.audioTracks.find((t) => t.id === wanted) || state.audioTracks.find((t) => String(t.lang || '').toLowerCase() === lang);
+        if (!track) return { ok: false, error: `No audio track matches "${wanted}"` };
+        selectAudioTrack(track);
+        return { ok: true };
+      }
+      case 'setServer': {
+        const id = String(msg.server || msg.id || '').toLowerCase();
+        if (!state.servers.some((srv) => srv.id === id)) return { ok: false, error: `Unknown server "${id}"` };
+        if (id !== state.server) selectServer(id);
+        return { ok: true };
+      }
+      case 'setEpisode': {
+        if (state.type !== 'tv') return { ok: false, error: 'setEpisode only applies to TV' };
+        const season = num(msg.season);
+        const episode = num(msg.episode);
+        if (!(season >= 1) || !(episode >= 1)) return { ok: false, error: 'setEpisode needs `season` and `episode` >= 1' };
+        if (season !== state.season || episode !== state.episode) jumpToEpisode(Math.floor(season), Math.floor(episode));
+        return { ok: true };
+      }
+      case 'nextEpisode':
+        if (!getNextEpisodeTarget()) return { ok: false, error: 'No next episode' };
+        goToNextEpisode();
+        return { ok: true };
+      case 'getState':
+      case 'getTime':
+      case 'getDuration':
+      case 'ping':
+        return { ok: true };
+      default:
+        return { ok: false, error: `Unknown command "${command}"` };
+    }
+  }
+
   window.addEventListener('message', (event) => {
     const msg = event.data;
-    if (!msg || typeof msg !== 'object') return;
+    if (!msg || typeof msg !== 'object' || msg.source === HOST_SOURCE) return;
+    // Only the embedding page (or the window that opened us) may drive the
+    // player; a named ?origin= narrows that further.
+    if (state.hostOrigin && event.origin !== state.hostOrigin) return;
+    if (event.source && event.source !== window.parent && event.source !== window.top && event.source !== window.opener) return;
+    const replyOrigin = event.origin && event.origin !== 'null' ? event.origin : '*';
 
-    if (msg.command === 'play' || msg.type === 'VIDBOLT_PLAY') video.play().catch(() => {});
-    if (msg.command === 'pause' || msg.type === 'VIDBOLT_PAUSE') video.pause();
-    if (msg.command === 'seek' && typeof msg.time === 'number') video.currentTime = msg.time;
-    if (msg.command === 'setVolume' && typeof msg.volume === 'number') {
-      video.volume = Math.max(0, Math.min(1, msg.volume));
-      volumeRange.value = String(video.volume);
-      updateVolumeUI();
-    }
-    if (msg.command === 'nextEpisode') goToNextEpisode();
     if (msg.type === 'SCREENSCAPE_GET_WATCH_HISTORY_WITH_PROGRESS') {
-      window.parent.postMessage({
+      postToHost({
         type: 'SCREENSCAPE_WATCH_HISTORY_WITH_PROGRESS_RESPONSE',
         requestId: msg.requestId,
         watchHistory: [{
@@ -3185,8 +3485,28 @@
           currentTime: video.currentTime || 0,
           duration: getEffectiveDuration()
         }]
-      }, '*');
+      }, event.source || null, replyOrigin);
+      return;
     }
+
+    const command = typeof msg.command === 'string' ? msg.command : LEGACY_COMMANDS[msg.type];
+    if (!command) return;
+    runHostCommand(command, msg).then((result) => {
+      if (msg.requestId === undefined && !HOST_QUERY_COMMANDS.has(command)) return;
+      postToHost(
+        {
+          source: HOST_SOURCE,
+          type: HOST_RESPONSE_TYPE,
+          command,
+          requestId: msg.requestId === undefined ? null : msg.requestId,
+          ok: result.ok,
+          error: result.error || null,
+          ...hostSnapshot()
+        },
+        event.source || null,
+        replyOrigin
+      );
+    });
   });
 
   // Persist progress when the tab is hidden / the iframe is torn down.
@@ -3197,6 +3517,7 @@
 
   // Initialize Player
   parseRouteParams();
+  emitHostEvent('init');
   restoreVolume();
   applySubStyle(readSubStyle());
   renderSubtitleDelay();
