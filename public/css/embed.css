@@ -141,43 +141,229 @@ button {
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: 14px;
   padding: 24px;
-  background: rgba(0, 0, 0, 0.45);
-  /* Above the HUD (25) so the error-state buttons receive clicks; the overlay
-     itself stays click-through. */
+  background: #050507;
+  overflow: hidden;
+  /* Above the HUD (25) so the back / servers / error buttons receive clicks;
+     the overlay itself stays click-through. */
   z-index: 30;
   pointer-events: none;
   text-align: center;
   transition: opacity 0.25s ease;
 }
 
-.spinner-ring {
-  width: 44px;
-  height: 44px;
-  border: 3.5px solid rgba(255, 255, 255, 0.16);
-  border-top-color: var(--accent);
-  border-radius: 50%;
-  animation: spin 0.8s linear infinite;
+/* Shared blurred-artwork background of the connect and paused screens. The
+   backdrop is oversized so the blur never shows a bright edge. */
+.screen-backdrop {
+  position: absolute;
+  inset: -40px;
+  background: #0b0b0e center / cover no-repeat;
+  filter: blur(26px) brightness(0.5) saturate(1.15);
+  transform: scale(1.08);
+  pointer-events: none;
 }
 
-.spinner-ring.small {
-  width: 36px;
-  height: 36px;
-  border-width: 3px;
+.screen-scrim {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
+.connect-scrim {
+  background:
+    radial-gradient(ellipse at 50% 40%, rgba(0, 0, 0, 0.05), rgba(0, 0, 0, 0.55) 75%),
+    linear-gradient(to bottom, rgba(0, 0, 0, 0.6), rgba(0, 0, 0, 0.25) 35%, rgba(0, 0, 0, 0.35) 70%, rgba(0, 0, 0, 0.82));
+}
+
+.connect-topbar {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 20px 26px 0;
+  z-index: 2;
+}
+
+.connect-topbar .icon-btn {
+  pointer-events: auto;
+}
+
+.connect-topbar-right {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+
+.connect-branding {
+  display: inline-flex;
+  align-items: center;
+  max-width: 220px;
+  padding: 6px 14px;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  background: rgba(255, 255, 255, 0.08);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  color: rgba(255, 255, 255, 0.86);
+  font-size: 12.5px;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.connect-branding:empty {
+  display: none;
+}
+
+.connect-screen {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 14px;
+  width: 100%;
+  max-width: 640px;
+  padding: 36px 0 28px;
+}
+
+.connect-art {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  min-height: 48px;
+}
+
+/* TMDB title logo (transparent PNG); falls back to the plain title text */
+.title-logo {
+  display: block;
+  max-width: min(68%, 440px);
+  max-height: 26vh;
+  width: auto;
+  height: auto;
+  object-fit: contain;
+  filter: drop-shadow(0 10px 26px rgba(0, 0, 0, 0.7));
+  user-select: none;
+  -webkit-user-drag: none;
+}
+
+.title-logo-fallback {
+  font-size: clamp(24px, 4.6vw, 46px);
+  font-weight: 800;
+  letter-spacing: -0.02em;
+  line-height: 1.1;
+  color: #ffffff;
+  text-shadow: 0 4px 22px rgba(0, 0, 0, 0.75);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+}
+
+.title-logo-fallback:empty {
+  display: none;
+}
+
+.connect-genres {
+  font-size: 12.5px;
+  font-weight: 600;
+  letter-spacing: 0.32em;
+  text-transform: uppercase;
+  color: rgba(255, 255, 255, 0.62);
+  margin-top: -2px;
+}
+
+.connect-genres:empty {
+  display: none;
+}
+
+.connect-status-line {
+  display: inline-flex;
+  align-items: baseline;
+  margin-top: 18px;
+  font-family: ui-monospace, "SF Mono", Menlo, Consolas, "Liberation Mono", monospace;
+  font-size: 15px;
+  font-weight: 600;
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+  color: rgba(255, 255, 255, 0.92);
 }
 
 .loading-status-text {
-  font-size: 13px;
-  font-weight: 500;
-  color: rgba(255, 255, 255, 0.78);
-  letter-spacing: 0.02em;
-  max-width: 520px;
+  max-width: 560px;
   line-height: 1.45;
 }
 
+.connect-cursor {
+  margin-left: 2px;
+  animation: cursor-blink 1s steps(2, start) infinite;
+}
+
+@keyframes cursor-blink {
+  to { visibility: hidden; }
+}
+
+.connect-progress {
+  position: relative;
+  width: min(420px, 72%);
+  height: 3px;
+  border-radius: 2px;
+  background: rgba(255, 255, 255, 0.16);
+  overflow: hidden;
+}
+
+.connect-progress-fill {
+  height: 100%;
+  width: 0;
+  border-radius: 2px;
+  background: #ffffff;
+  box-shadow: 0 0 12px rgba(255, 255, 255, 0.6);
+  transition: width 0.6s ease;
+}
+
+.connect-progress-fill.is-creeping {
+  transition: width 5s cubic-bezier(0.1, 0.6, 0.3, 1);
+}
+
+.connect-source-line {
+  display: inline-flex;
+  align-items: center;
+  font-size: 16px;
+  font-weight: 500;
+  color: rgba(255, 255, 255, 0.88);
+}
+
+.connect-slash {
+  margin: 0 10px;
+  color: rgba(255, 255, 255, 0.4);
+}
+
+.connect-tip {
+  position: absolute;
+  left: 24px;
+  right: 24px;
+  bottom: 26px;
+  z-index: 1;
+  font-size: 14px;
+  color: rgba(255, 255, 255, 0.78);
+  text-shadow: 0 2px 10px rgba(0, 0, 0, 0.7);
+  animation: tip-in 0.5s ease;
+}
+
+@keyframes tip-in {
+  from { opacity: 0; transform: translateY(4px); }
+  to { opacity: 1; transform: none; }
+}
+
 .loading-status-detail {
-  font-size: 12px;
+  font-size: 12.5px;
   color: var(--text-secondary);
   max-width: 480px;
   line-height: 1.45;
@@ -188,22 +374,32 @@ button {
   color: rgba(255, 255, 255, 0.8);
 }
 
-.loading-overlay.is-error {
-  background: rgba(0, 0, 0, 0.7);
+.loading-overlay.is-leaving {
+  opacity: 0;
 }
 
-.loading-overlay.is-error .spinner-ring {
-  display: none;
+.loading-overlay.is-error .screen-backdrop {
+  filter: blur(30px) brightness(0.3) saturate(0.6);
 }
 
 .loading-overlay.is-error .loading-error-icon {
   display: block;
 }
 
-.loading-overlay.is-error .loading-status-text {
-  font-size: 14px;
+.loading-overlay.is-error .connect-status-line {
+  font-family: inherit;
+  font-size: 15px;
   font-weight: 600;
-  color: #ffffff;
+  letter-spacing: 0.02em;
+  text-transform: none;
+  margin-top: 6px;
+}
+
+.loading-overlay.is-error .connect-cursor,
+.loading-overlay.is-error .connect-progress,
+.loading-overlay.is-error .connect-source-line,
+.loading-overlay.is-error .connect-tip {
+  display: none;
 }
 
 .loading-actions {
@@ -243,6 +439,29 @@ button {
   filter: brightness(0.92);
 }
 
+/* The HUD stays out of the way while the connect screen is up: the screen
+   has its own Back / Servers buttons. */
+.player-root.is-loading .controls-hud {
+  opacity: 0;
+  pointer-events: none;
+}
+
+/* Spinner kept for the mid-playback buffering indicator */
+.spinner-ring {
+  width: 44px;
+  height: 44px;
+  border: 3.5px solid rgba(255, 255, 255, 0.16);
+  border-top-color: var(--accent);
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+}
+
+.spinner-ring.small {
+  width: 36px;
+  height: 36px;
+  border-width: 3px;
+}
+
 /* Buffering spinner shown during stalls / seeks once playback has started */
 .buffering-indicator {
   position: absolute;
@@ -257,14 +476,24 @@ button {
   to { transform: rotate(360deg); }
 }
 
-/* Center play / pause button */
-.center-play-btn {
+/* Center transport (play / pause, plus -15 / +15 in the compact layout) */
+.center-controls {
   position: absolute;
   top: 50%;
   left: 50%;
+  transform: translate(-50%, -50%);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 34px;
+  z-index: 26;
+  pointer-events: none;
+}
+
+.center-play-btn {
   width: 78px;
   height: 78px;
-  transform: translate(-50%, -50%) scale(1);
+  transform: scale(1);
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -275,7 +504,7 @@ button {
   -webkit-backdrop-filter: blur(10px);
   color: #ffffff;
   cursor: pointer;
-  z-index: 26;
+  pointer-events: auto;
   box-shadow: 0 10px 34px rgba(0, 0, 0, 0.6);
   transition: opacity 0.2s ease, transform 0.2s ease, background 0.15s ease;
 }
@@ -290,11 +519,11 @@ button {
 
 .center-play-btn:hover {
   background: rgba(40, 40, 46, 0.86);
-  transform: translate(-50%, -50%) scale(1.06);
+  transform: scale(1.06);
 }
 
 .center-play-btn:active {
-  transform: translate(-50%, -50%) scale(0.96);
+  transform: scale(0.96);
 }
 
 /* Hidden while playing on mouse devices, while loading/erroring, and with the HUD */
@@ -303,7 +532,7 @@ button {
 .player-root.controls-idle .center-play-btn {
   opacity: 0;
   pointer-events: none;
-  transform: translate(-50%, -50%) scale(0.9);
+  transform: scale(0.9);
 }
 
 /* Touch devices get a persistent center play/pause (like native mobile players) */
@@ -311,8 +540,37 @@ button {
   .player-root.is-playing:not(.controls-idle):not(.is-loading) .center-play-btn {
     opacity: 1;
     pointer-events: auto;
-    transform: translate(-50%, -50%) scale(1);
+    transform: scale(1);
   }
+}
+
+/* -15 / +15 beside the centre button: compact layout only (see below) */
+.center-seek-btn {
+  display: none;
+  width: 56px;
+  height: 56px;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  background: rgba(20, 20, 24, 0.55);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  color: #ffffff;
+  cursor: pointer;
+  pointer-events: auto;
+  opacity: 0;
+  transform: scale(0.9);
+  transition: opacity 0.2s ease, transform 0.2s ease, background 0.15s ease;
+}
+
+.center-seek-btn:hover {
+  background: rgba(40, 40, 46, 0.8);
+  transform: scale(1.06);
+}
+
+.center-seek-btn:active {
+  transform: scale(0.94);
 }
 
 /* Double-tap seek feedback */
@@ -1883,6 +2141,395 @@ button {
   border-left: 2px solid var(--border-subtle);
   font-size: 12.5px;
   color: var(--text-muted);
+}
+
+/* =================================================================== */
+/* PAUSED SCREEN                                                       */
+/* =================================================================== */
+.paused-overlay {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  padding: 6% 7%;
+  overflow: hidden;
+  /* Above the HUD (25) and centre transport (26), below the connect screen
+     (30) and toasts; click-through so any tap/move reaches the HUD and
+     dismisses it. */
+  z-index: 28;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 0.35s ease;
+}
+
+.player-root.is-paused-info .paused-overlay {
+  opacity: 1;
+}
+
+.paused-scrim {
+  background:
+    linear-gradient(to right, rgba(0, 0, 0, 0.82), rgba(0, 0, 0, 0.5) 55%, rgba(0, 0, 0, 0.3)),
+    linear-gradient(to top, rgba(0, 0, 0, 0.6), transparent 40%);
+}
+
+.paused-content {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 14px;
+  width: min(62%, 640px);
+  animation: paused-in 0.45s ease both;
+}
+
+@keyframes paused-in {
+  from { opacity: 0; transform: translateY(10px); }
+  to { opacity: 1; transform: none; }
+}
+
+.paused-eyebrow {
+  font-size: 12.5px;
+  font-weight: 700;
+  letter-spacing: 0.3em;
+  text-transform: uppercase;
+  color: rgba(255, 255, 255, 0.62);
+}
+
+.paused-content .title-logo {
+  max-width: min(78%, 460px);
+  max-height: 30vh;
+  filter: drop-shadow(0 12px 30px rgba(0, 0, 0, 0.75));
+}
+
+.paused-content .title-logo-fallback {
+  text-align: left;
+  font-size: clamp(26px, 5vw, 52px);
+}
+
+.paused-episode {
+  font-size: 16px;
+  font-weight: 700;
+  color: #ffffff;
+  letter-spacing: 0.01em;
+}
+
+.paused-tagline {
+  font-size: 17px;
+  font-style: italic;
+  font-weight: 400;
+  color: rgba(255, 255, 255, 0.8);
+  line-height: 1.4;
+}
+
+.paused-meta {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px 10px;
+  font-size: 15px;
+  font-weight: 600;
+  color: rgba(255, 255, 255, 0.8);
+  font-variant-numeric: tabular-nums;
+}
+
+.paused-meta:empty,
+.paused-genres:empty,
+.paused-overview:empty {
+  display: none;
+}
+
+.paused-meta-dot {
+  color: rgba(255, 255, 255, 0.4);
+}
+
+.paused-meta-rating {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.paused-meta-rating svg {
+  width: 15px;
+  height: 15px;
+  margin-top: -1px;
+}
+
+.paused-genres {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.paused-divider {
+  width: 96px;
+  height: 1px;
+  background: rgba(255, 255, 255, 0.28);
+  margin: 2px 0;
+}
+
+.paused-overview {
+  font-size: 15.5px;
+  line-height: 1.6;
+  color: rgba(255, 255, 255, 0.78);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  display: -webkit-box;
+  -webkit-line-clamp: 4;
+  -webkit-box-orient: vertical;
+}
+
+.player-root.is-paused-info .controls-hud,
+.player-root.is-paused-info .center-controls,
+.player-root.is-paused-info .custom-subtitle-overlay {
+  opacity: 0;
+  pointer-events: none;
+}
+
+/* =================================================================== */
+/* COMPACT LAYOUT (small embeds: < 720px wide or < 440px tall)         */
+/* =================================================================== */
+.top-left-group {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+  flex: 1;
+}
+
+.top-title-block {
+  display: none;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.top-title-block .watching-accent-bar {
+  height: 11px;
+}
+
+.top-title-block .watching-label {
+  font-size: 11.5px;
+}
+
+.top-media-title {
+  font-size: 15px;
+  font-weight: 800;
+  color: #ffffff;
+  letter-spacing: -0.01em;
+  line-height: 1.2;
+  text-shadow: 0 2px 10px rgba(0, 0, 0, 0.7);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.player-root.is-compact .top-bar {
+  padding: 10px 14px 0;
+}
+
+.player-root.is-compact .top-title-block {
+  display: flex;
+}
+
+.player-root.is-compact .top-right-actions {
+  gap: 8px;
+}
+
+.player-root.is-compact .media-meta-block {
+  display: none;
+}
+
+.player-root.is-compact .above-timeline-row {
+  justify-content: flex-end;
+}
+
+.player-root.is-compact .bottom-section {
+  padding: 0 14px 8px;
+  gap: 4px;
+}
+
+/* Timeline: full width, with the times beneath its two ends */
+.player-root.is-compact .timeline-row {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  grid-template-areas:
+    "slider slider"
+    "current duration";
+  gap: 0 8px;
+  padding: 0;
+}
+
+.player-root.is-compact .timeline-slider {
+  grid-area: slider;
+  height: 20px;
+}
+
+.player-root.is-compact #time-current {
+  grid-area: current;
+}
+
+.player-root.is-compact #time-duration {
+  grid-area: duration;
+}
+
+.player-root.is-compact .time-label {
+  font-size: 11.5px;
+  min-width: 0;
+  color: rgba(255, 255, 255, 0.7);
+  margin-top: -2px;
+}
+
+/* Bottom row: play / -15 / +15 live in the centre of the picture instead */
+.player-root.is-compact #btn-play,
+.player-root.is-compact #btn-rewind,
+.player-root.is-compact #btn-forward {
+  display: none;
+}
+
+.player-root.is-compact .bottom-controls-row {
+  justify-content: center;
+  gap: 4px;
+}
+
+.player-root.is-compact .controls-left,
+.player-root.is-compact .controls-right {
+  gap: 4px;
+}
+
+.player-root.is-compact .icon-btn {
+  padding: 5px;
+}
+
+.player-root.is-compact .center-controls {
+  gap: 26px;
+}
+
+.player-root.is-compact .center-play-btn {
+  width: 64px;
+  height: 64px;
+}
+
+.player-root.is-compact .center-play-btn svg {
+  width: 28px;
+  height: 28px;
+}
+
+.player-root.is-compact .center-seek-btn {
+  display: inline-flex;
+  width: 50px;
+  height: 50px;
+}
+
+.player-root.is-compact .center-seek-btn svg {
+  width: 26px;
+  height: 26px;
+}
+
+/* In the compact layout the whole centre transport follows the HUD, even on
+   mouse devices while playing (the bottom row has no play button there). */
+.player-root.is-compact:not(.controls-idle):not(.is-loading) .center-play-btn,
+.player-root.is-compact:not(.controls-idle):not(.is-loading) .center-seek-btn {
+  opacity: 1;
+  pointer-events: auto;
+  transform: scale(1);
+}
+
+.player-root.is-compact:not(.controls-idle):not(.is-loading) .center-play-btn:hover,
+.player-root.is-compact:not(.controls-idle):not(.is-loading) .center-seek-btn:hover {
+  transform: scale(1.06);
+}
+
+.player-root.is-compact:not(.controls-idle):not(.is-loading) .center-play-btn:active,
+.player-root.is-compact:not(.controls-idle):not(.is-loading) .center-seek-btn:active {
+  transform: scale(0.95);
+}
+
+.player-root.is-compact .floating-popover.servers-popover {
+  top: 52px;
+  right: 14px;
+}
+
+/* Connect / paused screens scale down with the embed */
+.player-root.is-compact .connect-topbar {
+  padding: 10px 14px 0;
+}
+
+.player-root.is-compact .connect-screen {
+  gap: 10px;
+  padding: 28px 0 24px;
+}
+
+.player-root.is-compact .title-logo {
+  max-width: min(60%, 300px);
+  max-height: 22vh;
+}
+
+.player-root.is-compact .title-logo-fallback {
+  font-size: clamp(20px, 5vw, 32px);
+}
+
+.player-root.is-compact .connect-genres {
+  font-size: 11px;
+  letter-spacing: 0.26em;
+}
+
+.player-root.is-compact .connect-status-line {
+  margin-top: 8px;
+  font-size: 12.5px;
+  letter-spacing: 0.18em;
+}
+
+.player-root.is-compact .connect-source-line {
+  font-size: 13.5px;
+}
+
+.player-root.is-compact .connect-tip {
+  bottom: 14px;
+  font-size: 12.5px;
+}
+
+.player-root.is-compact .paused-overlay {
+  padding: 5% 6%;
+}
+
+.player-root.is-compact .paused-content {
+  gap: 8px;
+  width: min(72%, 520px);
+}
+
+.player-root.is-compact .paused-content .title-logo {
+  max-width: min(70%, 300px);
+  max-height: 24vh;
+}
+
+.player-root.is-compact .paused-eyebrow {
+  font-size: 11px;
+}
+
+.player-root.is-compact .paused-episode,
+.player-root.is-compact .paused-tagline {
+  font-size: 13.5px;
+}
+
+.player-root.is-compact .paused-meta {
+  font-size: 13px;
+}
+
+.player-root.is-compact .paused-divider {
+  width: 64px;
+  margin: 0;
+}
+
+.player-root.is-compact .paused-overview {
+  font-size: 13px;
+  line-height: 1.5;
+  -webkit-line-clamp: 3;
+}
+
+.player-root.is-compact .paused-genres .media-tag-pill {
+  font-size: 10.5px;
+  padding: 2px 8px;
 }
 
 /* =================================================================== */

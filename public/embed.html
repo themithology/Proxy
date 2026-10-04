@@ -24,36 +24,113 @@
     <div id="seek-feedback-left" class="seek-feedback left" aria-hidden="true">-15s</div>
     <div id="seek-feedback-right" class="seek-feedback right" aria-hidden="true">+15s</div>
 
-    <!-- Center Play / Pause Button (shown while paused; always on touch devices) -->
-    <button id="btn-center-play" class="center-play-btn" title="Play / Pause" aria-label="Play">
-      <svg id="icon-center-play" viewBox="0 0 24 24" width="34" height="34" fill="currentColor" aria-hidden="true">
-        <polygon points="7 4 21 12 7 20 7 4"></polygon>
-      </svg>
-      <svg id="icon-center-pause" class="hidden" viewBox="0 0 24 24" width="34" height="34" fill="currentColor" aria-hidden="true">
-        <rect x="5" y="4" width="4.5" height="16" rx="1"></rect>
-        <rect x="14.5" y="4" width="4.5" height="16" rx="1"></rect>
-      </svg>
-    </button>
+    <!-- Center transport: play / pause (shown while paused; always on touch
+         devices) flanked by -15s / +15s in the compact layout, where the
+         bottom row has no room for them. -->
+    <div class="center-controls">
+      <button id="btn-center-rewind" class="center-seek-btn" title="Rewind 15 seconds (←)" aria-label="Rewind 15 seconds">
+        <svg viewBox="0 0 24 24" width="30" height="30" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"></path>
+          <path d="M3 3v5h5"></path>
+          <text x="12" y="15.3" text-anchor="middle" fill="currentColor" stroke="none" font-size="7.5" font-weight="800" font-family="Inter, system-ui, sans-serif">15</text>
+        </svg>
+      </button>
+      <button id="btn-center-play" class="center-play-btn" title="Play / Pause" aria-label="Play">
+        <svg id="icon-center-play" viewBox="0 0 24 24" width="34" height="34" fill="currentColor" aria-hidden="true">
+          <polygon points="7 4 21 12 7 20 7 4"></polygon>
+        </svg>
+        <svg id="icon-center-pause" class="hidden" viewBox="0 0 24 24" width="34" height="34" fill="currentColor" aria-hidden="true">
+          <rect x="5" y="4" width="4.5" height="16" rx="1"></rect>
+          <rect x="14.5" y="4" width="4.5" height="16" rx="1"></rect>
+        </svg>
+      </button>
+      <button id="btn-center-forward" class="center-seek-btn" title="Forward 15 seconds (→)" aria-label="Forward 15 seconds">
+        <svg viewBox="0 0 24 24" width="30" height="30" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <path d="M21 12a9 9 0 1 1-9-9c2.52 0 4.93 1 6.74 2.74L21 8"></path>
+          <path d="M21 3v5h-5"></path>
+          <text x="12" y="15.3" text-anchor="middle" fill="currentColor" stroke="none" font-size="7.5" font-weight="800" font-family="Inter, system-ui, sans-serif">15</text>
+        </svg>
+      </button>
+    </div>
 
     <!-- Mid-playback buffering indicator (stalls / seeks) -->
     <div id="buffering-indicator" class="buffering-indicator hidden" aria-hidden="true">
       <div class="spinner-ring small"></div>
     </div>
 
-    <!-- Loading Spinner Overlay (doubles as the error state) -->
-    <div id="loading-overlay" class="loading-overlay" role="status" aria-live="polite">
-      <div class="spinner-ring"></div>
-      <svg class="loading-error-icon" viewBox="0 0 24 24" width="40" height="40" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-        <circle cx="12" cy="12" r="9.5"></circle>
-        <line x1="12" y1="7.5" x2="12" y2="13"></line>
-        <circle cx="12" cy="16.5" r="0.6" fill="currentColor"></circle>
-      </svg>
-      <div id="loading-status-text" class="loading-status-text">Connecting to server…</div>
-      <div id="loading-status-detail" class="loading-status-detail hidden"></div>
-      <div id="loading-actions" class="loading-actions hidden">
-        <button id="btn-retry-load" class="loading-action-btn primary" type="button">Retry</button>
-        <button id="btn-error-servers" class="loading-action-btn" type="button">Change server</button>
+    <!-- Paused screen: after 2s without interaction while paused, the title
+         card (logo, tagline, facts, overview) fades in over the blurred art. -->
+    <div id="paused-overlay" class="paused-overlay hidden" aria-hidden="true">
+      <div id="paused-backdrop" class="screen-backdrop" aria-hidden="true"></div>
+      <div class="screen-scrim paused-scrim" aria-hidden="true"></div>
+      <div class="paused-content">
+        <div class="paused-eyebrow">Paused</div>
+        <img id="paused-logo" class="title-logo hidden" alt="" draggable="false" />
+        <div id="paused-title-text" class="title-logo-fallback"></div>
+        <div id="paused-episode" class="paused-episode hidden"></div>
+        <div id="paused-tagline" class="paused-tagline hidden"></div>
+        <div id="paused-meta" class="paused-meta"></div>
+        <div id="paused-genres" class="paused-genres"></div>
+        <div class="paused-divider"></div>
+        <div id="paused-overview" class="paused-overview"></div>
       </div>
+    </div>
+
+    <!-- Connect screen: shown on every load and server/source change over the
+         blurred backdrop (doubles as the error state via `.is-error`). -->
+    <div id="loading-overlay" class="loading-overlay">
+      <div id="loading-backdrop" class="screen-backdrop" aria-hidden="true"></div>
+      <div class="screen-scrim connect-scrim" aria-hidden="true"></div>
+
+      <div class="connect-topbar">
+        <button id="btn-loading-back" class="icon-btn top-icon-btn" title="Back" aria-label="Back">
+          <svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+            <polyline points="15 18 9 12 15 6"></polyline>
+          </svg>
+        </button>
+        <div class="connect-topbar-right">
+          <span id="loading-branding" class="connect-branding"></span>
+          <button id="btn-loading-servers" class="icon-btn top-icon-btn" title="Servers" aria-label="Servers" aria-haspopup="dialog">
+            <svg viewBox="0 0 24 24" width="22" height="22" fill="currentColor">
+              <path d="M18.5 10A5.5 5.5 0 0 0 7.6 8.6 4.5 4.5 0 0 0 6.5 17.5h12a3.75 3.75 0 0 0 0-7.5z"/>
+            </svg>
+          </button>
+        </div>
+      </div>
+
+      <div class="connect-screen">
+        <div class="connect-art">
+          <img id="loading-logo" class="title-logo hidden" alt="" draggable="false" />
+          <div id="loading-title-text" class="title-logo-fallback"></div>
+        </div>
+        <div id="loading-genres" class="connect-genres"></div>
+
+        <svg class="loading-error-icon" viewBox="0 0 24 24" width="40" height="40" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <circle cx="12" cy="12" r="9.5"></circle>
+          <line x1="12" y1="7.5" x2="12" y2="13"></line>
+          <circle cx="12" cy="16.5" r="0.6" fill="currentColor"></circle>
+        </svg>
+
+        <div class="connect-status-line" role="status" aria-live="polite">
+          <span id="loading-status-text" class="loading-status-text">Connecting to server</span><span class="connect-cursor" aria-hidden="true">_</span>
+        </div>
+        <div class="connect-progress" aria-hidden="true">
+          <div id="loading-progress-fill" class="connect-progress-fill"></div>
+        </div>
+        <div id="loading-source-line" class="connect-source-line hidden">
+          <span id="loading-source-server"></span>
+          <span class="connect-slash">/</span>
+          <span id="loading-source-label"></span>
+        </div>
+
+        <div id="loading-status-detail" class="loading-status-detail hidden" role="alert"></div>
+        <div id="loading-actions" class="loading-actions hidden">
+          <button id="btn-retry-load" class="loading-action-btn primary" type="button">Retry</button>
+          <button id="btn-error-servers" class="loading-action-btn" type="button">Change server</button>
+        </div>
+      </div>
+
+      <div id="loading-tip" class="connect-tip">Change playback speed in the player settings.</div>
     </div>
 
     <!-- Status Toast Notification -->
@@ -79,11 +156,22 @@
     <div id="controls-hud" class="controls-hud">
       <!-- Top Bar: Back Button (Left), Episodes & Server Cloud (Right) -->
       <div class="top-bar">
-        <button id="btn-back" class="icon-btn top-icon-btn" title="Back" aria-label="Back">
-          <svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
-            <polyline points="15 18 9 12 15 6"></polyline>
-          </svg>
-        </button>
+        <div class="top-left-group">
+          <button id="btn-back" class="icon-btn top-icon-btn" title="Back" aria-label="Back">
+            <svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+              <polyline points="15 18 9 12 15 6"></polyline>
+            </svg>
+          </button>
+          <!-- Compact layout only: the title moves up here beside Back so the
+               bottom of the picture keeps room for the timeline. -->
+          <div class="top-title-block" aria-hidden="true">
+            <div class="watching-eyebrow">
+              <span class="watching-accent-bar"></span>
+              <span class="watching-label">You're Watching</span>
+            </div>
+            <div id="top-media-title" class="top-media-title">Loading…</div>
+          </div>
+        </div>
 
         <div class="top-right-actions">
           <!-- Episodes Drawer Button -->

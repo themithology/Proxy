@@ -1,4 +1,5 @@
 const config = require('../config');
+const tmdbArtwork = require('./tmdbArtwork');
 const { cache } = require('../utils/cache');
 
 const USER_AGENT =
@@ -75,7 +76,7 @@ async function resolveTmdbMetadata(type, tmdbId, season = 1, episode = 1) {
   const sNum = Math.max(1, parseInt(season || 1, 10));
   const eNum = Math.max(1, parseInt(episode || 1, 10));
 
-  const cacheKey = `tmdb:v2:${normalizedType}:${cleanId}:s${sNum}:e${eNum}`;
+  const cacheKey = `tmdb:v3:${normalizedType}:${cleanId}:s${sNum}:e${eNum}`;
   const cached = await cache.get(cacheKey);
   if (cached) return cached;
 
@@ -87,7 +88,9 @@ async function resolveTmdbMetadata(type, tmdbId, season = 1, episode = 1) {
     // alternative_titles powers the TMDB-anchored identity gate used by the
     // name-search upstreams (CastleTV): a localized or original
     // title must be provably the same film, not just a title collision.
-    const detailsUrl = `${config.tmdbBaseUrl}/${normalizedType}/${cleanId}?${apiKeyParam}append_to_response=external_ids,alternative_titles&language=en-US`;
+    // `images` (logos) + tagline + rating feed the player's connect / paused
+    // screens; the selection logic is shared with the Worker (tmdbArtwork.js).
+    const detailsUrl = `${config.tmdbBaseUrl}/${normalizedType}/${cleanId}?${apiKeyParam}${tmdbArtwork.DETAILS_APPEND}&language=en-US`;
     const data = await safeFetchJson(detailsUrl);
 
     if (data && (data.id || data.title || data.name)) {
@@ -151,6 +154,7 @@ async function resolveTmdbMetadata(type, tmdbId, season = 1, episode = 1) {
         overview: data.overview || '',
         backdrop: data.backdrop_path ? `${config.tmdbImageBase}/w1280${data.backdrop_path}` : null,
         poster: data.poster_path ? `${config.tmdbImageBase}/w500${data.poster_path}` : null,
+        ...tmdbArtwork.presentationFields(data, config.tmdbImageBase),
         externalIds: {
           imdb_id: imdbId,
           tvdb_id: tvdbId,

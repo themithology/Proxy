@@ -43,9 +43,32 @@ const SHOW = {
   releaseYear: 2021,
   genres: ['Animation', 'Drama'],
   runtime: 10,
-  backdrop: '',
+  tagline: 'In the shadow of Piltover, the undercity rises.',
+  rating: 8.7,
+  voteCount: 5134,
+  overview: 'Amid the stark discord of twin cities, two sisters fight on rival sides of a war between magic technologies and clashing convictions.',
+  // Real TMDB artwork: the browser fetches it directly, so the preview shows
+  // the blurred backdrop even though this sandbox has no outbound network.
+  backdrop: 'https://image.tmdb.org/t/p/w1280/rkB4LyZHo1NHXFEDHl9vSD9r1lI.jpg',
   seasons: [{ season_number: 1 }, { season_number: 2 }]
 };
+
+// Transparent wordmark standing in for the TMDB title logo (served by this
+// mock at /mock/logo.svg; the player only accepts absolute http(s) URLs).
+const LOGO_SVG = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 640 210" width="640" height="210">
+  <defs><linearGradient id="g" x1="0" x2="0" y1="0" y2="1"><stop offset="0" stop-color="#ffffff"/><stop offset="1" stop-color="#b9b9c2"/></linearGradient></defs>
+  <text x="320" y="122" text-anchor="middle" font-family="Impact, 'Arial Black', sans-serif" font-size="128" letter-spacing="6" fill="url(#g)" stroke="#111" stroke-width="3">MOCK SHOW</text>
+  <text x="320" y="178" text-anchor="middle" font-family="Inter, Arial, sans-serif" font-size="30" letter-spacing="18" fill="#e6e6e6">THE SERIES</text>
+</svg>`;
+
+// Artificial resolve latency so the connect screen can actually be seen.
+const RESOLVE_DELAY_MS = Math.max(0, parseInt(process.env.RESOLVE_DELAY_MS || '1400', 10) || 0);
+
+function publicOrigin(req) {
+  const host = req.headers['x-forwarded-host'] || req.headers.host || 'localhost';
+  const proto = req.headers['x-forwarded-proto'] || (String(host).includes('e2b.app') ? 'https' : 'http');
+  return `${proto}://${host}`;
+}
 
 function episodesFor(season) {
   const count = season === 2 ? 4 : 6;
@@ -115,6 +138,11 @@ const server = http.createServer((req, res) => {
   }
 
   if (pathname === '/meta-image.gif') return serveAsset(res, 'lol-embed-meta.gif');
+  if (pathname === '/mock/logo.svg') {
+    res.writeHead(200, { 'Content-Type': 'image/svg+xml', 'Cache-Control': 'no-cache' });
+    res.end(LOGO_SVG);
+    return;
+  }
   if (/^\/(css|js|vendor)\//.test(pathname)) return serveAsset(res, pathname.slice(1));
 
   const apiMatch = pathname.match(/^\/api\/(info|resolve)\/(movie|tv)\/([^/]+)$/i);
@@ -128,6 +156,8 @@ const server = http.createServer((req, res) => {
       type,
       tmdbId,
       title: isTv ? SHOW.title : 'Mock Movie',
+      // `?nologo=1` previews the text fallback of the connect / paused screens.
+      logo: url.searchParams.get('nologo') ? null : `${publicOrigin(req)}/mock/logo.svg`,
       season,
       episode,
       seasons: isTv ? SHOW.seasons : [],
@@ -148,8 +178,12 @@ const server = http.createServer((req, res) => {
     const serverFails = everythingFails || requested === 'centaurus';
     const servers = SERVERS.map((s) => ({ ...s, active: !serverFails && s.id === requested }));
 
+    // `/api/resolve` answers after a short delay so the connect screen's
+    // phases (resolving -> source picked -> playable) are visible.
+    const respond = (status, body) => setTimeout(() => json(res, status, body), RESOLVE_DELAY_MS);
+
     if (serverFails) {
-      return json(res, everythingFails ? 502 : 200, {
+      return respond(everythingFails ? 502 : 200, {
         ok: false,
         error: everythingFails ? 'All upstream servers failed for this title.' : 'Gigachad Node has no source for this title.',
         explanation: 'HiCine search returned no quality ladder',
@@ -162,7 +196,7 @@ const server = http.createServer((req, res) => {
       });
     }
 
-    return json(res, 200, {
+    return respond(200, {
       ok: true,
       metadata,
       segments,

@@ -150,6 +150,21 @@ function startUpstreamMockServer() {
             overview: 'Amid the stark discord of twin cities Piltover and Zaun, two sisters fight on rival sides.',
             backdrop_path: '/rkB4LyZHo1NHXFEDHl9vSD9r1lI.jpg',
             poster_path: '/fqldf2t8ztc9aiwn3k6mlX3tvRT.jpg',
+            tagline: 'The future of the city is in their hands.',
+            vote_average: 8.746,
+            vote_count: 5134,
+            // `images` is only present when the backend asked for it with
+            // include_image_language=en,null (the player's logo artwork).
+            images: u.searchParams.get('append_to_response')?.includes('images') && u.searchParams.get('include_image_language') === 'en,null'
+              ? {
+                  logos: [
+                    { file_path: '/arcane-fr.png', iso_639_1: 'fr', vote_average: 9 },
+                    { file_path: '/arcane-en.svg', iso_639_1: 'en', vote_average: 6 },
+                    { file_path: '/arcane-en.png', iso_639_1: 'en', vote_average: 5.3 },
+                    { file_path: '/arcane-null.png', iso_639_1: null, vote_average: 7 }
+                  ]
+                }
+              : undefined,
             external_ids: { imdb_id: 'tt11126994', tvdb_id: 371028 },
             seasons: [
               { season_number: 1, name: 'Season 1', episode_count: 9 },
@@ -1430,6 +1445,17 @@ async function runTests() {
     assert.strictEqual(infoRes.json.metadata.externalIds.imdb_id, 'tt11126994');
     assert.strictEqual(infoRes.json.metadata.externalIds.tvdb_id, 371028);
     assert.ok(infoRes.json.metadata.episodes.length >= 2, 'Episodes list must be populated from TMDB');
+    const assertArcaneArtwork = (metadata, label) => {
+      assert.strictEqual(
+        metadata.logo,
+        'https://image.tmdb.org/t/p/w500/arcane-en.png',
+        `${label}: the English PNG logo must win over SVG, other languages and language-less logos`
+      );
+      assert.strictEqual(metadata.tagline, 'The future of the city is in their hands.', `${label}: tagline exposed`);
+      assert.strictEqual(metadata.rating, 8.7, `${label}: rating rounded to one decimal`);
+      assert.strictEqual(metadata.voteCount, 5134, `${label}: vote count exposed`);
+    };
+    assertArcaneArtwork(infoRes.json.metadata, 'Node /api/info');
     const assertArcaneSegments = (segments, label) => {
       assert.ok(Array.isArray(segments), `${label}: segments must be an array`);
       assert.deepStrictEqual(
@@ -2256,8 +2282,9 @@ async function runTests() {
         'worker /api/info must expose the rebranded server objects'
       );
       // The Worker (which serves the player) must resolve the exact same skip
-      // segments as the Node backend through the shared provider parsers.
+      // segments and artwork as the Node backend through the shared helpers.
       assertArcaneSegments(infoJson.segments, 'Worker /api/info');
+      assertArcaneArtwork(infoJson.metadata, 'Worker /api/info');
       const workerMovieSegmentsRes = await callWorker(
         'http://player.test/api/segments/movie/693134',
         catalogWorkerEnv

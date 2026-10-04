@@ -137,6 +137,32 @@
   const btnCenterPlay = document.getElementById('btn-center-play');
   const iconCenterPlay = document.getElementById('icon-center-play');
   const iconCenterPause = document.getElementById('icon-center-pause');
+  const btnCenterRewind = document.getElementById('btn-center-rewind');
+  const btnCenterForward = document.getElementById('btn-center-forward');
+  // Connect screen (loading overlay) parts
+  const loadingBackdrop = document.getElementById('loading-backdrop');
+  const loadingLogo = document.getElementById('loading-logo');
+  const loadingTitleText = document.getElementById('loading-title-text');
+  const loadingGenres = document.getElementById('loading-genres');
+  const loadingProgressFill = document.getElementById('loading-progress-fill');
+  const loadingSourceLine = document.getElementById('loading-source-line');
+  const loadingSourceServer = document.getElementById('loading-source-server');
+  const loadingSourceLabel = document.getElementById('loading-source-label');
+  const loadingTip = document.getElementById('loading-tip');
+  const loadingBranding = document.getElementById('loading-branding');
+  const btnLoadingBack = document.getElementById('btn-loading-back');
+  const btnLoadingServers = document.getElementById('btn-loading-servers');
+  // Paused screen parts
+  const pausedOverlay = document.getElementById('paused-overlay');
+  const pausedBackdrop = document.getElementById('paused-backdrop');
+  const pausedLogo = document.getElementById('paused-logo');
+  const pausedTitleText = document.getElementById('paused-title-text');
+  const pausedEpisode = document.getElementById('paused-episode');
+  const pausedTagline = document.getElementById('paused-tagline');
+  const pausedMeta = document.getElementById('paused-meta');
+  const pausedGenres = document.getElementById('paused-genres');
+  const pausedOverview = document.getElementById('paused-overview');
+  const topMediaTitle = document.getElementById('top-media-title');
 
   // Up next
   const upNextCard = document.getElementById('up-next-card');
@@ -291,6 +317,10 @@
     upNextTimer: null,
     upNextDeadline: 0,
     upNextTarget: null,
+    pausedInfoTimer: null,
+    loadingHideTimer: null,
+    tipTimer: null,
+    tipIndex: 0,
     _triedStreamUrls: new Set()
   };
 
@@ -489,17 +519,34 @@
 
     const episodes = normalizeEpisodes(meta.episodes, meta, isTv ? (meta.season || state.season) : 1);
 
+    // Artwork / facts for the connect and paused screens. Only http(s) image
+    // URLs are ever written into `src` / `background-image`.
+    const ratingNum = Number(meta.rating);
     return {
       ...meta,
       type: isTv ? 'tv' : 'movie',
       title: baseTitle,
       displayTitle,
       tags,
+      genres: Array.isArray(meta.genres) ? meta.genres.filter((g) => typeof g === 'string' && g.trim()) : [],
+      logo: isHttpUrl(meta.logo) ? meta.logo : null,
+      backdrop: isHttpUrl(meta.backdrop) ? meta.backdrop : null,
+      poster: isHttpUrl(meta.poster) ? meta.poster : null,
+      tagline: typeof meta.tagline === 'string' ? meta.tagline.trim() : '',
+      rating: Number.isFinite(ratingNum) && ratingNum > 0 ? Math.round(ratingNum * 10) / 10 : null,
       durationSec,
       totalSeasons,
       seasonNumbers,
       episodes
     };
+  }
+
+  function isHttpUrl(value) {
+    return typeof value === 'string' && /^https?:\/\/\S+$/i.test(value);
+  }
+
+  function cssUrl(url) {
+    return `url("${String(url).replace(/["\\\n\r]/g, (c) => `\\${c}`)}")`;
   }
 
   function normalizeEpisodes(list, meta, seasonNumber) {
@@ -526,23 +573,106 @@
   }
 
   // --- Loading / error overlay ---
+  // The connect screen: blurred backdrop, title logo, genres, a terminal-style
+  // "CONNECTING TO <SERVER>_" status with a progress bar that advances per
+  // phase (resolving -> stream picked -> playable), the server/source that
+  // answered, and rotating usage tips. Shown on every load and server/source
+  // change; `.is-error` turns the same screen into the failure state.
+  const CONNECT_TIPS = [
+    'Change playback speed in the player settings.',
+    'Press S to skip an intro or recap the moment the button appears.',
+    'Double-tap the left or right side of the picture to jump 15 seconds.',
+    'Pick another server or source from the cloud menu at any time.',
+    'Keyboard: Space plays, C toggles subtitles, M mutes, F goes full screen.',
+    'Your position is saved — reopen this title to resume where you left off.'
+  ];
+  const PAUSED_INFO_DELAY_MS = 2000;
+
+  function showConnectTip() {
+    loadingTip.textContent = CONNECT_TIPS[state.tipIndex % CONNECT_TIPS.length];
+    state.tipIndex += 1;
+    // Restart the fade-in for the new tip.
+    loadingTip.style.animation = 'none';
+    void loadingTip.offsetWidth;
+    loadingTip.style.animation = '';
+  }
+
+  function startConnectTips() {
+    stopConnectTips();
+    showConnectTip();
+    state.tipTimer = setInterval(showConnectTip, 4500);
+  }
+
+  function stopConnectTips() {
+    if (state.tipTimer) clearInterval(state.tipTimer);
+    state.tipTimer = null;
+  }
+
+  function setConnectProgress(pct, creeping) {
+    loadingProgressFill.classList.toggle('is-creeping', !!creeping);
+    loadingProgressFill.style.width = `${Math.max(0, Math.min(100, pct))}%`;
+  }
+
+  // "Centaurus / Source 02" once we know which source of which server is
+  // being attached (`sourceIndex` is 0-based; negative hides the line).
+  function setConnectSource(serverId, sourceIndex) {
+    if (!(sourceIndex >= 0)) {
+      loadingSourceLine.classList.add('hidden');
+      return;
+    }
+    loadingSourceServer.textContent = serverDisplayName(serverId);
+    loadingSourceLabel.textContent = `Source ${String(sourceIndex + 1).padStart(2, '0')}`;
+    loadingSourceLine.classList.remove('hidden');
+  }
+
+  function cancelPendingLoadingHide() {
+    if (state.loadingHideTimer) clearTimeout(state.loadingHideTimer);
+    state.loadingHideTimer = null;
+    loadingOverlay.classList.remove('is-leaving');
+  }
+
   function showLoading(message) {
+    cancelPendingLoadingHide();
+    hidePausedInfo();
     loadingOverlay.classList.remove('hidden', 'is-error');
     loadingActions.classList.add('hidden');
     loadingStatusDetail.classList.add('hidden');
     loadingStatusDetail.textContent = '';
-    loadingStatusText.textContent = message;
+    // The blinking cursor replaces any trailing ellipsis.
+    loadingStatusText.textContent = String(message || 'Connecting').replace(/[\s.…]+$/, '');
+    loadingSourceLine.classList.add('hidden');
+    loadingBranding.textContent = state.branding || '';
+    renderScreenArtwork();
     playerRoot.classList.add('is-loading');
     hideBuffering();
+    startConnectTips();
+    // Progress: snap back to the start, then creep towards ~40% while the
+    // stream resolves so the bar is never frozen at zero.
+    loadingProgressFill.style.transition = 'none';
+    setConnectProgress(6, false);
+    void loadingProgressFill.offsetWidth;
+    loadingProgressFill.style.transition = '';
+    setConnectProgress(42, true);
   }
 
   function hideLoading() {
-    loadingOverlay.classList.add('hidden');
-    loadingOverlay.classList.remove('is-error');
     playerRoot.classList.remove('is-loading');
+    stopConnectTips();
+    if (loadingOverlay.classList.contains('hidden') || state.loadingHideTimer) return;
+    // Let the bar complete and the screen fade before it is removed.
+    setConnectProgress(100, false);
+    loadingOverlay.classList.add('is-leaving');
+    state.loadingHideTimer = setTimeout(() => {
+      state.loadingHideTimer = null;
+      loadingOverlay.classList.add('hidden');
+      loadingOverlay.classList.remove('is-error', 'is-leaving');
+    }, 320);
   }
 
   function showLoadError(message, detail) {
+    cancelPendingLoadingHide();
+    hidePausedInfo();
+    stopConnectTips();
     loadingOverlay.classList.remove('hidden');
     loadingOverlay.classList.add('is-error');
     loadingStatusText.textContent = message;
@@ -554,9 +684,145 @@
     }
     loadingActions.classList.remove('hidden');
     btnErrorServers.classList.toggle('hidden', state.servers.length < 2);
+    loadingBranding.textContent = state.branding || '';
+    renderScreenArtwork();
     playerRoot.classList.add('is-loading');
     playerRoot.classList.remove('controls-idle');
     hideBuffering();
+  }
+
+  // Blurred backdrop + title logo (or the plain title) + genres shared by the
+  // connect and paused screens. Re-run whenever metadata changes.
+  function renderScreenArtwork() {
+    const m = state.media;
+    const art = m && (m.backdrop || m.poster);
+    const background = art ? cssUrl(art) : 'none';
+    loadingBackdrop.style.backgroundImage = background;
+    pausedBackdrop.style.backgroundImage = background;
+    setTitleLogo(loadingLogo, loadingTitleText, m);
+    setTitleLogo(pausedLogo, pausedTitleText, m);
+    loadingGenres.textContent = m && m.genres.length > 0 ? m.genres.slice(0, 3).join(' / ') : '';
+  }
+
+  function setTitleLogo(img, fallbackEl, m) {
+    const title = m ? m.title : '';
+    if (m && m.logo) {
+      img.onerror = () => {
+        img.classList.add('hidden');
+        fallbackEl.textContent = title;
+      };
+      if (img.getAttribute('src') !== m.logo) img.setAttribute('src', m.logo);
+      img.alt = title;
+      img.classList.remove('hidden');
+      fallbackEl.textContent = '';
+      return;
+    }
+    img.onerror = null;
+    img.removeAttribute('src');
+    img.classList.add('hidden');
+    fallbackEl.textContent = title;
+  }
+
+  // --- Paused screen ---
+  // Two seconds after pausing with no interaction, the HUD gives way to the
+  // title card (logo, tagline, facts, overview) over the blurred artwork. Any
+  // pointer / key activity brings the controls back; resuming removes it.
+  function canShowPausedInfo() {
+    return (
+      state.media !== null &&
+      video.paused &&
+      !video.ended &&
+      state.hasPlaybackStarted &&
+      !playerRoot.classList.contains('is-loading') &&
+      !playerRoot.classList.contains('is-ended') &&
+      !state.isDraggingTimeline &&
+      !isAnyOverlayOpen()
+    );
+  }
+
+  function schedulePausedInfo() {
+    if (state.pausedInfoTimer) clearTimeout(state.pausedInfoTimer);
+    state.pausedInfoTimer = null;
+    if (!canShowPausedInfo()) return;
+    state.pausedInfoTimer = setTimeout(() => {
+      state.pausedInfoTimer = null;
+      if (canShowPausedInfo()) showPausedInfo();
+    }, PAUSED_INFO_DELAY_MS);
+  }
+
+  function showPausedInfo() {
+    renderPausedInfo();
+    pausedOverlay.classList.remove('hidden');
+    pausedOverlay.setAttribute('aria-hidden', 'false');
+    playerRoot.classList.add('is-paused-info');
+  }
+
+  function hidePausedInfo() {
+    if (state.pausedInfoTimer) clearTimeout(state.pausedInfoTimer);
+    state.pausedInfoTimer = null;
+    if (!playerRoot.classList.contains('is-paused-info')) return;
+    playerRoot.classList.remove('is-paused-info');
+    pausedOverlay.classList.add('hidden');
+    pausedOverlay.setAttribute('aria-hidden', 'true');
+  }
+
+  function renderPausedInfo() {
+    const m = state.media;
+    if (!m) return;
+    const isTv = m.type === 'tv';
+    const ep = isTv ? m.episodes.find((e) => e.episode === state.episode) : null;
+
+    if (isTv) {
+      pausedEpisode.textContent = `S${state.season} E${state.episode}${ep && ep.title ? ` · ${ep.title}` : ''}`;
+      pausedEpisode.classList.remove('hidden');
+    } else {
+      pausedEpisode.textContent = '';
+      pausedEpisode.classList.add('hidden');
+    }
+
+    pausedTagline.textContent = m.tagline || '';
+    pausedTagline.classList.toggle('hidden', !m.tagline);
+
+    const runtimeMin = ep && ep.runtime ? parseInt(ep.runtime, 10) : Number(m.runtime);
+    const facts = [];
+    if (m.releaseYear) facts.push({ text: String(m.releaseYear) });
+    if (runtimeMin > 0) facts.push({ text: `${runtimeMin} min` });
+    if (m.rating) facts.push({ text: m.rating.toFixed(1), rating: true });
+    pausedMeta.innerHTML = facts
+      .map((f, idx) => {
+        const dot = idx > 0 ? '<span class="paused-meta-dot" aria-hidden="true">•</span>' : '';
+        const body = f.rating
+          ? `<span class="paused-meta-rating"><svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><polygon points="12 2 15.1 8.6 22.2 9.3 16.9 14.1 18.4 21.1 12 17.5 5.6 21.1 7.1 14.1 1.8 9.3 8.9 8.6"></polygon></svg><span class="sr-only">Rating </span>${escapeHtml(f.text)}</span>`
+          : `<span>${escapeHtml(f.text)}</span>`;
+        return dot + body;
+      })
+      .join('');
+
+    pausedGenres.innerHTML = m.genres
+      .slice(0, 4)
+      .map((g) => `<span class="media-tag-pill">${escapeHtml(g)}</span>`)
+      .join('');
+
+    pausedOverview.textContent = (ep && ep.overview) || m.overview || '';
+  }
+
+  // --- Compact layout ---
+  // Small embeds get the title in the top bar, the transport in the centre of
+  // the picture and a full-width timeline (see `.is-compact` in the CSS).
+  const COMPACT_MAX_WIDTH = 720;
+  const COMPACT_MAX_HEIGHT = 440;
+
+  function applyCompactLayout() {
+    const width = playerRoot.clientWidth;
+    const height = playerRoot.clientHeight;
+    if (!(width > 0 && height > 0)) return;
+    playerRoot.classList.toggle('is-compact', width < COMPACT_MAX_WIDTH || height < COMPACT_MAX_HEIGHT);
+  }
+
+  if (typeof ResizeObserver === 'function') {
+    new ResizeObserver(applyCompactLayout).observe(playerRoot);
+  } else {
+    window.addEventListener('resize', applyCompactLayout);
   }
 
   function showBuffering() {
@@ -606,7 +872,11 @@
     // A stale "Skip Intro" from the previous episode must not survive the switch.
     if (!preserveTime) clearActiveSkip();
     playerRoot.classList.remove('is-ended');
-    showLoading(`Connecting to ${serverDisplayName(requestedServer)}…`);
+    showLoading(`Connecting to ${serverDisplayName(requestedServer)}`);
+    // First open: the upstream resolve can take seconds, while the TMDB
+    // metadata is one cached call away. Fetch it in parallel so the connect
+    // screen shows the artwork almost immediately.
+    if (!state.media) prefetchArtwork(loadToken);
 
     let data = null;
     try {
@@ -705,7 +975,8 @@
       renderAudioPopover();
       renderServersPopover();
       updateSettingsSummaryValues();
-      loadingStatusText.textContent = `Loading stream from ${serverDisplayName(state.server)}…`;
+      // The waterfall may have answered from another server than requested.
+      loadingStatusText.textContent = `Connecting to ${serverDisplayName(state.server)}`;
 
       // Honour a source the viewer picked from the servers list, if this
       // server still offers it; otherwise start from the primary source.
@@ -713,6 +984,8 @@
       const targetStreamUrl =
         state.pendingSourceUrl && sources.includes(state.pendingSourceUrl) ? state.pendingSourceUrl : state.stream.streamUrl;
       state.pendingSourceUrl = null;
+      setConnectSource(state.server, sources.indexOf(targetStreamUrl));
+      setConnectProgress(72, false);
       await attachStreamToVideo(targetStreamUrl, savedTime);
 
       // Apply the subtitle preference: a track the viewer already had on, a
@@ -749,6 +1022,22 @@
     }
   }
 
+  async function prefetchArtwork(loadToken) {
+    try {
+      const res = await fetch(
+        apiUrl(`/api/info/${state.type}/${encodeURIComponent(state.tmdbId)}?season=${state.season}&episode=${state.episode}`)
+      );
+      const json = await res.json();
+      const meta = json && json.metadata;
+      // The resolve may have delivered the full metadata in the meantime.
+      if (loadToken !== state.loadToken || state.media || !meta || !meta.title) return;
+      state.media = normalizeMetadata({ ...meta, type: meta.type || state.type });
+      renderMetadataUI();
+    } catch (_) {
+      /* best effort: the resolve response carries the same metadata */
+    }
+  }
+
   // --- Render Metadata (Title, Tags, Season/Episode Controls) ---
   function renderMetadataUI() {
     const m = state.media;
@@ -757,6 +1046,8 @@
     document.title = `${m.displayTitle} — ${state.branding}`;
     mediaTitleEl.textContent = m.displayTitle;
     mediaTitleEl.classList.remove('is-placeholder');
+    topMediaTitle.textContent = m.displayTitle;
+    renderScreenArtwork();
 
     mediaTagsEl.innerHTML = '';
     (m.tags || []).forEach((tag) => {
@@ -1058,6 +1349,13 @@
 
   btnErrorServers.addEventListener('click', () => {
     openServersPopover();
+  });
+  // The connect screen covers the HUD, so it carries its own Back / Servers.
+  btnLoadingBack.addEventListener('click', () => btnBack.click());
+  btnLoadingServers.addEventListener('click', () => {
+    const wasHidden = popoverServers.classList.contains('hidden');
+    closeAllPopovers();
+    if (wasHidden) openServersPopover();
   });
 
   // Resolve which native HLS audio rendition a payload audio row maps to.
@@ -1639,7 +1937,9 @@
       }
       state._triedStreamUrls = new Set();
       closeAllPopovers();
-      showToast(`Switching to ${label}…`, 1800);
+      showLoading(`Connecting to ${serverDisplayName(serverId)}`);
+      setConnectSource(serverId, sourcesFromStream(state.stream).indexOf(url));
+      setConnectProgress(72, false);
       attachStreamToVideo(url, video.currentTime || 0);
       renderServersPopover();
       return;
@@ -2296,6 +2596,14 @@
   });
   btnRewind.addEventListener('click', () => seekBy(-15));
   btnForward.addEventListener('click', () => seekBy(15));
+  btnCenterRewind.addEventListener('click', (e) => {
+    e.stopPropagation();
+    seekBy(-15);
+  });
+  btnCenterForward.addEventListener('click', (e) => {
+    e.stopPropagation();
+    seekBy(15);
+  });
   btnNextEpisode.addEventListener('click', goToNextEpisode);
 
   // Click / tap / double-tap on the picture. Clicking the picture never
@@ -2372,6 +2680,7 @@
     setPlayingUI(true);
     playerRoot.classList.remove('is-ended');
     state.hasPlaybackStarted = true;
+    hidePausedInfo();
     resetIdleTimer();
     emitHostEvent('play');
   });
@@ -2388,9 +2697,11 @@
     stopRenderLoop();
     updateTimelineAndSkipState();
     saveProgress(true);
-    // Keep the HUD on screen while paused.
+    // Keep the HUD on screen while paused; the title card takes over after a
+    // couple of idle seconds.
     if (state.idleTimer) clearTimeout(state.idleTimer);
     playerRoot.classList.remove('controls-idle');
+    schedulePausedInfo();
     emitHostEvent('pause');
   });
 
@@ -2430,6 +2741,7 @@
   video.addEventListener('ended', () => {
     stopRenderLoop();
     setPlayingUI(false);
+    hidePausedInfo();
     playerRoot.classList.add('is-ended');
     playerRoot.classList.remove('controls-idle');
     // Mark as finished so the episode card fills up and resume starts over.
@@ -2761,6 +3073,10 @@
   // Auto-hide HUD on inactivity during playback
   function resetIdleTimer() {
     playerRoot.classList.remove('controls-idle');
+    if (playerRoot.classList.contains('is-paused-info') || state.pausedInfoTimer) {
+      hidePausedInfo();
+      schedulePausedInfo();
+    }
     if (state.idleTimer) clearTimeout(state.idleTimer);
     state.idleTimer = setTimeout(() => {
       if (!video.paused && !video.ended && !isAnyOverlayOpen() && !state.isDraggingTimeline) {
@@ -2887,5 +3203,6 @@
   updateFullscreenUI();
   setPlayingUI(false);
   renderSegmentedTimeline();
+  applyCompactLayout();
   loadMediaBundle(false);
 })();

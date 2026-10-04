@@ -23,6 +23,7 @@ import identity from '../src/services/identity.js';
 // so rebranding or re-prioritising a server must never require a second edit here.
 import serverCatalog from '../src/services/serverCatalog.js';
 import skipSegments from '../src/services/skipSegments.js';
+import tmdbArtwork from '../src/services/tmdbArtwork.js';
 
 const USER_AGENT =
   'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36';
@@ -381,7 +382,7 @@ async function resolveTmdbMetadata(type, tmdbId, season = 1, episode = 1, env = 
   const sNum = Math.max(1, parseInt(season || 1, 10));
   const eNum = Math.max(1, parseInt(episode || 1, 10));
 
-  const cacheKey = `cf:tmdb:${normalizedType}:${cleanId}:s${sNum}:e${eNum}`;
+  const cacheKey = `cf:tmdb:v2:${normalizedType}:${cleanId}:s${sNum}:e${eNum}`;
   const cached = await edgeCacheGet(cacheKey);
   if (cached) return cached;
 
@@ -400,7 +401,9 @@ async function resolveTmdbMetadata(type, tmdbId, season = 1, episode = 1, env = 
   // quickly: Cloudflare's shared egress IPs hit TMDB rate limits more often
   // than a dedicated host would.
   let detailsData = null;
-  const detailsUrl = `${tmdbBase}/${normalizedType}/${cleanId}?api_key=${encodeURIComponent(tmdbKey)}&append_to_response=external_ids,alternative_titles&language=en-US`;
+  // `images` (logos) + tagline + rating feed the player's connect / paused
+  // screens; the selection logic is shared with Node (src/services/tmdbArtwork.js).
+  const detailsUrl = `${tmdbBase}/${normalizedType}/${cleanId}?api_key=${encodeURIComponent(tmdbKey)}&${tmdbArtwork.DETAILS_APPEND}&language=en-US`;
   for (let attempt = 0; attempt < 2; attempt += 1) {
     try {
       const detailsRes = await fetch(detailsUrl, {
@@ -489,6 +492,7 @@ async function resolveTmdbMetadata(type, tmdbId, season = 1, episode = 1, env = 
         overview: data.overview || '',
         backdrop: data.backdrop_path ? `https://image.tmdb.org/t/p/w1280${data.backdrop_path}` : null,
         poster: data.poster_path ? `https://image.tmdb.org/t/p/w500${data.poster_path}` : null,
+        ...tmdbArtwork.presentationFields(data),
         externalIds: {
           imdb_id: data.imdb_id || data.external_ids?.imdb_id || null,
           tvdb_id: data.external_ids?.tvdb_id || null,
