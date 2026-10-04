@@ -19,8 +19,7 @@ import zlib from 'node:zlib';
 import { Buffer } from 'node:buffer';
 // Shared TMDB-anchored identity matching (single source of truth with the Node backend).
 import identity from '../src/services/identity.js';
-// Shared server catalog + Hamster Wheel cascade (single source of truth with the
-// Node backend). The player renders the `servers` array returned by /api/resolve,
+// Shared server catalog (single source of truth with the Node backend). The player renders the `servers` array returned by /api/resolve,
 // so rebranding or re-prioritising a server must never require a second edit here.
 import serverCatalog from '../src/services/serverCatalog.js';
 
@@ -37,15 +36,10 @@ const runtimeState = {
   upstreams: {
     castletvBase: 'https://api.hlowb.com',
     netmirrorBase: 'https://net27.cc',
-    dahmerBase: 'https://a.111477.xyz',
-    domainDiscoveryUrl: 'https://raw.githubusercontent.com/SaurabhKaperwan/Utils/refs/heads/main/urls.json',
     vidstuckBase: 'https://vidstuck.xyz',
-    zxcBase: 'https://zxcstream.icu',
-    vidsrcDataUrl: 'https://data.vidsrc.sh/api.php',
     hicineApiBase: 'https://api.hicine.sbs',
     hianimeBase: 'https://hianime.at'
   },
-  zxcAesKey: '7f4c9e2a81d63b05c4f7a9e8126d3b50e1a8c7f23d9465ab0c6e9f1d4a7b832c',
   externalProxyPool: [],
   domains: new Map(),
   blockedDomains: new Set(),
@@ -170,7 +164,6 @@ function getWorkerAdminSnapshot() {
     blockedDomains: Array.from(runtimeState.blockedDomains),
     servers,
     upstreams: { ...runtimeState.upstreams },
-    zxcAesKey: runtimeState.zxcAesKey,
     externalProxyPool: [...runtimeState.externalProxyPool],
     customOverrides: Array.from(runtimeState.customOverrides.values())
   };
@@ -401,9 +394,9 @@ async function resolveTmdbMetadata(type, tmdbId, season = 1, episode = 1, env = 
   let result = null;
 
   // A single failed TMDB call used to hand back a title-less metadata stub,
-  // which silently disables every search-by-title server — Ursa then probes
-  // nothing (`ursa_metadata_missing`) and the waterfall slides to Server 1,
-  // whose NetMirror tier is TMDB-id keyed and keeps playing. Retry once
+  // which silently disables every search-by-title server — the search-by-title
+  // tiers then probe nothing and the waterfall slides to the TMDB-id keyed
+  // NetMirror tier. Retry once
   // quickly: Cloudflare's shared egress IPs hit TMDB rate limits more often
   // than a dedicated host would.
   let detailsData = null;
@@ -518,7 +511,7 @@ async function resolveTmdbMetadata(type, tmdbId, season = 1, episode = 1, env = 
     // Secondary live fallback (mirrors the Node backend): the VidStuck backend
     // proxies TMDB details, so a TMDB outage/rate-limit on the Worker's shared
     // egress IP does not strip the title from metadata. Without a title every
-    // search-by-title cascade (Ursa first) instantly reports "nothing to probe"
+    // search-by-title cascade instantly reports "nothing to probe"
     // while TMDB-id keyed tiers keep answering — exactly the "Server 3 falls
     // back to Server 1" symptom.
     const vidstuckBase = (
@@ -736,7 +729,7 @@ async function resolveSubtitles(metadata) {
 }
 
 /**
- * 4. Upstream Stream Extractors (Andromeda/Atlas, Ursa/VidSrc, Centaurus/HiCine, Strings/HiAnime)
+ * 4. Upstream Stream Extractors (Andromeda/CastleTV+NetMirror, Centaurus/HiCine, HiAnime)
  */
 
 /**
@@ -1444,7 +1437,7 @@ async function resolveNetmirrorUpstream(metadata, preferredAudio = '', env = nul
 
 /**
  * Server 1 — Andromeda Multi-Audio Orchestrator (Cloudflare Worker)
- * Cascades: CastleTV -> NetMirror -> (mock VidStuck if configured) -> failover to Server 2 (Ursa)
+ * Cascades: CastleTV -> NetMirror -> failover to Server 2 (Centaurus)
  */
 async function resolveAndromedaUpstream(metadata, requestedServer = 'andromeda', preferredAudio = '', env = null) {
   const diag = { stage: 'init', steps: [] };
@@ -1480,7 +1473,7 @@ async function resolveAndromedaUpstream(metadata, requestedServer = 'andromeda',
     stamp('netmirror_error', `NetMirror failed: ${err.message}`);
   }
 
-  // All sub-providers failed: signal failure so waterfall advances to Server 2 (Ursa)
+  // All sub-providers failed: signal failure so waterfall advances to Server 2 (Centaurus)
   stamp('andromeda_exhausted', 'All Andromeda sub-providers (CastleTV, NetMirror) failed to resolve a stream.');
   return {
     ok: false,
@@ -1489,250 +1482,6 @@ async function resolveAndromedaUpstream(metadata, requestedServer = 'andromeda',
   };
 }
 
-/**
- * vidstuck.xyz backend "keys": the player talks to its own API with randomly
- * obfuscated JSON-field / query-parameter names (anti-bot obfuscation baked into
- * their bundle). These are field names, not secrets — the exact same constants
- * are mirrored by vicine v1.5.2's zxc provider:
- *
- *   POST /backend/meow          { <UO>: tmdbId, <UP>: type, <UG>: server }
- *   GET  /backend/servers/:id?  <UO>=id&<UG>=server&<UP>=type&<UL>=ts&<UU>=token
- *                               &<UD>=title&<UC>=year&<UM>=releaseDate&<IM>=imdbId
- *   -> links[0].link is an OpenSSL AES-256-CBC (md5 EVP_BytesToKey) base64 blob
- *      whose plaintext is the internal stream path.
- *
- * The backend rejects every request that does not carry
- * `Origin`/`Referer: https://vidstuck.xyz`.
- */
-const ZXC_UO = 'a7f39c821d604e5b9c71f36e1547b'; // tmdb id
-const ZXC_UP = 'c285f91ab306d28147a35632e816b'; // media type (movie|tv)
-const ZXC_UG = '6b491e7253ad84d392e7561a9384c'; // server id (andromeda|atlas)
-const ZXC_UL = '61d9a5274c8e3b29afd6384c291e6'; // token timestamp from /backend/meow
-const ZXC_UU = 'c492f7a183d6502b1e7436c538a716d'; // session token from /backend/meow
-const ZXC_UD = '5e28c9147a306d1e829f3674b392a1'; // title
-const ZXC_UC = 'b731e6c94f08269d725f8341c306e'; // release year
-const ZXC_UM = 'e164932c50216a39e5814b3027'; // release date (YYYY-MM-DD)
-const ZXC_IM = 'f35a8c19d674b3265e871c4933a725f'; // imdb id
-
-const ZXC_AES_KEY_DEFAULT =
-  '7f4c9e2a81d63b05c4f7a9e8126d3b50e1a8c7f23d9465ab0c6e9f1d4a7b832c';
-
-/**
- * Sniff the real container of a resolved stream URL (HLS vs DASH vs progressive
- * MP4). VidStuck hands out `/backend/...` paths with no extension, so the only
- * reliable signal is the upstream `Content-Type` + post-redirect URL.
- */
-async function sniffStreamFormat(url, headers = {}) {
-  try {
-    const res = await fetch(url, {
-      headers: { ...headers, Range: 'bytes=0-2047' },
-      redirect: 'follow'
-    });
-    const contentType = (res.headers.get('content-type') || '').toLowerCase();
-    const finalUrl = res.url || url;
-    try {
-      if (res.body && typeof res.body.cancel === 'function') await res.body.cancel();
-    } catch {}
-    const format =
-      contentType.includes('dash') || /\.mpd(\?|$)/i.test(finalUrl)
-        ? 'dash'
-        : contentType.includes('mpegurl') ||
-            contentType.includes('m3u8') ||
-            /\.m3u8(\?|$)/i.test(finalUrl)
-          ? 'hls'
-          : /\.(mp4|mkv|m4v)(\?|$)/i.test(finalUrl)
-            ? 'mp4'
-            : '';
-    return { format, finalUrl };
-  } catch {
-    return { format: '', finalUrl: url };
-  }
-}
-
-async function resolveVidsrcUpstream(metadata, env = null) {
-  try {
-    const isTv = metadata.type === 'tv';
-    const qs = isTv
-      ? `type=tv&tmdb=${metadata.tmdbId}&season=${metadata.season || 1}&episode=${metadata.episode || 1}&stream_urls`
-      : `type=movie&tmdb=${metadata.tmdbId}&stream_urls`;
-    const referer = VSRC_REFERER;
-    const vidsrcDataUrl = (
-      (env && env.VIDSRC_DATA_URL) ||
-      runtimeState.upstreams.vidsrcDataUrl ||
-      'https://data.vidsrc.sh/api.php'
-    );
-    const res = await fetch(`${vidsrcDataUrl}?${qs}`, {
-      headers: { Accept: 'application/json', 'User-Agent': USER_AGENT, Referer: referer }
-    });
-    if (!res.ok) return null;
-    const json = await res.json();
-
-    let urls = [];
-    let vsEnvelope = null;
-
-    if (Array.isArray(json?.data?.stream_urls)) {
-      urls = json.data.stream_urls;
-    } else if (typeof json?.data?.stream_urls === 'string' && json?.vs) {
-      let wasmBytes = null;
-      if (json.vs.wasm) {
-        wasmBytes = Buffer.from(json.vs.wasm, 'base64');
-      } else if (json.vs.wasm_url) {
-        const wRes = await fetch(json.vs.wasm_url, {
-          headers: { 'User-Agent': USER_AGENT, Referer: referer }
-        });
-        if (wRes.ok) wasmBytes = Buffer.from(await wRes.arrayBuffer());
-      }
-      if (wasmBytes) {
-        try {
-          const mod = await WebAssembly.compile(wasmBytes);
-          const inst = await WebAssembly.instantiate(mod, {
-            env: { emscripten_notify_memory_growth() {} }
-          });
-          const ex = inst.exports;
-          const mem = ex.memory;
-          if (typeof ex.key === 'function') {
-            const kp = ex.key();
-            const kb = new Uint8Array(mem.buffer, kp, 32);
-            const kh = '91d803885852299907d44c2f92822699c62f8b0f0a5c8d208190e0f102131415';
-            for (let i = 0; i < 32; i++) kb[i] = parseInt(kh.slice(i * 2, i * 2 + 2), 16);
-          }
-          const nonceStr = isTv
-            ? `${metadata.tmdbId}_${metadata.season || 1}_${metadata.episode || 1}`
-            : `stream_urls:${metadata.tmdbId}`;
-          const nb = Buffer.from(nonceStr, 'utf8');
-          const np = (typeof ex.alloc === 'function' ? ex.alloc : ex.malloc)(nb.length + 1);
-          new Uint8Array(mem.buffer).set(nb, np);
-          new Uint8Array(mem.buffer)[np + nb.length] = 0;
-          ex.nonce(np);
-          if (typeof ex.free === 'function') ex.free(np);
-
-          // vicine v1.5.2 ABI: decrypt(ptr, len) returns the plaintext length and
-          // the UTF-8 payload starts at `ptr + 12` (v1.5.x dropped the `malloc`
-          // return-value convention and the NUL-terminated string read).
-          const raw = Buffer.from(json.data.stream_urls, 'base64');
-          const ptr = (typeof ex.alloc === 'function' ? ex.alloc : ex.malloc)(raw.length);
-          new Uint8Array(mem.buffer, ptr, raw.length).set(raw);
-          const len = ex.decrypt(ptr, raw.length);
-          const decoded = new TextDecoder().decode(
-            new Uint8Array(mem.buffer, ptr + 12, len)
-          );
-          const parsed = JSON.parse(decoded);
-          if (Array.isArray(parsed)) urls = parsed;
-        } catch {
-          // "Wasm code generation disallowed by embedder" (Workers V8 isolates)
-          // or an unexpected ABI — hand the envelope to the browser instead.
-        }
-      }
-
-      if (urls.length === 0) {
-        vsEnvelope = {
-          streamUrls: json.data.stream_urls,
-          wasmUrl: json.vs.wasm_url
-            ? buildWorkerProxyUrl(json.vs.wasm_url, referer)
-            : null,
-          wasmBase64: json.vs.wasm || null
-        };
-      }
-    }
-
-    urls = urls.filter((u) => typeof u === 'string' && /^https?:\/\//i.test(u));
-
-    // Browser-side WASM assist: the edge could not run WebAssembly.compile, so
-    // ship the sealed envelope to the player and let it decrypt + stream.
-    if (urls.length === 0 && vsEnvelope) {
-      return {
-        server: 'ursa',
-        format: 'hls',
-        rawUrl: VSRC_WASM_ENVELOPE_URL,
-        streamUrl: VSRC_WASM_ENVELOPE_URL,
-        referer,
-        headers: {},
-        transport: 'browser-wasm',
-        vsEnvelope,
-        audioTracks: [
-          {
-            id: 'vidsrc-orig',
-            lang: 'en',
-            label: 'Original Audio',
-            type: 'sub',
-            streamUrl: VSRC_WASM_ENVELOPE_URL,
-            rawUrl: VSRC_WASM_ENVELOPE_URL,
-            default: true
-          }
-        ],
-        qualities: [{ label: 'Auto', height: 0, url: VSRC_WASM_ENVELOPE_URL }]
-      };
-    }
-
-    if (urls.length === 0) return null;
-
-    // VidSrc stream hosts require a per-host JWT (IP bound, ~4h). Plain-text
-    // JWTs and `{"token": "..."}` JSON are both in the wild.
-    let vsToken = '';
-    try {
-      const origin = new URL(urls[0]).origin;
-      const genRes = await fetch(`${origin}/generate.php`, {
-        headers: { 'User-Agent': USER_AGENT, Referer: referer }
-      });
-      if (genRes.ok) {
-        const genText = (await genRes.text()).trim();
-        if (genText.startsWith('{')) {
-          vsToken = JSON.parse(genText)?.token || '';
-        } else {
-          vsToken = genText.replace(/^["']|["']$/g, '');
-        }
-      }
-    } catch {}
-
-    const stampUrl = (u) =>
-      !vsToken
-        ? u
-        : u.includes('__TOKEN__')
-          ? u.replace(/__TOKEN__/g, encodeURIComponent(vsToken))
-          : `${u}${u.includes('?') ? '&' : '?'}token=${encodeURIComponent(vsToken)}`;
-
-    const stamped = urls.map(stampUrl);
-    const rawUrl = stamped[0];
-    // token=<JWT> makes the upstream CDN Origin/Referer + JWT gated.
-    const streamUrl = buildWorkerProxyUrl(rawUrl, referer, 'full');
-
-    const toQuality = (u, idx) => ({
-      label: idx === 0 ? '1080p' : idx === 1 ? '720p' : `Mirror ${idx + 1}`,
-      height: idx === 0 ? 1080 : 720,
-      url: buildWorkerProxyUrl(u, referer, 'full')
-    });
-
-    return {
-      server: 'ursa',
-      format: rawUrl.includes('.mp4') || rawUrl.includes('.mkv') ? 'mp4' : 'hls',
-      rawUrl,
-      streamUrl,
-      referer,
-      headers: {},
-      vsToken,
-      backupUrls: [
-        buildWorkerProxyUrl(rawUrl, referer, 'manifest'),
-        rawUrl,
-        ...stamped.slice(1).map((u) => buildWorkerProxyUrl(u, referer, 'manifest'))
-      ],
-      audioTracks: [
-        { id: 'vidsrc-orig', lang: 'en', label: 'Original Audio', type: 'sub', streamUrl, rawUrl, default: true }
-      ],
-      qualities: [
-        { label: 'Auto', height: 0, url: streamUrl },
-        ...stamped.map(toQuality)
-      ]
-    };
-  } catch {
-    return null;
-  }
-}
-
-/**
- * Unwrap a `/go` redirect wrapper: `ten` links bounce through
- * `https://gamerxyt.com/dl.php?link=https://video-downloads.googleusercontent.com/...`
- * and the inner Google CDN URL is the real, never hotlink-blocked stream.
- */
 function unwrapRedirectVideoUrl(loc) {
   if (!loc || typeof loc !== 'string') return '';
   const inner = loc.match(/[?&]link=(https?:\/\/[^\s&"']+)/i);
@@ -1795,9 +1544,9 @@ function isHubcloudGeneratorUrl(u) {
       /(^|\.)hubcdn\./.test(host) ||
       /(^|\.)gamerxyt\.com$/.test(host) ||
       /^gpdl\d*\./.test(host) ||
-      // MoviesDrive now links through HubCloud's browser-only recovery path;
+      // Legacy download hosts now link through HubCloud's browser-only recovery path;
       // keep recognizing it even when the page resolves a relative href on a
-      // MoviesDrive host before the endpoint redirects to hubcloud.ist.
+      // download host before the endpoint redirects to hubcloud.ist.
       /\/drive\/search-recover\.php$/i.test(url.pathname) ||
       (/\/drive\/[A-Za-z0-9_-]+$/i.test(url.pathname) && /(?:hubcloud|moviesdrive)/i.test(host)) ||
       // third-party hosts reuse the HubCloud wrapper scripts verbatim
@@ -1919,7 +1668,7 @@ function scorePlayableUrl(u) {
   // CDN hosts only earn their bonus when the URL points at a real object: a
   // media extension or at least one non-root path segment. A bare host plus a
   // query string — `https://d33f51dyacx7bd.cloudfront.net/?aydfd=1015073`,
-  // which is what 4KHDHub's redirector chain returns — is a landing/gate page,
+  // which is what the legacy 4K redirector chains return — is a landing/gate page,
   // not media. It used to score 90 and outrank every real file candidate, so
   // Server 3 reported a JavaScript page as its "verified 4K" stream.
   const hasObjectPath = pathname.replace(/\/+$/, '') !== '';
@@ -1973,10 +1722,10 @@ function isLocalTestMediaUrl(rawUrl) {
 /**
  * Media sniffing for the Range preflight.
  *
- * A 200/206 response is NOT proof of media. 4KHDHub's redirector chain answers
+ * A 200/206 response is NOT proof of media. Legacy redirector chains answer
  * with a JavaScript landing page (no Content-Type, body starting with
  * `(function(){`), which the old "not HTML and not JSON" test accepted — so
- * Server 3 (ursa) returned that page as its "verified 4K" stream and every
+ * The old 4K tier returned that page as its "verified 4K" stream and every
  * playback attempt failed. Accept a candidate only when the response carries a
  * real media Content-Type, or when the first bytes match a known container.
  */
@@ -3173,13 +2922,13 @@ async function resolveStreamWaterfall(metadata, requestedServer, preferredAudio,
  * 5. M3U8 Manifest Rewriter & Edge Stream Proxy
  */
 /**
- * Per-host JWT cache for VidSrc-style stream hosts (`<host>/generate.php`).
+ * Per-host JWT cache for token-gated stream hosts (`<host>/generate.php`).
  * Tokens are IP bound with a ~4h TTL, so a 10 minute edge cache is safe and
  * keeps the waterfall within the sub-400ms budget.
  */
 const jwTokenCache = new Map();
 
-async function fetchVidsrcHostToken(hostOrigin, referer = VSRC_REFERER) {
+async function fetchHostGateToken(hostOrigin, referer = '') {
   if (!hostOrigin) return '';
   const cached = jwTokenCache.get(hostOrigin);
   if (cached && Date.now() < cached.exp) return cached.token;
@@ -3315,11 +3064,11 @@ async function handleProxyRequest(request, url) {
   }
   if (cookie) upstreamHeaders.set('Cookie', cookie);
 
-  // JWT stamping for X-frame/Origin gated hosts: `vidsrcStamp=1` (or an
-  // __TOKEN__ placeholder in the URL) triggers a <host>/generate.php lookup.
+  // JWT stamping for X-frame/Origin gated hosts: `vidsrcStamp=1` (legacy flag)
+  // or an __TOKEN__ placeholder in the URL triggers a <host>/generate.php lookup.
   let token = passthroughToken;
   if (vidsrcStamp || targetUrl.includes('__TOKEN__')) {
-    token = token || (await fetchVidsrcHostToken(parsed.origin, referer));
+    token = token || (await fetchHostGateToken(parsed.origin, referer));
   }
 
   let upstreamTarget = targetUrl;
@@ -3427,10 +3176,7 @@ export default {
       if (pathname === '/api/admin/probe' && request.method === 'POST') {
         const targets = [
           { serverId: 'andromeda', url: `${runtimeState.upstreams.vidstuckBase}/backend/tmdb/details/tv/94605?language=en-US` },
-          { serverId: 'ursa', url: `${runtimeState.upstreams.vidsrcDataUrl}?type=tv&tmdb=94605&season=1&episode=1&stream_urls`, headers: { Referer: 'https://vidsrc.sh/' } },
           { serverId: 'centaurus', url: `${runtimeState.upstreams.hicineApiBase}/api/search/arcane` },
-          { serverId: 'atlas', url: `${runtimeState.upstreams.zxcBase}/movie` },
-          { serverId: 'hamster', url: 'https://api.videasy.net/mb-flix/sources-with-title?tmdb=94605', headers: { Referer: 'https://player.videasy.net/' } }
         ];
         const probeResults = [];
         for (const t of targets) {
@@ -3486,8 +3232,6 @@ export default {
             castletvBase: (env && env.CASTLETV_BASE_URL) || runtimeState.upstreams.castletvBase,
             netmirrorBase: (env && env.NETMIRROR_BASE_URL) || runtimeState.upstreams.netmirrorBase,
             vidstuckBase: (env && env.VIDSTUCK_BASE_URL) || runtimeState.upstreams.vidstuckBase,
-            zxcBase: (env && env.ZXC_BASE_URL) || runtimeState.upstreams.zxcBase,
-            aesKeySet: !!(env && env.ZXC_AES_KEY) || !!runtimeState.zxcAesKey,
             tmdbKeySet: !!(env && env.TMDB_API_KEY)
           },
           result: direct
@@ -3641,14 +3385,8 @@ export default {
             servers_404: 'Upstream has no record for this server.',
             servers_5xx: 'Upstream 5xx on the server lookup.',
             servers_no_link: 'Upstream has no stream link for this title on this server.',
-            aes_decrypt_failed: 'Stream link decryption failed (ZXC_AES_KEY rotated).',
             upstream_timeout: 'Timed out talking to the upstream provider.',
             upstream_exception: 'Unhandled error contacting the upstream provider.',
-            ursa_metadata_missing:
-              'TMDB metadata could not be resolved, so the 4K sources had no title to search — no source was probed.',
-            ursa_all_4k_sources_exhausted:
-              'Neither 4KHDHub nor MoviesDrive 4K returned a verified playable stream; the player can continue to the next server.',
-            ursa_upstream_timeout: 'The 4K source lookups exceeded their resolve budget before producing a verified stream.'
           };
           const humanReason = firstFailed
             ? reasonMap[firstFailed.reason] || firstFailed.reason

@@ -195,10 +195,6 @@ class TelemetryAndAdminEngine {
       }
     }
 
-    if (typeof payload.zxcAesKey === 'string' && payload.zxcAesKey.trim()) {
-      config.zxcAesKey = payload.zxcAesKey.trim();
-    }
-
     if (typeof payload.tmdbApiKey === 'string' && payload.tmdbApiKey.trim()) {
       config.tmdbApiKey = payload.tmdbApiKey.trim();
     }
@@ -366,7 +362,6 @@ class TelemetryAndAdminEngine {
       blockedDomains: Array.from(this.blockedDomains),
       servers,
       upstreams: { ...config.upstreams },
-      zxcAesKey: config.zxcAesKey,
       externalProxyPool: [...config.externalProxyPool],
       customOverrides: Array.from(this.customOverrides.values())
     };

@@ -51,7 +51,7 @@ The page is served with `Content-Security-Policy: frame-ancestors *` so any site
 | `type`     | `tv` (default) or `movie`                                               |
 | `tmdb`     | TMDB ID (also accepted as `id`)                                          |
 | `s` / `e`  | Season / episode for TV (also `season` / `episode`)                      |
-| `server`   | Preferred upstream server: `andromeda`, `ursa` (or `4k`), `centaurus`, `atlas`, `strings` |
+| `server`   | Preferred upstream server: `andromeda` or `centaurus` (a stale/removed id falls back to the top-priority server) |
 | `api`      | Absolute API base URL override (see below)                               |
 | `lang`     | Preferred audio language (e.g. `hi`, `en`, `ta`)                         |
 | `sub`      | Preferred subtitle language (e.g. `en`)                                  |
@@ -107,9 +107,6 @@ server modal can never drift from what the waterfall actually tries:
 |----------|-------------|-----------------------|----------------------------------------|---------|
 | 1        | `andromeda` | Fiber Optic Speedrun  | Multi-Audio • Primary                  | CastleTV → NetMirror |
 | 2        | `centaurus` | Gigachad Node         | Adaptive • Multi-Quality               | HiCine Direct MP4 |
-| 3        | `ursa` (`4k`)| FBI Surveillance Van | 4K UHD • Multi-Audio                   | 4KHDHub → MoviesDrive 4K → HiCine 4K UHD → DahmerMovies 4K |
-| 4        | `hamster`   | Hamster Wheel         | Multi-Language • OMSS Cascade          | Videasy → Peachify → VidSrc |
-| 5        | `atlas`     | Atlas                 | Adaptive • Backup                      | ZXC Backup Adaptive HLS |
 
 Every `/api/resolve` payload carries the `servers` array in this exact order with
 the answering server flagged `active`, and it is rebuilt from the live catalog on
@@ -119,7 +116,7 @@ up in the player immediately. Owner priority changes made through
 
 ### Server 1 — Andromeda (Fiber Optic Speedrun) Multi-Tier Architecture
 
-To replace the deprecated VidStuck upstream, Server Andromeda uses a resilient cascade backed by automatic dynamic discovery:
+Server Andromeda uses a resilient two-tier cascade backed by automatic dynamic discovery:
 
 1. **Priority 1: CastleTV (`api.hlowb.com`)**
    - **Coverage:** Extensive South Indian dubs (Tamil, Telugu, Malayalam, Kannada, Hindi), K-dramas, C-dramas, anime, and Hollywood multi-audio.
@@ -133,53 +130,8 @@ To replace the deprecated VidStuck upstream, Server Andromeda uses a resilient c
    - **Last live probe (2026-10-04, `diagnostics/netmirror-probe.json`):** `net27.cc` live (a TV title returned 4 streams + 13 subtitle languages; a movie not in their catalog returns `ok:true` + "couldn't find this title", treated as a miss), `net52.cc`/`net77.cc`/`netmiror.com` 404, and every CDN fetch from the CI runner was `429` regardless of Referer/Range/sign, so playback could not be confirmed from cloud IPs.
    - **Not yet wired:** NetMirror's `captions[]` (13 languages on the probed episode, sourced from Moviebox's library) are still ignored by `/api/subtitles`, which currently uses OpenSubtitles/Wyzie only.
 
-3. **Clean Waterfall Failover: Server 3 (Ursa / 4K UHD)**
+3. **Clean Waterfall Failover: Server 2 (Centaurus, HiCine)**
    - If both internal Andromeda tiers return no playable streams for a given title, Andromeda cleanly cascades to the next server in the shared priority waterfall.
-
-### Server 3 — Ursa (`?server=ursa` / `?server=4k`) 4K UHD
-
-Server 3 uses a small sequential resolver with **two sources, not four**:
-MoviesDrive 4K first for movies (the live-probed Dune link was responsive),
-and 4KHDHub first for TV. Each has the other as its single fallback. A source
-must unroll to a direct media URL and pass the playability check; if both miss,
-the normal server waterfall takes over. Lower-resolution quality links remain
-available for playback fallback.
-
-The latest live probe confirmed direct 206 media for Dune via MoviesDrive and
-for Fight Club and Arcane via 4KHDHub. Dune's 4KHDHub Google mirror timed out
-in the independent range probe, which is why movie resolution prefers
-MoviesDrive. The Worker does not transcode, so MKV/HEVC playback still depends
-on the browser/device.
-
-**Honest metadata failure (`ursa_metadata_missing`).** Both sources search by
-title. If TMDB metadata has no title, Ursa returns
-`reason: ursa_metadata_missing` with a `metadata_missing` diagnostic step
-instead of claiming a provider was probed. The Worker retries TMDB once and
-uses the VidStuck TMDB proxy as a fallback.
-
-### Server 4 — Hamster Wheel (`?server=hamster`) Multi-Language OMSS Cascade
-
-Hamster Wheel is the multi-language fallback tier and is implemented once in
-`src/services/hamsterCore.js`, shared verbatim by the Node backend
-(`src/services/hamsterWheel.js` wires the Node proxy/breaker) and the Worker
-(`resolveHamsterWheelUpstream` wires the edge proxy/breaker). Priority order:
-
-1. **Videasy (primary)** — `api.videasy.net` / `api2.videasy.net`, parallel fan-out
-   across `mb-flix`, `1movies`, `cdn`, `superflix`, `lamovie`, `cuevana` and
-   `hdmovie` (Hindi). Encrypted answers are round-tripped through
-   `enc-dec.app/api/decrypt`; each answering server becomes an audio track with a
-   language label (English, Hindi, etc.).
-2. **Peachify (fallback 1)** — `uwu.eat-peach.sbs` / `usa.eat-peach.sbs`, dub/sub
-   labels, AES-256-CBC envelope decryption (hex key + 16-byte IV prefix in the
-   payload).
-3. **VidSrc via vsembed.ru (fallback 2)** — three-hop scrape that substitutes the
-   `{v1}`–`{v4}` CDN domain placeholders (neonhorizonworkshops, wanderlynest,
-   orchidpixelgardens, cloudnestra).
-
-Circuit breakers are per provider (`videasy:hamster`, `peachify:hamster`,
-`vidsrc:hamster`); the Node backend reuses the shared breaker so provider health
-stays visible in `/api/admin/overview`, and the Worker uses the shared module's
-in-isolate breaker. All playback URLs are routed through `/api/proxy`.
 
 ### Audio Behavior & Remuxing
 

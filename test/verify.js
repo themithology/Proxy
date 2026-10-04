@@ -7,8 +7,6 @@ const crypto = require('crypto');
 const config = require('../src/config');
 const { app } = require('../src/server');
 const {
-  encryptZxcLink,
-  decryptZxcLink,
   signProxyParams,
   verifyProxySignature,
   generateHandshakeToken,
@@ -53,13 +51,6 @@ const {
 
 const identity = require('../src/services/identity');
 
-/** Local ROT13 for the mock upstream's b64->rot13->b64 chain fixtures. */
-function rot13Cipher(str) {
-  return String(str || '').replace(/[a-zA-Z]/g, (c) => {
-    const base = c <= 'Z' ? 65 : 97;
-    return String.fromCharCode(((c.charCodeAt(0) - base + 13) % 26) + base);
-  });
-}
 
 function encryptCastleAes(plaintext, key) {
   const cipher = crypto.createCipheriv('aes-128-cbc', key, key);
@@ -133,8 +124,6 @@ async function verifyPayloadLinksOneByOne(label, payload, requestLink) {
  * - TMDB v3 API (/tv/:id, /tv/:id/season/:s, /movie/:id)
  * - IntroDB (/intro?imdb_id=...)
  * - OpenSubtitles REST API (/search/...) + Gzipped .srt.gz download (/download/sub.srt.gz)
- * - VidStuck / ZXC (/movie, /backend/meow, /backend/servers/andromeda)
- * - VidSrc.sh (/api.php, /generate.php)
  * - HiCine (/api/search/:q, /api/links, /go)
  */
 function startUpstreamMockServer() {
@@ -193,7 +182,7 @@ function startUpstreamMockServer() {
         );
       }
 
-      // Delayed metadata used to verify Cloudflare Worker Ursa tier concurrency.
+      // Extra TMDB metadata fixture used by the worker resolve tests.
       if (u.pathname === '/tmdb/movie/550') {
         res.writeHead(200, { 'Content-Type': 'application/json' });
         return res.end(
@@ -209,26 +198,6 @@ function startUpstreamMockServer() {
             alternative_titles: { titles: [{ title: 'Fight Club' }, { title: 'Fight Club (1999)' }] }
           })
         );
-      }
-
-      // Worker-side fixture metadata forces a 4KHDHub miss for the fallback test.
-      const workerUrsaFixtures = {
-        '/tmdb/movie/555554': { title: 'fail-moviesdrive Dune: Part Two', imdbId: 'fail-moviesdrive' },
-        '/tmdb/movie/555555': { title: '4k-cascade-fail-all', imdbId: '4k-cascade-fail-all' }
-      };
-      const workerUrsaFixture = workerUrsaFixtures[u.pathname];
-      if (workerUrsaFixture) {
-        const id = Number(u.pathname.split('/').pop());
-        res.writeHead(200, { 'Content-Type': 'application/json' });
-        return res.end(JSON.stringify({
-          id,
-          title: workerUrsaFixture.title,
-          release_date: '2024-02-27',
-          runtime: 167,
-          genres: [{ id: 878, name: 'Science Fiction' }],
-          imdb_id: workerUrsaFixture.imdbId,
-          external_ids: { imdb_id: workerUrsaFixture.imdbId }
-        }));
       }
 
       // 3. TMDB v3 Movie Details
@@ -294,57 +263,6 @@ function startUpstreamMockServer() {
         const gzBuf = zlib.gzipSync(Buffer.from(sampleSrt, 'utf8'));
         res.writeHead(200, { 'Content-Type': 'application/x-gzip' });
         return res.end(gzBuf);
-      }
-
-      // 6. VidStuck / ZXC Upstream (/movie, /backend/meow, /backend/servers/andromeda)
-      if (u.pathname === '/zxc/movie') {
-        res.writeHead(200, { 'Set-Cookie': 'zxc_sess=live_ok; Path=/' });
-        return res.end('ok');
-      }
-
-      if (u.pathname === '/vidstuck/backend/meow' && req.method === 'POST') {
-        res.writeHead(200, { 'Content-Type': 'application/json' });
-        return res.end(JSON.stringify({ token: 'meow-live-jwt-token' }));
-      }
-
-      if (u.pathname.startsWith('/vidstuck/backend/servers/')) {
-        const encryptedPath = encryptZxcLink(`${mockOrigin}/cdn/hls/master.m3u8`);
-        res.writeHead(200, { 'Content-Type': 'application/json' });
-        return res.end(
-          JSON.stringify({
-            data: {
-              link: encryptedPath,
-              audioTracks: [
-                { id: 'en-sub', lang: 'en', label: 'English sub', type: 'sub', url: `${mockOrigin}/cdn/hls/master.m3u8` },
-                { id: 'en-dub', lang: 'en', label: 'English dub', type: 'dub', url: `${mockOrigin}/cdn/hls/master-dub.m3u8` },
-                { id: 'hi-dub', lang: 'hi', label: 'Hindi dub', type: 'dub', url: `${mockOrigin}/cdn/hls/master-hi.m3u8` },
-                { id: 'fr-dub', lang: 'fr', label: 'French dub', type: 'dub', url: `${mockOrigin}/cdn/hls/master-fr.m3u8`, default: true }
-              ],
-              qualities: [
-                { label: 'Auto', height: 0, url: `${mockOrigin}/cdn/hls/master.m3u8` },
-                { label: '1080p', height: 1080, url: `${mockOrigin}/cdn/hls/1080p.m3u8` },
-                { label: '720p', height: 720, url: `${mockOrigin}/cdn/hls/720p.m3u8` }
-              ]
-            }
-          })
-        );
-      }
-
-      // 7. VidSrc.sh Upstream (/vidsrc/api.php & /generate.php)
-      if (u.pathname === '/vidsrc/api.php') {
-        res.writeHead(200, { 'Content-Type': 'application/json' });
-        return res.end(
-          JSON.stringify({
-            data: {
-              stream_urls: [`${mockOrigin}/cdn/hls/vidsrc-master.m3u8`]
-            }
-          })
-        );
-      }
-
-      if (u.pathname === '/generate.php') {
-        res.writeHead(200, { 'Content-Type': 'application/json' });
-        return res.end(JSON.stringify({ token: 'vidsrc-short-lived-jwt' }));
       }
 
       // 8b. HubCloud generator landing pages (Centaurus unroller fixtures).
@@ -730,192 +648,6 @@ function startUpstreamMockServer() {
         );
       }
 
-      // 12a. 4KHDHub Mock Upstream (/4khdhub/...)
-      if (u.pathname === '/4khdhub/' || u.pathname === '/4khdhub') {
-        const sQuery = (u.searchParams.get('s') || '').toLowerCase();
-        if (sQuery.includes('fail-4khdhub') || sQuery.includes('4k-cascade-fail-all') || sQuery.includes('cascade-test-fail-all')) {
-          res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
-          return res.end('<html><body><div class="card-grid"></div></body></html>');
-        }
-        res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
-        if (/arcane/i.test(sQuery)) {
-          return res.end(
-            `<html><body><div class="card-grid">` +
-              `<a class="movie-card nested" href="/4khdhub/arcane-series-200/">` +
-              `<div class="movie-card-content"><h3 class="movie-card-title"><span>Arcane</span></h3>` +
-              `<p class="movie-card-meta"><span>2021</span> • Series</p></div></a>` +
-              `</div></body></html>`
-          );
-        }
-        return res.end(
-          `<html><body><div class="card-grid">` +
-            `<a href="${mockOrigin}/4khdhub/dune-part-two-movie-199/" class="movie-card">` +
-            `<div class="movie-card-content"><h3 class="movie-card-title">Dune: Part Two</h3>` +
-            `<p class="movie-card-meta">2024 • 167 min</p></div></a>` +
-            `</div></body></html>`
-        );
-      }
-
-      if (u.pathname === '/4khdhub/arcane-series-200/') {
-        res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
-        return res.end(
-          `<html><body><main id="episodes">` +
-            `<section class="episode-card"><div class="episode-number"><span>S01E01</span></div>` +
-            `<div class="episode-info"><h3>Welcome to the Playground</h3>` +
-            `<div class="episode-download-item nested"><div class="download-row">` +
-            `<p class="file-title">Arcane.S01E01.2160p.WEB-DL.SDR.x264.AAC.[Hindi+English].8GB.mkv</p>` +
-            `<a href="../redirect?id=arcane2160"><span>Download HubCloud</span></a></div></div>` +
-            `<div class="episode-download-item"><div class="download-row">` +
-            `<p class="file-title">Arcane.S01E01.1080p.WEB-DL.x264.[Hindi+English].3GB.mkv</p>` +
-            `<a href="../redirect?id=arcane1080">Download HubCloud</a></div></div></section>` +
-            `<section class="episode-card"><div class="episode-number">S01E02</div>` +
-            `<div class="episode-download-item"><p class="file-title">Arcane.S01E02.2160p.REMUX.TrueHD.55GB.mkv</p>` +
-            `<a href="../redirect?id=wrong-episode">Download</a></div></section>` +
-            `</main></body></html>`
-        );
-      }
-
-      if (u.pathname === '/4khdhub/dune-part-two-movie-199/') {
-        res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
-        return res.end(
-          `<html><body>` +
-            `<div class="download-item">` +
-            `<div class="file-title">Dune.Part.Two.2024.2160p.4K.UHD.BluRay.REMUX.DV.HDR.[Hindi.DDP5.1+English.TrueHD.Atmos.7.1].H.265.mkv <span class="badge">61.6 GB</span></div>` +
-            `<div class="grid"><a href="${mockOrigin}/4khdhub/redirect?id=chain4k-remux">Download HubCloud</a></div>` +
-            `</div>` +
-            `<div class="download-item">` +
-            `<div class="file-title">Dune.Part.Two.2024.2160p.4K.WEB-DL.SDR.x264.AAC.[Hindi+English].11GB.mkv <span class="badge">11 GB</span></div>` +
-            `<div class="grid"><a href="../redirect?id=chain4k-webdl">Download HubCloud</a></div>` +
-            `</div>` +
-            `<div class="download-item">` +
-            `<div class="file-title">Dune.Part.Two.2024.1080p.BluRay.[Hindi+English].x264.mkv <span class="badge">4.2 GB</span></div>` +
-            `<div class="grid"><a href="../redirect?id=chain1080">Download HubCloud</a></div>` +
-            `</div>` +
-            `</body></html>`
-        );
-      }
-
-      if (u.pathname === '/4khdhub/redirect') {
-        const id = u.searchParams.get('id') || 'chain4k';
-        const directTargets = {
-          'chain1080': `${mockOrigin}/cdn/4k/dune-1080p-dual.mkv`,
-          'chain4k-remux': `${mockOrigin}/cdn/4k/dune-2160p-4k-dual.mkv`,
-          'arcane2160': `${mockOrigin}/cdn/4k/arcane-s1e1-2160p.mkv`,
-          'arcane1080': `${mockOrigin}/cdn/4k/arcane-s1e1-1080p.mkv`,
-          'wrong-episode': `${mockOrigin}/cdn/4k/arcane-s1e2-wrong.mkv`
-        };
-        const directTarget = directTargets[id] || `${mockOrigin}/cdn/4k/dune-2160p-webdl.mkv`;
-        const pageWrappedTarget = `https://dune-stream.pages.dev/?u=${Buffer.from(directTarget, 'utf8').toString('base64url')}`;
-        const terminalTarget = id === 'chain4k-remux' || id === 'chain1080' || id.startsWith('arcane') || id === 'wrong-episode'
-          ? directTarget
-          : pageWrappedTarget;
-        const targetHub = `${mockOrigin}/hubcloud/dl.php?link=${encodeURIComponent(terminalTarget)}`;
-        const innerJson = JSON.stringify({ o: Buffer.from(targetHub, 'utf8').toString('base64') });
-        const stepB64 = Buffer.from(innerJson, 'utf8').toString('base64');
-        const stepRot = rot13Cipher(stepB64);
-        const step2 = Buffer.from(stepRot, 'utf8').toString('base64');
-        const encoded = Buffer.from(step2, 'utf8').toString('base64');
-        res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
-        return res.end(`<html><body><script>s('o','${encoded}',1800);</script></body></html>`);
-      }
-
-      // 12b. MoviesDrive 4K Mock Upstream (/moviesdrive/... & /mdrive/archive/...)
-      if (u.pathname === '/moviesdrive/search.php') {
-        const q = (u.searchParams.get('q') || '').toLowerCase();
-        if (q.includes('fail-moviesdrive') || q.includes('4k-cascade-fail-all') || q.includes('cascade-test-fail-all')) {
-          res.writeHead(200, { 'Content-Type': 'application/json' });
-          return res.end(JSON.stringify({ found: 0, hits: [] }));
-        }
-        res.writeHead(200, { 'Content-Type': 'application/json' });
-        return res.end(
-          JSON.stringify({
-            found: 1,
-            hits: [
-              {
-                document: {
-                  imdb_id: 'tt15239678',
-                  post_title: 'Dune: Part Two (2024) Dual Audio [Hindi + English] 4K 2160p BluRay',
-                  permalink: '/moviesdrive/dune-part-two-2024/'
-                }
-              }
-            ]
-          })
-        );
-      }
-
-      if (u.pathname === '/moviesdrive/dune-part-two-2024/') {
-        res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
-        return res.end(
-          `<html><body>` +
-            `<h5>Dune: Part Two (2024) [Hindi.DDP5.1 + English.DDPA5.1] 2160p 4K AMZN WEB-DL SDR H.265 [19GB]</h5>` +
-            `<p><a href="${mockOrigin}/mdrive/archive/20906">2160p SDR [19GB]</a></p>` +
-            `<h5>Dune: Part Two (2024) [Hindi + English] 1080p BluRay x264 [3.4GB]</h5>` +
-            `<p><a href="${mockOrigin}/hubcloud/dl.php?link=${encodeURIComponent(`${mockOrigin}/cdn/4k/mdrive-1080p.mkv`)}">1080p HubCloud</a></p>` +
-            `</body></html>`
-        );
-      }
-
-      if (u.pathname === '/mdrive/archive/20906') {
-        res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
-        return res.end(
-          `<html><body>` +
-            `<a href="${mockOrigin}/hubcloud/dl.php?link=${encodeURIComponent(`${mockOrigin}/cdn/4k/mdrive-dune-2160p-4k.mkv`)}">HubCloud [Fast DL]</a>` +
-            `</body></html>`
-        );
-      }
-
-      // 12c. HiCine 4K Mock Upstream (/hicine4k/...)
-      if (u.pathname.startsWith('/hicine4k/api/search/')) {
-        const searchTitle = decodeURIComponent(u.pathname.split('/').pop() || '').toLowerCase();
-        if (searchTitle.includes('fail-hicine4k') || searchTitle.includes('4k-cascade-fail-all') || searchTitle.includes('cascade-test-fail-all')) {
-          res.writeHead(200, { 'Content-Type': 'application/json' });
-          return res.end(JSON.stringify([]));
-        }
-        res.writeHead(200, { 'Content-Type': 'application/json' });
-        return res.end(
-          JSON.stringify([
-            {
-              title: 'Dune: Part Two',
-              releaseYear: 2024,
-              contentType: 'movies',
-              links: [
-                `Dune: Part Two (2024) [Hindi + English] 720p, ${mockOrigin}/hicine/w?vcloud=https://vcloud.fit/dune720`,
-                `Dune: Part Two (2024) [Hindi + English] 1080p, ${mockOrigin}/hicine/w?vcloud=https://vcloud.fit/dune1080`,
-                `Dune: Part Two (2024) [Hindi.DDP5.1 + English.DDPA5.1] [2160P] SDR 2160p [19GB], ${mockOrigin}/hicine4k/w?vcloud=https://vcloud.fit/dune2160p`
-              ].join('\n')
-            }
-          ])
-        );
-      }
-
-      if (u.pathname === '/hicine4k/go' || (u.pathname === '/go' && (u.searchParams.get('vcloud') || '').includes('dune2160p'))) {
-        res.writeHead(302, {
-          Location: `${mockOrigin}/hubcloud/dl.php?link=${encodeURIComponent(`${mockOrigin}/cdn/4k/hicine-dune-2160p-4k.mkv`)}`
-        });
-        return res.end();
-      }
-
-      // 12d. DahmerMovies 4K Open Directory Mock Upstream (/dahmer/...)
-      if (u.pathname.startsWith('/dahmer/movies/')) {
-        const decodedPath = decodeURIComponent(u.pathname).toLowerCase();
-        if (decodedPath.includes('fail-dahmer') || decodedPath.includes('4k-cascade-fail-all') || decodedPath.includes('cascade-test-fail-all')) {
-          res.writeHead(404);
-          return res.end('Not found');
-        }
-        res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
-        return res.end(
-          `<html><body><table>` +
-            `<tr><td><a href="${mockOrigin}/cdn/4k/Dune.Part.Two.2024.HDR.2160p.Multi.Audio.Hindi.English.mkv">Dune.Part.Two.2024.HDR.2160p.Multi.Audio.Hindi.English.mkv</a></td><td data-sort="31366263767">29.21 GB</td></tr>` +
-            `<tr><td><a href="${mockOrigin}/cdn/4k/Dune.Part.Two.2024.1080p.BluRay.REMUX.Multi.Audio.mkv">Dune.Part.Two.2024.1080p.BluRay.REMUX.Multi.Audio.mkv</a></td><td data-sort="15000000000">14.0 GB</td></tr>` +
-            `</table></body></html>`
-        );
-      }
-
-      if (u.pathname.startsWith('/cdn/4k/')) {
-        res.writeHead(200, { 'Content-Type': 'video/mp4' });
-        return res.end('fake-4k-2160p-video-stream');
-      }
-
       res.writeHead(404);
       res.end('Not found');
     });
@@ -936,12 +668,7 @@ async function runTests() {
   console.log('==========================================================\n');
 
   // 1. Cryptographic Unit Tests (AES-256-CBC + HMAC-SHA256 + Handshake Token)
-  console.log('[1/10] Testing AES-256-CBC (ZXC OpenSSL EVP_BytesToKey) & HMAC Signing...');
-  const sampleStreamPath = '/pl/token123/master.m3u8?exp=1790000000';
-  const encrypted = encryptZxcLink(sampleStreamPath);
-  const decrypted = decryptZxcLink(encrypted);
-  assert.strictEqual(decrypted, sampleStreamPath, 'AES-256-CBC decrypted link must match original');
-
+  console.log('[1/12] Testing HMAC proxy signing & handshake tokens...');
   const exp = Math.floor(Date.now() / 1000) + 3600;
   const sig = signProxyParams('https://cdn.example.com/hls/master.m3u8', 'https://vidstuck.xyz/', exp);
   assert.strictEqual(
@@ -961,7 +688,7 @@ async function runTests() {
   console.log('  ✔ Passed cryptographic verification.');
 
   // 2. ZokoAnime XOR ("otaku-embed-v1") & HiCine Link Parser Unit Tests
-  console.log('[2/10] Testing ZokoAnime XOR Decryptor & HiCine Multi-Quality Link Parser...');
+  console.log('[2/12] Testing ZokoAnime XOR Decryptor & HiCine Multi-Quality Link Parser...');
   const rawZokoJson = JSON.stringify({
     data: {
       sources: { file: 'https://cdn.zokoanime.video/hls/arcane-ep1/master.m3u8' },
@@ -1220,7 +947,7 @@ async function runTests() {
   console.log('  ✔ Passed ZokoAnime, HiCine language parsing, and multi-track payload tests.');
 
   // 3. SRT -> WebVTT Converter Unit Test
-  console.log('[3/10] Testing SubRip (.srt) to WebVTT (.vtt) Converter...');
+  console.log('[3/12] Testing SubRip (.srt) to WebVTT (.vtt) Converter...');
   const sampleSrt = `1\r\n00:00:02,500 --> 00:00:05,800\r\nWelcome to Piltover.\r\n\r\n2\r\n00:00:06,100 --> 00:00:09,450\r\nThe City of Progress.\r\n`;
   const convertedVtt = srtToVtt(sampleSrt);
   assert.ok(convertedVtt.startsWith('WEBVTT'), 'Output must start with WEBVTT header');
@@ -1231,7 +958,7 @@ async function runTests() {
   console.log('  ✔ Passed SRT -> VTT conversion.');
 
   // 4. M3U8 Manifest Rewriter Unit Test
-  console.log('[4/10] Testing M3U8 Master & Media Playlist Rewriter...');
+  console.log('[4/12] Testing M3U8 Master & Media Playlist Rewriter...');
   const sampleMasterM3u8 = [
     '#EXTM3U',
     '#EXT-X-VERSION:3',
@@ -1267,7 +994,6 @@ async function runTests() {
   config.upstreams.introDbUrl = `${mockUpstream.url}/introdb`;
   config.upstreams.openSubtitlesRestUrl = `${mockUpstream.url}/opensubtitles`;
   config.upstreams.vidstuckBase = `${mockUpstream.url}/vidstuck`;
-  config.upstreams.vidsrcDataUrl = `${mockUpstream.url}/vidsrc/api.php`;
   // Andromeda's live tiers: point CastleTV + NetMirror at the mock so the
   // end-to-end suites resolve without touching real upstreams.
   config.upstreams.castletvBase = `${mockUpstream.url}/castletv`;
@@ -1279,7 +1005,7 @@ async function runTests() {
   config.upstreams.hicineApiBase = `${mockUpstream.url}/hicine`;
 
   // 4b. HubCloud generator unroller (Centaurus "All upstream servers failed" fix)
-  console.log('[4b/10] Testing HubCloud generator unroller (Centaurus)...');
+  console.log('[4b/12] Testing HubCloud generator unroller (Centaurus)...');
   assert.strictEqual(
     isHubcloudGeneratorUrl('https://gpdl2.hubcloud.ist/?id=abc::def'),
     true,
@@ -1414,9 +1140,9 @@ async function runTests() {
     'Range preflight must reject 200 JSON/hotlink responses'
   );
 
-  // The 4KHDHub redirector chain answers with a JavaScript landing page and no
+  // A legacy 4K redirector chain answers with a JavaScript landing page and no
   // Content-Type. It used to pass the "not HTML, not JSON" check, which made
-  // Server 3 (ursa) return that page as a "verified 4K" stream. Only positive
+  // The old 4K tier returned that page as a "verified 4K" stream. Only positive
   // media evidence may pass now.
   assert.strictEqual(
     await probePlayableMediaUrl('https://d33f51dyacx7bd.cloudfront.net/?aydfd=1015073', {
@@ -1451,7 +1177,7 @@ async function runTests() {
     'Range preflight must accept an HLS playlist body served as text/plain'
   );
   // A CDN host alone is not a "playable" score: a bare host with only a query
-  // string must rank below real file candidates (4KHDHub gate-page regression).
+  // string must rank below real file candidates (gate-page regression).
   assert.ok(
     scorePlayableUrl('https://pub-abc.r2.dev/movies/RRR.mkv') >
       scorePlayableUrl('https://d33f51dyacx7bd.cloudfront.net/?aydfd=1015073'),
@@ -1559,7 +1285,7 @@ async function runTests() {
 
   try {
     // 5. Health & Handshake Endpoints
-    console.log('[5/10] Testing /api/health & /api/handshake...');
+    console.log('[5/12] Testing /api/health & /api/handshake...');
     const health = await httpRequest(baseUrl, '/api/health');
     assert.strictEqual(health.status, 200);
     assert.strictEqual(health.json.ok, true);
@@ -1591,7 +1317,7 @@ async function runTests() {
     console.log('  ✔ Passed /api/health & /api/handshake.');
 
     // 6. TMDB-ID Metadata & Real IntroDB Skip Segments Resolution
-    console.log('[6/10] Testing TMDB ID -> External IDs (IMDb/TVDB) & IntroDB Skip Intro Segments...');
+    console.log('[6/12] Testing TMDB ID -> External IDs (IMDb/TVDB) & IntroDB Skip Intro Segments...');
     const infoRes = await httpRequest(baseUrl, '/api/info/tv/94605?season=1&episode=1');
     assert.strictEqual(infoRes.status, 200);
     assert.strictEqual(infoRes.json.ok, true);
@@ -1606,7 +1332,7 @@ async function runTests() {
     console.log('  ✔ Passed TMDB -> IMDb/TVDB bridging & IntroDB segments.');
 
     // 7. Full Production Stream Resolution + OpenSubtitles .srt.gz Decompression + M3U8 Proxy
-    console.log('[7/10] Testing /api/resolve/tv/94605, OpenSubtitles .srt.gz -> .vtt, & /api/proxy...');
+    console.log('[7/12] Testing /api/resolve/movie/693134, OpenSubtitles .srt.gz -> .vtt, & /api/proxy...');
     const resolveRes = await httpRequest(
       baseUrl,
       '/api/resolve/movie/693134?server=andromeda'
@@ -1622,7 +1348,7 @@ async function runTests() {
     );
     assert.ok(resolveRes.json.stream.audioTracks.length >= 4, 'Multi-language audio tracks must be returned');
     const upstreamDefaultTracks = resolveRes.json.stream.audioTracks.filter((track) => track.default);
-    assert.strictEqual(upstreamDefaultTracks.length, 1, 'VidStuck must map exactly one upstream default track');
+    assert.strictEqual(upstreamDefaultTracks.length, 1, 'the stream payload must map exactly one default audio track');
     assert.ok(
       /^[a-z]{2}$/.test(upstreamDefaultTracks[0].lang),
       'the default track must carry an ISO language code'
@@ -1662,7 +1388,7 @@ async function runTests() {
     // 8. Backend-only public surface: service metadata + social image, no web UI.
     // 8. Node API public surface: service metadata + social image, JSON-only.
     // (The /embed player page ships with the Cloudflare Worker; suite 10 covers it.)
-    console.log('[8/10] Testing LOL Embed branding, meta image, and JSON-only Node surface...');
+    console.log('[8/12] Testing LOL Embed branding, meta image, and JSON-only Node surface...');
     const rootInfo = await httpRequest(baseUrl, '/');
     assert.strictEqual(rootInfo.status, 200);
     assert.strictEqual(rootInfo.json.brand, 'LOL Embed');
@@ -1685,7 +1411,7 @@ async function runTests() {
     console.log('  ✔ Passed backend-only root, metadata image, and JSON-only Node surface checks.');
 
     // 9. Owner Admin Panel (/admin, Domain Telemetry, Source Replacer, Domain Blocking, Custom Overrides)
-    console.log('[9/10] Testing JSON Admin API, Domain Telemetry, Source Replacement & Firewall...');
+    console.log('[9/12] Testing JSON Admin API, Domain Telemetry, Source Replacement & Firewall...');
 
     // Simulate API requests from an external client domain (there is no embed page).
     await httpRequest(baseUrl, '/api/resolve/tv/94605?season=1&episode=1&parent=https://partner-cinema.to', {
@@ -1776,7 +1502,7 @@ async function runTests() {
     // the API base URL is configurable for a separate API Worker, `/` stays
     // JSON for API clients (with a browser-only rickroll easter egg), and the
     // portal/admin UI stays removed.
-    console.log('[10/10] Testing Worker /embed player page, assets, API base config & root behavior...');
+    console.log('[10/12] Testing Worker /embed player page, assets, API base config & root behavior...');
     const workerModule = await import('../cloudflare-worker/worker.js');
     const workerFetch = workerModule.default.fetch;
 
@@ -1961,8 +1687,8 @@ async function runTests() {
     // 11. Server Andromeda Multi-Tier Architecture & Waterfall Failover
     // Priority 1: CastleTV (South Indian, Asian, Hollywood dubs)
     // Priority 2: NetMirror (Official OTT platform mirrors)
-    // Waterfall Failover: When both tiers miss, cleanly hand off to Server 2 (Ursa / VidSrc)
-    console.log('[11/11] Testing Server Andromeda Multi-Tier Architecture & Waterfall Failover...');
+    // Waterfall Failover: When both tiers miss, cleanly hand off to Server 2 (Centaurus)
+    console.log('[11/12] Testing Server Andromeda Multi-Tier Architecture & Waterfall Failover...');
 
     // 11a. CastleTV Unit & Sub-resolver: Security key handshake, AES-128-CBC encryption, multi-audio tracks
     const castleKey = buildCastleKey('MTIzNDU2Nzg5MA==');
@@ -1979,7 +1705,7 @@ async function runTests() {
     try {
       config.upstreams.castletvBase = `${mockUpstream.url}/castletv`;
       config.upstreams.netmirrorBase = `${mockUpstream.url}/netmirror`;
-      // Clear VidStuck base to verify the pure cascade and Ursa failover without old fallback
+      // Clear the VidStuck metadata fallback so the pure two-tier cascade is exercised
       config.upstreams.vidstuckBase = '';
 
       // Test Direct CastleTV Resolver
@@ -2256,7 +1982,7 @@ async function runTests() {
 
     // 13. Server catalog: a rebrand / re-prioritisation must reach BOTH backends
     // and the player's server modal, with no stale names, slots, or order.
-    console.log('[13/13] Testing shared server catalog, worker servers array & player defaults...');
+    console.log('[12/12] Testing shared server catalog, worker servers array & player defaults...');
     {
       const catalog = require('../src/services/serverCatalog');
       const expected = [
@@ -2309,7 +2035,7 @@ async function runTests() {
       // 13d. The player must default to priority 1 and order rows defensively.
       const embedJs = fs.readFileSync(path.join(__dirname, '..', 'public', 'js', 'embed.js'), 'utf8');
       assert.match(embedJs, /server: 'andromeda'/, 'player default server must be the priority-1 server');
-      assert.ok(!/server: 'atlas'/.test(embedJs), 'player must not default to the backup server');
+      assert.ok(!/server: '(atlas|ursa|hamster)'/.test(embedJs), 'player must not default to a removed server');
       assert.ok(
         /\.sort\(\(a, b\) => \(Number\(a\.priority\) \|\| 999\)/.test(embedJs),
         'player must re-sort the API server array by priority before rendering'
@@ -2324,8 +2050,7 @@ async function runTests() {
         NETMIRROR_BASE_URL: `${mockUpstream.url}/netmirror`,
         NETMIRROR_WEB_MIRRORS: `${mockUpstream.url}/netmirror`,
         VIDSTUCK_BASE_URL: '',
-        TMDB_BASE_URL: `${mockUpstream.url}/tmdb`,
-        VIDSRC_DATA_URL: `${mockUpstream.url}/vidsrc/api.php`
+        TMDB_BASE_URL: `${mockUpstream.url}/tmdb`
       };
 
       const healthRes = await callWorker('http://player.test/api/health');
@@ -2373,7 +2098,7 @@ async function runTests() {
         'worker payload must not leak removed servers'
       );
 
-      // 13f. Hamster Wheel must run on the worker too (same shared cascade).
+      // 13f. The worker must build its server list from the same shared catalog.
       const workerSrc = fs.readFileSync(path.join(__dirname, '..', 'cloudflare-worker', 'worker.js'), 'utf8');
       assert.ok(
         /serverCatalog\.workerServerList\(\)/.test(workerSrc),

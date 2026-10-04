@@ -72,12 +72,12 @@ function waterfallEnabledServers(list) {
 
 /**
  * Map a (possibly stale or unknown) requested server id onto a real one.
- * Keeps `4k`/`uhd`/`2160p` aliases working and falls back to the top-priority
- * server so a rebranded or removed id can never strand the player.
+ * Removed or unknown ids (including legacy `4k`/`uhd`/`2160p` aliases) fall back
+ * to the top-priority server so a stale bookmark can never strand the player.
  */
 function resolveServerId(list, requestedServerId) {
   const requested = String(requestedServerId || '').trim().toLowerCase();
-  const normalized = ['4k', 'uhd', '2160p'].includes(requested) ? 'ursa' : requested;
+  const normalized = requested;
   if (normalized) {
     const known = list.find((s) => s.id === normalized && s.enabled !== false);
     if (known) return known.id;

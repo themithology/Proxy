@@ -1,7 +1,6 @@
 const crypto = require('crypto');
 const config = require('../config');
 const { cache, circuitBreaker } = require('../utils/cache');
-const { decryptZxcLink } = require('../utils/crypto');
 const { buildProxyStreamUrl } = require('./proxy');
 const { prepareMultiTrackStream, normalizeAudioLanguage } = require('./multitrack');
 const { telemetry } = require('./telemetry');
@@ -10,42 +9,6 @@ const serverCatalog = require('./serverCatalog');
 
 const USER_AGENT =
   'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36';
-
-/**
- * vidstuck.xyz backend "keys": the player talks to its own API with randomly
- * obfuscated JSON field names / query parameters (anti-bot obfuscation baked into
- * their bundle). These are field names, not secrets — identical constants are
- * mirrored by vicine v1.5.2's zxc provider:
- *
- *   POST /backend/meow          { <UO>: tmdbId, <UP>: type, <UG>: server }
- *   GET  /backend/servers/:id?  <UO>=id&<UG>=server&<UP>=type&<UL>=ts&<UU>=token
- *                               &<UD>=title&<UC>=year&<UM>=releaseDate&<IM>=imdbId
- *   -> links[0].link is an OpenSSL AES-256-CBC (md5 EVP_BytesToKey) base64 blob.
- *
- * The backend rejects requests that do not carry Origin/Referer: https://vidstuck.xyz.
- */
-const ZXC_KEYS = {
-  id: 'a7f39c821d604e5b9c71f36e1547b',
-  type: 'c285f91ab306d28147a35632e816b',
-  server: '6b491e7253ad84d392e7561a9384c',
-  ts: '61d9a5274c8e3b29afd6384c291e6',
-  token: 'c492f7a183d6502b1e7436c538a716d',
-  title: '5e28c9147a306d1e829f3674b392a1',
-  year: 'b731e6c94f08269d725f8341c306e',
-  date: 'e164932c50216a39e5814b3027',
-  imdb: 'f35a8c19d674b3265e871c4933a725f'
-};
-
-const VIDSTUCK_ORIGIN = 'https://vidstuck.xyz';
-
-/**
- * Ursa (VidSrc.sh) WASM envelope marker. When the runtime refuses runtime
- * WebAssembly compilation (Cloudflare Workers V8 isolates) or the wasm ABI is
- * unknown, the sealed envelope is shipped to the browser which finishes the
- * decryption with the exact same (vicine v1.5.2) ABI.
- */
-const VSRC_WASM_ENVELOPE_URL = 'vidsrc://wasm-envelope';
-const VSRC_REFERER = 'https://vidsrc.sh/';
 
 /**
  * Common Language Name -> ISO-639-1 code mapping for multi-audio tracks
@@ -759,7 +722,7 @@ async function resolveNetmirror(metadata, preferredAudio = '', parentSignal = nu
  * Cascades across the multi-audio sources in priority order:
  *   1. CastleTV (Priority 1: South Indian dubs, K-Drama/C-Drama, Anime, Hollywood)
  *   2. NetMirror (Priority 2: Netflix/Prime/Hotstar official platform streams)
- * If both fail, fails cleanly so the waterfall immediately hands playback to Server 2 (Ursa).
+ * If both fail, fails cleanly so the waterfall immediately hands playback to Server 2 (Centaurus).
  * (The Moviebox tier was removed: the upstreams are region-blocked/unreliable.)
  */
 async function resolveAndromedaServer(metadata, requestedServerId = 'andromeda', preferredAudio = '') {
@@ -818,270 +781,6 @@ async function resolveAndromedaServer(metadata, requestedServerId = 'andromeda',
     reason: 'andromeda_all_sources_exhausted',
     diag
   };
-}
-
-async function decryptVidsrcWasmPayload(wasmBytes, encryptedBase64, nonceKeyStr) {
-  const mod = await WebAssembly.compile(wasmBytes);
-  const inst = await WebAssembly.instantiate(mod, {
-    env: { emscripten_notify_memory_growth() {} }
-  });
-  const ex = inst.exports;
-  const mem = ex.memory;
-  if (!mem) return null;
-
-  // --- Current ABI (vicine v1.5.2): alloc + decrypt -> utf8 payload at ptr + 12
-  if (typeof ex.decrypt === 'function' && typeof ex.alloc === 'function') {
-    try {
-      const raw = Buffer.from(encryptedBase64, 'base64');
-      const ptr = ex.alloc(raw.length);
-      new Uint8Array(mem.buffer, ptr, raw.length).set(raw);
-      const len = ex.decrypt(ptr, raw.length);
-      if (typeof len === 'number' && len > 0) {
-        const decoded = new TextDecoder().decode(new Uint8Array(mem.buffer, ptr + 12, len));
-        const parsed = JSON.parse(decoded);
-        if (Array.isArray(parsed)) return parsed;
-        if (Array.isArray(parsed?.stream_urls)) return parsed.stream_urls;
-      }
-    } catch {
-      // fall through to the legacy ABI
-    }
-  }
-
-  // --- Legacy ABI: key() + nonce() + malloc() + NUL-terminated JSON
-  if (typeof ex.key === 'function') {
-    const kp = ex.key();
-    const kb = new Uint8Array(mem.buffer, kp, 32);
-    const kh = '91d803885852299907d44c2f92822699c62f8b0f0a5c8d208190e0f102131415';
-    for (let i = 0; i < 32; i++) kb[i] = parseInt(kh.slice(i * 2, i * 2 + 2), 16);
-  }
-  if (typeof ex.nonce === 'function') {
-    const nb = Buffer.from(String(nonceKeyStr), 'utf8');
-    const np = (typeof ex.alloc === 'function' ? ex.alloc : ex.malloc)(nb.length + 1);
-    new Uint8Array(mem.buffer).set(nb, np);
-    new Uint8Array(mem.buffer)[np + nb.length] = 0;
-    ex.nonce(np);
-    if (typeof ex.free === 'function') ex.free(np);
-  }
-
-  const ct = Buffer.from(encryptedBase64, 'base64');
-  const ptr = (typeof ex.alloc === 'function' ? ex.alloc : ex.malloc)(ct.length);
-  new Uint8Array(mem.buffer).set(ct, ptr);
-  const outPtr = ex.decrypt(ptr, ct.length);
-  if (!outPtr) return null;
-
-  const u8 = new Uint8Array(mem.buffer);
-  let end = outPtr;
-  while (end < u8.length && u8[end] !== 0) end++;
-  const plainText = Buffer.from(mem.buffer, outPtr, end - outPtr).toString('utf8');
-  const parsed = JSON.parse(plainText);
-  if (Array.isArray(parsed)) return parsed;
-  return Array.isArray(parsed?.stream_urls) ? parsed.stream_urls : null;
-}
-
-/**
- * 2. VidSrc.sh Upstream Resolver (Ursa)
- * Queries https://data.vidsrc.sh/api.php, decrypts ChaCha20 WASM stream_urls if encrypted,
- * and stamps the stream URL with a fresh JWT from <streamHost>/generate.php.
- */
-async function resolveVidsrcServer(metadata) {
-  const providerKey = 'vidsrc:ursa';
-  if (!circuitBreaker.isAvailable(providerKey)) return null;
-
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), 9000);
-
-  try {
-    const isTv = metadata.type === 'tv';
-    const qs = isTv
-      ? `type=tv&tmdb=${encodeURIComponent(metadata.tmdbId)}&season=${metadata.season || 1}&episode=${metadata.episode || 1}&stream_urls`
-      : `type=movie&tmdb=${encodeURIComponent(metadata.tmdbId)}&stream_urls`;
-
-    const apiUrl = `${config.upstreams.vidsrcDataUrl}?${qs}`;
-    const referer = 'https://vidsrc.sh/';
-
-    const res = await fetch(apiUrl, {
-      headers: {
-        Accept: 'application/json',
-        'User-Agent': USER_AGENT,
-        Referer: referer
-      },
-      signal: controller.signal
-    });
-
-    if (!res.ok) {
-      circuitBreaker.recordFailure(providerKey);
-      return null;
-    }
-
-    const json = await res.json();
-    let urls = [];
-    let vsEnvelope = null;
-
-    if (Array.isArray(json?.data?.stream_urls)) {
-      urls = json.data.stream_urls;
-    } else if (typeof json?.data?.stream_urls === 'string' && json?.vs) {
-      let wasmBytes = null;
-      if (json.vs.wasm) {
-        wasmBytes = Buffer.from(json.vs.wasm, 'base64');
-      } else if (json.vs.wasm_url) {
-        const wasmRes = await fetch(json.vs.wasm_url, {
-          headers: { 'User-Agent': USER_AGENT, Referer: referer },
-          signal: controller.signal
-        });
-        if (wasmRes.ok) {
-          wasmBytes = Buffer.from(await wasmRes.arrayBuffer());
-        }
-      }
-
-      if (wasmBytes) {
-        const nonceKey = isTv
-          ? `${metadata.tmdbId}_${metadata.season || 1}_${metadata.episode || 1}`
-          : `stream_urls:${metadata.tmdbId}`;
-        try {
-          const decrypted = await decryptVidsrcWasmPayload(
-            wasmBytes,
-            json.data.stream_urls,
-            nonceKey
-          );
-          if (Array.isArray(decrypted)) {
-            urls = decrypted;
-          }
-        } catch {
-          // "Wasm code generation disallowed by embedder" (Workers V8 isolates)
-          // or an unknown ABI — the browser finishes the job below.
-        }
-      }
-
-      if (urls.length === 0) {
-        vsEnvelope = {
-          streamUrls: json.data.stream_urls,
-          wasmUrl: json.vs.wasm_url
-            ? buildProxyStreamUrl(json.vs.wasm_url, referer, '', { mode: 'manifest' })
-            : null,
-          wasmBase64: json.vs.wasm || null
-        };
-      }
-    }
-
-    urls = urls.filter((u) => typeof u === 'string' && /^https?:\/\//i.test(u));
-
-    // Browser-side WASM assist: never dead-end a title just because this runtime
-    // cannot compile wasm. Return the sealed envelope for a trusted API client
-    // to process in its browser and relay through /api/proxy with vidsrcStamp=1
-    // and mode=full.
-    if (urls.length === 0 && vsEnvelope) {
-      circuitBreaker.recordSuccess(providerKey);
-      return {
-        server: 'ursa',
-        format: 'hls',
-        rawUrl: VSRC_WASM_ENVELOPE_URL,
-        streamUrl: VSRC_WASM_ENVELOPE_URL,
-        referer,
-        headers: {},
-        transport: 'browser-wasm',
-        vsEnvelope,
-        backupUrls: [],
-        audioTracks: [
-          {
-            id: 'vidsrc-orig',
-            lang: 'en',
-            label: 'Original Audio',
-            type: 'sub',
-            streamUrl: VSRC_WASM_ENVELOPE_URL,
-            rawUrl: VSRC_WASM_ENVELOPE_URL,
-            default: true
-          }
-        ],
-        qualities: [{ label: 'Auto', height: 0, url: VSRC_WASM_ENVELOPE_URL }]
-      };
-    }
-
-    if (urls.length === 0) {
-      circuitBreaker.recordFailure(providerKey);
-      return null;
-    }
-
-    // Stamp stream URLs with a fresh JWT from <streamOrigin>/generate.php.
-    // The endpoint answers either a bare JWT (text/plain) or `{"token": "..."}`;
-    // some mirrors also ship `__TOKEN__` placeholders inside the URL itself.
-    let rawMasterUrl = urls[0];
-    let vsToken = '';
-    try {
-      const parsed = new URL(rawMasterUrl);
-      const genRes = await fetch(`${parsed.origin}/generate.php`, {
-        headers: { 'User-Agent': USER_AGENT, Referer: referer },
-        signal: controller.signal
-      });
-      if (genRes.ok) {
-        const genText = (await genRes.text()).trim();
-        if (genText.startsWith('{')) {
-          vsToken = JSON.parse(genText)?.token || '';
-        } else if (!genText.startsWith('<')) {
-          vsToken = genText.replace(/^["']|["']$/g, '');
-        }
-      }
-    } catch {
-      // Some VidSrc CDN mirrors do not require generate.php token
-    }
-
-    if (vsToken) {
-      const stamp = (u) =>
-        u.includes('__TOKEN__')
-          ? u.replace(/__TOKEN__/g, encodeURIComponent(vsToken))
-          : `${u}${u.includes('?') ? '&' : '?'}token=${encodeURIComponent(vsToken)}`;
-      urls = urls.map(stamp);
-      rawMasterUrl = urls[0];
-    }
-
-    circuitBreaker.recordSuccess(providerKey);
-
-    // Origin/Referer + JWT gated host -> proxy every playlist AND segment URI
-    // with the token attached ('full' mode).
-    const proxiedUrl = buildProxyStreamUrl(rawMasterUrl, referer, '', {
-      mode: 'full',
-      token: vsToken
-    });
-    const qualities = [
-      { label: 'Auto', height: 0, url: proxiedUrl },
-      ...urls.map((u, idx) => ({
-        label: idx === 0 ? '1080p' : idx === 1 ? '720p' : `Mirror ${idx + 1}`,
-        height: idx === 0 ? 1080 : 720,
-        url: buildProxyStreamUrl(u, referer, '', { mode: 'full', token: vsToken })
-      }))
-    ];
-
-    return {
-      server: 'ursa',
-      format: rawMasterUrl.includes('.mp4') || rawMasterUrl.includes('.mkv') ? 'mp4' : 'hls',
-      rawUrl: rawMasterUrl,
-      streamUrl: proxiedUrl,
-      referer,
-      headers: {},
-      vsToken,
-      backupUrls: [
-        buildProxyStreamUrl(rawMasterUrl, referer, '', { mode: 'manifest', token: vsToken }),
-        rawMasterUrl,
-        ...urls.slice(1).map((u) => buildProxyStreamUrl(u, referer, '', { mode: 'manifest', token: vsToken }))
-      ],
-      audioTracks: [
-        {
-          id: 'vidsrc-orig',
-          lang: 'en',
-          label: 'Original Audio',
-          type: 'sub',
-          streamUrl: proxiedUrl,
-          rawUrl: rawMasterUrl,
-          default: true
-        }
-      ],
-      qualities
-    };
-  } catch {
-    circuitBreaker.recordFailure(providerKey);
-    return null;
-  } finally {
-    clearTimeout(timer);
-  }
 }
 
 /**
@@ -1157,9 +856,9 @@ function isHubcloudGeneratorUrl(u) {
       /(^|\.)hubcdn\./.test(host) ||
       /(^|\.)gamerxyt\.com$/.test(host) ||
       /^gpdl\d*\./.test(host) ||
-      // MoviesDrive now links through HubCloud's browser-only recovery path;
+      // Legacy download hosts now link through HubCloud's browser-only recovery path;
       // keep recognizing it even when the page resolves a relative href on a
-      // MoviesDrive host before the endpoint redirects to hubcloud.ist.
+      // download host before the endpoint redirects to hubcloud.ist.
       /\/drive\/search-recover\.php$/i.test(url.pathname) ||
       (/\/drive\/[A-Za-z0-9_-]+$/i.test(url.pathname) && /(?:hubcloud|moviesdrive)/i.test(host)) ||
       // third-party hosts reuse the HubCloud wrapper scripts verbatim
@@ -1281,7 +980,7 @@ function scorePlayableUrl(u) {
   // CDN hosts only earn their bonus when the URL points at a real object: a
   // media extension or at least one non-root path segment. A bare host plus a
   // query string — `https://d33f51dyacx7bd.cloudfront.net/?aydfd=1015073`,
-  // which is what 4KHDHub's redirector chain returns — is a landing/gate page,
+  // which is what the legacy 4K redirector chains return — is a landing/gate page,
   // not media. It used to score 90 and outrank every real file candidate, so
   // Server 3 reported a JavaScript page as its "verified 4K" stream.
   const hasObjectPath = pathname.replace(/\/+$/, '') !== '';
@@ -1335,10 +1034,10 @@ function isLocalTestMediaUrl(rawUrl) {
 /**
  * Media sniffing for the Range preflight.
  *
- * A 200/206 response is NOT proof of media. 4KHDHub's redirector chain answers
+ * A 200/206 response is NOT proof of media. Legacy redirector chains answer
  * with a JavaScript landing page (no Content-Type, body starting with
  * `(function(){`), which the old "not HTML and not JSON" test accepted — so
- * Server 3 (ursa) returned that page as its "verified 4K" stream and every
+ * The old 4K tier returned that page as its "verified 4K" stream and every
  * playback attempt failed. Accept a candidate only when the response carries a
  * real media Content-Type, or when the first bytes match a known container.
  */
@@ -1817,7 +1516,7 @@ function isAntiBotPage(html) {
   return isCfChallengePage(html) || isDdosGuardPage(html);
 }
 
-/** Browser navigation headers used by 4KHDHub/MoviesDrive anti-bot pages. */
+/** Browser navigation headers used by the HubCloud/legacy-host anti-bot pages. */
 function fourKBrowserHeaders(referer = '', accept = 'text/html,application/xhtml+xml,application/json;q=0.9,*/*;q=0.8') {
   return {
     Accept: accept,
@@ -2552,19 +2251,6 @@ async function resolveHicineServer(metadata) {
   }
 }
 
-// ============================================================================
-// SERVER 3 (URSA / 4K): TWO-SOURCE 2160p UHD & MULTI-AUDIO
-// Movies: MoviesDrive 4K first, then 4KHDHub. TV: 4KHDHub first, then
-// MoviesDrive 4K. Other scrapers remain outside the player path (Node exposes
-// them only to the optional dub inventory).
-// ============================================================================
-
-let dynamic4kDomainCache = {
-  fourkhdhub: null,
-  moviesdrive: null,
-  exp: 0
-};
-
 function b64DecodeUtf8(str) {
   try {
     const clean = String(str || '')
@@ -2882,13 +2568,11 @@ module.exports = {
   resolveNetmirror,
   extractHubcloudXhrEndpoints,
   isDdosGuardPage,
-  resolveVidsrcServer,
   resolveHicineServer,
   resolveHianimeServer,
   buildCastleKey,
   decryptCastleAes,
   mapLanguageNameToCode,
-  decryptVidsrcWasmPayload,
   decodeZokoAnimeXorPayload,
   parseHicineLinks,
   parseHicineAudioHints,

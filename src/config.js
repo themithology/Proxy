@@ -102,13 +102,7 @@ const config = {
       .map((s) => s.trim().replace(/\/$/, ''))
       .filter(Boolean),
 
-    // Ursa uses MoviesDrive + 4KHDHub; remaining 4K hosts serve optional dub lookups.
-    domainDiscoveryUrl:
-      process.env.DOMAIN_DISCOVERY_URL ||
-      'https://raw.githubusercontent.com/SaurabhKaperwan/Utils/refs/heads/main/urls.json',
-
     vidstuckBase: process.env.VIDSTUCK_BASE_URL || 'https://vidstuck.xyz',
-    vidsrcDataUrl: process.env.VIDSRC_DATA_URL || 'https://data.vidsrc.sh/api.php',
     hicineApiBase: process.env.HICINE_API_BASE || 'https://api.hicine.sbs',
     hianimeBase: process.env.HIANIME_BASE_URL || 'https://hianime.at',
     wyzieSubsUrl: process.env.WYZIE_SUBS_URL || 'https://sub.wyzie.ru',
