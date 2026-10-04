@@ -136,8 +136,11 @@
   /* Blocked */
   .blocklist { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 4px; }
   .blocklist .item { display: inline-flex; align-items: center; gap: 8px; padding: 5px 8px 5px 11px; border: 1px solid rgba(248, 113, 113, 0.35); border-radius: 999px; font-size: 13px; font-family: var(--mono); }
+  .ad-free-list .item { border-color: rgba(74, 222, 128, 0.35); }
   .blockform { display: flex; gap: 8px; margin-top: 12px; flex-wrap: wrap; }
   .blockform input { flex: 1; min-width: 200px; }
+  .card-note { margin: -6px 0 14px; color: var(--muted); font-size: 12px; }
+  .row .ads-off { color: var(--ok); font-size: 11px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; }
 
   .toast { position: fixed; left: 50%; bottom: 24px; transform: translate(-50%, 20px); background: #fff; color: #000; padding: 9px 14px; border-radius: 10px; font-size: 13px; font-weight: 600; opacity: 0; pointer-events: none; transition: opacity 0.2s, transform 0.2s; z-index: 50; }
   .toast.show { opacity: 1; transform: translate(-50%, 0); }
@@ -221,6 +224,15 @@
           <button class="btn" type="submit">Block domain</button>
         </form>
       </div>
+      <div class="card wide">
+        <h2>Ad-free sites <span class="meta" id="ad-free-meta"></span></h2>
+        <p class="card-note">The popunder tag is removed for embeds opened from these host sites. Enter a domain or URL; www is ignored. Keep the browser's default referrer enabled so the player can identify the host page. The global ADS_ENABLED setting still takes precedence.</p>
+        <div class="blocklist ad-free-list" id="ad-free"></div>
+        <form class="blockform" id="ad-free-form" autocomplete="off">
+          <input type="text" id="ad-free-domain" placeholder="partner.example" aria-label="Website domain to make ad-free">
+          <button class="btn" type="submit">Turn ads off</button>
+        </form>
+      </div>
     </section>
   </main>
 </div>
@@ -236,10 +248,16 @@
   var key = '';
   var timer = null;
   var lastData = null;
+  var adFreeDomains = [];
+  var adSettingsWarned = false;
 
   function $(s) { return document.querySelector(s); }
   function esc(s) { return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]; }); }
   function fmt(n) { n = Number(n) || 0; return n >= 1e6 ? (n / 1e6).toFixed(1) + 'M' : n >= 1e4 ? (n / 1e3).toFixed(1) + 'k' : String(n); }
+  function normalizeDomain(domain) {
+    return String(domain || '').trim().toLowerCase().replace(/^https?:\/\//, '').split(/[/?#]/)[0].replace(/:\d+$/, '').replace(/^www\./, '');
+  }
+  function isAdFree(domain) { return adFreeDomains.indexOf(normalizeDomain(domain)) >= 0; }
   function ago(iso) {
     if (!iso) return '—';
     var s = Math.max(0, (Date.now() - new Date(iso).getTime()) / 1000);
@@ -274,14 +292,18 @@
     try { key = sessionStorage.getItem(KEY_STORE) || ''; } catch (e) {}
   }
 
-  function api(path, opts) {
-    opts = opts || {};
+  function requestApi(base, path, opts) {
+    opts = Object.assign({}, opts || {});
     var headers = Object.assign({ 'X-Admin-Key': key }, opts.headers || {});
     if (opts.body && typeof opts.body !== 'string') { opts.body = JSON.stringify(opts.body); headers['Content-Type'] = 'application/json'; }
-    return fetch(apiBase + path, Object.assign({}, opts, { headers: headers, cache: 'no-store' })).then(function (r) {
+    return fetch(base + path, Object.assign({}, opts, { headers: headers, cache: 'no-store' })).then(function (r) {
       return r.json().catch(function () { return {}; }).then(function (j) { j.__status = r.status; return j; });
     });
   }
+  function api(path, opts) { return requestApi(apiBase, path, opts); }
+  // Ad settings belong to the player Worker even when API_BASE_URL points to
+  // a separate backend, so always manage them on the dashboard's own origin.
+  function playerApi(path, opts) { return requestApi('', path, opts); }
 
   function showGate(err) {
     $('#gate').classList.remove('hidden');
@@ -379,9 +401,12 @@
 
     // sites
     bars($('#sites'), (s.domains || []).map(function (d) {
-      var act = '<span class="actions"><button class="btn tiny ' + (d.blocked ? '' : 'danger') + '" data-block="' + esc(d.domain) + '" data-blocked="' + (d.blocked ? '1' : '0') + '" type="button">' + (d.blocked ? 'Unblock' : 'Block') + '</button></span>';
+      var adFree = isAdFree(d.domain);
+      var adButton = '<button class="btn tiny" data-ad-free="' + esc(d.domain) + '" data-ad-free-value="' + (adFree ? '0' : '1') + '" type="button">' + (adFree ? 'Enable ads' : 'Turn ads off') + '</button>';
+      var blockButton = '<button class="btn tiny ' + (d.blocked ? '' : 'danger') + '" data-block="' + esc(d.domain) + '" data-blocked="' + (d.blocked ? '1' : '0') + '" type="button">' + (d.blocked ? 'Unblock' : 'Block') + '</button>';
+      var act = '<span class="actions">' + adButton + blockButton + '</span>';
       return {
-        label: '<span>' + esc(d.domain) + '</span>' + (d.blocked ? '<span class="blocked">blocked</span>' : '') + '<span class="sub">' + fmt(d.embeds) + ' embeds · ' + fmt(d.resolves) + ' resolves' + (d.fails ? ' · ' + fmt(d.fails) + ' failed' : '') + (d.proxyHits ? ' · ' + fmt(d.proxyHits) + ' proxy' : '') + '</span>',
+        label: '<span>' + esc(d.domain) + '</span>' + (d.blocked ? '<span class="blocked">blocked</span>' : '') + (adFree ? '<span class="ads-off">ads off</span>' : '') + '<span class="sub">' + fmt(d.embeds) + ' embeds · ' + fmt(d.resolves) + ' resolves' + (d.fails ? ' · ' + fmt(d.fails) + ' failed' : '') + (d.proxyHits ? ' · ' + fmt(d.proxyHits) + ' proxy' : '') + '</span>',
         value: d.requests, actions: act, title: 'first seen ' + (d.firstSeen ? new Date(d.firstSeen).toLocaleString() : '—') + ' · last ' + ago(d.lastSeen)
       };
     }), { empty: 'No embedding sites seen yet. Direct opens of the player are not attributed to a site.' });
@@ -446,9 +471,32 @@
     $('#blocked').innerHTML = blocked.length
       ? blocked.map(function (d) { return '<span class="item">' + esc(d) + '<button class="btn tiny" data-block="' + esc(d) + '" data-blocked="1" type="button">Unblock</button></span>'; }).join('')
       : '<div class="empty" style="padding:4px 0">No blocked sites.</div>';
+
+    $('#ad-free-meta').textContent = adFreeDomains.length ? adFreeDomains.length + ' site' + (adFreeDomains.length === 1 ? '' : 's') + ' without ads' : 'per-site ad exceptions';
+    $('#ad-free').innerHTML = adFreeDomains.length
+      ? adFreeDomains.map(function (domain) {
+          return '<span class="item">' + esc(domain) + '<button class="btn tiny" data-ad-free="' + esc(domain) + '" data-ad-free-value="0" type="button">Enable ads</button></span>';
+        }).join('')
+      : '<div class="empty" style="padding:4px 0">No ad-free sites configured.</div>';
   }
 
   // --- Actions ---------------------------------------------------------------------
+  function saveAdFreeDomain(domain, adFree, onSaved) {
+    return playerApi('/api/admin/domains/ad-free', { method: 'POST', body: { domain: domain, adFree: adFree } }).then(function (j) {
+      if (j.__status === 401) return toast('Admin key must match the player Worker ADMIN_SECRET to manage ad settings.');
+      if (!j.ok) return toast(j.error || 'Could not update ad settings');
+      adFreeDomains = Array.isArray(j.adFreeDomains) ? j.adFreeDomains : adFreeDomains;
+      toast((adFree ? 'Ads turned off for ' : 'Ads enabled for ') + (j.domain || domain));
+      if (onSaved) onSaved();
+      load(false);
+    }).catch(function () { toast('Network error while saving ad settings'); });
+  }
+
+  document.addEventListener('click', function (e) {
+    var adButton = e.target.closest('[data-ad-free]');
+    if (!adButton) return;
+    saveAdFreeDomain(adButton.getAttribute('data-ad-free'), adButton.getAttribute('data-ad-free-value') === '1');
+  });
   document.addEventListener('click', function (e) {
     var b = e.target.closest('[data-block]');
     if (!b) return;
@@ -471,6 +519,12 @@
       toast('Blocked ' + domain);
       load(false);
     });
+  });
+  $('#ad-free-form').addEventListener('submit', function (e) {
+    e.preventDefault();
+    var domain = $('#ad-free-domain').value.trim();
+    if (!domain) return;
+    saveAdFreeDomain(domain, true, function () { $('#ad-free-domain').value = ''; });
   });
   $('#reset').addEventListener('click', function () {
     if (!confirm('Reset ALL statistics? Blocked sites are kept.')) return;
@@ -497,10 +551,24 @@
     if (!key) return showGate('');
     if (loading) return;
     loading = true;
-    api('/api/admin/stats?limit=25').then(function (j) {
+    Promise.all([
+      api('/api/admin/stats?limit=25'),
+      playerApi('/api/admin/domains/ad-free')
+    ]).then(function (results) {
       loading = false;
+      var j = results[0];
+      var adSettings = results[1];
       if (j.__status === 401) return showGate(fromGate ? 'Wrong key.' : 'Session expired — enter the key again.');
       if (!j.ok) { toast(j.error || 'Could not load statistics'); return; }
+      if (adSettings && Array.isArray(adSettings.adFreeDomains)) {
+        adFreeDomains = adSettings.adFreeDomains;
+      } else {
+        adFreeDomains = (j.adFreeDomains || (j.stats && j.stats.adFreeDomains) || []).slice();
+        if (adSettings && adSettings.__status === 401 && !adSettingsWarned) {
+          toast('Use the player Worker ADMIN_SECRET to manage per-site ads.');
+          adSettingsWarned = true;
+        }
+      }
       render(j);
       if ($('#dash').classList.contains('hidden')) showDash();
     }).catch(function () {

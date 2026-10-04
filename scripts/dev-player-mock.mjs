@@ -50,6 +50,34 @@ const SERVERS = [
 // Seeded demo statistics for /reze (deterministic, so the dashboard looks the
 // same on every start). Mirrors what the Worker's StatsStore accumulates.
 const demoStats = statsAggregate.createStatsAggregate();
+const adFreeDomains = new Set();
+
+function normalizeSiteDomain(raw) {
+  const value = String(raw || '').trim();
+  if (!value || (/^[a-z][a-z0-9+.-]*:\/\//i.test(value) && !/^https?:\/\//i.test(value))) return '';
+  try {
+    const parsed = new URL(/^https?:\/\//i.test(value) ? value : `https://${value}`);
+    const host = parsed.hostname.toLowerCase().replace(/^www\./, '').replace(/\.$/, '');
+    if (!host || host.length > 253 || host.split('.').some((label) =>
+      !label || label.length > 63 || !/^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?$/i.test(label)
+    )) return '';
+    return host;
+  } catch {
+    return '';
+  }
+}
+
+function callerSite(req, url) {
+  const candidates = [url.searchParams.get('parent'), url.searchParams.get('domain'), req.headers.origin, req.headers.referer].filter(Boolean);
+  for (const raw of candidates) {
+    try {
+      const host = normalizeSiteDomain(raw);
+      if (host) return host;
+    } catch {}
+  }
+  return normalizeSiteDomain(url.hostname);
+}
+
 (function seedDemoStats() {
   let seed = 42;
   const rand = () => (seed = (seed * 1664525 + 1013904223) % 4294967296) / 4294967296;
@@ -285,8 +313,10 @@ const server = http.createServer((req, res) => {
   if (isEmbedRoute) {
     let html = fs.readFileSync(path.join(PUBLIC_DIR, 'embed.html'), 'utf8');
     html = html.replace('<!--LOL_EMBED_CONFIG-->', '<script>window.__LOL_EMBED_CONFIG__={"apiBaseUrl":""};</script>');
-    // ADS=0 previews the ad-free page (what ADS_ENABLED = "false" serves).
-    if (process.env.ADS === '0') html = html.replace(/[ \t]*<!--LOL_EMBED_ADS-->[\s\S]*?<!--\/LOL_EMBED_ADS-->\n?/g, '');
+    // ADS=0 previews the globally ad-free page; dashboard exceptions apply per host site.
+    if (process.env.ADS === '0' || adFreeDomains.has(callerSite(req, url))) {
+      html = html.replace(/[ \t]*<!--LOL_EMBED_ADS-->[\s\S]*?<!--\/LOL_EMBED_ADS-->\n?/g, '');
+    }
     res.writeHead(200, {
       'Content-Type': 'text/html; charset=utf-8',
       'Cache-Control': 'no-cache',
@@ -323,8 +353,26 @@ const server = http.createServer((req, res) => {
       stats: { persistent: false, ...demoStats.snapshot({ limit: 25 }) },
       catalog: SERVERS.map(({ id, name, badge, priority }) => ({ id, name, badge, priority, enabled: true })),
       servers: SERVERS.map((s) => ({ ...s, status: s.id === 'centaurus' ? 'degraded' : 'online' })),
+      adFreeDomains: Array.from(adFreeDomains).sort(),
       runtime: { startedAt: demoStats.startedAt, version: 'mock' }
     });
+    if (pathname === '/api/admin/domains/ad-free' && req.method === 'GET') {
+      return json(res, 200, { ok: true, adFreeDomains: Array.from(adFreeDomains).sort(), adsEnabled: process.env.ADS !== '0' });
+    }
+    if (pathname === '/api/admin/domains/ad-free' && req.method === 'POST') {
+      let body = '';
+      req.on('data', (chunk) => { body += chunk; });
+      req.on('end', () => {
+        let parsed = {};
+        try { parsed = JSON.parse(body || '{}'); } catch {}
+        const domain = normalizeSiteDomain(parsed.domain);
+        if (!domain || typeof parsed.adFree !== 'boolean') return json(res, 400, { ok: false, error: 'domain and boolean adFree are required' });
+        if (parsed.adFree) adFreeDomains.add(domain);
+        else adFreeDomains.delete(domain);
+        json(res, 200, { ok: true, domain, adFree: parsed.adFree, adFreeDomains: Array.from(adFreeDomains).sort() });
+      });
+      return;
+    }
     if (pathname === '/api/admin/stats' && req.method === 'GET') return json(res, 200, adminPayload());
     if (pathname === '/api/admin/stats/reset' && req.method === 'POST') {
       demoStats.reset();
