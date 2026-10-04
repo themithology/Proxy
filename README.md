@@ -51,7 +51,7 @@ The page is served with `Content-Security-Policy: frame-ancestors *` so any site
 | `type`     | `tv` (default) or `movie`                                               |
 | `tmdb`     | TMDB ID (also accepted as `id`)                                          |
 | `s` / `e`  | Season / episode for TV (also `season` / `episode`)                      |
-| `server`   | Preferred upstream server: `andromeda`, `ursa`, `centaurus`, `atlas`, `strings` |
+| `server`   | Preferred upstream server: `andromeda`, `ursa` (or `4k`), `centaurus`, `atlas`, `strings` |
 | `api`      | Absolute API base URL override (see below)                               |
 | `lang`     | Preferred audio language (e.g. `hi`, `en`, `ta`)                         |
 | `sub`      | Preferred subtitle language (e.g. `en`)                                  |
@@ -100,7 +100,7 @@ Supported media types are `movie`, `tv`, and `series` where applicable. TV reque
 
 The resolver supports five server configurations:
 - **Server 1 (Andromeda)**: Multi-Tier Multi-Audio Cascade (CastleTV → Moviebox → NetMirror) with automatic failover to Server 2 (Ursa).
-- **Server 2 (Ursa)**: VidSrc / Fast CDN HLS.
+- **Server 2 (Ursa / `4k`)**: 4-Tier 2160p 4K UHD & Multi-Audio Cascade (4KHDHub → MoviesDrive 4K → HiCine 4K UHD → DahmerMovies 4K).
 - **Server 3 (Centaurus)**: HiCine Direct MP4.
 - **Server 4 (Atlas)**: ZXC Backup Adaptive HLS.
 - **Server 5 (Strings)**: Anime Sub/Dub (HiAnime / ZokoAnime).
@@ -123,8 +123,27 @@ To replace the deprecated VidStuck upstream, Server Andromeda uses a resilient 3
    - **Dynamic Discovery Network:** Rather than hardcoding static web numbers (`net27.cc`), the resolver queries the `checknewtv.php` discovery network (`mobiledetect.app`, `mobiledetects.com`, `mobidetect.cc`, etc.) to dynamically resolve the active API backend (`https://tv.imgcdn.kim`).
    - **Live Rotating Domain Tracker:** Automatically extracts the active web mirror domain (e.g. `net52.cc`, `net77.cc`) from API response headers (`img_referer`, `referer`), dynamically updating video chunk and subtitle proxy headers without code changes.
 
-4. **Clean Waterfall Failover: Server 2 (Ursa / VidSrc)**
+4. **Clean Waterfall Failover: Server 2 (Ursa / 4K UHD)**
    - If all three internal Andromeda tiers return no playable streams for a given title, Andromeda cleanly cascades to Server 2 (Ursa) in the waterfall failover chain.
+
+### Server Ursa (`?server=ursa` / `?server=4k`) 4-Tier 4K UHD Multi-Audio Architecture
+
+Server 2 (`ursa`, also accessible via `?server=4k`) delivers true **2160p (4K UHD)** streams with **Multi-Audio / Dual-Audio** prioritized (and Original Audio supported) across a 4-tier cascade:
+
+1. **Priority 1: 4KHDHub (`4khdhub.one` + Dynamic Domain Discovery)**
+   - **Coverage:** Dedicated 2160p UHD BluRay REMUX, DV/HDR10, and 4K WEB-DL releases with Dual/Multi-Audio (`[Hindi DDP 5.1 + English TrueHD Atmos 7.1]`, Tamil/Telugu/Multi-Audio) plus 1080p backup qualities.
+   - **Protocol:** Dynamic domain discovery (`urls.json` + mirror pool), `.download-item` / `.episode-download-item` extraction, 3-chain Base64 + ROT13 redirector decoding (`b64 -> b64 -> rot13 -> b64 -> JSON.o -> b64`), HubDrive hop, and HubCloud unrolling to direct R2 / FSL / workers.dev CDN URLs.
+
+2. **Priority 2: MoviesDrive 4K (`new5.moviesdrive.christmas` + Typesense IMDb API)**
+   - **Coverage:** Fast Typesense JSON search (`/search.php?q=<imdbId>&page=1`) indexing 2160p 4K SDR/HDR Dual-Audio (`[Hindi + English]`) and Multi-Audio releases.
+   - **Protocol:** Exact `imdb_id` / title matching, `<h5>` quality block parsing, `mdrive.lol/archive/...` unpacking, and HubCloud generator unrolling to direct 2160p CDN streams.
+
+3. **Priority 3: HiCine 4K UHD (`api.hicine.sbs`)**
+   - **Coverage:** Extracts `[2160P]` / `4K` SDR & DV HDR Dual-Audio streams from HiCine's catalog (which Server 3 Centaurus skips in favor of mobile-first 720p x264) while retaining 1080p/720p backup rungs in `qualities`.
+   - **Protocol:** Parallel `vcloud` worker token resolution (`ten`, `fsl2`, `fsl`, `r2`) and HubCloud unrolling.
+
+4. **Priority 4: DahmerMovies 4K (`a.111477.xyz`)**
+   - **Coverage:** Direct open-directory 2160p HDR/SDR `.mkv`/`.mp4` streams (`/movies/<Title> (<Year>)/` and `/tvs/<Title>/Season <NN>/`) with Original and Multi-Audio tracks.
 
 ### Audio Behavior & Remuxing
 

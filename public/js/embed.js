@@ -219,7 +219,10 @@
       state.episode = parseInt(params.get('e') || params.get('episode') || '1', 10);
     }
 
-    if (params.get('server')) state.server = params.get('server').toLowerCase();
+    if (params.get('server')) {
+      const rawServer = params.get('server').toLowerCase();
+      state.server = ['4k', 'uhd', '2160p'].includes(rawServer) ? 'ursa' : rawServer;
+    }
     if (params.get('branding')) state.branding = params.get('branding');
     if (params.get('lang')) {
       const l = params.get('lang').toLowerCase();
