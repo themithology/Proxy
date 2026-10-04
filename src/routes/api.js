@@ -4,6 +4,7 @@ const { resolveTmdbMetadata } = require('../services/tmdb');
 const { resolveSkipSegments } = require('../services/segments');
 const { resolveSubtitles, fetchAndConvertSubtitleToVtt } = require('../services/subtitles');
 const { resolveStreamForServer, resolveAndromedaServer, resolveUrsaServer } = require('../services/resolver');
+const { buildDubCatalog } = require('../services/dubCatalog');
 const { handleStreamProxy } = require('../services/proxy');
 const { serveMasterPlaylist, serveGeneratedFile } = require('../services/multitrack');
 const { generateHandshakeToken } = require('../utils/crypto');
@@ -324,6 +325,51 @@ router.get('/resolve/:type/:tmdbId', async (req, res) => {
 });
 
 /**
+ * GET /api/dubs/:type/:tmdbId
+ * TMDB-id keyed dub inventory. Every provider answer is identity-checked
+ * against the TMDB title, so a same-name film (e.g. the 2023 "Fight Club")
+ * can never be reported as a dub source for the 1999 film.
+ *
+ *   ?deep=1     also probe MoviesDrive / 4KHDHub / HiCine / Dahmer / HiAnime
+ *   ?audio=hi   preferred audio used for the returned default track
+ */
+router.get('/dubs/:type/:tmdbId', async (req, res) => {
+  try {
+    const { type, tmdbId } = req.params;
+    const season = parseInt(req.query.season || '1', 10);
+    const episode = parseInt(req.query.episode || '1', 10);
+    const deep = /^(1|true|yes)$/i.test(String(req.query.deep || ''));
+    const audio = String(req.query.audio || 'hi').toLowerCase();
+
+    const metadata = await resolveTmdbMetadata(type, tmdbId, season, episode);
+    if (metadata.unresolvedTmdb) {
+      return res.status(404).json({
+        ok: false,
+        error: `TMDB id ${tmdbId} could not be resolved; refusing to fall back to a name search.`
+      });
+    }
+
+    const catalog = await buildDubCatalog(metadata, { deep, preferredAudio: audio });
+    return res.json({
+      ok: true,
+      metadata: {
+        tmdbId: metadata.tmdbId,
+        type: metadata.type,
+        title: metadata.title,
+        originalTitle: metadata.originalTitle,
+        releaseYear: metadata.releaseYear,
+        imdbId: metadata.externalIds?.imdb_id || null,
+        season: metadata.season,
+        episode: metadata.episode
+      },
+      ...catalog
+    });
+  } catch (err) {
+    return res.status(500).json({ ok: false, error: err.message });
+  }
+});
+
+/**
  * GET /api/multitrack/master.m3u8
  * Lazily remuxes a signed, allowlisted direct media URL to fMP4 HLS audio renditions.
  */
@@ -469,7 +515,6 @@ router.get('/debug/andromeda/:type/:tmdbId', requireAdminAuth, async (req, res) 
       },
       upstream: {
         castletvBase: config.upstreams.castletvBase,
-        movieboxBase: config.upstreams.movieboxBase,
         netmirrorBase: config.upstreams.netmirrorBase,
         vidstuckBase: config.upstreams.vidstuckBase,
         zxcBase: config.upstreams.zxcBase,

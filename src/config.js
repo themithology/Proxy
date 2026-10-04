@@ -81,17 +81,18 @@ const config = {
       .filter(Boolean),
 
     // MovieBox dynamic cluster pool (replaces deprecated api3.aoneroom.com / uwu.eat-peach.sbs)
-    movieboxBase: process.env.MOVIEBOX_BASE_URL || 'https://api.inmoviebox.com',
-    movieboxHosts: (
-      process.env.MOVIEBOX_HOSTS ||
-      'https://api.inmoviebox.com,https://api6.aoneroom.com,https://h5-api.aoneroom.com,https://apii.inmoviebox.com,https://api.aoneroom.com,https://i-api.aoneroom.com,https://api5.aoneroom.com,https://h5.aoneroom.com'
+    // NetMirror dynamic discovery & rotating web mirror (replaces static net27.cc)
+    netmirrorBase: process.env.NETMIRROR_BASE_URL || 'https://net27.cc',
+    // Web mirrors that serve the TMDB-id keyed /api/embed-tmdb endpoint. The
+    // NewTV discovery API base (tv.imgcdn.kim) is regressed upstream, so these
+    // are tried directly (and rotated) before giving up on NetMirror.
+    netmirrorWebMirrors: (
+      process.env.NETMIRROR_WEB_MIRRORS ||
+      'https://net27.cc,https://net52.cc,https://net77.cc,https://netmiror.com'
     )
       .split(',')
       .map((s) => s.trim().replace(/\/$/, ''))
       .filter(Boolean),
-
-    // NetMirror dynamic discovery & rotating web mirror (replaces static net27.cc)
-    netmirrorBase: process.env.NETMIRROR_BASE_URL || 'https://net52.cc',
     netmirrorDiscoveryUrls: (
       process.env.NETMIRROR_DISCOVERY_URLS ||
       'https://mobiledetect.app,https://mobiledetects.com,https://mobidetect.cc,https://mobidetects.top,https://getimgcdn.com,https://mobidetect.art,https://mobidetect.click'
@@ -171,6 +172,19 @@ const config = {
       badge: 'Anime Sub/Dub • Zoko HLS',
       priority: 5,
       supportsMultiAudio: true
+    },
+    {
+      // TMDB-id keyed Hindi-dub server. Every candidate is identity-checked
+      // against the TMDB title before it can be used, so name collisions
+      // (e.g. Fight Club 1999 vs the 2023 Indian film) can never win.
+      // `fallback: false` keeps it out of the implicit waterfall: it is used
+      // when a client asks for ?server=hindi.
+      id: 'hindi',
+      name: 'Hindi',
+      badge: 'Hindi Dubs • TMDB-ID Verified',
+      priority: 6,
+      supportsMultiAudio: true,
+      fallback: false
     }
   ]
 };

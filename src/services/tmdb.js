@@ -84,7 +84,10 @@ async function resolveTmdbMetadata(type, tmdbId, season = 1, episode = 1) {
   // 1. Primary: Official TMDB API v3 with append_to_response=external_ids
   if (config.tmdbApiKey || config.tmdbBearerToken) {
     const apiKeyParam = config.tmdbApiKey ? `api_key=${encodeURIComponent(config.tmdbApiKey)}&` : '';
-    const detailsUrl = `${config.tmdbBaseUrl}/${normalizedType}/${cleanId}?${apiKeyParam}append_to_response=external_ids&language=en-US`;
+    // alternative_titles powers the TMDB-anchored identity gate used by the
+    // name-search upstreams (CastleTV): a localized or original
+    // title must be provably the same film, not just a title collision.
+    const detailsUrl = `${config.tmdbBaseUrl}/${normalizedType}/${cleanId}?${apiKeyParam}append_to_response=external_ids,alternative_titles&language=en-US`;
     const data = await safeFetchJson(detailsUrl);
 
     if (data && (data.id || data.title || data.name)) {
@@ -131,12 +134,17 @@ async function resolveTmdbMetadata(type, tmdbId, season = 1, episode = 1) {
       const imdbId = data.imdb_id || data.external_ids?.imdb_id || null;
       const tvdbId = data.external_ids?.tvdb_id || null;
       const malId = isAnimation ? await resolveMalId(title, releaseYear, normalizedType) : null;
+      const alternativeTitles = (data.alternative_titles?.titles || [])
+        .map((entry) => entry && entry.title)
+        .filter((entry) => typeof entry === 'string' && entry.trim())
+        .slice(0, 25);
 
       result = {
         tmdbId: Number(cleanId) || cleanId,
         type: normalizedType,
         title,
         originalTitle: data.original_title || data.original_name || title,
+        alternativeTitles,
         releaseYear,
         runtime: data.runtime || (Array.isArray(data.episode_run_time) && data.episode_run_time[0]) || null,
         genres,
