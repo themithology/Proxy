@@ -583,6 +583,8 @@
 
   // --- Attach Stream via HLS.js / Dash.js / Native Video ---
   async function attachStreamToVideo(streamUrl, resumeTime = 0) {
+    video.onerror = null;
+    video.onloadedmetadata = null;
     if (state.hlsInstance) {
       state.hlsInstance.destroy();
       state.hlsInstance = null;
@@ -635,6 +637,7 @@
     if (!state.stream) state.stream = {};
     if (!Array.isArray(state.stream.backupUrls)) state.stream.backupUrls = [];
     if (!state._triedStreamUrls) state._triedStreamUrls = new Set();
+    if (!state.stream._primaryStreamUrl) state.stream._primaryStreamUrl = state.stream.streamUrl || streamUrl;
     state._triedStreamUrls.add(streamUrl);
     if (state.stream.streamUrl !== streamUrl) state.stream.streamUrl = streamUrl;
 
@@ -644,16 +647,26 @@
       const backups = Array.isArray(state.stream && state.stream.backupUrls)
         ? state.stream.backupUrls
         : [];
-      for (const candidate of backups) {
+      const qualityUrls = Array.isArray(state.qualities)
+        ? state.qualities.map((quality) => quality && quality.url).filter(Boolean)
+        : [];
+      const candidates = [...new Set([...backups, ...qualityUrls])];
+      for (const candidate of candidates) {
         if (!candidate || state._triedStreamUrls.has(candidate)) continue;
-        showToast('Switching to backup stream mirror...', 2200);
+        const quality = state.qualities.find((item) => item.url === candidate);
+        if (quality) {
+          state.activeQualityId = quality.id;
+          updateSettingsSummaryValues();
+        }
+        showToast(quality ? `Switching to ${quality.label} fallback...` : 'Switching to backup stream mirror...', 2200);
         attachStreamToVideo(candidate, fromTime);
         return true;
       }
       return false;
     };
 
-    if (streamUrl.includes('.mpd') && window.dashjs) {
+    const isDeclaredPrimaryUrl = streamUrl === state.stream._primaryStreamUrl;
+    if ((/\.mpd(?:[?#]|$)/i.test(streamUrl) || (state.stream.format === 'dash' && isDeclaredPrimaryUrl)) && window.dashjs) {
       const player = window.dashjs.MediaPlayer().create();
       state.dashInstance = player;
       player.initialize(video, streamUrl, true);
@@ -661,10 +674,27 @@
         loadingOverlay.classList.add('hidden');
         if (targetStartTime > 2) video.currentTime = targetStartTime;
       });
+      const dashErrorEvent = window.dashjs.MediaPlayer.events && window.dashjs.MediaPlayer.events.ERROR;
+      if (dashErrorEvent) {
+        player.on(dashErrorEvent, (event) => {
+          if (!event || (!event.fatal && !event.error && !event.event)) return;
+          player.reset();
+          state.dashInstance = null;
+          if (tryNextBackupStream(video.currentTime || targetStartTime || 0)) return;
+          handleFatalStreamError();
+        });
+      }
+      video.onerror = () => {
+        if (state.dashInstance) state.dashInstance.reset();
+        state.dashInstance = null;
+        if (tryNextBackupStream(video.currentTime || targetStartTime || 0)) return;
+        handleFatalStreamError();
+      };
       return;
     }
 
-    if (window.Hls && window.Hls.isSupported() && (streamUrl.includes('.m3u8') || state.stream.format === 'hls')) {
+    const isHlsUrl = /\.m3u8(?:[?#]|$)/i.test(streamUrl) || (state.stream.format === 'hls' && isDeclaredPrimaryUrl);
+    if (window.Hls && window.Hls.isSupported() && isHlsUrl) {
       const hls = new window.Hls({
         enableWorker: true,
         lowLatencyMode: false
@@ -686,8 +716,13 @@
           video.currentTime = targetStartTime;
         }
 
-        video.play().catch(() => {
-          // Autoplay blocked by browser policy until user clicks
+        video.play().catch((error) => {
+          // Autoplay denial is recoverable, but an unsupported HLS decode can use the next quality/mirror.
+          if (error && error.name === 'NotSupportedError') {
+            if (!tryNextBackupStream(video.currentTime || targetStartTime || 0)) {
+              handleFatalStreamError();
+            }
+          }
         });
       });
 
@@ -707,7 +742,12 @@
     video.onloadedmetadata = () => {
       loadingOverlay.classList.add('hidden');
       if (targetStartTime > 2) video.currentTime = targetStartTime;
-      video.play().catch(() => {});
+      video.play().catch((error) => {
+        if (error && error.name === 'NotSupportedError') {
+          if (tryNextBackupStream(video.currentTime || targetStartTime || 0)) return;
+          handleFatalStreamError();
+        }
+      });
     };
     video.onerror = () => {
       // Direct CDN <video src> failed (hotlink/ISP block) — iterate the resolved

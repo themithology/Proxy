@@ -2094,18 +2094,80 @@ function isHubcloudGeneratorUrl(u) {
  * is returned untouched (its `%xx` sequences belong to the target), only a
  * percent-encoded value is decoded.
  */
-function extractHttpLinkParam(u) {
-  const m = String(u || '').match(/[?&]link=([^&#\s]+)/i);
-  if (!m) return '';
-  const raw = m[1];
+function extractQueryHttpUrl(value) {
+  const raw = String(value || '').trim();
+  if (!raw) return '';
   if (/^https?:\/\//i.test(raw)) return raw;
   try {
     const decoded = decodeURIComponent(raw);
     if (/^https?:\/\//i.test(decoded)) return decoded;
   } catch {
-    /* malformed encoding — keep raw */
+    /* malformed encoding — keep looking */
   }
   return '';
+}
+
+function extractHttpLinkParam(u) {
+  const value = String(u || '').replace(/&amp;/gi, '&');
+  for (const name of ['link', 'url']) {
+    const match = value.match(new RegExp(`[?&]${name}=([^&#\s]+)`, 'i'));
+    if (match) {
+      const target = extractQueryHttpUrl(match[1]);
+      if (target) return target;
+    }
+    try {
+      const parsed = new URL(value);
+      const target = extractQueryHttpUrl(parsed.searchParams.get(name));
+      if (target) return target;
+    } catch {
+      /* malformed URL */
+    }
+  }
+  return '';
+}
+
+function decodeBase64UrlParam(value) {
+  try {
+    let clean = String(value || '').trim().replace(/\s+/g, '').replace(/-/g, '+').replace(/_/g, '/');
+    if (!clean) return '';
+    clean += '='.repeat((4 - (clean.length % 4)) % 4);
+    const decoded = Buffer.from(clean, 'base64').toString('utf8').trim();
+    if (/^https?:\/\//i.test(decoded)) return decoded;
+    try {
+      const uriDecoded = decodeURIComponent(decoded);
+      if (/^https?:\/\//i.test(uriDecoded)) return uriDecoded;
+    } catch {}
+  } catch {
+    /* invalid base64 */
+  }
+  return '';
+}
+
+/** Extract raw targets embedded in common HubCloud and pages.dev wrappers. */
+function extractWrappedMediaTargets(u) {
+  const targets = [];
+  const add = (value) => {
+    const target = extractQueryHttpUrl(value);
+    if (target && !targets.includes(target)) targets.push(target);
+  };
+  const rawUrl = String(u || '').replace(/&amp;/gi, '&');
+  for (const name of ['link', 'url']) {
+    const match = rawUrl.match(new RegExp(`[?&]${name}=([^&#\s]+)`, 'i'));
+    if (match) add(match[1]);
+    try {
+      const parsed = new URL(rawUrl);
+      add(parsed.searchParams.get(name));
+    } catch {}
+  }
+  try {
+    const parsed = new URL(rawUrl);
+    if (/(^|\.)pages\.dev$/i.test(parsed.hostname)) {
+      const encoded = parsed.searchParams.get('u') || '';
+      const decoded = decodeBase64UrlParam(encoded.replace(/\s/g, '+'));
+      if (decoded && !targets.includes(decoded)) targets.push(decoded);
+    }
+  } catch {}
+  return targets;
 }
 
 /** File hosts that answer with an HTML page no `<video>` element can play. */
@@ -2133,28 +2195,128 @@ function scorePlayableUrl(u) {
   }
   if (isHubcloudGeneratorUrl(href)) return -1;
   if (HUBCLOUD_UNPLAYABLE_HOST_RE.test(host)) return -1;
-  if (/(^|\.)video-downloads\.googleusercontent\.com$/.test(host)) return 100;
-  if (/(^|\.)r2\.dev$/.test(host)) return 95;
-  if (/\.(cloudflarestorage\.com|cloudfront\.net)$/.test(host)) return 90;
-  if (/(^|\.)workers\.dev$/.test(host)) return 85;
-  if (/\.(mp4|mkv|webm|m4v|m3u8|mpd)([?#]|$)/i.test(href)) return 80;
-  if (/(^|\.)pixeldrain\.(com|dev)$/.test(host) && /^\/(u|api\/file)\/[A-Za-z0-9]+/.test(pathname)) {
-    return 70;
-  }
+
+  if (/(^|\.)workers\.dev$/i.test(host) && /[?&]vcloud=/i.test(href)) return -1;
+  if (/(^|\.)googleusercontent\.com$/i.test(host)) return 100;
+  if (/(^|\.)r2\.dev$/i.test(host)) return 95;
+  if (/(^|\.)r2\.cloudflarestorage\.com$/i.test(host) || /(^|\.)cloudflarestorage\.com$/i.test(host)) return 92;
+  if (/(^|\.)cloudfront\.net$/i.test(host)) return 90;
+  if (/(^|\.)storage\.googleapis\.com$/i.test(host)) return 88;
+  if (/(^|\.)pixeldrain\.(?:com|dev)$/i.test(host) && /^\/(?:u|api\/file)\/[A-Za-z0-9_-]+/i.test(pathname)) return 75;
+  if (/(^|\.)workers\.dev$/i.test(host)) return 60;
+  if (!/(^|\.)workers\.dev$/i.test(host) && /\.(?:mp4|mkv|webm|m4v|m3u8|mpd)$/i.test(pathname)) return 80;
   return -1;
 }
 
-/** Pixeldrain share pages `/u/ID` → direct API endpoint `/api/file/ID`. */
+/** Pixeldrain share pages `/u/ID` → direct download API endpoint. */
 function normalizePlayableUrl(u) {
   try {
     const url = new URL(u);
-    if (/(^|\.)pixeldrain\.(com|dev)$/.test(url.hostname.toLowerCase())) {
-      const m = url.pathname.match(/^\/u\/([A-Za-z0-9]+)/);
-      if (m) return `${url.origin}/api/file/${m[1]}`;
+    if (/(^|\.)pixeldrain\.(?:com|dev)$/i.test(url.hostname.toLowerCase())) {
+      const share = url.pathname.match(/^\/u\/([A-Za-z0-9_-]+)/i);
+      const api = url.pathname.match(/^\/api\/file\/([A-Za-z0-9_-]+)/i);
+      if (share) return `${url.origin}/api/file/${share[1]}?download`;
+      if (api && !url.searchParams.has('download')) {
+        return `${url.origin}${url.pathname}${url.search ? `${url.search}&download` : '?download'}`;
+      }
     }
     return url.href;
   } catch {
     return u;
+  }
+}
+
+function isLocalTestMediaUrl(rawUrl) {
+  try {
+    const hostname = new URL(rawUrl).hostname.toLowerCase();
+    return (
+      hostname === 'localhost' ||
+      hostname.endsWith('.localhost') ||
+      hostname.endsWith('.test') ||
+      hostname === '::1' ||
+      hostname === '[::1]' ||
+      /^127\./.test(hostname)
+    );
+  } catch {
+    return false;
+  }
+}
+
+async function readProbePrefix(response, maxBytes = 4096) {
+  const reader = response?.body?.getReader?.();
+  if (!reader) return '';
+  try {
+    const { value } = await reader.read();
+    if (!value) return '';
+    return new TextDecoder('utf-8', { fatal: false }).decode(value.subarray(0, maxBytes)).toLowerCase();
+  } catch {
+    return '';
+  } finally {
+    try { await reader.cancel(); } catch {}
+  }
+}
+
+/**
+ * Verify that a resolved candidate behaves like media before exposing it to
+ * `<video>`. Local mock URLs are deliberately trusted so offline tests stay
+ * deterministic; public candidates get a short byte-range GET.
+ */
+async function probePlayableMediaUrl(rawUrl, options = {}) {
+  if (!rawUrl || typeof rawUrl !== 'string') return false;
+  let url;
+  try {
+    url = new URL(rawUrl).href;
+  } catch {
+    return false;
+  }
+  if (isLocalTestMediaUrl(url)) return true;
+  const {
+    signal,
+    deadline,
+    timeoutMs = 2500,
+    headers = {},
+    fetchImpl = fetch
+  } = options;
+  const remaining = deadline ? Math.min(timeoutMs, deadline - Date.now()) : timeoutMs;
+  if (remaining < 100 || signal?.aborted) return false;
+
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), remaining);
+  const abort = () => controller.abort();
+  signal?.addEventListener?.('abort', abort, { once: true });
+  let response;
+  try {
+    response = await fetchImpl(url, {
+      method: 'GET',
+      headers: {
+        'User-Agent': USER_AGENT,
+        Accept: '*/*',
+        Range: 'bytes=0-1023',
+        ...headers
+      },
+      redirect: 'follow',
+      signal: controller.signal
+    });
+    const contentType = String(response.headers?.get?.('content-type') || '').toLowerCase();
+    if (
+      response.status >= 400 ||
+      ![200, 206].includes(response.status) ||
+      /text\/html|application\/(?:xhtml\+xml|json)/i.test(contentType)
+    ) {
+      try { await response.body?.cancel?.(); } catch {}
+      return false;
+    }
+    const prefix = await readProbePrefix(response);
+    if (
+      /<\s*!doctype\s+html|<\s*html\b|<\s*body\b|download\s*quota\s*exceeded|downloadquotaexceeded|access\s+denied|token\s+expired|file\s+not\s+found/i.test(prefix)
+    ) return false;
+    return true;
+  } catch {
+    return false;
+  } finally {
+    clearTimeout(timer);
+    signal?.removeEventListener?.('abort', abort);
+    try { await response?.body?.cancel?.(); } catch {}
   }
 }
 
@@ -2207,30 +2369,65 @@ function collectGeneratorCandidates(html, pageUrl) {
  * link to themselves; self-references are skipped so the walk always moves.
  */
 function pickFromGeneratorHtml(html, pageUrl) {
-  let direct = null;
-  let directScore = -1;
-  let generator = null;
+  const directByUrl = new Map();
+  const generatorSet = new Set();
+  const considerDirect = (candidate) => {
+    const score = scorePlayableUrl(candidate);
+    if (score < 0) return;
+    const normalized = normalizePlayableUrl(candidate);
+    const previous = directByUrl.get(normalized);
+    if (!previous || score > previous.score) directByUrl.set(normalized, { url: normalized, score });
+  };
+
   for (const cand of collectGeneratorCandidates(html, pageUrl)) {
     if (cand === pageUrl) continue;
-    if (isHubcloudGeneratorUrl(cand) || extractHttpLinkParam(cand)) {
-      if (!generator) generator = cand;
+    const wrappedTargets = extractWrappedMediaTargets(cand);
+    if (wrappedTargets.length > 0) {
+      for (const target of wrappedTargets) {
+        if (scorePlayableUrl(target) >= 0) considerDirect(target);
+        else if (isHubcloudGeneratorUrl(target) || extractWrappedMediaTargets(target).length) generatorSet.add(target);
+      }
+      if (isHubcloudGeneratorUrl(cand)) generatorSet.add(cand);
       continue;
     }
-    const score = scorePlayableUrl(cand);
-    if (score > directScore) {
-      direct = cand;
-      directScore = score;
+    if (isHubcloudGeneratorUrl(cand)) {
+      generatorSet.add(cand);
+      continue;
     }
+    considerDirect(cand);
   }
-  if (directScore >= 0) return { direct: normalizePlayableUrl(direct), generator: null };
-  return { direct: null, generator };
+
+  const directCandidates = [...directByUrl.values()]
+    .sort((a, b) => b.score - a.score)
+    .map((candidate) => candidate.url);
+  const generatorCandidates = [...generatorSet];
+  return {
+    direct: directCandidates[0] || null,
+    directCandidates,
+    generator: generatorCandidates[0] || null,
+    generatorCandidates
+  };
+}
+
+async function pickPlayableGeneratorCandidate(pick, options = {}) {
+  if (!pick) return null;
+  const candidates = Array.from(new Set(pick.directCandidates || (pick.direct ? [pick.direct] : [])));
+  if (candidates.length === 0) return null;
+  const checked = await Promise.all(
+    candidates.slice(0, 8).map(async (url) => ({
+      url,
+      playable: await probePlayableMediaUrl(url, options)
+    }))
+  );
+  const winner = checked.find((candidate) => candidate.playable);
+  return winner ? normalizePlayableUrl(winner.url) : null;
 }
 
 /**
  * Fetch with a hard deadline: `deadline` (epoch ms) bounds the whole unroll,
  * `outerSignal` (when present) aborts together with the caller's controller.
  */
-async function fetchWithDeadline(url, userAgent, outerSignal, deadline) {
+async function fetchWithDeadline(url, userAgent, outerSignal, deadline, fetchOptions = {}) {
   const remaining = deadline - Date.now();
   if (remaining < 400 || outerSignal?.aborted) return null;
   const ctrl = new AbortController();
@@ -2239,11 +2436,13 @@ async function fetchWithDeadline(url, userAgent, outerSignal, deadline) {
   if (outerSignal) outerSignal.addEventListener?.('abort', onAbort);
   try {
     return await fetch(url, {
+      ...fetchOptions,
       headers: {
         'User-Agent': userAgent,
-        Accept: 'text/html,application/xhtml+xml,application/json;q=0.9,*/*;q=0.8'
+        Accept: 'text/html,application/xhtml+xml,application/json;q=0.9,*/*;q=0.8',
+        ...(fetchOptions.headers || {})
       },
-      redirect: 'follow',
+      redirect: fetchOptions.redirect || 'follow',
       signal: ctrl.signal
     });
   } catch {
@@ -2308,13 +2507,34 @@ function isCfChallengePage(html) {
 }
 
 /** Follow one `?link=` hop: recurse into wrappers, accept terminal URLs. */
-async function resolveLinkInner(inner, opts) {
-  if (!inner) return null;
-  if (isHubcloudGeneratorUrl(inner)) {
-    return unrollHubcloudUrl(inner, { ...opts, depth: opts.depth + 1 });
+async function resolveLinkInner(inner, opts = {}) {
+  if (!inner || (opts.depth || 0) > HUBCLOUD_UNROLL_MAX_DEPTH) return null;
+  const wrappedTargets = extractWrappedMediaTargets(inner).filter((target) => target !== inner);
+  for (const target of wrappedTargets) {
+    const resolved = await resolveLinkInner(target, { ...opts, depth: (opts.depth || 0) + 1 });
+    if (resolved) return resolved;
   }
-  if (scorePlayableUrl(inner) >= 0) return normalizePlayableUrl(inner);
+  if (isHubcloudGeneratorUrl(inner)) {
+    return unrollHubcloudUrl(inner, { ...opts, depth: (opts.depth || 0) + 1 });
+  }
+  const playableUrl = normalizePlayableUrl(inner);
+  if (scorePlayableUrl(playableUrl) >= 0 && await probePlayableMediaUrl(playableUrl, opts)) {
+    return playableUrl;
+  }
   return null;
+}
+
+async function validateGeneratorPick(pick, options = {}) {
+  const direct = await pickPlayableGeneratorCandidate(pick, options);
+  if (direct) return direct;
+  if ((options.depth || 0) >= HUBCLOUD_UNROLL_MAX_DEPTH) return null;
+  const generators = Array.from(new Set(pick?.generatorCandidates || (pick?.generator ? [pick.generator] : [])));
+  const attempts = await Promise.all(
+    generators.slice(0, 6).map((generator) =>
+      unrollHubcloudUrl(generator, { ...options, depth: (options.depth || 0) + 1 })
+    )
+  );
+  return attempts.find(Boolean) || null;
 }
 
 /**
@@ -2330,15 +2550,17 @@ async function unrollHubcloudUrl(startUrl, options = {}) {
   const depth = options.depth || 0;
   if (depth > HUBCLOUD_UNROLL_MAX_DEPTH) return null;
 
+  const deadline = options.deadline || Date.now() + HUBCLOUD_UNROLL_BUDGET_MS;
   const cached = hubcloudUnrollCache.get(startUrl);
   if (cached) {
-    if (Date.now() < cached.exp) return cached.direct;
+    if (Date.now() < cached.exp && await probePlayableMediaUrl(cached.direct, { ...options, deadline })) {
+      return cached.direct;
+    }
     hubcloudUnrollCache.delete(startUrl);
   }
-
-  const deadline = options.deadline || Date.now() + HUBCLOUD_UNROLL_BUDGET_MS;
   const direct = await unrollHubcloudUncached(startUrl, {
     signal: options.signal,
+    headers: options.headers || {},
     depth,
     deadline
   });
@@ -2353,13 +2575,18 @@ async function unrollHubcloudUrl(startUrl, options = {}) {
 }
 
 async function unrollHubcloudUncached(startUrl, opts) {
-  const { signal, depth, deadline } = opts;
+  const { signal, headers = {}, depth, deadline } = opts;
   try {
     // 1) `dl.php?link=…` wrappers carry the final URL in the query string —
     //    no fetch needed at all when the Location itself is one.
     const entryInner = extractHttpLinkParam(startUrl);
     if (entryInner) {
       const resolved = await resolveLinkInner(entryInner, opts);
+      if (resolved) return resolved;
+    }
+    for (const target of extractWrappedMediaTargets(startUrl)) {
+      if (target === entryInner) continue;
+      const resolved = await resolveLinkInner(target, opts);
       if (resolved) return resolved;
     }
 
@@ -2383,8 +2610,11 @@ async function unrollHubcloudUncached(startUrl, opts) {
       /^(?:text\/|application\/(?:json|xhtml|xml|javascript))/i.test(contentType) ||
       /html|xml/i.test(contentType);
     if (!isPage) {
-      // binary body after redirect → the final URL itself is the file
-      return scorePlayableUrl(finalUrl) >= 0 ? normalizePlayableUrl(finalUrl) : null;
+      // Binary body after redirect → verify the final URL before returning it.
+      if (scorePlayableUrl(finalUrl) >= 0 && await probePlayableMediaUrl(finalUrl, { signal, deadline, headers })) {
+        return normalizePlayableUrl(finalUrl);
+      }
+      return null;
     }
 
     // 3) scan the raw landing HTML for the final CDN link — it is present in
@@ -2396,11 +2626,8 @@ async function unrollHubcloudUncached(startUrl, opts) {
       if (isCfChallengePage(html)) html = ''; // challenge interstitial — no links
     }
     const pick = pickFromGeneratorHtml(html, finalUrl);
-    if (pick.direct) return pick.direct;
-    if (pick.generator && pick.generator !== startUrl) {
-      const next = await unrollHubcloudUrl(pick.generator, { ...opts, depth: depth + 1 });
-      if (next) return next;
-    }
+    const pickedDirect = await validateGeneratorPick(pick, { signal, deadline, headers, depth });
+    if (pickedDirect) return pickedDirect;
 
     // 4) last resort: some generator hosts serve the countdown page to browser
     //    UAs but 302 directly for crawlers — retry once with a non-browser UA.
@@ -2419,11 +2646,8 @@ async function unrollHubcloudUncached(startUrl, opts) {
           if (isCfChallengePage(rHtml)) rHtml = '';
         }
         const rPick = pickFromGeneratorHtml(rHtml, retryUrl);
-        if (rPick.direct) return rPick.direct;
-        if (rPick.generator && rPick.generator !== startUrl) {
-          const next = await unrollHubcloudUrl(rPick.generator, { ...opts, depth: depth + 1 });
-          if (next) return next;
-        }
+        const retryDirect = await validateGeneratorPick(rPick, { signal, deadline, headers, depth });
+        if (retryDirect) return retryDirect;
       }
     }
     return null;
@@ -2547,15 +2771,19 @@ function buildHicineDefaultAudioTrack(audioHints, streamUrl) {
 
 async function resolveHicineUpstream(metadata, env = {}) {
   if (!metadata.title) return null;
+  // Bound the HiCine search, token requests, generator unrolls, and probes as one operation.
+  const unrollDeadline = Date.now() + 5000;
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), unrollDeadline - Date.now());
   try {
-    // Shared HubCloud-unroll budget: qualities resolve sequentially, so one
-    // deadline (not per-hop timeouts) keeps the whole step inside the 9s
-    // waterfall slot even when a generator page stalls.
-    const unrollDeadline = Date.now() + 5000;
     const apiBase = (env && env.HICINE_API_BASE) || runtimeState.upstreams.hicineApiBase || 'https://api.hicine.sbs';
-    const res = await fetch(`${apiBase}/api/search/${encodeURIComponent(metadata.title)}`, {
-      headers: { Accept: 'application/json', 'User-Agent': USER_AGENT }
-    });
+    const res = await fetchWithDeadline(
+      `${apiBase}/api/search/${encodeURIComponent(metadata.title)}`,
+      USER_AGENT,
+      controller.signal,
+      unrollDeadline,
+      { headers: { Accept: 'application/json' } }
+    );
     if (!res.ok) return null;
     const items = await res.json();
     if (!Array.isArray(items) || items.length === 0) return null;
@@ -2654,7 +2882,10 @@ async function resolveHicineUpstream(metadata, env = {}) {
           /(https?:\/\/[^\s,"']+\.(?:mp4|mkv|webm)(?:[?#][^\s,"']*)?|https?:\/\/[^\s,"']*pixeldrain\.[^\s,"']+)/gi
         )
       ].map((m) => m[1]);
-      const found = workerMatches.length > 0 ? workerMatches : directMatches;
+      const found = Array.from(new Set([
+        ...workerMatches,
+        ...directMatches.filter((url) => !/[?&]vcloud=/i.test(url))
+      ]));
       if (found.length === 0) continue;
 
       // every quality token found on the entry, in order, so `480p : <url>,720p`
@@ -2701,12 +2932,31 @@ async function resolveHicineUpstream(metadata, env = {}) {
       try {
         const url = new URL(parsed.rawUrlMatch);
         const vcloud = url.searchParams.get('vcloud');
-        if (!vcloud) return null;
+        if (!vcloud) {
+          if (!/(^|\.)pixeldrain\.(?:dev|com)$/i.test(url.hostname) || !/^\/(?:u|api\/file)\/[A-Za-z0-9_-]+/i.test(url.pathname)) {
+            return null;
+          }
+          const pixelUrl = normalizePlayableUrl(parsed.rawUrlMatch);
+          const playable = await probePlayableMediaUrl(pixelUrl, {
+            signal: controller.signal,
+            deadline: unrollDeadline
+          });
+          return {
+            url: pixelUrl,
+            tokenType: 'pixel',
+            format: 'mp4',
+            isHotlinkBlocked: !playable
+          };
+        }
 
-        const lRes = await fetch(`${url.origin}/api/links?vcloud=${encodeURIComponent(vcloud)}`, {
-          headers: { Accept: 'application/json', 'User-Agent': USER_AGENT }
-        });
-        if (!lRes.ok) return null;
+        const lRes = await fetchWithDeadline(
+          `${url.origin}/api/links?vcloud=${encodeURIComponent(vcloud)}`,
+          USER_AGENT,
+          controller.signal,
+          unrollDeadline,
+          { headers: { Accept: 'application/json' } }
+        );
+        if (!lRes?.ok) return null;
         const lData = await lRes.json();
         const tokens = lData?.tokens || {};
         const tokenTypes = [
@@ -2721,11 +2971,14 @@ async function resolveHicineUpstream(metadata, env = {}) {
             const tok = tokens[tType];
             if (!tok?.ts || !tok?.sig) return null;
             try {
-              const goRes = await fetch(
+              const goRes = await fetchWithDeadline(
                 `${url.origin}/go?type=${tType}&vcloud=${encodeURIComponent(vcloud)}&ts=${encodeURIComponent(tok.ts)}&sig=${encodeURIComponent(tok.sig)}`,
-                { headers: { 'User-Agent': USER_AGENT }, redirect: 'manual' }
+                USER_AGENT,
+                controller.signal,
+                unrollDeadline,
+                { redirect: 'manual' }
               );
-              let loc = goRes.headers.get('location');
+              let loc = goRes?.headers.get('location');
               if (!loc || !/^https?:\/\//i.test(loc)) return null;
 
               // Root Cause E: HubCloud link generators (`gpdl2.hubcloud.ist/?id=…`,
@@ -2733,8 +2986,8 @@ async function resolveHicineUpstream(metadata, env = {}) {
               // countdown HTML, not media — unroll them server-side to the real CDN
               // file before anything reaches `<video src>`.
               let unrollFailed = false;
-              if (isHubcloudGeneratorUrl(loc) || extractHttpLinkParam(loc)) {
-                const direct = await unrollHubcloudUrl(loc, { deadline: unrollDeadline });
+              if (isHubcloudGeneratorUrl(loc) || extractHttpLinkParam(loc) || extractWrappedMediaTargets(loc).length > 0) {
+                const direct = await unrollHubcloudUrl(loc, { deadline: unrollDeadline, signal: controller.signal });
                 if (direct) loc = direct;
                 // A landing page that could not be unrolled is just as unplayable
                 // as a hotlink-blocked URL: mark it dead so the attempts loop can
@@ -2749,34 +3002,12 @@ async function resolveHicineUpstream(metadata, env = {}) {
 
               // pixeldrain `/u/ID` share pages -> direct API stream endpoint
               if (/pixeldrain\.(dev|com)/i.test(loc) && loc.includes('/u/')) {
-                const pdId = loc.split('/u/')[1].split(/[?#]/)[0];
-                if (pdId) loc = `https://pixeldrain.dev/api/file/${pdId}`;
+                loc = normalizePlayableUrl(loc);
               }
 
               let isHotlinkBlocked = unrollFailed;
-              if (/pixeldrain\.(?:dev|com)\/api\/file\//i.test(loc)) {
-                // Probe first: Pixeldrain answers 200
-                // {"success":false,"value":"hotlink_detected"} for foreign referers.
-                try {
-                  const probe = await fetch(loc, {
-                    headers: {
-                      Accept: '*/*',
-                      'User-Agent': USER_AGENT,
-                      Range: 'bytes=0-64'
-                    }
-                  });
-                  const probeText = (await probe.text()).slice(0, 400).toLowerCase();
-                  if (
-                    !probe.ok ||
-                    probeText.includes('hotlink_detected') ||
-                    probeText.includes('"success":false') ||
-                    probeText.includes('captcha')
-                  ) {
-                    isHotlinkBlocked = true;
-                  }
-                } catch {
-                  isHotlinkBlocked = true;
-                }
+              if (!isHotlinkBlocked) {
+                isHotlinkBlocked = !(await probePlayableMediaUrl(loc, { signal: controller.signal, deadline: unrollDeadline }));
               }
 
               return {
@@ -2893,6 +3124,8 @@ async function resolveHicineUpstream(metadata, env = {}) {
     };
   } catch {
     return null;
+  } finally {
+    clearTimeout(timer);
   }
 }
 
@@ -3039,8 +3272,16 @@ function score4kCandidate(item, preferredAudio = '') {
   const height = Number(item.height) || parseResolutionHeight(item.description || item.label || '');
   const desc = String(item.description || item.label || '');
   const hints = item.audioHints || parseHicineAudioHints(hicineAudioHintText(desc));
-  const langs = (hints.languages || []).map((l) => l.code);
+  const langs = (hints.languages || []).map((language) => language.code);
+  const sizeMatch = desc.match(/\b(\d+(?:[.,]\d+)?)\s*(?:gb|gib)\b/i);
+  const sizeGb = Number(item.sizeBytes) > 0
+    ? Number(item.sizeBytes) / (1024 ** 3)
+    : sizeMatch
+      ? Number(sizeMatch[1].replace(',', '.'))
+      : 0;
 
+  // Resolution remains the dominant signal; build4kStreamPayload separately
+  // keeps a 1080p codec fallback below any available 2160p primary.
   if (height >= 2160) score += 500;
   else if (height === 1440) score += 250;
   else if (height === 1080) score += 150;
@@ -3051,14 +3292,20 @@ function score4kCandidate(item, preferredAudio = '') {
   if (langs.length >= 3) score += 40;
   if (langs.includes('en') && langs.includes('hi')) score += 45;
   if (hints.original || langs.includes('en')) score += 35;
-
   if (preferredAudio) {
     const wanted = normalizeAudioLanguage(String(preferredAudio).trim().toLowerCase());
     if (wanted !== 'und' && langs.includes(wanted)) score += 180;
   }
 
-  if (/\bsdr\b|web-?dl|webrip/i.test(desc)) score += 30;
-  else if (/remux/i.test(desc)) score += 15;
+  if (/\bweb[ ._-]?dl\b|\bwebrip\b/i.test(desc)) score += 45;
+  if (/\bsdr\b/i.test(desc)) score += 35;
+  if (/\baac\b|\beac3\b/i.test(desc)) score += 25;
+  if (/\b(?:h\.?264|x264|avc)\b/i.test(desc)) score += 40;
+  if (sizeGb >= 2 && sizeGb <= 18) score += 30;
+  if (/\bremux\b/i.test(desc)) score -= 120;
+  if (/\btruehd\b/i.test(desc)) score -= 120;
+  if (/\bdts(?:[- .]?hd)?\b/i.test(desc)) score -= 120;
+  if (sizeGb > 25) score -= 80;
 
   if (item.linkType === 'hubcloud') score += 25;
   if (item.isHotlinkBlocked) score -= 400;
@@ -3113,17 +3360,39 @@ async function getWorkerMoviesdriveHosts(env = {}) {
   return Array.from(new Set(pool));
 }
 
-async function resolveWorkerVcloudLink(workerUrl, deadline) {
+const WORKER_HICINE_TOKEN_PRIORITY = ['ten', 'fsl2', 'fsl', 'r2', 'DDL', 'server1'];
+
+function orderHicineTokens(tokens = {}) {
+  if (!tokens || typeof tokens !== 'object' || Array.isArray(tokens)) return [];
+  return [
+    ...WORKER_HICINE_TOKEN_PRIORITY.filter((type) => tokens[type]),
+    ...Object.keys(tokens).filter(
+      (type) => !WORKER_HICINE_TOKEN_PRIORITY.includes(type) && type !== 'pixel'
+    ),
+    ...(tokens.pixel ? ['pixel'] : [])
+  ];
+}
+
+async function resolveWorkerVcloudLink(workerUrl, deadline, outerSignal = null) {
+  const endTime = deadline || Date.now() + 4500;
+  const remaining = endTime - Date.now();
+  if (remaining < 100 || outerSignal?.aborted) return null;
+  const controller = new AbortController();
+  const abortFromOuter = () => controller.abort();
+  const timer = setTimeout(() => controller.abort(), remaining);
+  outerSignal?.addEventListener?.('abort', abortFromOuter, { once: true });
+
   try {
     const parsed = new URL(workerUrl);
     const workerOrigin = parsed.origin;
     const vcloudParam = parsed.searchParams.get('vcloud');
     if (!vcloudParam) return null;
 
-    const linksRes = await fetch(`${workerOrigin}/api/links?vcloud=${encodeURIComponent(vcloudParam)}`, {
-      headers: { Accept: 'application/json', 'User-Agent': USER_AGENT }
+    const linksUrl = `${workerOrigin}/api/links?vcloud=${encodeURIComponent(vcloudParam)}`;
+    const linksRes = await fetchWithDeadline(linksUrl, USER_AGENT, controller.signal, endTime, {
+      headers: { Accept: 'application/json' }
     });
-    if (!linksRes.ok) return null;
+    if (!linksRes?.ok) return null;
     const linksData = await linksRes.json();
     const tokens = linksData?.tokens || {};
     const orderedTokens = orderHicineTokens(tokens);
@@ -3132,29 +3401,32 @@ async function resolveWorkerVcloudLink(workerUrl, deadline) {
     const tokenAttempts = await Promise.all(
       orderedTokens.map(async (tokType) => {
         const tok = tokens[tokType];
-        if (!tok || !tok.ts || !tok.sig) return null;
+        if (!tok || !tok.ts || !tok.sig || controller.signal.aborted) return null;
         try {
           const goUrl = `${workerOrigin}/go?type=${encodeURIComponent(tokType)}&vcloud=${encodeURIComponent(vcloudParam)}&ts=${encodeURIComponent(tok.ts)}&sig=${encodeURIComponent(tok.sig)}`;
-          const goRes = await fetch(goUrl, { headers: { 'User-Agent': USER_AGENT }, redirect: 'manual' });
-          let loc = goRes.headers.get('location') || '';
+          const goRes = await fetchWithDeadline(goUrl, USER_AGENT, controller.signal, endTime, {
+            redirect: 'manual'
+          });
+          let loc = goRes?.headers.get('location') || '';
           if (!loc || !/^https?:\/\//i.test(loc)) return null;
 
           let unrollFailed = false;
-          if (isHubcloudGeneratorUrl(loc) || extractHttpLinkParam(loc)) {
-            const direct = await unrollHubcloudUrl(loc, { deadline: deadline || Date.now() + 4500 });
+          if (isHubcloudGeneratorUrl(loc) || extractHttpLinkParam(loc) || extractWrappedMediaTargets(loc).length > 0) {
+            const direct = await unrollHubcloudUrl(loc, { deadline: endTime, signal: controller.signal });
             if (direct) loc = direct;
             else unrollFailed = true;
           }
           loc = unwrapRedirectVideoUrl(loc);
           if (!/^https?:\/\//i.test(loc)) return null;
           if (/pixeldrain\.(dev|com)/i.test(loc) && loc.includes('/u/')) {
-            const pdId = loc.split('/u/')[1].split(/[?#]/)[0];
-            if (pdId) loc = `https://pixeldrain.dev/api/file/${pdId}`;
+            loc = normalizePlayableUrl(loc);
           }
           let isHotlinkBlocked = unrollFailed;
-          if (/pixeldrain\.(?:dev|com)\/api\/file\//i.test(loc)) {
-            const probe = await probePixeldrain(loc);
-            isHotlinkBlocked = probe.blocked;
+          if (!isHotlinkBlocked) {
+            isHotlinkBlocked = !(await probePlayableMediaUrl(loc, {
+              signal: controller.signal,
+              deadline: endTime
+            }));
           }
           return {
             url: loc,
@@ -3169,26 +3441,47 @@ async function resolveWorkerVcloudLink(workerUrl, deadline) {
       })
     );
     return (
-      tokenAttempts.find((a) => a && !a.isHotlinkBlocked) ||
-      tokenAttempts.find((a) => a) ||
+      tokenAttempts.find((attempt) => attempt && !attempt.isHotlinkBlocked) ||
+      tokenAttempts.find((attempt) => attempt) ||
       null
     );
   } catch {
     return null;
+  } finally {
+    clearTimeout(timer);
+    outerSignal?.removeEventListener?.('abort', abortFromOuter);
   }
 }
 
-async function unrollWorker4kCandidateUrl(rawLink, deadline) {
+async function unrollWorker4kCandidateUrl(rawLink, deadline, signal = null, referer = '') {
   if (!rawLink || typeof rawLink !== 'string') return null;
   let currentUrl = rawLink.trim();
+  const headers = referer ? { Referer: referer } : {};
+  const probeOptions = { signal, deadline, headers };
+  const checkedDirect = async (url) => {
+    if (!url) return null;
+    const normalizedUrl = normalizePlayableUrl(url);
+    if (scorePlayableUrl(normalizedUrl) < 0) return null;
+    return await probePlayableMediaUrl(normalizedUrl, probeOptions) ? normalizedUrl : null;
+  };
 
-  if (!isHubcloudGeneratorUrl(currentUrl) && scorePlayableUrl(currentUrl) >= 80) {
-    return normalizePlayableUrl(currentUrl);
+  const wrappedTargets = extractWrappedMediaTargets(currentUrl);
+  if (wrappedTargets.length > 0) {
+    for (const target of wrappedTargets) {
+      const direct = await resolveLinkInner(target, { ...probeOptions, depth: 0 });
+      if (direct) return direct;
+    }
+    if (!isHubcloudGeneratorUrl(currentUrl)) return null;
+  }
+
+  if (!isHubcloudGeneratorUrl(currentUrl) && !/vcloud=/i.test(currentUrl) && scorePlayableUrl(currentUrl) >= 0) {
+    return checkedDirect(currentUrl);
   }
 
   if (/vcloud=/i.test(currentUrl)) {
-    const vc = await resolveWorkerVcloudLink(currentUrl, deadline);
-    if (vc?.url) return vc.url;
+    const vc = await resolveWorkerVcloudLink(currentUrl, deadline, signal);
+    if (vc?.url && !vc.isHotlinkBlocked) return checkedDirect(vc.url);
+    return null;
   }
 
   const isRedirector =
@@ -3197,14 +3490,14 @@ async function unrollWorker4kCandidateUrl(rawLink, deadline) {
     !/hubdrive|mdrive/i.test(currentUrl);
 
   if (isRedirector) {
-    const res = await fetchWithDeadline(currentUrl, USER_AGENT, null, deadline);
+    const res = await fetchWithDeadline(currentUrl, USER_AGENT, signal, deadline);
     if (!res) return null;
     const html = await readCappedText(res);
     const decoded = decode4khdhubRedirectHtml(html, res.url || currentUrl);
     if (decoded?.type === 'direct' && decoded.url) {
       currentUrl = decoded.url;
     } else if (decoded?.type === 'blog_re' && decoded.url) {
-      const blogRes = await fetchWithDeadline(decoded.url, USER_AGENT, null, deadline);
+      const blogRes = await fetchWithDeadline(decoded.url, USER_AGENT, signal, deadline);
       if (blogRes) {
         const blogText = (await readCappedText(blogRes)).trim();
         const urlMatch = blogText.match(/https?:\/\/[^\s"'<>]+/i);
@@ -3218,58 +3511,33 @@ async function unrollWorker4kCandidateUrl(rawLink, deadline) {
     }
   }
 
-  if (/mdrive\.|\/archive\/\d+/i.test(currentUrl)) {
-    const res = await fetchWithDeadline(currentUrl, USER_AGENT, null, deadline);
-    if (!res) return null;
+  if (/mdrive\.|\/archive\/\d+/i.test(currentUrl) || /hubdrive\./i.test(currentUrl)) {
+    const res = await fetchWithDeadline(currentUrl, USER_AGENT, signal, deadline);
+    if (!res || !res.ok) return null;
     const html = await readCappedText(res);
-    const hubMatch =
-      html.match(/href=["'](https?:\/\/[^"']*(?:hubcloud|hubcdn|vcloud)[^"']*)["']/i) ||
-      html.match(/https?:\/\/[^\s"'<>]*(?:hubcloud|hubcdn|vcloud)[^\s"'<>]*/i);
-    if (hubMatch) {
-      currentUrl = hubMatch[1] || hubMatch[0];
-    } else {
-      const pick = pickFromGeneratorHtml(html, res.url || currentUrl);
-      if (pick.direct) return pick.direct;
-      if (pick.generator) currentUrl = pick.generator;
-      else return null;
-    }
-  }
-
-  if (/hubdrive\./i.test(currentUrl)) {
-    const res = await fetchWithDeadline(currentUrl, USER_AGENT, null, deadline);
-    if (!res) return null;
-    const html = await readCappedText(res);
-    const hubMatch =
-      html.match(/href=["'](https?:\/\/[^"']*(?:hubcloud|hubcdn)[^"']*)["']/i) ||
-      html.match(/https?:\/\/[^\s"'<>]*(?:hubcloud|hubcdn)[^\s"'<>]*/i);
-    if (hubMatch) {
-      currentUrl = hubMatch[1] || hubMatch[0];
-    } else {
-      const pick = pickFromGeneratorHtml(html, res.url || currentUrl);
-      if (pick.direct) return pick.direct;
-      if (pick.generator) currentUrl = pick.generator;
-      else return null;
-    }
+    const pick = pickFromGeneratorHtml(html, res.url || currentUrl);
+    const direct = await validateGeneratorPick(pick, { ...probeOptions, depth: 0 });
+    if (direct) return direct;
+    return null;
   }
 
   if (/vcloud=/i.test(currentUrl)) {
-    const vc = await resolveWorkerVcloudLink(currentUrl, deadline);
-    if (vc?.url) return vc.url;
+    const vc = await resolveWorkerVcloudLink(currentUrl, deadline, signal);
+    if (vc?.url && !vc.isHotlinkBlocked) return checkedDirect(vc.url);
+    return null;
   }
 
   if (
     isHubcloudGeneratorUrl(currentUrl) ||
     extractHttpLinkParam(currentUrl) ||
+    extractWrappedMediaTargets(currentUrl).length > 0 ||
     /(^|\.)vcloud\./i.test(currentUrl)
   ) {
-    const direct = await unrollHubcloudUrl(currentUrl, { deadline });
+    const direct = await unrollHubcloudUrl(currentUrl, { signal, deadline, headers });
     if (direct) return direct;
   }
 
-  if (scorePlayableUrl(currentUrl) >= 0) {
-    return normalizePlayableUrl(currentUrl);
-  }
-  return null;
+  return checkedDirect(currentUrl);
 }
 
 function buildWorker4kStreamPayload({
@@ -3282,9 +3550,12 @@ function buildWorker4kStreamPayload({
 }) {
   if (!Array.isArray(resolvedItems) || resolvedItems.length === 0) return null;
 
-  const sorted = [...resolvedItems].sort(
-    (a, b) => score4kCandidate(b, preferredAudio) - score4kCandidate(a, preferredAudio)
-  );
+  const scoreSort = (a, b) => score4kCandidate(b, preferredAudio) - score4kCandidate(a, preferredAudio);
+  const fourKItems = resolvedItems.filter((item) => Number(item.height) >= 2160).sort(scoreSort);
+  const otherItems = resolvedItems.filter((item) => Number(item.height) < 2160).sort(scoreSort);
+  // Keep 2160p primary when available, while preserving browser-friendly
+  // 1080p encodes as selectable/failover alternatives.
+  const sorted = fourKItems.length > 0 ? [...fourKItems, ...otherItems] : [...resolvedItems].sort(scoreSort);
   const primary = sorted[0];
   const seenLabels = new Set();
 
@@ -3380,6 +3651,106 @@ function buildWorker4kStreamPayload({
   };
 }
 
+function normalize4kHtmlText(value) {
+  return String(value || '')
+    .replace(/<[^>]*>/g, ' ')
+    .replace(/&nbsp;|&#160;/gi, ' ')
+    .replace(/&amp;/gi, '&')
+    .replace(/&quot;/gi, '"')
+    .replace(/&#39;|&apos;/gi, "'")
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function read4kHtmlAttribute(tag, name) {
+  const match = String(tag || '').match(new RegExp(`\\b${name}\\s*=\\s*(?:"([^"]*)"|'([^']*)'|([^\\s>]+))`, 'i'));
+  return match ? (match[1] ?? match[2] ?? match[3] ?? '') : '';
+}
+
+/** Marker-slice search cards and validate the source slug before scoring. */
+function parse4khdhubSearchCards(html, baseUrl) {
+  const anchors = [];
+  const tagRe = /<a\b[^>]*>/gi;
+  let match;
+  while ((match = tagRe.exec(String(html || '')))) {
+    const tag = match[0];
+    if (!/\bmovie-card\b/i.test(read4kHtmlAttribute(tag, 'class'))) continue;
+    const href = read4kHtmlAttribute(tag, 'href');
+    if (!/(?:movie|series)-\d+/i.test(href)) continue;
+    anchors.push({ index: match.index, tagEnd: tagRe.lastIndex, href });
+  }
+
+  return anchors.map((marker, idx) => {
+    const nextMarker = anchors[idx + 1]?.index ?? String(html || '').length;
+    const close = String(html || '').indexOf('</a>', marker.tagEnd);
+    const end = close >= 0 && close < nextMarker ? close : nextMarker;
+    const inner = String(html || '').slice(marker.tagEnd, end);
+    const titleMatch = inner.match(/class=["'][^"']*movie-card-title[^"']*["'][^>]*>([\s\S]*?)<\/h\d>/i);
+    const metaMatch = inner.match(/class=["'][^"']*movie-card-meta[^"']*["'][^>]*>([\s\S]*?)<\/p>/i);
+    const title = normalize4kHtmlText(titleMatch ? titleMatch[1] : inner);
+    const meta = normalize4kHtmlText(metaMatch ? metaMatch[1] : '');
+    const yearMatch = `${title} ${meta}`.match(/\b(19\d{2}|20\d{2})\b/);
+    let href = marker.href;
+    try { href = new URL(href, baseUrl).href; } catch {}
+    return {
+      href,
+      title,
+      year: yearMatch ? Number(yearMatch[1]) : 0,
+      isSeries: /series-\d+/i.test(marker.href)
+    };
+  });
+}
+
+/** Slice sibling `.download-item` / `.episode-download-item` chunks by marker. */
+function extract4kDivMarkerBlocks(html, markerClass) {
+  const source = String(html || '');
+  const markers = [];
+  const divRe = /<div\b[^>]*>/gi;
+  let match;
+  while ((match = divRe.exec(source))) {
+    const classes = read4kHtmlAttribute(match[0], 'class').split(/\s+/);
+    if (classes.includes(markerClass)) markers.push({ index: match.index });
+  }
+  return markers.map((marker, idx) => {
+    const end = markers[idx + 1]?.index ?? source.length;
+    return { html: source.slice(marker.index, end), index: marker.index };
+  });
+}
+
+function get4kEpisodeBadgeBefore(html, index) {
+  const before = String(html || '').slice(Math.max(0, index - 3000), index);
+  const badgeRe = /<([a-z][\w:-]*)\b[^>]*class=["'][^"']*\bepisode-number\b[^"']*["'][^>]*>([\s\S]*?)<\/\1>/gi;
+  const badges = [...before.matchAll(badgeRe)];
+  return badges.length ? normalize4kHtmlText(badges[badges.length - 1][2]) : '';
+}
+
+function get4kDownloadBlocks(html, isTv, seasonNum = 1, episodeNum = 1) {
+  if (!isTv) return extract4kDivMarkerBlocks(html, 'download-item');
+  const source = String(html || '');
+  const episodesMatch = source.match(/<(?:div|section|main)\b[^>]*\bid=["']episodes["'][^>]*>/i);
+  const scopeStart = episodesMatch ? episodesMatch.index : 0;
+  const scope = source.slice(scopeStart);
+  const blocks = extract4kDivMarkerBlocks(scope, 'episode-download-item');
+  if (blocks.length === 0) return [];
+
+  const seasonRe = new RegExp(`(?:\\bS0*${seasonNum}\\b|\\bseason\\s*0*${seasonNum}\\b)`, 'i');
+  const episodeRe = new RegExp(
+    `(?:\\bS0*${seasonNum}[\\s._-]*E0*${episodeNum}\\b|\\b(?:episode|ep)[\\s._-]*0*${episodeNum}\\b|\\bE0*${episodeNum}\\b)`,
+    'i'
+  );
+  const matching = blocks.filter((block) => {
+    const badge = get4kEpisodeBadgeBefore(scope, block.index);
+    const text = `${badge} ${normalize4kHtmlText(block.html)}`;
+    const explicitSeason = seasonRe.test(badge) || seasonRe.test(text);
+    return episodeRe.test(text) && (!explicitSeason || seasonRe.test(text));
+  });
+  if (matching.length > 0) return matching;
+  // Keep compatibility only when an older page omits the episode badge and
+  // exposes exactly one item for the requested season; never guess among episodes.
+  const seasonOnly = blocks.filter((block) => seasonRe.test(get4kEpisodeBadgeBefore(scope, block.index)));
+  return seasonOnly.length === 1 ? seasonOnly : [];
+}
+
 async function resolve4khdhubWorker(metadata, preferredAudio = '', env = {}) {
   if (!metadata || !metadata.title) return { ok: false, reason: '4khdhub_missing_title' };
   const deadline = Date.now() + 7000;
@@ -3392,6 +3763,7 @@ async function resolve4khdhubWorker(metadata, preferredAudio = '', env = {}) {
 
     let pageHtml = '';
     let activeHost = '';
+    let activePageUrl = '';
 
     for (const host of hosts.slice(0, 3)) {
       const searchUrl = `${host}/?s=${encodeURIComponent(metadata.title)}`;
@@ -3400,21 +3772,7 @@ async function resolve4khdhubWorker(metadata, preferredAudio = '', env = {}) {
       const searchHtml = await readCappedText(searchRes);
       if (!searchHtml || isCfChallengePage(searchHtml)) continue;
 
-      const cards = [];
-      const cardRe = /<a\b[^>]*href=["']([^"']+)["'][^>]*class=["'][^"']*movie-card[^"']*["'][^>]*>([\s\S]*?)<\/a>|<a\b[^>]*class=["'][^"']*movie-card[^"']*["'][^>]*href=["']([^"']+)["'][^>]*>([\s\S]*?)<\/a>/gi;
-      let m;
-      while ((m = cardRe.exec(searchHtml))) {
-        const href = m[1] || m[3] || '';
-        const inner = m[2] || m[4] || '';
-        const titleMatch = inner.match(/class=["'][^"']*movie-card-title[^"']*["'][^>]*>([\s\S]*?)<\/h\d>/i);
-        const metaMatch = inner.match(/class=["'][^"']*movie-card-meta[^"']*["'][^>]*>([\s\S]*?)<\/p>/i);
-        const rawCardTitle = (titleMatch ? titleMatch[1] : inner).replace(/<[^>]+>/g, ' ').trim();
-        const rawMeta = (metaMatch ? metaMatch[1] : '').replace(/<[^>]+>/g, ' ').trim();
-        const yearMatch = `${rawCardTitle} ${rawMeta}`.match(/\b(19\d{2}|20\d{2})\b/);
-        const cardYear = yearMatch ? Number(yearMatch[1]) : 0;
-        const cardIsSeries = /-series-|\bseries\b|\bseason\b/i.test(`${href} ${inner}`);
-        cards.push({ href, title: rawCardTitle, year: cardYear, isSeries: cardIsSeries });
-      }
+      const cards = parse4khdhubSearchCards(searchHtml, host);
 
       if (cards.length === 0) continue;
 
@@ -3442,6 +3800,7 @@ async function resolve4khdhubWorker(metadata, preferredAudio = '', env = {}) {
       if (detailRes && detailRes.ok) {
         pageHtml = await readCappedText(detailRes);
         activeHost = host;
+        activePageUrl = detailRes.url || detailUrl;
         if (pageHtml) break;
       }
     }
@@ -3451,62 +3810,33 @@ async function resolve4khdhubWorker(metadata, preferredAudio = '', env = {}) {
     const candidates = [];
     const seasonNum = Number(metadata.season || 1);
     const episodeNum = Number(metadata.episode || 1);
-    const sTag = `S${String(seasonNum).padStart(2, '0')}`;
-    const epTag = `Episode-${String(episodeNum).padStart(2, '0')}`;
-    const sxeTag = new RegExp(`S0*${seasonNum}[.\\s_-]*E0*${episodeNum}\\b|Episode[-\\s]*0*${episodeNum}\\b`, 'i');
+    const blocks = get4kDownloadBlocks(pageHtml, isTv, seasonNum, episodeNum);
 
-    const blockRegex = isTv
-      ? /<div\s+class=["'][^"']*episode-download-item[^"']*["'][^>]*>([\s\S]*?)(?=<div\s+class=["'][^"']*episode-download-item|<\/div>\s*<\/div>\s*<\/div>|$)/gi
-      : /<div\s+class=["'][^"']*download-item[^"']*["'][^>]*>([\s\S]*?)(?=<div\s+class=["'][^"']*download-item|<\/section>|$)/gi;
-
-    let blocks = [];
-    if (isTv) {
-      const seasonSections = pageHtml.split(/<div\s+class=["'][^"']*episode-item[^"']*["']/i);
-      const matchingSeason = seasonSections.find((sec) =>
-        new RegExp(`\\b${sTag}\\b|Season\\s+0*${seasonNum}\\b`, 'i').test(sec)
-      );
-      const targetHtml = matchingSeason || pageHtml;
-      let bm;
-      while ((bm = blockRegex.exec(targetHtml))) {
-        if (sxeTag.test(bm[1]) || bm[1].includes(epTag)) blocks.push(bm[1]);
-      }
-    } else {
-      let bm;
-      while ((bm = blockRegex.exec(pageHtml))) {
-        blocks.push(bm[1]);
-      }
-    }
-
-    if (blocks.length === 0) blocks = [pageHtml];
-
-    for (const block of blocks) {
-      const titleMatch =
-        block.match(/class=["'][^"']*(?:episode-)?file-title[^"']*["'][^>]*>([\s\S]*?)<\/div>/i) ||
-        block.match(/class=["'][^"']*font-semibold[^"']*["'][^>]*>([\s\S]*?)(?:<br|<span|<\/div>)/i);
-      const fileTitle = (titleMatch ? titleMatch[1] : block)
-        .replace(/<[^>]+>/g, ' ')
-        .replace(/\s+/g, ' ')
-        .trim()
-        .slice(0, 320);
-
+    for (const blockRecord of blocks) {
+      const block = blockRecord.html;
+      const fileTitle = normalize4kHtmlText(block).slice(0, 320);
       if (/\.zip\b|\bpack\b/i.test(fileTitle) && !isTv) continue;
 
       const height = parseResolutionHeight(fileTitle);
       const audioHints = parseHicineAudioHints(hicineAudioHintText(fileTitle));
-
-      const linkRe = /<a\b[^>]*href=["'](https?:\/\/[^"']+)["'][^>]*>([\s\S]*?)<\/a>/gi;
+      const linkRe = /<a\b[^>]*>/gi;
       let lm;
       while ((lm = linkRe.exec(block))) {
-        const href = lm[1].trim().replace(/&amp;/g, '&');
-        const linkText = lm[2].replace(/<[^>]+>/g, ' ').trim();
+        const rawHref = read4kHtmlAttribute(lm[0], 'href').trim().replace(/&amp;/g, '&');
+        if (!rawHref) continue;
+        const close = block.indexOf('</a>', linkRe.lastIndex);
+        const linkText = normalize4kHtmlText(close >= 0 ? block.slice(linkRe.lastIndex, close) : '');
+        let href = rawHref;
+        try { href = new URL(rawHref, activePageUrl || activeHost || '').href; } catch { continue; }
         const isHubCloud = /hubcloud|hubcdn/i.test(`${href} ${linkText}`);
         const isHubDrive = /hubdrive/i.test(`${href} ${linkText}`);
         const isRedirect = /[?&]id=[A-Za-z0-9+/=_-]+/i.test(href);
-        if (!isHubCloud && !isHubDrive && !isRedirect) continue;
+        const isDirect = scorePlayableUrl(href) >= 0;
+        if (!isHubCloud && !isHubDrive && !isRedirect && !isDirect) continue;
 
         candidates.push({
           url: href,
-          linkType: isHubCloud ? 'hubcloud' : isHubDrive ? 'hubdrive' : 'redirect',
+          linkType: isHubCloud ? 'hubcloud' : isHubDrive ? 'hubdrive' : isRedirect ? 'redirect' : 'direct',
           height,
           description: fileTitle,
           audioHints
@@ -3519,26 +3849,42 @@ async function resolve4khdhubWorker(metadata, preferredAudio = '', env = {}) {
     const sortedCandidates = [...candidates].sort(
       (a, b) => score4kCandidate(b, preferredAudio) - score4kCandidate(a, preferredAudio)
     );
+    const fourKCandidates = sortedCandidates.filter((candidate) => candidate.height >= 2160);
+    const lowerQualityCandidates = sortedCandidates.filter((candidate) => candidate.height < 2160);
+    const preferred1080 = lowerQualityCandidates.filter((candidate) => candidate.height >= 1080).slice(0, 2);
+    const selectedCandidates = Array.from(new Map(
+      [...fourKCandidates.slice(0, 3), ...preferred1080, ...lowerQualityCandidates.slice(0, 2)]
+        .map((candidate) => [candidate.url, candidate])
+    ).values()).slice(0, 7);
 
-    const resolvedItems = [];
-    const seenUrls = new Set();
-
-    for (const cand of sortedCandidates.slice(0, 5)) {
-      if (resolvedItems.length >= 3) break;
-      const directUrl = await unrollWorker4kCandidateUrl(cand.url, deadline);
-      if (!directUrl || seenUrls.has(directUrl)) continue;
-      seenUrls.add(directUrl);
-      resolvedItems.push({
+    // Resolve separate mirrors/qualities concurrently. A dead 4K token should
+    // not block a viable R2/Google mirror or the 1080p browser fallback.
+    const settledItems = await Promise.all(selectedCandidates.map(async (cand) => {
+      const directUrl = await unrollWorker4kCandidateUrl(
+        cand.url,
+        deadline,
+        null,
+        activeHost ? `${activeHost}/` : ''
+      );
+      if (!directUrl) return null;
+      return {
         rawUrl: directUrl,
         streamUrl: directUrl,
         height: cand.height,
         description: cand.description,
         audioHints: cand.audioHints,
         format: /\.m3u8(\?|$)/i.test(directUrl) ? 'hls' : 'mp4'
-      });
-    }
+      };
+    }));
+    const seenUrls = new Set();
+    const resolvedItems = settledItems.filter((item) => {
+      if (!item || seenUrls.has(item.rawUrl)) return false;
+      seenUrls.add(item.rawUrl);
+      return true;
+    });
 
     if (resolvedItems.length === 0) return { ok: false, reason: '4khdhub_unroll_failed' };
+    if (!resolvedItems.some((item) => item.height >= 2160)) return { ok: false, reason: '4khdhub_no_2160p_resolved' };
 
     const payload = buildWorker4kStreamPayload({
       serverId: 'ursa',
@@ -3663,41 +4009,53 @@ async function resolveMoviesdrive4kWorker(metadata, preferredAudio = '', env = {
     const sortedCandidates = [...candidates].sort(
       (a, b) => score4kCandidate(b, preferredAudio) - score4kCandidate(a, preferredAudio)
     );
+    const fourKCandidates = sortedCandidates.filter((candidate) => candidate.height >= 2160);
+    const lowerQualityCandidates = sortedCandidates.filter((candidate) => candidate.height < 2160);
+    const preferred1080 = lowerQualityCandidates.filter((candidate) => candidate.height >= 1080).slice(0, 2);
+    const selectedCandidates = Array.from(new Map(
+      [...fourKCandidates.slice(0, 3), ...preferred1080, ...lowerQualityCandidates.slice(0, 2)]
+        .map((candidate) => [candidate.url, candidate])
+    ).values()).slice(0, 7);
 
-    const resolvedItems = [];
-    const seenUrls = new Set();
-
-    for (const cand of sortedCandidates.slice(0, 5)) {
-      if (resolvedItems.length >= 3) break;
+    const settledItems = await Promise.all(selectedCandidates.map(async (cand) => {
       let targetUrl = cand.url;
-
       if (isTv && /mdrive\.|\/archive\/\d+/i.test(targetUrl)) {
         const archRes = await fetchWithDeadline(targetUrl, USER_AGENT, null, deadline);
         if (archRes && archRes.ok) {
           const archHtml = await readCappedText(archRes);
           const epRegex = new RegExp(
-            `(?:Ep(?:isode)?\\s*0*${episodeNum}\\b|S0*${seasonNum}E0*${episodeNum}\\b)[\\s\\S]{0,600}?href=["'](https?:\\/\\/[^"']*(?:hubcloud|hubcdn|vcloud)[^"']*)["']`,
+            `(?:Ep(?:isode)?\s*0*${episodeNum}\b|S0*${seasonNum}E0*${episodeNum}\b)[\s\S]{0,600}?href=["'](https?:\/\/[^"']*(?:hubcloud|hubcdn|vcloud)[^"']*)["']`,
             'i'
           );
           const epMatch = archHtml.match(epRegex);
           if (epMatch && epMatch[1]) targetUrl = epMatch[1];
         }
       }
-
-      const directUrl = await unrollWorker4kCandidateUrl(targetUrl, deadline);
-      if (!directUrl || seenUrls.has(directUrl)) continue;
-      seenUrls.add(directUrl);
-      resolvedItems.push({
+      const directUrl = await unrollWorker4kCandidateUrl(
+        targetUrl,
+        deadline,
+        null,
+        activeHost ? `${activeHost}/` : ''
+      );
+      if (!directUrl) return null;
+      return {
         rawUrl: directUrl,
         streamUrl: directUrl,
         height: cand.height,
         description: cand.description,
         audioHints: cand.audioHints,
         format: /\.m3u8(\?|$)/i.test(directUrl) ? 'hls' : 'mp4'
-      });
-    }
+      };
+    }));
+    const seenUrls = new Set();
+    const resolvedItems = settledItems.filter((item) => {
+      if (!item || seenUrls.has(item.rawUrl)) return false;
+      seenUrls.add(item.rawUrl);
+      return true;
+    });
 
     if (resolvedItems.length === 0) return { ok: false, reason: 'moviesdrive4k_unroll_failed' };
+    if (!resolvedItems.some((item) => item.height >= 2160)) return { ok: false, reason: 'moviesdrive4k_no_2160p_resolved' };
 
     const payload = buildWorker4kStreamPayload({
       serverId: 'ursa',
@@ -3718,11 +4076,17 @@ async function resolveHicine4kWorker(metadata, preferredAudio = '', env = {}) {
     return { ok: false, reason: 'hicine4k_missing_config' };
   }
   const unrollDeadline = Date.now() + 6000;
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), Math.max(0, unrollDeadline - Date.now()));
 
   try {
-    const res = await fetch(`${apiBase}/api/search/${encodeURIComponent(metadata.title)}`, {
-      headers: { Accept: 'application/json', 'User-Agent': USER_AGENT }
-    });
+    const res = await fetchWithDeadline(
+      `${apiBase}/api/search/${encodeURIComponent(metadata.title)}`,
+      USER_AGENT,
+      controller.signal,
+      unrollDeadline,
+      { headers: { Accept: 'application/json' } }
+    );
     if (!res.ok) return { ok: false, reason: `hicine4k_http_${res.status}` };
 
     const items = await res.json();
@@ -3815,6 +4179,17 @@ async function resolveHicine4kWorker(metadata, preferredAudio = '', env = {}) {
             audioHints
           });
         }
+        for (const match of segment.matchAll(/(https?:\/\/pixeldrain\.(?:dev|com)\/(?:u|api\/file)\/[A-Za-z0-9_-]+(?:\?[^\s,"']*)?)/gi)) {
+          const label = labelFor(match.index);
+          parsedEntries.push({
+            type: 'pixeldrain',
+            quality: label,
+            height: toHeight(label),
+            url: normalizePlayableUrl(match[1]),
+            description,
+            audioHints
+          });
+        }
       }
     }
 
@@ -3823,27 +4198,33 @@ async function resolveHicine4kWorker(metadata, preferredAudio = '', env = {}) {
     );
     if (entries4k.length === 0) return { ok: false, reason: 'hicine4k_no_2160p_entries' };
 
+    const sorted4k = entries4k.sort(
+      (a, b) => score4kCandidate(b, preferredAudio) - score4kCandidate(a, preferredAudio)
+    );
     const backups = parsedEntries
-      .filter((e) => e.height < 2160)
+      .filter((entry) => entry.height < 2160)
       .sort((a, b) => (b.height || 0) - (a.height || 0))
       .slice(0, 2);
+    const orderedEntries = [...sorted4k.slice(0, 4), ...backups];
 
-    const orderedEntries = [
-      ...entries4k.sort(
-        (a, b) => score4kCandidate(b, preferredAudio) - score4kCandidate(a, preferredAudio)
-      ),
-      ...backups
-    ];
-
-    const resolvedItems = [];
-    const seenDirect = new Set();
-
-    for (const entry of orderedEntries) {
-      if (resolvedItems.length >= 4) break;
-      const resolved = await resolveWorkerVcloudLink(entry.url, unrollDeadline);
-      if (!resolved?.url || seenDirect.has(resolved.url) || resolved.isHotlinkBlocked) continue;
-      seenDirect.add(resolved.url);
-      resolvedItems.push({
+    const settledItems = await Promise.all(orderedEntries.map(async (entry) => {
+      let resolved;
+      if (entry.type === 'pixeldrain') {
+        resolved = {
+          url: normalizePlayableUrl(entry.url),
+          tokenType: 'pixel',
+          format: 'mp4',
+          isHotlinkBlocked: false
+        };
+        resolved.isHotlinkBlocked = !(await probePlayableMediaUrl(resolved.url, {
+          signal: controller.signal,
+          deadline: unrollDeadline
+        }));
+      } else {
+        resolved = await resolveWorkerVcloudLink(entry.url, unrollDeadline, controller.signal);
+      }
+      if (!resolved?.url || resolved.isHotlinkBlocked) return null;
+      return {
         rawUrl: resolved.url,
         streamUrl: resolved.url,
         height: entry.height >= 2160 ? 2160 : entry.height,
@@ -3851,8 +4232,14 @@ async function resolveHicine4kWorker(metadata, preferredAudio = '', env = {}) {
         audioHints: entry.audioHints,
         tokenType: resolved.tokenType,
         format: resolved.format || 'mp4'
-      });
-    }
+      };
+    }));
+    const seenDirect = new Set();
+    const resolvedItems = settledItems.filter((item) => {
+      if (!item || seenDirect.has(item.rawUrl)) return false;
+      seenDirect.add(item.rawUrl);
+      return true;
+    });
 
     if (!resolvedItems.some((item) => item.height >= 2160)) {
       return { ok: false, reason: 'hicine4k_no_2160p_resolved' };
@@ -3867,6 +4254,8 @@ async function resolveHicine4kWorker(metadata, preferredAudio = '', env = {}) {
     return payload ? { ok: true, ...payload } : { ok: false, reason: 'hicine4k_payload_empty' };
   } catch (err) {
     return { ok: false, reason: `hicine4k_error:${err.message}` };
+  } finally {
+    clearTimeout(timer);
   }
 }
 
@@ -3944,14 +4333,26 @@ async function resolveDahmer4kWorker(metadata, preferredAudio = '', env = {}) {
       });
     }
 
-    if (!files.some((f) => f.height >= 2160)) {
+    const sorted4k = files.filter((file) => file.height >= 2160)
+      .sort((a, b) => score4kCandidate(b, preferredAudio) - score4kCandidate(a, preferredAudio));
+    const lowerQuality = files.filter((file) => file.height < 2160)
+      .sort((a, b) => score4kCandidate(b, preferredAudio) - score4kCandidate(a, preferredAudio));
+    const filesToProbe = [...sorted4k.slice(0, 4), ...lowerQuality.filter((file) => file.height >= 1080).slice(0, 3)];
+    const checkedFiles = await Promise.all(filesToProbe.map(async (file) =>
+      await probePlayableMediaUrl(file.rawUrl, {
+        deadline,
+        headers: { Referer: `${dahmerBase}/` }
+      }) ? file : null
+    ));
+    const playableFiles = checkedFiles.filter(Boolean);
+    if (!playableFiles.some((file) => file.height >= 2160)) {
       return { ok: false, reason: 'dahmer4k_no_2160p_files' };
     }
 
     const payload = buildWorker4kStreamPayload({
       serverId: 'ursa',
       tier: 'dahmer4k',
-      resolvedItems: files,
+      resolvedItems: playableFiles,
       referer: `${dahmerBase}/`,
       headers: { Referer: `${dahmerBase}/` },
       preferredAudio
@@ -3960,6 +4361,20 @@ async function resolveDahmer4kWorker(metadata, preferredAudio = '', env = {}) {
   } catch (err) {
     return { ok: false, reason: `dahmer4k_error:${err.message}` };
   }
+}
+
+function isVerifiedUrsa2160WorkerResult(result) {
+  const rawUrl = String(result?.rawUrl || '');
+  return !!(
+    result?.streamUrl &&
+    /^https?:\/\//i.test(rawUrl) &&
+    scorePlayableUrl(rawUrl) >= 0 &&
+    !isHubcloudGeneratorUrl(rawUrl) &&
+    !extractHttpLinkParam(rawUrl) &&
+    !extractWrappedMediaTargets(rawUrl).length &&
+    Array.isArray(result.qualities) &&
+    result.qualities.some((quality) => Number(quality.height) >= 2160)
+  );
 }
 
 async function resolveUrsaUpstream(metadata, requestedServerId = 'ursa', preferredAudio = '', env = {}) {
@@ -3973,48 +4388,61 @@ async function resolveUrsaUpstream(metadata, requestedServerId = 'ursa', preferr
     diag.steps.push({ step, detail, t: Date.now() });
     diag.message = detail || step;
   };
+  const tiers = [
+    {
+      id: '4khdhub',
+      attempt: 'Attempting Tier 1: 4KHDHub (2160p UHD Multi-Audio)...',
+      run: () => resolve4khdhubWorker(metadata, preferredAudio, env)
+    },
+    {
+      id: 'moviesdrive4k',
+      attempt: 'Attempting Tier 2: MoviesDrive 4K (Typesense IMDb + 2160p HubCloud)...',
+      run: () => resolveMoviesdrive4kWorker(metadata, preferredAudio, env)
+    },
+    {
+      id: 'hicine4k',
+      attempt: 'Attempting Tier 3: HiCine 4K UHD (2160p vcloud worker)...',
+      run: () => resolveHicine4kWorker(metadata, preferredAudio, env)
+    },
+    {
+      id: 'dahmer4k',
+      attempt: 'Attempting Tier 4: DahmerMovies 4K (2160p direct directory)...',
+      run: () => resolveDahmer4kWorker(metadata, preferredAudio, env)
+    }
+  ];
+  for (const tier of tiers) stamp(`${tier.id}_attempt`, tier.attempt);
 
-  // Tier 1: 4KHDHub
-  stamp('4khdhub_attempt', 'Attempting Tier 1: 4KHDHub (2160p UHD Multi-Audio)...');
-  const t1 = await resolve4khdhubWorker(metadata, preferredAudio, env);
-  if (t1 && t1.ok && t1.streamUrl) {
-    stamp('4khdhub_success', `Resolved 4K stream via 4KHDHub (${t1.qualities?.[0]?.label || '2160p'})`);
-    recordWorkerServerAttempt('ursa', true, 120);
-    return { ...t1, diag };
+  const results = await Promise.all(tiers.map(async (tier) => {
+    try {
+      const result = await tier.run();
+      return result && result.ok && isVerifiedUrsa2160WorkerResult(result)
+        ? result
+        : result && result.ok
+          ? { ...result, ok: false, reason: `${tier.id}_no_verified_2160p` }
+          : result;
+    } catch (error) {
+      return { ok: false, reason: `${tier.id}_error:${error.message}` };
+    }
+  }));
+
+  let selected = null;
+  for (let index = 0; index < tiers.length; index += 1) {
+    const tier = tiers[index];
+    const result = results[index];
+    if (!selected && result?.ok && result.streamUrl) {
+      selected = result;
+      stamp(`${tier.id}_success`, `Resolved verified 4K stream via ${tier.id} (${result.qualities?.[0]?.label || '2160p'})`);
+    } else {
+      stamp(`${tier.id}_failed`, result?.reason || `${tier.id} returned no verified 2160p stream`);
+    }
   }
-  stamp('4khdhub_failed', t1?.reason || '4KHDHub returned no stream');
-
-  // Tier 2: MoviesDrive 4K
-  stamp('moviesdrive4k_attempt', 'Attempting Tier 2: MoviesDrive 4K (Typesense IMDb + 2160p HubCloud)...');
-  const t2 = await resolveMoviesdrive4kWorker(metadata, preferredAudio, env);
-  if (t2 && t2.ok && t2.streamUrl) {
-    stamp('moviesdrive4k_success', `Resolved 4K stream via MoviesDrive (${t2.qualities?.[0]?.label || '2160p'})`);
+  if (selected) {
+    diag.selectedTier = selected.tier;
+    diag.message = `Resolved verified 4K stream via ${selected.tier} (${selected.qualities?.[0]?.label || '2160p'})`;
     recordWorkerServerAttempt('ursa', true, 120);
-    return { ...t2, diag };
+    return { ...selected, diag };
   }
-  stamp('moviesdrive4k_failed', t2?.reason || 'MoviesDrive 4K returned no stream');
 
-  // Tier 3: HiCine 4K UHD
-  stamp('hicine4k_attempt', 'Attempting Tier 3: HiCine 4K UHD (2160p vcloud worker)...');
-  const t3 = await resolveHicine4kWorker(metadata, preferredAudio, env);
-  if (t3 && t3.ok && t3.streamUrl) {
-    stamp('hicine4k_success', `Resolved 4K stream via HiCine 4K (${t3.qualities?.[0]?.label || '2160p'})`);
-    recordWorkerServerAttempt('ursa', true, 120);
-    return { ...t3, diag };
-  }
-  stamp('hicine4k_failed', t3?.reason || 'HiCine 4K returned no 2160p stream');
-
-  // Tier 4: DahmerMovies 4K
-  stamp('dahmer4k_attempt', 'Attempting Tier 4: DahmerMovies 4K (2160p direct directory)...');
-  const t4 = await resolveDahmer4kWorker(metadata, preferredAudio, env);
-  if (t4 && t4.ok && t4.streamUrl) {
-    stamp('dahmer4k_success', `Resolved 4K stream via DahmerMovies 4K (${t4.qualities?.[0]?.label || '2160p'})`);
-    recordWorkerServerAttempt('ursa', true, 120);
-    return { ...t4, diag };
-  }
-  stamp('dahmer4k_failed', t4?.reason || 'DahmerMovies 4K returned no 2160p stream');
-
-  // Test/Mock Fallback: if vidsrcDataUrl is explicitly pointed to a local mock
   const vsDataUrl = (env && env.VIDSRC_DATA_URL) || runtimeState.upstreams.vidsrcDataUrl || '';
   if (vsDataUrl && /127\.0\.0\.1|localhost/i.test(vsDataUrl)) {
     stamp('vidsrc_mock_attempt', 'Attempting local VidSrc mock fallback...');
@@ -4025,10 +4453,7 @@ async function resolveUrsaUpstream(metadata, requestedServerId = 'ursa', preferr
     }
   }
 
-  stamp(
-    'ursa_4k_exhausted',
-    'All 4 Ursa 4K UHD sub-providers (4KHDHub, MoviesDrive 4K, HiCine 4K, DahmerMovies 4K) failed to resolve a stream.'
-  );
+  stamp('ursa_4k_exhausted', 'All four Ursa 4K UHD sub-providers failed to resolve a verified 2160p stream.');
   return {
     ok: false,
     reason: 'ursa_all_4k_sources_exhausted',
@@ -4044,6 +4469,8 @@ async function resolveUrsaUpstream(metadata, requestedServerId = 'ursa', preferr
 const WATERFALL_PRIORITY = ['andromeda', 'ursa', 'centaurus', 'atlas', 'strings'];
 /** Hard per-upstream budget: the waterfall must stay fast and deterministic. */
 const WATERFALL_UPSTREAM_TIMEOUT_MS = 9000;
+// A manually selected Ursa/4K request gets a separate 14s budget for concurrent tiers and range probes.
+const URSA_WATERFALL_TIMEOUT_MS = 14000;
 
 async function withTimeout(promise, ms, fallback = null) {
   let timer;
@@ -4064,7 +4491,7 @@ async function resolveStreamWaterfall(metadata, requestedServer, preferredAudio,
     ? 'ursa'
     : String(requestedServer || 'andromeda').toLowerCase();
   const validServer = SERVERS.find((s) => s.id === normalizedServer)?.id || 'andromeda';
-  const cacheKey = `cf:resolve:${metadata.type}:${metadata.tmdbId}:s${metadata.season}:e${metadata.episode}:${validServer}`;
+  const cacheKey = `cf:resolve:v3:${metadata.type}:${metadata.tmdbId}:s${metadata.season}:e${metadata.episode}:${validServer}`;
   const cached = await edgeCacheGet(cacheKey);
   if (cached) return applyPreferredAudio(cached, preferredAudio);
 
@@ -4094,9 +4521,10 @@ async function resolveStreamWaterfall(metadata, requestedServer, preferredAudio,
         WATERFALL_UPSTREAM_TIMEOUT_MS
       );
     } else if (srvId === 'ursa') {
+      const timeoutMs = validServer === 'ursa' ? URSA_WATERFALL_TIMEOUT_MS : WATERFALL_UPSTREAM_TIMEOUT_MS;
       resolved = await withTimeout(
         resolveUrsaUpstream(metadata, requestedServer, preferredAudio, env),
-        WATERFALL_UPSTREAM_TIMEOUT_MS
+        timeoutMs
       );
     } else if (srvId === 'centaurus') {
       resolved = await withTimeout(
@@ -4478,7 +4906,7 @@ export default {
         const meta = await resolveTmdbMetadata(dbgType, dbgTmdb, dbgSeason, dbgEpisode, env);
         const direct = await withTimeout(
           resolveUrsaUpstream(meta, dbgAlias.toLowerCase(), '', env),
-          WATERFALL_UPSTREAM_TIMEOUT_MS
+          URSA_WATERFALL_TIMEOUT_MS
         );
         return jsonResponse({
           ok: !!(direct && direct.streamUrl),
