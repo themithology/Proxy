@@ -104,7 +104,6 @@ const config = {
 
     vidstuckBase: process.env.VIDSTUCK_BASE_URL || 'https://vidstuck.xyz',
     hicineApiBase: process.env.HICINE_API_BASE || 'https://api.hicine.sbs',
-    hianimeBase: process.env.HIANIME_BASE_URL || 'https://hianime.at',
     wyzieSubsUrl: process.env.WYZIE_SUBS_URL || 'https://sub.wyzie.ru',
     openSubtitlesRestUrl: 'https://rest.opensubtitles.org',
     openSubtitlesStremioUrl: 'https://opensubtitles-v3.strem.io',

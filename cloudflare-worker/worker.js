@@ -37,8 +37,7 @@ const runtimeState = {
     castletvBase: 'https://api.hlowb.com',
     netmirrorBase: 'https://net27.cc',
     vidstuckBase: 'https://vidstuck.xyz',
-    hicineApiBase: 'https://api.hicine.sbs',
-    hianimeBase: 'https://hianime.at'
+    hicineApiBase: 'https://api.hicine.sbs'
   },
   externalProxyPool: [],
   domains: new Map(),
@@ -729,7 +728,7 @@ async function resolveSubtitles(metadata) {
 }
 
 /**
- * 4. Upstream Stream Extractors (Andromeda/CastleTV+NetMirror, Centaurus/HiCine, HiAnime)
+ * 4. Upstream Stream Extractors (Andromeda/CastleTV+NetMirror, Centaurus/HiCine)
  */
 
 /**

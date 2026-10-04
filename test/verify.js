@@ -16,7 +16,6 @@ const { srtToVtt } = require('../src/utils/srtToVtt');
 const { cache } = require('../src/utils/cache');
 const { rewriteM3u8Manifest } = require('../src/services/proxy');
 const {
-  decodeZokoAnimeXorPayload,
   parseHicineLinks,
   parseHicineAudioHints,
   isHubcloudGeneratorUrl,
@@ -687,27 +686,8 @@ async function runTests() {
   assert.ok(hsPayload && hsPayload.id === '94605', 'Handshake token must verify');
   console.log('  ✔ Passed cryptographic verification.');
 
-  // 2. ZokoAnime XOR ("otaku-embed-v1") & HiCine Link Parser Unit Tests
-  console.log('[2/12] Testing ZokoAnime XOR Decryptor & HiCine Multi-Quality Link Parser...');
-  const rawZokoJson = JSON.stringify({
-    data: {
-      sources: { file: 'https://cdn.zokoanime.video/hls/arcane-ep1/master.m3u8' },
-      tracks: [{ file: 'https://cdn.zokoanime.video/subs/en.vtt', label: 'English', kind: 'captions' }]
-    }
-  });
-  const xorKey = Buffer.from('otaku-embed-v1', 'utf8');
-  const plainBuf = Buffer.from(rawZokoJson, 'utf8');
-  const xorBuf = Buffer.alloc(plainBuf.length);
-  for (let i = 0; i < plainBuf.length; i++) {
-    xorBuf[i] = plainBuf[i] ^ xorKey[i % xorKey.length];
-  }
-  const decodedZoko = decodeZokoAnimeXorPayload(xorBuf.toString('base64'));
-  assert.strictEqual(
-    decodedZoko.streamUrl,
-    'https://cdn.zokoanime.video/hls/arcane-ep1/master.m3u8',
-    'ZokoAnime XOR decryptor must extract .m3u8 master URL'
-  );
-
+  // 2. HiCine Multi-Quality Link Parser Unit Tests
+  console.log('[2/12] Testing HiCine Multi-Quality Link Parser...');
   const sampleHicineSeason1 = [
     'Episode 1 : ',
     '480p : https://frosty-snowflake-407a.renker2364.workers.dev/?vcloud=https://vcloud.fit/ep1_480, https://pixeldrain.dev/u/AbCdEf123',
@@ -944,7 +924,7 @@ async function runTests() {
     }
   );
   assert.strictEqual(singleTrackResult, null, 'Single audio stream must remain progressive');
-  console.log('  ✔ Passed ZokoAnime, HiCine language parsing, and multi-track payload tests.');
+  console.log('  ✔ Passed HiCine language parsing and multi-track payload tests.');
 
   // 3. SRT -> WebVTT Converter Unit Test
   console.log('[3/12] Testing SubRip (.srt) to WebVTT (.vtt) Converter...');
