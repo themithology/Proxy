@@ -52,7 +52,7 @@ The page is served with `Content-Security-Policy: frame-ancestors *` so any site
 | `tmdb`     | TMDB ID (also accepted as `id`)                                          |
 | `s` / `e`  | Season / episode for TV (also `season` / `episode`)                      |
 | `server`   | Preferred upstream server: `andromeda`, `centaurus` or `hamster` (a stale/removed id falls back to the top-priority server) |
-| `source`   | Optional pin to one source of a multi-source server: `centaurus&source=hicine` or `centaurus&source=animedubhindi` (pinned requests do not fall through to other servers) |
+| `source`   | Optional pin to one source of a multi-source server: `centaurus&source=hicine`, `centaurus&source=animedubhindi` or `centaurus&source=animedrive` (pinned requests do not fall through to other servers) |
 | `api`      | Absolute API base URL override (see below)                               |
 | `lang`     | Preferred audio language (e.g. `hi`, `en`, `ta`)                         |
 | `sub`      | Preferred subtitle language (e.g. `en`)                                  |
@@ -107,7 +107,7 @@ server modal can never drift from what the waterfall actually tries:
 | Priority | Server id   | Player name           | Badge                                  | Cascade |
 |----------|-------------|-----------------------|----------------------------------------|---------|
 | 1        | `andromeda` | Fiber Optic Speedrun  | Multi-Audio • Primary                  | CastleTV → NetMirror |
-| 2        | `centaurus` | Gigachad Node         | Adaptive • Multi-Quality               | HiCine → Anime Dub Hindi (2 sources) |
+| 2        | `centaurus` | Gigachad Node         | Adaptive • Multi-Quality               | HiCine → Anime Dub Hindi → AnimeDrive (3 sources) |
 | 3        | `hamster`   | Hamster Wheel         | Hindi First • Multi-Audio • Max Coverage | MovieBox → HindMoviez → 4KHDHub (fan-out) |
 
 Every `/api/resolve` payload carries the `servers` array in this exact order with
@@ -135,18 +135,21 @@ Server Andromeda uses a resilient two-tier cascade backed by automatic dynamic d
 3. **Clean Waterfall Failover: Server 2 (Centaurus, HiCine)**
    - If both internal Andromeda tiers return no playable streams for a given title, Andromeda cleanly cascades to the next server in the shared priority waterfall.
 
-### Server 2 — Centaurus (two sources)
+### Server 2 — Centaurus (three sources)
 
-Centaurus is a two-source server. Source 1 is HiCine; source 2 is **Anime Dub
-Hindi** (`animedubhindi.link`), which covers the official Netflix Hindi/Tamil/
-Telugu dubs that general aggregators miss. Source 2 only runs when source 1
-produced nothing, so behaviour for every title HiCine already serves is
-unchanged.
+Centaurus is a three-source server. Source 1 is HiCine; sources 2 and 3 are the
+two Hindi-dub anime blogs **Anime Dub Hindi** (`animedubhindi.link`) and
+**AnimeDrive** (`animedrive.cc`), which cover the official Netflix Hindi/Tamil/
+Telugu dubs and the wider Hindi-Eng-Jap "multi audio" catalog that general
+aggregators miss. Each later source only runs when
+the earlier ones produced nothing, so behaviour for every title HiCine already
+serves is unchanged.
 
 | Source | Upstream | Flow | Output |
 |--------|----------|------|--------|
 | `hicine` | `api.hicine.sbs` | Search API → quality tokens → vCloud/Pixeldrain | Direct MP4/HLS |
 | `animedubhindi` | `animedubhindi.link` → `new.adhlinks.com` | WordPress search → post → episode page → HubCloud / GDFlix | Direct MP4/MKV (multi-audio Hindi) |
+| `animedrive` | `animedrive.cc` → `link.animedrive.cc` | WordPress search → post → "Download / Watch" landing page → `EP NN` rows → HubCloud / GDFlix | Direct MP4/MKV (multi-audio Hindi) |
 
 Why this source works where the big anime catalogs do not: the Streamtape-based
 anime sites only serve IP-locked iframes, while Anime Dub Hindi publishes to
@@ -172,6 +175,24 @@ Anime-specific care taken in the parser (`src/services/animedubhindi.js`):
   the Node remuxer; MKV releases become switchable HLS tracks when FFmpeg is
   available, and stay progressive elsewhere.
 
+AnimeDrive-specific care taken in the parser (`src/services/animedrive.js`):
+
+- **Release links are wrapped, not direct**: every row is
+  `link.animedrive.cc/dl/<base64url(reverse(target))>`, so the module decodes the
+  payload first and only then classifies the host (`hubcloud.ist` / `gdflix.dev`
+  today). A domain rotation behind the wrapper therefore still lands on the
+  right unroller.
+- **The host is decided by the decoded URL, not the section heading**
+  (☁️ HubCloud / 🟣 GDFlix), so a re-ordered page cannot mislabel a mirror.
+- **Episode blocks are tracked by the "EP NN" markers** and rows are attached to
+  the episode that precedes them; a ZIP/"Season Pack" block never satisfies an
+  episode request, and a missing episode returns nothing rather than a wrong
+  one.
+- **Send.cm / FuckingFast / 1Fichier / StreamTape / StreamWish rows are counted
+  for diagnostics and skipped** — only HubCloud and GDFlix are unrollable here.
+- Same ranking and audio-hint rules as Anime Dub Hindi (x264 outranks x265
+  10-bit; Hindi default, English/Japanese hinted for the remuxer).
+
 Configure with `ANIMEDUBHINDI_*` in `.env.example`; `ANIMEDUBHINDI_ENABLED=false`
 disables the source. Debug a title with the admin diagnostics endpoint:
 
@@ -180,18 +201,22 @@ curl "$API/api/admin/centaurus/diagnose/tv/249477?season=2&episode=1&key=$ADMIN_
 # → per-source {ok, ms, reason, diag, rawUrl, qualities, audioTracks}
 ```
 
-**Worker deployments:** source 2 works best on the Node backend (HTML
+**Worker deployments:** sources 2 and 3 work best on the Node backend (HTML
 extraction, unrolling, probes, and — most importantly — the ffmpeg remux that
 turns HiCine's multi-audio MKVs into switchable HLS audio renditions). Set
 `HICINE_BACKEND_URL` in `wrangler.toml` to the Node deployment's absolute URL
 (falls back to `ANIMEDUBHINDI_BACKEND_URL`, then `HAMSTER_BACKEND_URL`) and the
-Worker delegates the whole Centaurus server — HiCine first, Anime Dub Hindi
-second — to it; if the backend is absent or unreachable the in-Worker path still
-runs. The anime-only source additionally uses `?source=animedubhindi` when the
-in-Worker HiCine attempt finds nothing on an animation title, and reports an
-explicit `animedubhindi_backend_not_configured` diagnostic without it. Without
-ffmpeg on the Node host (`multitrack.enabled=false` in `/api/health`) HiCine
-MKVs still play, but their embedded audio tracks cannot be switched.
+Worker delegates the whole Centaurus server — HiCine first, then Anime Dub
+Hindi, then AnimeDrive — to it; if the backend is absent or unreachable the
+in-Worker path still runs. The anime-only sources additionally use
+`?source=animedubhindi` / `?source=animedrive` when the in-Worker HiCine attempt
+finds nothing on an animation title, and report explicit
+`animedubhindi_backend_not_configured` / `animedrive_backend_not_configured`
+diagnostics without a backend. `ANIMEDRIVE_ENABLED=false` (or
+`ANIMEDUBHINDI_ENABLED=false`) disables a blog source without touching the
+others; `ANIMEDRIVE_*` knobs live next to `ANIMEDUBHINDI_*` in `.env.example`.
+Without ffmpeg on the Node host (`multitrack.enabled=false` in `/api/health`)
+HiCine MKVs still play, but their embedded audio tracks cannot be switched.
 
 ### Server 3 — Hamster Wheel (Hindi-first fan-out)
 

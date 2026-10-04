@@ -367,6 +367,63 @@ flow with `x-token` — not needed while the GET path works).
 
 ---
 
+## 10. Second Hindi-dub anime source — AnimeDrive (2026-10-04)
+
+User asked for one more Hindi-dub anime source inside server 2 (the last one).
+Candidate scan (all fetched live 2026-10-04):
+
+| Site | Verdict | Why |
+|------|---------|-----|
+| **animedrive.cc** | **shipped** | WordPress search works; posts link to `link.animedrive.cc/<date>/<slug>/`; every release row is a `dl/<base64url(reverse(url))>` wrapper decoding to HubCloud or GDFlix — both already unrolled by this repo. Carries x264 480p/720p/1080p (not HEVC-only). |
+| hindianimeszone.com (hindianimezone.me redirects there) | rejected | Episode rows point at `002.hindianimeszone.com/download1.php?code=…&q=…`; the download hop is a Cloudflare Turnstile interstitial ("Authorization valid for 1 hour"). Not automatable. |
+| gokuhd.com | rejected | Search is client-rendered ("Searching database…" with an empty DOM). Only usable with hand-collected post URLs; not worth it next to AnimeDrive. |
+| morimoflix.xyz | rejected | Search works but the Blue Box entry is `S01 1080P … English/Japanese` — no Hindi row; the site is a members-library front-end, not a release blog. |
+| puretoons.in | rejected | Search returns cartoons only; no Hindi-dub anime rows. |
+
+**Verified facts about AnimeDrive**
+
+- Search: `https://animedrive.cc/?s=<title>` → one WP post per season
+  (`/blue-box-season-2-hindi-download/`, `/that-time-i-got-reincarnated-as-a-slime-season-4-hindi-download/`, …).
+  Posts carry the season in the title (`Season 2`, `Season 4`), so the same
+  title+season matcher as Anime Dub Hindi works.
+- Post → exactly one CTA, `Download / Watch`, to
+  `https://link.animedrive.cc/<yyyy>/<mm>/<dd>/<slug>/` (e.g.
+  `link.animedrive.cc/2026/06/18/that-time-i-got-reincarnated-as-a-slime-season-4-hindi-english-japanese-multi-audio-web-dl-episodes-download/`).
+- Landing page: `EP 01` … `EP NN` accordions; each has a ☁️ HubCloud group and a
+  🟣 GDFlix group with four rows —
+  `480p x264`, `720p x264`, `1080p x265 10bit`, `1080p x264` (sizes vary per
+  episode; e.g. 104mb / 174mb / 395mb / 1.50GB). A full-season ZIP block is
+  promised "once airing completes".
+- Every row is
+  `https://link.animedrive.cc/dl/<payload>?t=<title>&q=<quality label>` where
+  `payload = base64url(reverse(target URL))`. Decoded live examples:
+  EP01 HubCloud 480p `MmN1Zm50Mm4yNndlb3RlL2V2aXJkL3RzaS5kdW9sY2J1aC8vOnNwdHRo`
+  → `https://hubcloud.ist/drive/etoew62n2tnfuc2`; EP01 GDFlix 480p
+  `NUNJMGpJcjZVbmRnYXBLL2VsaWYvdmVkLnhpbGZkZy8vOnNwdHRo`
+  → `https://gdflix.dev/file/KpagdnU6rIj0IC5`.
+- Rows this repo will not serve are counted in diagnostics and skipped:
+  Send.cm, FuckingFast, 1Fichier, StreamTape, StreamWish.
+- The two hosts are the *same* hosts Anime Dub Hindi publishes to, so no new
+  unroller was needed — only a parser for the page + wrapper (this module
+  deliberately classifies the host **after** decoding, so a rotated mirror
+  domain still resolves).
+
+**Shipped implementation**
+
+| Piece | Where |
+|-------|-------|
+| Parser + wrapper decoder + episode/row grouping | `src/services/animedrive.js` (`decodeDlUrl`, `parseRowLabel`, `parsePostLink`, `parseEpisodePage`, `selectRowsForEpisode`, `languagesFromText`; reuses the Anime Dub Hindi text walker/ranking helpers) |
+| Resolver source #3 (`search → post → landing → rows → unroll+probe → payload`) | `src/services/resolver.js` (`resolveAnimeDriveSource`, wired into `resolveCentaurusServer` + `diagnoseCentaurus`; `?source=animedrive` pins it) |
+| Worker delegation + admin probe | `cloudflare-worker/worker.js` (`resolveAnimeDriveUpstream`, falls back `ANIMEDRIVE_BACKEND_URL → ANIMEDUBHINDI_BACKEND_URL → HAMSTER_BACKEND_URL`) |
+| Config / env | `src/config.js` `animedrive` block; `.env.example` `ANIMEDRIVE_*`; `wrangler.toml` |
+| Tests | `test/animedrive.test.js` (15 checks: live wrapper token, row labels, host filtering, episode strictness, mock pipeline for both hosts, pinned-source) |
+
+Reasoning rules are identical to Anime Dub Hindi: x264 outranks x265 10-bit, a
+missing episode returns nothing (never a neighbour/ZIP), and Hindi stays the
+default audio hint.
+
+---
+
 ## Sources
 
 - https://github.com/cinepro-org/core · issues [#62](https://github.com/cinepro-org/core/issues/62), [LICENSE](https://github.com/cinepro-org/core/blob/main/LICENSE) · https://docs.cinepro.cc/
@@ -379,3 +436,4 @@ flow with `x-token` — not needed while the GET path works).
 - https://github.com/simoabid/cineflix-core · https://github.com/rathod-ramraj/cinebridge
 - GDFlix reference flows: https://github.com/yogesh-hacker/MediaVanced (`sites/gdflix.py`) · https://github.com/mnsrulz/nurlresolver (`src/libs/gdflix.ts`)
 - Anime Dub Hindi: https://www.animedubhindi.link/ · https://new.adhlinks.com/episode/blubox-s1/ (25-episode season) · https://new.adhlinks.com/episode/bluebox-s2/ (airing, S2 row format) · https://new4.gdflix.io/file/zObWX9waTYr4hN4 (GDFlix page)
+- AnimeDrive: https://animedrive.cc/?s=blue+box · https://animedrive.cc/that-time-i-got-reincarnated-as-a-slime-season-4-hindi-download/ · https://link.animedrive.cc/2026/06/18/that-time-i-got-reincarnated-as-a-slime-season-4-hindi-english-japanese-multi-audio-web-dl-episodes-download/ (per-episode HubCloud/GDFlix rows)

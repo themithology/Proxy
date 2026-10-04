@@ -8,6 +8,7 @@ const identity = require('./identity');
 const serverCatalog = require('./serverCatalog');
 const hamster = require('./hamster');
 const animedubhindi = require('./animedubhindi');
+const animedrive = require('./animedrive');
 
 const USER_AGENT =
   'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36';
@@ -2751,16 +2752,256 @@ async function resolveAnimeDubHindiSource(metadata = {}) {
 }
 
 /**
- * Server 2 (Centaurus) is a two-source server: HiCine first (broad catalog),
- * Anime Dub Hindi second (Hindi-dub anime, which general aggregators miss).
- * The second source only runs when the first produced nothing, so behaviour is
- * unchanged for every title HiCine already serves.
+ * Server 2 (Centaurus) source #3: AnimeDrive.
+ *
+ * Hindi-dub anime release blog whose releases live on a separate links
+ * subdomain:
+ *   search  : /?s=<title>                       → WordPress posts
+ *   post    : /<slug>-hindi-download/           → "Download / Watch"
+ *   landing : link.animedrive.cc/<date>/<slug>/ → "EP NN" blocks
+ *             with HubCloud + GDFlix rows per quality
+ *   row     : link.animedrive.cc/dl/<base64url(reverse(targetUrl))>
+ *             → hubcloud.ist/drive/<id> | gdflix.dev/file/<id>
+ *
+ * Every path is followed (no slug is constructed) and hosts are classified
+ * *after* decoding the `/dl/` payload, so a mirror that rotates domains still
+ * lands on the right unroller. Send.cm / FuckingFast / 1Fichier / StreamTape /
+ * StreamWish rows are skipped by the parser. See docs §10 for the live
+ * verification (2026-10-04).
+ */
+async function resolveAnimeDriveSource(metadata = {}) {
+  const settings = config.animedrive || {};
+  if (settings.enabled === false) return { reason: 'source_disabled' };
+  if (!metadata.title) return { reason: 'no_title' };
+  if (!isAnimeCandidate(metadata)) return { reason: 'not_anime' };
+
+  const providerKey = 'centaurus:animedrive';
+  if (!circuitBreaker.isAvailable(providerKey)) return { reason: 'circuit_open' };
+
+  const base = String(settings.baseUrl || 'https://animedrive.cc').replace(/\/+$/, '');
+  const budgetMs = Number(settings.timeoutMs) || 12000;
+  const pageCap = Number(settings.pageBodyCap) || 1600 * 1024;
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), budgetMs + 2500);
+  const deadline = Date.now() + budgetMs;
+  const diag = [];
+
+  try {
+    const fetchPage = async (url, extraHeaders = {}) => {
+      const res = await fetchWithDeadline(url, USER_AGENT, controller.signal, deadline, {
+        headers: { Referer: `${base}/`, ...extraHeaders }
+      });
+      if (!res || !res.ok) return null;
+      const html = await readCappedText(res, pageCap);
+      return html || null;
+    };
+
+    // 1) WordPress search → the post for this title (and season).
+    let post = null;
+    const queries = [String(metadata.title).trim()];
+    if (metadata.releaseYear) queries.push(`${String(metadata.title).trim()} ${metadata.releaseYear}`);
+    for (const query of queries) {
+      if (Date.now() > deadline - 3000) break;
+      const html = await fetchPage(`${base}/?s=${encodeURIComponent(query)}`);
+      if (!html) {
+        diag.push(`search_failed:${query}`);
+        continue;
+      }
+      const results = animedrive.parseSearchResults(html, base);
+      if (results.length === 0) {
+        diag.push(`search_empty:${query}`);
+        continue;
+      }
+      const picked = animedrive.pickBestPost(results, metadata);
+      if (picked) {
+        post = picked;
+        diag.push(`post:${picked.title}`);
+        break;
+      }
+      diag.push(`search_miss:${query}(${results.length})`);
+    }
+    if (!post) {
+      circuitBreaker.recordSuccess(providerKey);
+      return { reason: 'animedrive_no_post', diag: diag.join(', ') };
+    }
+
+    // 2) Post → link.animedrive.cc landing page ("Download / Watch").
+    const postHtml = await fetchPage(post.url);
+    if (!postHtml) return { reason: 'animedrive_post_failed', diag: diag.join(', ') };
+    const landingUrl = animedrive.parsePostLink(postHtml, post.url);
+    if (!landingUrl) {
+      return { reason: 'animedrive_no_episode_page', diag: `${diag.join(', ')}, post has no links page` };
+    }
+    diag.push(`landing:${landingUrl}`);
+
+    // 3) Landing page → the requested episode's quality rows.
+    const pageHtml = await fetchPage(landingUrl, { Referer: post.url });
+    if (!pageHtml) return { reason: 'animedrive_landing_failed', diag: diag.join(', ') };
+    const parsed = animedrive.parseEpisodePage(pageHtml, landingUrl);
+    if (parsed.pageKind === 'not_found') {
+      return { reason: 'animedrive_page_not_found', diag: `${diag.join(', ')}, links page removed` };
+    }
+    const rows = animedrive.selectRowsForEpisode(parsed, {
+      type: metadata.type,
+      episode: metadata.episode || 1
+    });
+    if (rows.length === 0) {
+      return {
+        reason: 'animedrive_episode_not_found',
+        diag: `${diag.join(', ')}, ${parsed.episodes.length} block(s), wanted e${metadata.episode || 1}`
+      };
+    }
+
+    // 4) Rank rows (x264 before x265, then resolution). Each row already
+    //    carries its decoded host (hubcloud | gdflix).
+    const ordered = animedrive.sortRows(rows);
+    const candidates = [];
+    const seenUrls = new Set();
+    for (const row of ordered) {
+      if (!row.url || seenUrls.has(row.url)) continue;
+      seenUrls.add(row.url);
+      candidates.push({ url: row.url, hostId: row.host, row });
+    }
+    if (candidates.length === 0) {
+      return { reason: 'animedrive_no_release_links', diag: `${diag.join(', ')}, rows carry no HubCloud/GDFlix link` };
+    }
+    diag.push(`rows:${rows.length}`);
+
+    // 5) Unroll + probe until the budget runs out.
+    const unrollDeadline = Date.now() + (Number(settings.unrollBudgetMs) || 7000);
+    const probeLimit = Number(settings.maxProbeCandidates) || 6;
+    const probeTimeoutMs = Number(settings.probeTimeoutMs) || 3500;
+    const playable = [];
+    const seen = new Set();
+
+    for (const candidate of candidates) {
+      if (playable.length >= probeLimit || Date.now() > unrollDeadline + 2500) break;
+      const referer = candidate.hostId === 'gdflix' ? 'https://gdflix.dev/' : 'https://hubcloud.ist/';
+      const headers = { Referer: referer };
+      let url = '';
+      try {
+        url = candidate.hostId === 'gdflix'
+          ? await unrollGdflixUrl(candidate.url, { signal: controller.signal, deadline: unrollDeadline, headers })
+          : await unrollHubcloudUrl(candidate.url, { signal: controller.signal, deadline: unrollDeadline, headers });
+      } catch {
+        url = '';
+      }
+      if (!url || seen.has(url)) continue;
+      seen.add(url);
+      const isPlayable = await probePlayableMediaUrl(url, {
+        signal: controller.signal,
+        deadline: Math.max(unrollDeadline, Date.now() + 1500) + 3000,
+        timeoutMs: probeTimeoutMs,
+        headers
+      });
+      if (!isPlayable) continue;
+      playable.push({
+        url,
+        referer,
+        headers,
+        row: candidate.row,
+        hostId: candidate.hostId,
+        kind: hamster.kindFromUrl(url)
+      });
+    }
+
+    if (playable.length === 0) {
+      circuitBreaker.recordFailure(providerKey);
+      diag.push(`unplayable:${candidates.length}`);
+      return { reason: 'animedrive_no_playable_stream', diag: diag.join(', ') };
+    }
+    circuitBreaker.recordSuccess(providerKey);
+
+    // ---- payload assembly (same shape as Anime Dub Hindi) ----------------
+    const primary = playable[0];
+    const proxyFor = (item) => buildProxyStreamUrl(item.url, item.referer || '', '', { mode: 'full' });
+    const primaryTrack = {
+      id: 'animedrive-hi',
+      lang: 'hi',
+      // The site advertises Hindi-Eng-Jap multi audio; browsers play the file's
+      // default (Hindi) track, and the Node tier remuxes the rest when it can.
+      label: 'Hindi (Multi-Audio release — plays default track)',
+      type: 'dub',
+      streamUrl: proxyFor(primary),
+      rawUrl: primary.url,
+      default: true
+    };
+
+    const seenHeights = new Set();
+    const qualities = [];
+    for (const item of playable) {
+      const height = Number(item.row?.height) || 0;
+      if (height && seenHeights.has(height)) continue;
+      if (height) seenHeights.add(height);
+      qualities.push({
+        label: item.row?.label || (height ? `${height}p` : 'Auto'),
+        height,
+        url: proxyFor(item)
+      });
+    }
+
+    // AnimeDrive encodes are Hindi-Eng-Jap multi-audio; hints only label the
+    // remuxed renditions (Hindi default).
+    const hintedLanguages = [
+      { code: 'hi', label: 'Hindi' },
+      { code: 'en', label: 'English' },
+      { code: 'ja', label: 'Japanese' }
+    ];
+    const isProgressive = primary.kind !== 'hls' && primary.kind !== 'dash';
+    const multiTrackStream = isProgressive
+      ? await prepareMultiTrackStream(primary.url, hintedLanguages, { trustSource: true })
+      : null;
+    const fallbackKind = primary.kind === 'unknown' ? 'mp4' : primary.kind;
+
+    return {
+      server: 'centaurus',
+      sourceName: 'AnimeDrive',
+      centaurusSource: 'animedrive',
+      format: multiTrackStream ? multiTrackStream.format : fallbackKind,
+      rawUrl: primary.url,
+      streamUrl: multiTrackStream ? multiTrackStream.streamUrl : primaryTrack.streamUrl,
+      progressiveFormat: multiTrackStream ? fallbackKind : undefined,
+      progressiveFallbackUrls: multiTrackStream ? playable.slice(1).map((item) => item.url) : undefined,
+      progressiveAudioTrack: multiTrackStream
+        ? multiTrackStream.audioTracks.find((track) => track.default) || multiTrackStream.audioTracks[0] || primaryTrack
+        : primaryTrack,
+      referer: primary.referer,
+      headers: primary.headers,
+      // Proxied (not raw) so referer-protected CDNs still serve the mirror.
+      backupUrls: playable.slice(1).map((item) => proxyFor(item)),
+      audioTracks: multiTrackStream ? multiTrackStream.audioTracks : [primaryTrack],
+      // A remux publishes exactly one video rendition — keep the progressive
+      // ladder only while playback really is progressive.
+      qualities: multiTrackStream
+        ? [remuxQualityRow(qualities, multiTrackStream.streamUrl)]
+        : qualities.length > 0
+          ? qualities
+          : [{ label: 'Auto', height: 0, url: primaryTrack.streamUrl }],
+      animedriveDiag: diag.join(', ')
+    };
+  } catch (error) {
+    circuitBreaker.recordFailure(providerKey);
+    return {
+      reason: 'animedrive_failed',
+      diag: error instanceof Error ? error.message : 'unknown'
+    };
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+/**
+ * Server 2 (Centaurus) is a three-source server: HiCine first (broad catalog),
+ * then the two Hindi-dub anime blogs (Anime Dub Hindi, AnimeDrive) that
+ * general aggregators miss. Later sources only run when the earlier ones
+ * produced nothing, so behaviour is unchanged for every title HiCine serves.
  */
 async function resolveCentaurusServer(metadata, options = {}) {
   const onlySource = String(options.onlySource || '').toLowerCase() || '';
   const sources = [
     { id: 'hicine', run: () => resolveHicineServer(metadata) },
-    { id: 'animedubhindi', run: () => resolveAnimeDubHindiSource(metadata) }
+    { id: 'animedubhindi', run: () => resolveAnimeDubHindiSource(metadata) },
+    { id: 'animedrive', run: () => resolveAnimeDriveSource(metadata) }
   ].filter((source) => !onlySource || source.id === onlySource);
   const attempts = [];
 
@@ -2857,7 +3098,26 @@ async function diagnoseCentaurus(metadata) {
     audioTracks: Array.isArray(anime?.audioTracks) ? anime.audioTracks.map((track) => track.label).slice(0, 8) : []
   });
 
-  report.ok = !!(anime && anime.streamUrl) || !!(hicine && hicine.streamUrl);
+  const driveStart = Date.now();
+  let drive = null;
+  try {
+    drive = await resolveAnimeDriveSource(metadata);
+  } catch (error) {
+    drive = { reason: 'threw', diag: error instanceof Error ? error.message : 'unknown' };
+  }
+  report.sources.push({
+    id: 'animedrive',
+    ok: !!(drive && drive.streamUrl),
+    ms: Date.now() - driveStart,
+    reason: drive?.streamUrl ? 'stream' : drive?.reason || 'no_stream',
+    diag: drive?.diag || drive?.animedriveDiag || null,
+    rawUrl: drive?.rawUrl || null,
+    referer: drive?.referer || null,
+    qualities: Array.isArray(drive?.qualities) ? drive.qualities.map((quality) => quality.label).slice(0, 8) : [],
+    audioTracks: Array.isArray(drive?.audioTracks) ? drive.audioTracks.map((track) => track.label).slice(0, 8) : []
+  });
+
+  report.ok = !!(anime && anime.streamUrl) || !!(drive && drive.streamUrl) || !!(hicine && hicine.streamUrl);
   report.totalMs = Date.now() - startedAt;
   return report;
 }
@@ -3208,9 +3468,10 @@ async function diagnoseHamster(metadata) {
  * @param {string} requestedServerId
  * @param {string} preferredAudio
  * @param {{ onlySource?: string }} [options] `onlySource` restricts a multi-source
- *   server (currently centaurus) to one source. The Cloudflare Worker uses it to
- *   delegate just the Anime Dub Hindi source after its own HiCine attempt failed,
- *   instead of paying for a second HiCine run on the backend.
+ *   server (currently centaurus) to one source (`hicine` | `animedubhindi` |
+ *   `animedrive`). The Cloudflare Worker uses it to delegate just an anime blog
+ *   source after its own HiCine attempt failed, instead of paying for a second
+ *   HiCine run on the backend.
  */
 async function resolveStreamForServer(metadata, requestedServerId = 'andromeda', preferredAudio = '', options = {}) {
   // 1. Check whether the owner configured a custom stream override for this TMDB ID via /api/admin
@@ -3287,8 +3548,9 @@ async function resolveStreamForServer(metadata, requestedServerId = 'andromeda',
     if (srvId === 'andromeda') {
       resolved = await resolveAndromedaServer(metadata, srvId, preferredAudio);
     } else if (srvId === 'centaurus') {
-      // Server 2 fans out over two sources: HiCine, then Anime Dub Hindi.
-      // `onlySource` (set by the Worker's delegation) pins it to one of them.
+      // Server 2 fans out over three sources: HiCine, then the Hindi-dub
+      // anime blogs Anime Dub Hindi and AnimeDrive. `onlySource` (set by the
+      // Worker's delegation) pins it to one of them.
       resolved = await resolveCentaurusServer(metadata, { onlySource });
     } else if (srvId === 'hamster') {
       resolved = await resolveHamsterServer(metadata);
@@ -3341,6 +3603,7 @@ module.exports = {
   isDdosGuardPage,
   resolveHicineServer,
   resolveAnimeDubHindiSource,
+  resolveAnimeDriveSource,
   resolveCentaurusServer,
   diagnoseCentaurus,
   resolveHamsterServer,

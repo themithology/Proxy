@@ -2880,6 +2880,9 @@ async function resolveHicineUpstream(metadata, env = {}) {
 const WATERFALL_UPSTREAM_TIMEOUT_MS = 9000;
 /** Anime Dub Hindi is a backend HTTP call that itself runs a multi-hop flow. */
 const ANIMEDUBHINDI_UPSTREAM_TIMEOUT_MS = 11000;
+// The third centaurus source only runs after the other two failed in this
+// fallback path, so its budget is smaller to protect the route's latency.
+const ANIMEDRIVE_UPSTREAM_TIMEOUT_MS = 10000;
 
 /**
  * Hamster Wheel (server #3) runs on the Node backend: it needs HMAC request
@@ -2995,10 +2998,22 @@ async function resolveCentaurusBackendUpstream(metadata, env = {}) {
   }
 }
 
+/**
+ * Backend that owns the anime blog sources (Anime Dub Hindi / AnimeDrive). One
+ * Node deployment hosts both, so all three variables are interchangeable and
+ * the first non-empty one wins.
+ */
+function animeBlogBackendBase(env = {}) {
+  return String(
+    (env && env.ANIMEDRIVE_BACKEND_URL) ||
+    (env && env.ANIMEDUBHINDI_BACKEND_URL) ||
+    (env && env.HAMSTER_BACKEND_URL) ||
+    ''
+  ).replace(/\/+$/, '');
+}
+
 async function resolveAnimeDubHindiUpstream(metadata, env = {}) {
-  const base = String(
-    (env && env.ANIMEDUBHINDI_BACKEND_URL) || (env && env.HAMSTER_BACKEND_URL) || ''
-  ).replace(/\/$/, '');
+  const base = animeBlogBackendBase(env);
   if (!base) return { reason: 'animedubhindi_backend_not_configured' };
 
   const query = new URLSearchParams({
@@ -3032,6 +3047,53 @@ async function resolveAnimeDubHindiUpstream(metadata, env = {}) {
     };
   } catch {
     return { reason: 'animedubhindi_backend_unreachable' };
+  }
+}
+
+/**
+ * AnimeDrive (Centaurus source #3) is another Node-backend-owned blog source:
+ * its releases hide behind `link.animedrive.cc/dl/<base64url(reverse(url))>`
+ * wrappers that unroll to HubCloud/GDFlix, and both hosts need the unroll +
+ * media-probe stack the Node tier already has. Behaves exactly like the Anime
+ * Dub Hindi delegate: one direct source request, backend URL from
+ * `animeBlogBackendBase()` (a backend that hosts one blog source hosts the
+ * other).
+ */
+async function resolveAnimeDriveUpstream(metadata, env = {}) {
+  const base = animeBlogBackendBase(env);
+  if (!base) return { reason: 'animedrive_backend_not_configured' };
+
+  const query = new URLSearchParams({
+    server: 'centaurus',
+    source: 'animedrive',
+    season: String(metadata.season || 1),
+    episode: String(metadata.episode || 1)
+  });
+  try {
+    const response = await fetch(`${base}/api/resolve/${metadata.type}/${metadata.tmdbId}?${query}`, {
+      headers: { Accept: 'application/json', 'User-Agent': USER_AGENT }
+    });
+    if (!response.ok) return { reason: `animedrive_backend_http_${response.status}` };
+    const payload = await response.json();
+    const stream = payload && payload.stream;
+    if (!stream || !stream.streamUrl) {
+      return { reason: (payload && payload.failedReason) || 'animedrive_no_stream' };
+    }
+    return {
+      server: 'centaurus',
+      sourceName: stream.sourceName || 'AnimeDrive',
+      format: stream.format || 'mkv',
+      rawUrl: stream.rawUrl,
+      // Already an absolute, HMAC-signed /api/proxy URL on the Node origin.
+      streamUrl: stream.streamUrl,
+      referer: stream.referer || '',
+      headers: stream.headers || {},
+      backupUrls: stream.backupUrls || [],
+      audioTracks: stream.audioTracks || [],
+      qualities: stream.qualities || []
+    };
+  } catch {
+    return { reason: 'animedrive_backend_unreachable' };
   }
 }
 
@@ -3106,13 +3168,21 @@ async function resolveStreamWaterfall(metadata, requestedServer, preferredAudio,
           const anime = isAnimationMetadata(metadata)
             ? await withTimeout(resolveAnimeDubHindiUpstream(metadata, env), ANIMEDUBHINDI_UPSTREAM_TIMEOUT_MS)
             : { reason: 'not_anime' };
+          // Third source: AnimeDrive (anime-only as well; same blog family).
+          const animeDrive = anime && anime.streamUrl
+            ? null
+            : isAnimationMetadata(metadata)
+              ? await withTimeout(resolveAnimeDriveUpstream(metadata, env), ANIMEDRIVE_UPSTREAM_TIMEOUT_MS)
+              : { reason: 'not_anime' };
           resolved = anime && anime.streamUrl
             ? anime
-            : {
-                reason: `centaurus_no_source: hicine=${(hicine && hicine.reason) || 'no_stream'}; animedubhindi=${
-                  (anime && anime.reason) || 'no_stream'
-                }`
-              };
+            : animeDrive && animeDrive.streamUrl
+              ? animeDrive
+              : {
+                  reason: `centaurus_no_source: hicine=${(hicine && hicine.reason) || 'no_stream'}; animedubhindi=${
+                    (anime && anime.reason) || 'no_stream'
+                  }; animedrive=${(animeDrive && animeDrive.reason) || 'no_stream'}`
+                };
         }
       }
     } else if (srvId === 'hamster') {
@@ -3411,12 +3481,15 @@ export default {
         const targets = [
           { serverId: 'andromeda', url: `${runtimeState.upstreams.vidstuckBase}/backend/tmdb/details/tv/94605?language=en-US` },
           { serverId: 'centaurus', url: `${runtimeState.upstreams.hicineApiBase}/api/search/arcane` },
-          // Anime Dub Hindi (centaurus source #2) lives on the Node backend, so
-          // probe that backend — only when one is configured.
+          // Anime Dub Hindi / AnimeDrive (centaurus sources #2/#3) live on the
+          // Node backend, so probe that backend — only when one is configured.
           ...(() => {
-            const backend = String((env && (env.ANIMEDUBHINDI_BACKEND_URL || env.HAMSTER_BACKEND_URL)) || '').replace(/\/$/, '');
+            const backend = animeBlogBackendBase(env);
             return backend
-              ? [{ serverId: 'centaurus:animedubhindi', url: `${backend}/api/health` }]
+              ? [
+                  { serverId: 'centaurus:animedubhindi', url: `${backend}/api/health` },
+                  { serverId: 'centaurus:animedrive', url: `${backend}/api/health` }
+                ]
               : [];
           })()
         ];

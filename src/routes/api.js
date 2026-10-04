@@ -307,7 +307,15 @@ router.get('/resolve/:type/:tmdbId', async (req, res) => {
         animedubhindi_no_playable_stream:
           'The Hindi-dub anime release links did not play back (hosts may be down or IP-blocked).',
         animedubhindi_backend_not_configured: 'The anime source needs the Node backend (ANIMEDUBHINDI_BACKEND_URL).',
-        centaurus_no_source: 'Both Centaurus sources (HiCine, Anime Dub Hindi) found nothing for this title.',
+        animedrive_no_post: 'The second Hindi-dub anime source has no release for this title.',
+        animedrive_no_episode_page: 'The second Hindi-dub anime post has no links page yet.',
+        animedrive_episode_not_found: 'The second Hindi-dub anime source has not uploaded this episode yet.',
+        animedrive_no_release_links: 'The second Hindi-dub anime episode has no HubCloud/GDFlix rows.',
+        animedrive_no_playable_stream:
+          'The second Hindi-dub anime release links did not play back (hosts may be down or IP-blocked).',
+        animedrive_backend_not_configured: 'The second anime source needs the Node backend (ANIMEDRIVE_BACKEND_URL).',
+        centaurus_no_source:
+          'All Centaurus sources (HiCine, Anime Dub Hindi, AnimeDrive) found nothing for this title.',
         hamster_backend_not_configured:
           'Hamster Wheel needs the Node backend configured (HAMSTER_BACKEND_URL on the Worker).',
         hamster_backend_unreachable: 'Hamster Wheel backend could not be reached.',
@@ -366,10 +374,10 @@ router.get('/admin/hamster/diagnose/:type/:tmdbId', requireAdminAuth, async (req
 
 /**
  * GET /api/admin/centaurus/diagnose/:type/:tmdbId
- * Runs both Centaurus sources (HiCine, Anime Dub Hindi) and reports what each
- * produced — including the anime source's per-step diag string (search hit,
- * episode page, rows, unroll/probe outcome). Answers "is the anime source
- * working for this title?" with data instead of logs.
+ * Runs all Centaurus sources (HiCine, Anime Dub Hindi, AnimeDrive) and reports
+ * what each produced — including the anime sources' per-step diag strings
+ * (search hit, episode page, rows, unroll/probe outcome). Answers "is an anime
+ * source working for this title?" with data instead of logs.
  * Protected by the admin key like the other /api/admin routes.
  */
 router.get('/admin/centaurus/diagnose/:type/:tmdbId', requireAdminAuth, async (req, res) => {

@@ -161,6 +161,25 @@ const config = {
     pageBodyCap: parsePositiveInteger(process.env.ANIMEDUBHINDI_PAGE_BODY_CAP, 1400 * 1024)
   },
 
+  // Server 2 (Centaurus) source #3: AnimeDrive — a Hindi-dub anime release
+  // blog. Flow: search (`/?s=`) → post → link.animedrive.cc landing page →
+  // `EP NN` blocks → per-quality HubCloud/GDFlix rows. Row links are wrapped as
+  // `link.animedrive.cc/dl/<base64url(reverse(targetUrl))>` and are decoded in
+  // src/services/animedrive.js, then unrolled by the shared HubCloud/GDFlix
+  // helpers. Only the blog base is configurable; every path is followed. §10.
+  animedrive: {
+    enabled: parseBoolean(process.env.ANIMEDRIVE_ENABLED, true),
+    baseUrl: process.env.ANIMEDRIVE_BASE_URL || 'https://animedrive.cc',
+    linksBaseUrl: process.env.ANIMEDRIVE_LINKS_BASE_URL || 'https://link.animedrive.cc',
+    // Same budget shape as Anime Dub Hindi: the whole flow must fit inside the
+    // Worker's upstream timeout with headroom for the response transfer.
+    timeoutMs: parsePositiveInteger(process.env.ANIMEDRIVE_TIMEOUT_MS, 8000),
+    unrollBudgetMs: parsePositiveInteger(process.env.ANIMEDRIVE_UNROLL_BUDGET_MS, 6000),
+    probeTimeoutMs: parsePositiveInteger(process.env.ANIMEDRIVE_PROBE_TIMEOUT_MS, 3500),
+    maxProbeCandidates: parsePositiveInteger(process.env.ANIMEDRIVE_MAX_PROBE_CANDIDATES, 6),
+    pageBodyCap: parsePositiveInteger(process.env.ANIMEDRIVE_PAGE_BODY_CAP, 1600 * 1024)
+  },
+
   // Server definitions (names, badges, priorities) live in the shared catalog so
   // the Worker that serves the player and this backend can never drift apart.
   // `servers` is kept in priority order, which is also the implicit waterfall

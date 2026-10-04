@@ -626,6 +626,7 @@ module.exports = {
   isResolvableHost,
   isGdflixUrl,
   buildStream,
+  extractAnchors,
   parseSearchResults,
   pickBestPost,
   parsePostEpisodeLinks,
