@@ -103,7 +103,7 @@ const config = {
       .map((s) => s.trim().replace(/\/$/, ''))
       .filter(Boolean),
 
-    // Ursa uses 4KHDHub. Other 4K host settings are retained for optional dub-provider lookups.
+    // Ursa uses MoviesDrive + 4KHDHub; remaining 4K hosts serve optional dub lookups.
     fourkhdhubBase: process.env.FOURKHDHUB_BASE_URL || 'https://4khdhub.one',
     fourkhdhubHosts: (
       process.env.FOURKHDHUB_HOSTS ||

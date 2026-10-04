@@ -2848,13 +2848,10 @@ async function resolveHicineServer(metadata) {
 }
 
 // ============================================================================
-// SERVER 3 (URSA / 4K): 2160p 4K UHD & MULTI-AUDIO via 4KHDHub
-// Single source: 4KHDHub (2160p BluRay REMUX / WEB-DL Dual/Multi-Audio),
-// reached through its redirector chain + HubCloud unroll to direct files.
-// Keep the player path to the one source verified by the current live probes;
-// if it misses, let the regular server waterfall handle the fallback.
-// (The MoviesDrive 4K / HiCine 4K / Dahmer 4K resolvers remain exported for
-// the Node opt-in Hindi dub deep probe only.)
+// SERVER 3 (URSA / 4K): TWO-SOURCE 2160p UHD & MULTI-AUDIO
+// Movies: MoviesDrive 4K first, then 4KHDHub. TV: 4KHDHub first, then
+// MoviesDrive 4K. Other scrapers remain outside the player path (Node exposes
+// them only to the optional dub inventory).
 // ============================================================================
 
 let dynamic4kDomainCache = {
@@ -3210,7 +3207,7 @@ async function unroll4kCandidateUrl(rawLink, signal, deadline, referer = '') {
   if (!rawLink || typeof rawLink !== 'string') return null;
   let currentUrl = rawLink.trim();
   const headers = fourKBrowserHeaders(referer);
-  const probeOptions = { signal, deadline, headers, timeoutMs: 1800 };
+  const probeOptions = { signal, deadline, headers, timeoutMs: 3500 };
   const checkedDirect = async (url) => {
     if (!url) return null;
     const normalizedUrl = normalizePlayableUrl(url);
@@ -4282,10 +4279,9 @@ async function resolveDahmer4k(metadata, preferredAudio = '') {
 
 /**
  * Server 3 (Ursa) 4K resolver
- * Uses the verified 4KHDHub source, unrolls it to direct media files, and
- * falls through to the next server only when no verified stream is available.
- * The other 4K scrapers remain independent providers for the optional dub
- * inventory; they are not part of this player-server request path.
+ * Tries MoviesDrive before 4KHDHub for movies and reverses that order for TV.
+ * If neither yields verified media, the outer server waterfall continues.
+ * HiCine and DahmerMovies remain independent optional dub-inventory providers.
  */
 
 function isVerifiedUrsa2160Result(result) {
@@ -4325,7 +4321,7 @@ async function resolveUrsaServer(metadata, requestedServerId = 'ursa', preferred
   if (!metadata || !metadata.title) {
     stamp(
       'metadata_missing',
-      'Ursa needs the TMDB title to search 4KHDHub, but metadata resolution returned no title (unresolved TMDB lookup). Nothing was probed.'
+      'Ursa needs a TMDB title to search 4KHDHub and MoviesDrive 4K, but metadata resolution returned no title (unresolved TMDB lookup). Nothing was probed.'
     );
     return { ok: false, reason: 'ursa_metadata_missing', diag };
   }
@@ -4335,35 +4331,55 @@ async function resolveUrsaServer(metadata, requestedServerId = 'ursa', preferred
     return { ok: false, reason: 'circuit_open', diag };
   }
 
-  // Keep Server 3 to one source. If 4KHDHub misses, return a clear failure
-  // and let the regular server waterfall choose the next server.
-  stamp('4khdhub_attempt', 'Attempting 4KHDHub (2160p UHD Multi-Audio)...');
-  let result;
-  try {
-    result = await resolve4khdhub(metadata, preferredAudio);
-  } catch (error) {
-    result = { ok: false, reason: `4khdhub_error:${error.message}` };
-  }
+  // Keep Server 3 short and serial: use just these two sources, prioritize
+  // MoviesDrive for movies and 4KHDHub for TV, then return to the normal
+  // server waterfall if neither resolves.
+  const fourkhdhub = {
+    id: '4khdhub',
+    label: '4KHDHub',
+    run: () => resolve4khdhub(metadata, preferredAudio)
+  };
+  const moviesdrive = {
+    id: 'moviesdrive4k',
+    label: 'MoviesDrive 4K',
+    run: () => resolveMoviesdrive4k(metadata, preferredAudio)
+  };
+  // The live probe found a responsive MoviesDrive file for Dune, while its
+  // 4KHDHub Google mirror stalled. Use MoviesDrive first for movies; for TV,
+  // keep 4KHDHub first and MoviesDrive as the backup.
+  const sources = metadata.type === 'movie'
+    ? [moviesdrive, fourkhdhub]
+    : [fourkhdhub, moviesdrive];
 
-  if (result && result.ok && !isVerifiedUrsa2160Result(result)) {
-    result = { ...result, ok: false, reason: '4khdhub_no_verified_2160p' };
-  }
+  for (const source of sources) {
+    stamp(`${source.id}_attempt`, `Attempting ${source.label} (verified 2160p)...`);
+    let result;
+    try {
+      result = await source.run();
+    } catch (error) {
+      result = { ok: false, reason: `${source.id}_error:${error.message}` };
+    }
 
-  if (result && result.ok && result.streamUrl) {
-    const qualityNote = result.qualityDegraded
-      ? `quality degraded to ${result.qualities?.[0]?.label || 'the best available quality'}`
-      : `verified 4K (${result.qualities?.[0]?.label || '2160p'})`;
-    stamp('4khdhub_success', `Resolved ${qualityNote} via 4khdhub`);
-    diag.selectedTier = '4khdhub';
-    diag.qualityDegraded = result.qualityDegraded === true;
-    diag.message = result.qualityDegraded
-      ? `Resolved best available quality via 4khdhub (${result.qualities?.[0]?.label || 'fallback'})`
-      : `Resolved verified 4K stream via 4khdhub (${result.qualities?.[0]?.label || '2160p'})`;
-    circuitBreaker.recordSuccess(providerKey);
-    return { ...result, diag };
-  }
+    if (result && result.ok && !isVerifiedUrsa2160Result(result)) {
+      result = { ...result, ok: false, reason: `${source.id}_no_verified_2160p` };
+    }
 
-  stamp('4khdhub_failed', (result && result.reason) || '4khdhub returned no verified 2160p stream');
+    if (result && result.ok && result.streamUrl) {
+      const qualityNote = result.qualityDegraded
+        ? `quality degraded to ${result.qualities?.[0]?.label || 'the best available quality'}`
+        : `verified 4K (${result.qualities?.[0]?.label || '2160p'})`;
+      stamp(`${source.id}_success`, `Resolved ${qualityNote} via ${source.label}`);
+      diag.selectedTier = source.id;
+      diag.qualityDegraded = result.qualityDegraded === true;
+      diag.message = result.qualityDegraded
+        ? `Resolved best available quality via ${source.label} (${result.qualities?.[0]?.label || 'fallback'})`
+        : `Resolved verified 4K stream via ${source.label} (${result.qualities?.[0]?.label || '2160p'})`;
+      circuitBreaker.recordSuccess(providerKey);
+      return { ...result, diag };
+    }
+
+    stamp(`${source.id}_failed`, (result && result.reason) || `${source.label} returned no verified 2160p stream`);
+  }
 
   // Test/Mock Fallback: if vidsrcDataUrl explicitly points to localhost.
   if (config.upstreams.vidsrcDataUrl && /127\.0\.0\.1|localhost/i.test(config.upstreams.vidsrcDataUrl)) {
@@ -4377,7 +4393,7 @@ async function resolveUrsaServer(metadata, requestedServerId = 'ursa', preferred
 
   stamp(
     'ursa_4k_exhausted',
-    '4KHDHub could not resolve a verified 2160p stream for this title.'
+    'Neither 4KHDHub nor MoviesDrive 4K resolved a verified 2160p stream for this title.'
   );
   return {
     ok: false,

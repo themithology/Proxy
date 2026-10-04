@@ -188,22 +188,23 @@ To replace the deprecated VidStuck upstream, Server Andromeda uses a resilient c
 
 ### Server 3 — Ursa (`?server=ursa` / `?server=4k`) 4K UHD
 
-Server 3 is deliberately simple: **one source, 4KHDHub**. It searches the
-requested title/episode, follows the redirector chain, and returns a direct
-media URL only after checking it is a playable file. Recent CI probes verified
-2160p files and byte-range playback for the test titles. The resolver also
-keeps lower-resolution links as playback fallbacks when 4K is unavailable or
-cannot be decoded by the browser.
+Server 3 uses a small sequential resolver with **two sources, not four**:
+MoviesDrive 4K first for movies (the live-probed Dune link was responsive),
+and 4KHDHub first for TV. Each has the other as its single fallback. A source
+must unroll to a direct media URL and pass the playability check; if both miss,
+the normal server waterfall takes over. Lower-resolution quality links remain
+available for playback fallback.
 
-If 4KHDHub has no verified file, Ursa reports failure and the normal server
-waterfall can move on; it no longer waits on extra 4K scrapers. It does not
-transcode video in the Worker, so MKV/HEVC support still depends on the
-browser/device.
+The latest live probe confirmed direct 206 media for Dune via MoviesDrive and
+for Fight Club and Arcane via 4KHDHub. Dune's 4KHDHub Google mirror timed out
+in the independent range probe, which is why movie resolution prefers
+MoviesDrive. The Worker does not transcode, so MKV/HEVC playback still depends
+on the browser/device.
 
-**Honest metadata failure (`ursa_metadata_missing`).** 4KHDHub searches by
+**Honest metadata failure (`ursa_metadata_missing`).** Both sources search by
 title. If TMDB metadata has no title, Ursa returns
 `reason: ursa_metadata_missing` with a `metadata_missing` diagnostic step
-instead of claiming the provider was probed. The Worker retries TMDB once and
+instead of claiming a provider was probed. The Worker retries TMDB once and
 uses the VidStuck TMDB proxy as a fallback.
 
 ### Server 4 — Hamster Wheel (`?server=hamster`) Multi-Language OMSS Cascade
