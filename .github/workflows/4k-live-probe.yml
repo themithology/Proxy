@@ -56,16 +56,21 @@ jobs:
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          report_tmp="$(mktemp)"
+          cp diagnostics/4k-live-probe.json "$report_tmp"
           for attempt in 1 2 3 4 5; do
             git fetch -q origin "${GITHUB_REF_NAME}"
-            git reset --soft "origin/${GITHUB_REF_NAME}"
+            # Rebase the report onto the newest branch without letting a
+            # concurrent probe workflow delete another workflow's diagnostics.
+            git reset --hard "origin/${GITHUB_REF_NAME}"
+            cp "$report_tmp" diagnostics/4k-live-probe.json
             git add -f diagnostics/4k-live-probe.json
             if git diff --cached --quiet; then
               echo "report already up to date"
               exit 0
             fi
             git commit -q -m "chore(research): live 4K probe report [skip ci]"
-            if git push; then
+            if git push origin "HEAD:${GITHUB_REF_NAME}"; then
               exit 0
             fi
             echo "push attempt ${attempt} lost the race, retrying..."
