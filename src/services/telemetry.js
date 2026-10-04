@@ -265,9 +265,9 @@ class TelemetryAndAdminEngine {
         url: `${config.upstreams.zxcBase}/movie`
       },
       {
-        serverId: 'strings',
-        name: 'HiAnime Sub/Dub Source',
-        url: `${config.upstreams.hianimeBase}/search?keyword=arcane`
+        serverId: 'hamster',
+        name: 'Videasy Multi-Language',
+        url: `https://api.videasy.net/mb-flix/sources-with-title?tmdb=94605`
       }
     ];
 
