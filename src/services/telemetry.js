@@ -263,6 +263,11 @@ class TelemetryAndAdminEngine {
         serverId: 'atlas',
         name: 'ZXC Stream Mirror',
         url: `${config.upstreams.zxcBase}/movie`
+      },
+      {
+        serverId: 'hamster',
+        name: 'Videasy Multi-Language',
+        url: `https://api.videasy.net/mb-flix/sources-with-title?tmdb=94605`
       }
     ];
 

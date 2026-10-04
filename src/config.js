@@ -161,9 +161,16 @@ const config = {
     },
     {
       id: 'atlas',
-      name: 'Hamster Wheel',
+      name: 'Atlas',
       badge: 'Adaptive • Backup',
       priority: 4,
+      supportsMultiAudio: true
+    },
+    {
+      id: 'hamster',
+      name: 'Hamster Wheel',
+      badge: 'Multi-Language • OMSS Cascade',
+      priority: 5,
       supportsMultiAudio: true
     }
   ]

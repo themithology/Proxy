@@ -6,6 +6,7 @@ const { buildProxyStreamUrl } = require('./proxy');
 const { prepareMultiTrackStream, normalizeAudioLanguage } = require('./multitrack');
 const { telemetry } = require('./telemetry');
 const identity = require('./identity');
+const { resolveHamsterWheelServer } = require('./hamsterWheel');
 
 const USER_AGENT =
   'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36';
@@ -4589,7 +4590,7 @@ async function resolveStreamForServer(metadata, requestedServerId = 'andromeda',
 
   // Build ordered waterfall starting with the user's selected server, then the
   // premier multi-audio cascade: Andromeda (Server 1) -> Ursa (Server 2: 4K UHD) -> Centaurus -> Atlas -> Strings.
-  const WATERFALL_PRIORITY = ['andromeda', 'ursa', 'centaurus', 'atlas'];
+  const WATERFALL_PRIORITY = ['andromeda', 'ursa', 'centaurus', 'atlas', 'hamster'];
   const enabledIds = enabledServers.map((s) => s.id);
   const isImplicitFallback = (id) => {
     const server = config.servers.find((s) => s.id === id);
@@ -4611,6 +4612,8 @@ async function resolveStreamForServer(metadata, requestedServerId = 'andromeda',
       resolved = await resolveAndromedaServer(metadata, srvId, preferredAudio);
     } else if (srvId === 'atlas') {
       resolved = await resolveVidstuckServer(metadata, srvId);
+    } else if (srvId === 'hamster') {
+      resolved = await resolveHamsterWheelServer(metadata, srvId, preferredAudio);
     } else if (srvId === 'ursa') {
       resolved = await resolveUrsaServer(metadata, requestedServerId, preferredAudio);
     } else if (srvId === 'centaurus') {
