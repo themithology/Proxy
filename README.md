@@ -113,6 +113,7 @@ The multi-audio tiers (CastleTV, Moviebox) can only be searched by **name**, and
 
 - Metadata is always resolved from the **TMDB id** first (`/api/info`, `/api/resolve`, `/api/dubs`), including original and alternative titles.
 - Every upstream search row/subject is scored against that identity (title + original/alt titles + release year + movie/series type), and only an exact-identity candidate can be used. Unverifiable results are a clean miss, so the waterfall moves on instead of playing a different film.
+- Provider years are release-ish, so movies tolerate a ±2-year drift (CastleTV lists Spirited Away as 2003) while decade-apart collisions — the 2023 "Fight Club" for TMDB `550` — are still rejected; exact-year candidates outrank drifted ones.
 - The matched identity is returned in the payload (`stream.identity`: `matchedTitle`, `matchedYear`, `upstreamId`, `score`, `reasons`, plus the rejected candidates) so clients can show and verify what was actually selected.
 - All dub languages the verified provider exposes are surfaced as `audioTracks` (CastleTV per-language tracks, Moviebox `dubs[]`/`resourceDetectors[]`); Hindi is the default when present, otherwise the preferred `?audio=` track.
 - If no identity-verified Hindi source exists for a title, the Hindi server returns the verified original-audio stream with `hindiAvailable: false` (never a wrong-title Hindi stream) and the dub inventory reports `hindi: false`.
