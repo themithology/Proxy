@@ -96,7 +96,7 @@
           </button>
 
           <!-- Servers Cloud Button -->
-          <button id="btn-servers" class="icon-btn top-icon-btn" title="Servers & Sources" aria-label="Servers" aria-haspopup="dialog">
+          <button id="btn-servers" class="icon-btn top-icon-btn" title="Servers & Sources" aria-label="Servers" aria-haspopup="dialog" aria-expanded="false">
             <svg viewBox="0 0 24 24" width="22" height="22" fill="currentColor">
               <path d="M18.5 10A5.5 5.5 0 0 0 7.6 8.6 4.5 4.5 0 0 0 6.5 17.5h12a3.75 3.75 0 0 0 0-7.5z"/>
             </svg>
@@ -543,20 +543,19 @@
     </div>
 
     <!-- =================================================================== -->
-    <!-- MODAL 3: SERVERS / CLOUD SOURCES MODAL                              -->
+    <!-- POPOVER 3: SERVERS & SOURCES (anchored under the cloud button)      -->
+    <!-- Each server lists its stream sources as "Source N" — the upstream  -->
+    <!-- provider names are never shown to viewers.                          -->
     <!-- =================================================================== -->
-    <div id="modal-servers-backdrop" class="modal-backdrop hidden">
-      <div class="settings-modal-card servers-modal-card" role="dialog" aria-modal="true" aria-label="Servers">
-        <div class="modal-drag-handle"></div>
-        <div class="settings-header">
-          <div class="settings-title">STREAMING SERVERS</div>
-          <div class="settings-subtitle">Multi-server automatic failover &amp; regional audio routing.</div>
-        </div>
-        <div id="servers-list-container" class="settings-sections-scroll"></div>
-        <div class="settings-footer">
-          <button id="btn-close-servers" class="modal-close-full-btn">Close</button>
-        </div>
+    <div id="popover-servers" class="floating-popover servers-popover hidden" role="dialog" aria-label="Servers">
+      <div class="popover-header">
+        <svg class="popover-header-svg" viewBox="0 0 24 24" width="17" height="17" fill="currentColor" aria-hidden="true">
+          <path d="M18.5 10A5.5 5.5 0 0 0 7.6 8.6 4.5 4.5 0 0 0 6.5 17.5h12a3.75 3.75 0 0 0 0-7.5z"/>
+        </svg>
+        <span class="popover-header-title">SERVERS</span>
       </div>
+      <div id="servers-list-container" class="popover-scroll-list servers-scroll-list"></div>
+      <div class="popover-footer">Choose a server or one of its sources</div>
     </div>
   </div>
 

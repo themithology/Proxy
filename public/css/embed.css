@@ -1714,13 +1714,48 @@ button {
 }
 
 /* Server Card Row inside Servers Modal */
+/* Servers & sources popover (anchored under the cloud button, top-right) */
+.floating-popover.servers-popover {
+  top: 68px;
+  right: 26px;
+  bottom: auto;
+  width: 340px;
+  max-height: calc(100% - 150px);
+}
+
+.popover-header-svg {
+  color: var(--text-secondary);
+  flex-shrink: 0;
+}
+
+.popover-footer {
+  padding: 11px 16px;
+  border-top: 1px solid var(--border-subtle);
+  font-size: 12px;
+  color: var(--text-muted);
+  text-align: center;
+  flex-shrink: 0;
+}
+
+.servers-scroll-list {
+  max-height: min(440px, 60vh);
+  padding: 8px;
+  gap: 4px;
+}
+
+.server-group {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+/* Server row: name, tagline and a state mark on the right. */
 .server-row-card {
   width: 100%;
-  background: rgba(255, 255, 255, 0.04);
-  border: 1px solid var(--border-subtle);
+  background: transparent;
+  border: 1px solid transparent;
   border-radius: 10px;
-  padding: 12px 14px;
-  margin-bottom: 8px;
+  padding: 11px 12px;
   cursor: pointer;
   display: flex;
   align-items: center;
@@ -1732,12 +1767,12 @@ button {
 }
 
 .server-row-card:hover {
-  background: rgba(255, 255, 255, 0.08);
+  background: rgba(255, 255, 255, 0.06);
 }
 
 .server-row-card.active {
   background: rgba(255, 255, 255, 0.1);
-  border-color: var(--accent);
+  border-color: var(--border-subtle);
 }
 
 .server-row-main {
@@ -1747,59 +1782,106 @@ button {
   min-width: 0;
 }
 
-.server-rank {
-  width: 30px;
-  height: 30px;
-  border-radius: 8px;
-  background: rgba(255, 255, 255, 0.06);
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 12px;
-  font-weight: 800;
-  color: rgba(255, 255, 255, 0.8);
-  flex-shrink: 0;
-}
-
-.server-row-card.active .server-rank {
-  background: var(--accent);
-  border-color: var(--accent);
-  color: var(--accent-contrast);
-}
-
 .server-name-line {
   display: flex;
   align-items: center;
   gap: 8px;
-  font-size: 14.5px;
-  font-weight: 700;
+  font-size: 15px;
+  font-weight: 600;
 }
 
 .server-desc-line {
-  font-size: 12px;
+  font-size: 12.5px;
   color: var(--text-secondary);
   margin-top: 3px;
 }
 
-.server-badge-pill {
-  font-size: 11px;
-  font-weight: 700;
-  padding: 4px 9px;
-  border-radius: 999px;
-  background: rgba(163, 163, 163, 0.16);
-  color: #a3a3a3;
-  white-space: nowrap;
+/* State mark: ✓ ready · — not checked · ✕ unavailable · spinner checking */
+.server-state {
+  width: 22px;
+  height: 22px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   flex-shrink: 0;
+  color: rgba(255, 255, 255, 0.92);
+  font-size: 14px;
+  font-weight: 700;
 }
 
-.server-badge-pill.is-active {
-  background: var(--accent);
-  color: var(--accent-contrast);
+.server-state.is-unknown,
+.server-state.is-failed {
+  color: var(--text-muted);
 }
 
-.server-badge-pill.is-failed {
+.server-state-spinner {
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  border: 2px solid rgba(255, 255, 255, 0.18);
+  border-top-color: rgba(255, 255, 255, 0.85);
+  animation: spin 0.8s linear infinite;
+}
+
+/* Sources nested under a server, indented behind a guide line. */
+.server-sources {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  margin: 0 0 4px 14px;
+  padding-left: 12px;
+  border-left: 2px solid var(--border-strong);
+}
+
+.server-source-row {
+  width: 100%;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  padding: 9px 12px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  color: #fff;
+  font-size: 14px;
+  font-weight: 500;
+  text-align: left;
+  transition: background 0.15s ease;
+}
+
+.server-source-row:hover {
   background: rgba(255, 255, 255, 0.06);
+}
+
+.server-source-row.active {
+  background: rgba(255, 255, 255, 0.12);
+  border-color: var(--border-subtle);
+}
+
+.source-status {
+  font-size: 12.5px;
+  font-weight: 600;
+  white-space: nowrap;
+  color: var(--text-secondary);
+}
+
+/* Status colour: the only non-monochrome text in the picker, like the reference. */
+.source-status.is-ready,
+.source-status.is-playing {
+  color: #4ade80;
+}
+
+.source-status.is-failed {
+  color: var(--text-muted);
+}
+
+.server-source-note {
+  margin: 0 0 4px 14px;
+  padding: 6px 0 6px 12px;
+  border-left: 2px solid var(--border-subtle);
+  font-size: 12.5px;
   color: var(--text-muted);
 }
 
@@ -1955,6 +2037,17 @@ button {
   .floating-popover {
     bottom: 60px;
     max-height: calc(100% - 70px);
+  }
+  .floating-popover.servers-popover {
+    top: 56px;
+    bottom: auto;
+    left: 12px;
+    right: 12px;
+    width: auto;
+    max-height: calc(100% - 130px);
+  }
+  .servers-scroll-list {
+    max-height: min(360px, 55vh);
   }
   .popover-scroll-list {
     max-height: 38vh;

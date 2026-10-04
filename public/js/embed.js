@@ -232,9 +232,8 @@
   const episodesHeaderSubtitle = document.getElementById('episodes-header-subtitle');
   const btnCloseEpisodes = document.getElementById('btn-close-episodes');
 
-  const modalServersBackdrop = document.getElementById('modal-servers-backdrop');
+  const popoverServers = document.getElementById('popover-servers');
   const serversListContainer = document.getElementById('servers-list-container');
-  const btnCloseServers = document.getElementById('btn-close-servers');
 
   const seekFeedbackLeft = document.getElementById('seek-feedback-left');
   const seekFeedbackRight = document.getElementById('seek-feedback-right');
@@ -254,6 +253,11 @@
     audioTracks: [],
     qualities: [],
     servers: [],
+    // What the player has learned about each server for the current episode:
+    // { status: 'unknown'|'checking'|'ready'|'failed', sources: [url, ...] }.
+    serverInfo: {},
+    // A specific source the viewer picked before the server finished resolving.
+    pendingSourceUrl: null,
     activeAudioId: 'en-dub',
     activeSubtitleId: 'off',
     preferredSubtitleLang: '',
@@ -574,12 +578,29 @@
     bufferingIndicator.classList.add('hidden');
   }
 
+  // Same resolve URL for the main load and for server probes, so the backend
+  // cache (and its domain telemetry) sees one request shape.
+  function buildResolveUrl(serverId) {
+    const parentDomain =
+      (window.location.ancestorOrigins && window.location.ancestorOrigins[0]) ||
+      document.referrer ||
+      window.location.origin;
+    return apiUrl(
+      `/api/resolve/${state.type}/${encodeURIComponent(state.tmdbId)}?season=${state.season}&episode=${state.episode}&server=${encodeURIComponent(serverId)}&audio=${encodeURIComponent(state.activeAudioId)}&parent=${encodeURIComponent(parentDomain)}`
+    );
+  }
+
   // --- Load Media Bundle from Backend ---
   async function loadMediaBundle(preserveTime = false) {
     const savedTime = preserveTime ? video.currentTime : 0;
     const loadToken = ++state.loadToken;
     const requestedServer = state.server;
-    if (!preserveTime) state.progressLocked = true;
+    if (!preserveTime) {
+      state.progressLocked = true;
+      // Sources differ per episode: forget what we learned about the servers.
+      state.serverInfo = {};
+      state.pendingSourceUrl = null;
+    }
     if (!video.paused) video.pause();
     cancelUpNext();
     // A stale "Skip Intro" from the previous episode must not survive the switch.
@@ -589,12 +610,7 @@
 
     let data = null;
     try {
-      const parentDomain =
-        (window.location.ancestorOrigins && window.location.ancestorOrigins[0]) ||
-        document.referrer ||
-        window.location.origin;
-      const url = apiUrl(`/api/resolve/${state.type}/${encodeURIComponent(state.tmdbId)}?season=${state.season}&episode=${state.episode}&server=${encodeURIComponent(requestedServer)}&audio=${encodeURIComponent(state.activeAudioId)}&parent=${encodeURIComponent(parentDomain)}`);
-      const res = await fetch(url);
+      const res = await fetch(buildResolveUrl(requestedServer));
       try {
         data = await res.json();
       } catch (_) {
@@ -641,9 +657,10 @@
         state.server = state.servers[0].id;
       }
 
+      learnServersFromPayload(data, requestedServer);
       renderSegmentedTimeline();
       renderSubtitlesPopover();
-      renderServersModal();
+      renderServersPopover();
       updateNextEpisodeButton();
 
       if (!data || !res.ok || !data.ok || !data.stream || !data.stream.streamUrl) {
@@ -686,11 +703,16 @@
       }
 
       renderAudioPopover();
-      renderServersModal();
+      renderServersPopover();
       updateSettingsSummaryValues();
       loadingStatusText.textContent = `Loading stream from ${serverDisplayName(state.server)}…`;
 
-      const targetStreamUrl = state.stream.streamUrl;
+      // Honour a source the viewer picked from the servers list, if this
+      // server still offers it; otherwise start from the primary source.
+      const sources = sourcesFromStream(state.stream);
+      const targetStreamUrl =
+        state.pendingSourceUrl && sources.includes(state.pendingSourceUrl) ? state.pendingSourceUrl : state.stream.streamUrl;
+      state.pendingSourceUrl = null;
       await attachStreamToVideo(targetStreamUrl, savedTime);
 
       // Apply the subtitle preference: a track the viewer already had on, a
@@ -713,6 +735,10 @@
       // try block on purpose so this branch can read it.
       const apiData = data && (data.explanation || data.serverExplanation) ? data : null;
       const baseMsg = (err && err.message) || 'Stream unavailable — select another server.';
+      // Nothing is playing from this server now: do not keep listing the
+      // previous stream's sources as if they were.
+      state.stream = null;
+      renderServersPopover();
       const detail = apiData
         ? [apiData.serverExplanation, apiData.explanation && apiData.requestedServer ? `${apiData.explanation} (${apiData.requestedServer})` : apiData.explanation]
             .filter(Boolean)
@@ -861,6 +887,7 @@
     if (!state.stream._primaryStreamUrl) state.stream._primaryStreamUrl = state.stream.streamUrl || streamUrl;
     state._triedStreamUrls.add(streamUrl);
     if (state.stream.streamUrl !== streamUrl) state.stream.streamUrl = streamUrl;
+    if (!popoverServers.classList.contains('hidden')) renderServersPopover();
 
     // Walk the resolved backup ladder (googleusercontent -> fsl2 -> 480p ->
     // /api/proxy) before declaring the stream dead.
@@ -1005,6 +1032,8 @@
   const triedServers = new Set();
   function handleFatalStreamError() {
     triedServers.add(state.server);
+    setServerInfo(state.server, { status: 'failed' });
+    renderServersPopover();
     const nextSrv = state.servers.find((s) => !triedServers.has(s.id));
     if (nextSrv) {
       state.server = nextSrv.id;
@@ -1028,8 +1057,7 @@
   });
 
   btnErrorServers.addEventListener('click', () => {
-    renderServersModal();
-    modalServersBackdrop.classList.remove('hidden');
+    openServersPopover();
   });
 
   // Resolve which native HLS audio rendition a payload audio row maps to.
@@ -1518,8 +1546,117 @@
     }
   });
 
-  // --- Render Servers Modal ---
-  function renderServersModal() {
+  // --- Servers & sources ---------------------------------------------------
+  // A "source" is one of the stream URLs a server resolved (its primary stream
+  // plus its backup mirrors). They are shown as "Source 1..N" only: upstream
+  // provider names and URLs never reach the viewer.
+  function serverInfoFor(id) {
+    return state.serverInfo[id] || { status: 'unknown', sources: [] };
+  }
+
+  function setServerInfo(id, patch) {
+    if (!id) return;
+    state.serverInfo[id] = { ...serverInfoFor(id), ...patch };
+  }
+
+  function sourcesFromStream(stream) {
+    if (!stream || typeof stream !== 'object') return [];
+    const primary = stream._primaryStreamUrl || stream.streamUrl;
+    const backups = Array.isArray(stream.backupUrls) ? stream.backupUrls : [];
+    return [...new Set([primary, ...backups].filter((u) => typeof u === 'string' && u))];
+  }
+
+  /**
+   * Every resolve answer teaches us about several servers at once: the one
+   * that answered is ready (with its sources), and each entry of the backend
+   * waterfall's `serverAttempts` failed before it.
+   */
+  function learnServersFromPayload(data, requestedServer) {
+    const stream = data && data.stream && typeof data.stream === 'object' ? data.stream : null;
+    const attempts = (stream && Array.isArray(stream.serverAttempts) && stream.serverAttempts) ||
+      (data && Array.isArray(data.serverAttempts) && data.serverAttempts) || [];
+    attempts.forEach((attempt) => {
+      if (attempt && attempt.server && serverInfoFor(attempt.server).status !== 'ready') {
+        setServerInfo(attempt.server, { status: 'failed', sources: [] });
+      }
+    });
+    if (stream && stream.streamUrl && stream.server) {
+      setServerInfo(stream.server, { status: 'ready', sources: sourcesFromStream(stream) });
+      if (requestedServer && requestedServer !== stream.server && serverInfoFor(requestedServer).status !== 'ready') {
+        setServerInfo(requestedServer, { status: 'failed', sources: [] });
+      }
+    } else if (requestedServer && serverInfoFor(requestedServer).status !== 'ready') {
+      setServerInfo(requestedServer, { status: 'failed', sources: [] });
+    }
+  }
+
+  // Servers we know nothing about yet are checked one at a time while the
+  // list is open, so every row can show a real state instead of a guess.
+  let serverProbeChain = Promise.resolve();
+  function probeUnknownServers() {
+    const token = state.loadToken;
+    state.servers
+      .filter((srv) => srv.id !== state.server && serverInfoFor(srv.id).status === 'unknown')
+      .forEach((srv) => {
+        serverProbeChain = serverProbeChain.then(async () => {
+          if (token !== state.loadToken) return;
+          if (popoverServers.classList.contains('hidden')) return;
+          if (serverInfoFor(srv.id).status !== 'unknown') return;
+          setServerInfo(srv.id, { status: 'checking' });
+          renderServersPopover();
+          let data = null;
+          try {
+            const res = await fetch(buildResolveUrl(srv.id));
+            try { data = await res.json(); } catch (_) { data = null; }
+          } catch (_) {
+            data = null;
+          }
+          if (token !== state.loadToken) return;
+          if (data) absolutizeStreamPayload(data.stream);
+          learnServersFromPayload(data, srv.id);
+          if (serverInfoFor(srv.id).status === 'checking') setServerInfo(srv.id, { status: 'failed', sources: [] });
+          renderServersPopover();
+        });
+      });
+  }
+
+  function selectServer(serverId) {
+    // Manual selection: forget every previously failed server so the user's
+    // explicit choice is always retried with a clean slate.
+    triedServers.clear();
+    state._triedStreamUrls = new Set();
+    state.server = serverId;
+    closeAllPopovers();
+    loadMediaBundle(true);
+    emitHostEvent('serverchange', { server: serverId });
+  }
+
+  function switchToSource(serverId, url, label) {
+    if (serverId === state.server && state.stream && state.stream.streamUrl) {
+      if (state.stream.streamUrl === url) {
+        closeAllPopovers();
+        return;
+      }
+      state._triedStreamUrls = new Set();
+      closeAllPopovers();
+      showToast(`Switching to ${label}…`, 1800);
+      attachStreamToVideo(url, video.currentTime || 0);
+      renderServersPopover();
+      return;
+    }
+    state.pendingSourceUrl = url;
+    selectServer(serverId);
+  }
+
+  const STATE_ICONS = {
+    ready: '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="5 12.5 10 17.5 19 7"></polyline></svg>',
+    failed: '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" aria-hidden="true"><line x1="6" y1="6" x2="18" y2="18"></line><line x1="18" y1="6" x2="6" y2="18"></line></svg>',
+    checking: '<span class="server-state-spinner"></span>',
+    unknown: '—'
+  };
+  const STATE_LABELS = { ready: 'Ready', failed: 'Unavailable', checking: 'Checking', unknown: 'Not checked yet' };
+
+  function renderServersPopover() {
     serversListContainer.innerHTML = '';
     if (state.servers.length === 0) {
       const empty = document.createElement('div');
@@ -1528,36 +1665,83 @@
       serversListContainer.appendChild(empty);
       return;
     }
-    state.servers.forEach((srv, index) => {
-      const btn = document.createElement('button');
-      btn.type = 'button';
-      const isActive = srv.id === state.server;
-      const hasFailed = !isActive && triedServers.has(srv.id);
-      btn.className = 'server-row-card' + (isActive ? ' active' : '');
-      const pillClass = isActive ? ' is-active' : hasFailed ? ' is-failed' : '';
-      const pillText = isActive ? 'Playing' : hasFailed ? 'Failed' : 'Standby';
-      btn.innerHTML = `
+    const playingUrl = state.stream && state.stream.streamUrl ? state.stream.streamUrl : null;
+    const triedUrls = state._triedStreamUrls || new Set();
+
+    state.servers.forEach((srv) => {
+      const isActive = srv.id === state.server && !!playingUrl;
+      let info = serverInfoFor(srv.id);
+      // The playing server is the live truth, whatever we learned earlier.
+      if (isActive) info = { ...info, status: 'ready', sources: sourcesFromStream(state.stream) };
+      else if (info.status === 'unknown' && triedServers.has(srv.id)) info = { ...info, status: 'failed' };
+      const status = STATE_ICONS[info.status] ? info.status : 'unknown';
+
+      const group = document.createElement('div');
+      group.className = 'server-group' + (isActive ? ' is-active' : '');
+
+      const head = document.createElement('button');
+      head.type = 'button';
+      head.className = 'server-row-card' + (isActive ? ' active' : '');
+      head.setAttribute('aria-pressed', isActive ? 'true' : 'false');
+      head.innerHTML = `
         <div class="server-row-main">
-          <span class="server-rank">${index + 1}</span>
           <div>
             <div class="server-name-line"><span>${escapeHtml(srv.name)}</span></div>
             <div class="server-desc-line">${escapeHtml(srv.description)}</div>
           </div>
         </div>
-        <span class="server-badge-pill${pillClass}">${pillText}</span>
+        <span class="server-state is-${status}" role="img" aria-label="${STATE_LABELS[status]}">${STATE_ICONS[status]}</span>
       `;
-      btn.addEventListener('click', () => {
-        // Manual selection: forget every previously failed server so the user's
-        // explicit choice is always retried with a clean slate.
-        triedServers.clear();
-        state._triedStreamUrls = new Set();
-        state.server = srv.id;
-        modalServersBackdrop.classList.add('hidden');
-        loadMediaBundle(true);
-        emitHostEvent('serverchange', { server: srv.id });
+      head.addEventListener('click', () => {
+        if (isActive) {
+          closeAllPopovers();
+          return;
+        }
+        selectServer(srv.id);
       });
-      serversListContainer.appendChild(btn);
+      group.appendChild(head);
+
+      if (status === 'ready' && info.sources.length > 0) {
+        const list = document.createElement('div');
+        list.className = 'server-sources';
+        info.sources.slice(0, 8).forEach((url, index) => {
+          const label = `Source ${index + 1}`;
+          const isPlayingSource = isActive && url === playingUrl;
+          const sourceFailed = isActive && !isPlayingSource && triedUrls.has(url);
+          const row = document.createElement('button');
+          row.type = 'button';
+          row.className = 'server-source-row' + (isPlayingSource ? ' active' : '');
+          row.setAttribute('aria-pressed', isPlayingSource ? 'true' : 'false');
+          const statusClass = isPlayingSource ? 'is-playing' : sourceFailed ? 'is-failed' : 'is-ready';
+          const statusText = isPlayingSource ? 'Playing' : sourceFailed ? 'Failed' : 'Ready';
+          row.innerHTML = `<span class="source-name">${label}</span><span class="source-status ${statusClass}">${statusText}</span>`;
+          row.addEventListener('click', () => switchToSource(srv.id, url, label));
+          list.appendChild(row);
+        });
+        group.appendChild(list);
+      } else if (status === 'checking') {
+        const note = document.createElement('div');
+        note.className = 'server-source-note';
+        note.textContent = 'Checking sources…';
+        group.appendChild(note);
+      } else if (status === 'failed') {
+        const note = document.createElement('div');
+        note.className = 'server-source-note';
+        note.textContent = 'No sources available right now';
+        group.appendChild(note);
+      }
+
+      serversListContainer.appendChild(group);
     });
+  }
+
+  function openServersPopover() {
+    closeAllPopovers();
+    renderServersPopover();
+    popoverServers.classList.remove('hidden');
+    btnServers.classList.add('is-open');
+    btnServers.setAttribute('aria-expanded', 'true');
+    probeUnknownServers();
   }
 
   // --- Update Player Settings Summary Values ---
@@ -2114,16 +2298,21 @@
   btnForward.addEventListener('click', () => seekBy(15));
   btnNextEpisode.addEventListener('click', goToNextEpisode);
 
-  // Click / tap / double-tap on the picture.
-  //  - mouse:  click = play/pause, double-click = fullscreen
-  //  - touch:  tap = hide HUD while playing (or play when paused),
+  // Click / tap / double-tap on the picture. Clicking the picture never
+  // pauses: play/pause lives on the buttons, Space and K.
+  //  - mouse:  click = show the controls, double-click = fullscreen
+  //  - touch:  tap = show the controls (or hide them while playing),
   //            double-tap left/right = ±15s, double-tap center = fullscreen
   let lastPointerType = 'mouse';
   let tapTimer = null;
   let lastTapAt = 0;
+  let hudWasIdleOnPointerDown = false;
   playerRoot.addEventListener('pointerdown', (e) => {
     lastPointerType = e.pointerType || 'mouse';
-  }, { passive: true });
+    // Captured before touchstart wakes the HUD, so a tap on hidden controls
+    // shows them instead of immediately hiding them again.
+    hudWasIdleOnPointerDown = playerRoot.classList.contains('controls-idle');
+  }, { passive: true, capture: true });
 
   centerClickZone.addEventListener('click', (e) => {
     const now = Date.now();
@@ -2142,18 +2331,17 @@
       return;
     }
     lastTapAt = now;
+    const hudWasIdle = hudWasIdleOnPointerDown;
     tapTimer = setTimeout(() => {
       tapTimer = null;
-      if (isTouch) {
-        if (!video.paused && !playerRoot.classList.contains('controls-idle')) {
-          playerRoot.classList.add('controls-idle');
-          closeAllPopovers();
-        } else {
-          togglePlay();
-        }
-      } else {
-        togglePlay();
+      if (isTouch && !hudWasIdle && !video.paused && !playerRoot.classList.contains('controls-idle')) {
+        // Controls were already showing: a tap tucks them away again.
+        if (state.idleTimer) clearTimeout(state.idleTimer);
+        playerRoot.classList.add('controls-idle');
+        closeAllPopovers();
+        return;
       }
+      resetIdleTimer();
     }, 240);
   });
 
@@ -2380,6 +2568,9 @@
   function closeAllPopovers() {
     popoverAudio.classList.add('hidden');
     popoverSubtitles.classList.add('hidden');
+    popoverServers.classList.add('hidden');
+    btnServers.classList.remove('is-open');
+    btnServers.setAttribute('aria-expanded', 'false');
     subtitleStyleView.classList.add('hidden');
     subtitleDelayView.classList.add('hidden');
     subtitleMainView.classList.remove('hidden');
@@ -2392,14 +2583,13 @@
   function closeAllModals() {
     modalSettingsBackdrop.classList.add('hidden');
     modalEpisodesBackdrop.classList.add('hidden');
-    modalServersBackdrop.classList.add('hidden');
   }
 
   function isAnyOverlayOpen() {
     return (
       !modalSettingsBackdrop.classList.contains('hidden') ||
       !modalEpisodesBackdrop.classList.contains('hidden') ||
-      !modalServersBackdrop.classList.contains('hidden') ||
+      !popoverServers.classList.contains('hidden') ||
       !popoverAudio.classList.contains('hidden') ||
       !popoverSubtitles.classList.contains('hidden') ||
       !upNextCard.classList.contains('hidden')
@@ -2430,13 +2620,21 @@
 
   // Click anywhere outside an open popover closes it.
   document.addEventListener('pointerdown', (e) => {
-    if (popoverAudio.classList.contains('hidden') && popoverSubtitles.classList.contains('hidden')) return;
+    if (
+      popoverAudio.classList.contains('hidden') &&
+      popoverSubtitles.classList.contains('hidden') &&
+      popoverServers.classList.contains('hidden')
+    ) {
+      return;
+    }
     const target = e.target;
     if (
       popoverAudio.contains(target) ||
       popoverSubtitles.contains(target) ||
+      popoverServers.contains(target) ||
       btnAudioMenu.contains(target) ||
-      btnSubtitlesMenu.contains(target)
+      btnSubtitlesMenu.contains(target) ||
+      btnServers.contains(target)
     ) {
       return;
     }
@@ -2555,17 +2753,9 @@
   });
 
   btnServers.addEventListener('click', () => {
+    const wasHidden = popoverServers.classList.contains('hidden');
     closeAllPopovers();
-    renderServersModal();
-    modalServersBackdrop.classList.remove('hidden');
-  });
-
-  btnCloseServers.addEventListener('click', () => {
-    modalServersBackdrop.classList.add('hidden');
-  });
-
-  modalServersBackdrop.addEventListener('click', (e) => {
-    if (e.target === modalServersBackdrop) modalServersBackdrop.classList.add('hidden');
+    if (wasHidden) openServersPopover();
   });
 
   // Auto-hide HUD on inactivity during playback
