@@ -3844,6 +3844,9 @@ async function resolveMoviesdrive4k(metadata, preferredAudio = '') {
         .trim();
       const bodyStart = headingEnd !== -1 ? headingEnd + headingClose[0].length : 0;
       const bodyPart = sec.slice(bodyStart, bodyStart + 1800);
+      // Some themes put the download anchor inside the heading itself:
+      // `<h5><a href="...">1080p</a></h5>`.
+      const linkPart = sec.slice(0, bodyStart + 1800);
 
       if (/\.zip\b|\bpack\b/i.test(headingText) && isTv && !/single\s*episode/i.test(headingText)) {
         continue;
@@ -3854,7 +3857,7 @@ async function resolveMoviesdrive4k(metadata, preferredAudio = '') {
 
       const linkRe = /<a\b[^>]*href=["']([^"']+)["'][^>]*>([\s\S]*?)<\/a>/gi;
       let lm;
-      while ((lm = linkRe.exec(bodyPart))) {
+      while ((lm = linkRe.exec(linkPart))) {
         const rawHref = lm[1].trim().replace(/&amp;/g, '&');
         let href;
         try { href = new URL(rawHref, postBaseUrl || `${activeHost}/`).href; } catch { continue; }
