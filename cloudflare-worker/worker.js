@@ -22,6 +22,10 @@ import identity from '../src/services/identity.js';
 // Shared server catalog (single source of truth with the Node backend). The player renders the `servers` array returned by /api/resolve,
 // so rebranding or re-prioritising a server must never require a second edit here.
 import serverCatalog from '../src/services/serverCatalog.js';
+import skipSegments from '../src/services/skipSegments.js';
+import subtitleSources from '../src/services/subtitleSources.js';
+import tmdbArtwork from '../src/services/tmdbArtwork.js';
+import statsAggregate from '../src/services/statsAggregate.js';
 
 const USER_AGENT =
   'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36';
@@ -103,6 +107,9 @@ function recordWorkerDomainHit(request, url, type = 'embed', media = null) {
 }
 
 function recordWorkerServerAttempt(srvId, ok, latencyMs = 0, errMsg = null) {
+  // Per-server success/failure/latency also feeds the owner dashboard. No
+  // env/ctx here: the event rides along with the resolve outcome's flush.
+  queueStatsEvent({ kind: 'server_attempt', server: srvId, ok: !!ok, latencyMs, reason: ok ? null : errMsg });
   const m = runtimeState.serverMetrics.get(srvId);
   if (!m) return;
   m.lastLatencyMs = Math.round(latencyMs);
@@ -168,6 +175,276 @@ function getWorkerAdminSnapshot() {
   };
 }
 
+// ---------------------------------------------------------------------------
+// Usage statistics — owner dashboard at /reze, `GET /api/admin/stats`
+// ---------------------------------------------------------------------------
+// The counters (most requested / failing titles, sites using the API,
+// viewer countries, per-server health, per-day activity, latest failures,
+// blocked domains) live in ONE SQLite-backed Durable Object (`STATS` binding,
+// class `StatsStore` below) so they are global and survive isolate recycling.
+// Requests enqueue events in isolate memory and ship them to the object in
+// the background (`ctx.waitUntil`): embed / resolve outcomes flush at once,
+// per-segment proxy hits are batched. Without the binding (`wrangler dev`
+// without the DO, the test-suite) the same aggregate runs in-isolate and the
+// dashboard says so (`persistent: false`).
+
+const STATS_OBJECT_NAME = 'global';
+const STATS_FLUSH_DELAY_MS = 10000;
+const STATS_BATCH_SIZE = 50;
+const STATS_BATCH_MAX_AGE_MS = 30000;
+const STATS_BLOCKLIST_TTL_MS = 60000;
+
+const localStats = statsAggregate.createStatsAggregate();
+const statsQueue = { enabled: false, events: [], lastFlush: 0 };
+const blockedDomainsCache = { domains: new Set(), fetchedAt: 0, pending: null };
+
+function statsStub(env) {
+  const ns = env && env.STATS;
+  if (!ns || typeof ns.idFromName !== 'function' || typeof ns.get !== 'function') return null;
+  try {
+    return ns.get(ns.idFromName(STATS_OBJECT_NAME));
+  } catch {
+    return null;
+  }
+}
+
+function requestCountry(request) {
+  const cf = request && request.cf;
+  return (cf && cf.country) || (request && request.headers.get('cf-ipcountry')) || '';
+}
+
+/** Queue an event for the Durable Object (no-op when none is bound). */
+function queueStatsEvent(event) {
+  const stamped = { at: new Date().toISOString(), ...event };
+  localStats.record(stamped);
+  if (statsQueue.enabled) statsQueue.events.push(stamped);
+}
+
+function flushStats(env, ctx) {
+  const stub = statsStub(env);
+  if (!stub || !statsQueue.events.length) return;
+  const batch = statsQueue.events.splice(0);
+  statsQueue.lastFlush = Date.now();
+  const sent = stub
+    .fetch('https://stats.internal/record', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(batch)
+    })
+    .then(() => undefined)
+    .catch(() => undefined); // stats must never break a request; drop the batch
+  if (ctx && typeof ctx.waitUntil === 'function') ctx.waitUntil(sent);
+}
+
+function recordStatsEvent(env, ctx, event, { urgent = true } = {}) {
+  queueStatsEvent(event);
+  if (!statsQueue.enabled) return;
+  const stale = Date.now() - statsQueue.lastFlush > STATS_BATCH_MAX_AGE_MS;
+  if (urgent || statsQueue.events.length >= STATS_BATCH_SIZE || stale) flushStats(env, ctx);
+}
+
+function statsMediaFields(metadata) {
+  if (!metadata) return {};
+  return {
+    type: metadata.type === 'movie' ? 'movie' : 'tv',
+    tmdbId: metadata.tmdbId,
+    title: metadata.title || '',
+    year: metadata.releaseYear || null
+  };
+}
+
+/** `{ type, tmdbId, season, episode }` of a player URL (query or path form). */
+function parseEmbedMedia(url) {
+  const tv = url.pathname.match(/\/(?:embed\/)?tv\/([^/]+)(?:\/(\d+))?(?:\/(\d+))?/i);
+  const movie = url.pathname.match(/\/(?:embed\/)?movie\/([^/]+)/i);
+  const q = url.searchParams;
+  if (tv) {
+    return { type: 'tv', tmdbId: tv[1], season: parseInt(tv[2] || q.get('s') || q.get('season') || '1', 10), episode: parseInt(tv[3] || q.get('e') || q.get('episode') || '1', 10) };
+  }
+  if (movie) return { type: 'movie', tmdbId: movie[1], season: null, episode: null };
+  const type = (q.get('type') || 'tv').toLowerCase() === 'movie' ? 'movie' : 'tv';
+  const tmdbId = q.get('tmdb') || q.get('id') || '';
+  if (!tmdbId) return null;
+  return {
+    type,
+    tmdbId,
+    season: type === 'tv' ? parseInt(q.get('s') || q.get('season') || '1', 10) : null,
+    episode: type === 'tv' ? parseInt(q.get('e') || q.get('episode') || '1', 10) : null
+  };
+}
+
+async function fetchStatsSnapshot(env, limit = 25) {
+  const stub = statsStub(env);
+  if (stub) {
+    try {
+      const res = await stub.fetch(`https://stats.internal/snapshot?limit=${encodeURIComponent(limit)}`);
+      if (res.ok) return { persistent: true, storage: 'durable-object', ...(await res.json()) };
+    } catch {}
+  }
+  return { persistent: false, storage: 'isolate-memory', ...localStats.snapshot({ limit }) };
+}
+
+/** Owner block-list: persisted in the stats object, cached per isolate for a minute. */
+async function getBlockedDomains(env) {
+  const stub = statsStub(env);
+  if (!stub) return runtimeState.blockedDomains;
+  if (Date.now() - blockedDomainsCache.fetchedAt < STATS_BLOCKLIST_TTL_MS) return blockedDomainsCache.domains;
+  if (!blockedDomainsCache.pending) {
+    blockedDomainsCache.pending = stub
+      .fetch('https://stats.internal/blocked')
+      .then((res) => (res.ok ? res.json() : null))
+      .then((data) => {
+        if (data && Array.isArray(data.blockedDomains)) blockedDomainsCache.domains = new Set(data.blockedDomains);
+      })
+      .catch(() => undefined)
+      .finally(() => {
+        blockedDomainsCache.fetchedAt = Date.now();
+        blockedDomainsCache.pending = null;
+      });
+  }
+  await blockedDomainsCache.pending;
+  return blockedDomainsCache.domains;
+}
+
+async function isCallerBlocked(request, url, env) {
+  const callerDomain = extractCallerDomain(request, url);
+  const blocked = await getBlockedDomains(env);
+  return blocked.has(callerDomain.replace(/^www\./, '')) ? callerDomain : '';
+}
+
+async function setDomainBlocked(env, domain, blocked) {
+  const clean = statsAggregate.cleanDomain(domain);
+  if (!clean) return null;
+  if (blocked) runtimeState.blockedDomains.add(clean);
+  else runtimeState.blockedDomains.delete(clean);
+  localStats.setBlocked(clean, blocked);
+  const stub = statsStub(env);
+  if (stub) {
+    try {
+      const res = await stub.fetch('https://stats.internal/block', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ domain: clean, blocked })
+      });
+      const data = res.ok ? await res.json() : null;
+      if (data && Array.isArray(data.blockedDomains)) {
+        blockedDomainsCache.domains = new Set(data.blockedDomains);
+        blockedDomainsCache.fetchedAt = Date.now();
+        return data.blockedDomains;
+      }
+    } catch {}
+  }
+  return Array.from(runtimeState.blockedDomains).sort();
+}
+
+async function resetStats(env) {
+  localStats.reset();
+  statsQueue.events.length = 0;
+  const stub = statsStub(env);
+  if (!stub) return;
+  try {
+    await stub.fetch('https://stats.internal/reset', { method: 'POST' });
+  } catch {}
+}
+
+/**
+ * Durable Object that owns the counters. Declared in wrangler.toml as
+ *   [[durable_objects.bindings]]  name = "STATS", class_name = "StatsStore"
+ *   [[migrations]]                tag = "v1", new_sqlite_classes = ["StatsStore"]
+ * Events are applied to the in-memory aggregate immediately; only the rows
+ * that changed are written to SQLite ten seconds later (one alarm per burst),
+ * which keeps row writes far below the free plan's daily allowance. Written
+ * in the plain-class form (no `cloudflare:workers` import) so the module still
+ * loads under Node for the test-suite.
+ */
+export class StatsStore {
+  constructor(state) {
+    this.state = state;
+    this.sql = state.storage.sql;
+    this.agg = statsAggregate.createStatsAggregate();
+    this.ready = state.blockConcurrencyWhile(() => this.load());
+  }
+
+  async load() {
+    this.sql.exec(
+      'CREATE TABLE IF NOT EXISTS stats_rows (dim TEXT NOT NULL, key TEXT NOT NULL, data TEXT NOT NULL, PRIMARY KEY (dim, key))'
+    );
+    this.sql.exec('CREATE TABLE IF NOT EXISTS stats_meta (key TEXT PRIMARY KEY, data TEXT NOT NULL)');
+    const rows = this.sql.exec('SELECT dim, key, data FROM stats_rows').toArray();
+    const meta = this.sql.exec('SELECT key, data FROM stats_meta').toArray();
+    this.agg.load({ rows, meta });
+  }
+
+  async fetch(request) {
+    await this.ready;
+    const url = new URL(request.url);
+    const { method } = request;
+    if (method === 'POST' && url.pathname === '/record') {
+      const events = await request.json().catch(() => null);
+      this.agg.recordMany(Array.isArray(events) ? events : []);
+      await this.scheduleFlush();
+      return Response.json({ ok: true });
+    }
+    if (url.pathname === '/snapshot') {
+      const limit = Math.min(100, Math.max(5, parseInt(url.searchParams.get('limit') || '25', 10) || 25));
+      return Response.json(this.agg.snapshot({ limit }));
+    }
+    if (url.pathname === '/blocked') {
+      return Response.json({ blockedDomains: this.agg.blockedDomains() });
+    }
+    if (method === 'POST' && url.pathname === '/block') {
+      const body = (await request.json().catch(() => null)) || {};
+      this.agg.setBlocked(body.domain, body.blocked !== false);
+      this.flush();
+      return Response.json({ ok: true, blockedDomains: this.agg.blockedDomains() });
+    }
+    if (method === 'POST' && url.pathname === '/reset') {
+      this.agg.reset();
+      this.sql.exec('DELETE FROM stats_rows');
+      this.sql.exec('DELETE FROM stats_meta');
+      this.flush();
+      return Response.json({ ok: true });
+    }
+    return Response.json({ ok: false, error: 'Not found' }, { status: 404 });
+  }
+
+  async scheduleFlush() {
+    const existing = await this.state.storage.getAlarm();
+    if (existing === null || existing === undefined) {
+      await this.state.storage.setAlarm(Date.now() + STATS_FLUSH_DELAY_MS);
+    }
+  }
+
+  async alarm() {
+    await this.ready;
+    this.flush();
+  }
+
+  flush() {
+    if (!this.agg.hasDirty()) return;
+    const batch = this.agg.drainDirty();
+    const write = () => {
+      for (const row of batch.rows) {
+        this.sql.exec(
+          'INSERT INTO stats_rows (dim, key, data) VALUES (?, ?, ?) ON CONFLICT(dim, key) DO UPDATE SET data = excluded.data',
+          row.dim,
+          row.key,
+          row.data
+        );
+      }
+      for (const row of batch.removed) {
+        this.sql.exec('DELETE FROM stats_rows WHERE dim = ? AND key = ?', row.dim, row.key);
+      }
+      for (const [key, data] of [['totals', batch.meta], ['errors', batch.errors], ['blocked', batch.blocked]]) {
+        if (!data) continue;
+        this.sql.exec('INSERT INTO stats_meta (key, data) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET data = excluded.data', key, data);
+      }
+    };
+    if (typeof this.state.storage.transactionSync === 'function') this.state.storage.transactionSync(write);
+    else write();
+  }
+}
+
 const NATIVE_LANG_LABELS = {
   ar: 'العربية', ara: 'العربية',
   bn: 'বাংলা', ben: 'বাংলা',
@@ -228,11 +505,24 @@ async function edgeCacheSet(key, val, ttlSec = 1800) {
   }
 }
 
+// The /embed page carries the ad tag between <!--LOL_EMBED_ADS--> markers.
+const AD_BLOCK_RE = /[ \t]*<!--LOL_EMBED_ADS-->[\s\S]*?<!--\/LOL_EMBED_ADS-->\n?/g;
+
+function adsEnabled(env) {
+  const raw = env && env.ADS_ENABLED;
+  if (raw === undefined || raw === null || raw === '') return true;
+  return !['false', '0', 'off', 'no'].includes(String(raw).trim().toLowerCase());
+}
+
+function stripAdBlock(html) {
+  return String(html).replace(AD_BLOCK_RE, '');
+}
+
 function corsHeaders(extra = {}) {
   return {
     'Access-Control-Allow-Origin': '*',
     'Access-Control-Allow-Methods': 'GET, POST, HEAD, OPTIONS',
-    'Access-Control-Allow-Headers': 'Content-Type, Range, Authorization, X-Requested-With',
+    'Access-Control-Allow-Headers': 'Content-Type, Range, Authorization, X-Requested-With, X-Admin-Key',
     'Access-Control-Expose-Headers': 'Content-Length, Content-Range, Content-Type, Accept-Ranges',
     'Content-Security-Policy': 'frame-ancestors *;',
     ...extra
@@ -256,6 +546,34 @@ const PLAYER_ASSET_PATHS = new Set([
   '/vendor/hls.min.js',
   '/vendor/dash.all.min.js'
 ]);
+
+/**
+ * The two non-player pages this Worker serves, both self-contained HTML files
+ * in `public/` (no extra CSS/JS routes): the public documentation and the
+ * owner dashboard. `/` itself stays the JSON descriptor / browser rickroll.
+ */
+const OWNER_PAGES = {
+  '/docs': { file: 'docs.html', private: false },
+  '/documentation': { file: 'docs.html', private: false },
+  '/reze': { file: 'reze.html', private: true }
+};
+
+/**
+ * Replace the `<!--LOL_EMBED_CONFIG-->` placeholder of a served page with the
+ * runtime config (API Worker URL, …). Pages without the placeholder get it
+ * injected before `</head>`.
+ */
+function injectPageConfig(html, config) {
+  const script = `<script>window.__LOL_EMBED_CONFIG__=${JSON.stringify(config).replace(/</g, '\\u003c')};</script>`;
+  return html.includes('<!--LOL_EMBED_CONFIG-->')
+    ? html.replace('<!--LOL_EMBED_CONFIG-->', script)
+    : html.replace('</head>', `${script}\n</head>`);
+}
+
+function blockedEmbedHtml(domain) {
+  const safe = String(domain).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+  return `<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>LOL Embed</title><style>body{margin:0;min-height:100vh;display:flex;align-items:center;justify-content:center;background:#000;color:#fff;font-family:system-ui,-apple-system,"Segoe UI",sans-serif;text-align:center}main{padding:24px}h1{font-size:1.1rem;letter-spacing:.14em;text-transform:uppercase;color:#a3a3a3;margin:0 0 12px;font-weight:600}p{color:#f5f5f5;margin:6px 0}code{color:#a3a3a3}</style></head><body><main><h1>LOL Embed</h1><p>This player is not available on <code>${safe}</code>.</p><p>The embed owner has blocked this site.</p></main></body></html>`;
+}
 
 /**
  * Normalize the configured API Worker base URL. Accepts an absolute http(s)
@@ -374,15 +692,40 @@ function buildWorkerProxyUrl(targetUrl, referer = '', mode = 'manifest', cookie 
 /**
  * 1. Resolve TMDB ID -> Unified Metadata + External IDs (IMDb, TVDB, MAL) + Episodes
  */
-async function resolveTmdbMetadata(type, tmdbId, season = 1, episode = 1, env = {}) {
-  const normalizedType = type === 'tv' || type === 'series' ? 'tv' : 'movie';
-  const cleanId = String(tmdbId).trim();
-  const sNum = Math.max(1, parseInt(season || 1, 10));
-  const eNum = Math.max(1, parseInt(episode || 1, 10));
-
-  const cacheKey = `cf:tmdb:${normalizedType}:${cleanId}:s${sNum}:e${eNum}`;
+/**
+ * IMDb ids (`tt1234567`) are accepted wherever a TMDB id is: they are
+ * translated once through TMDB's /find endpoint and cached for a day.
+ */
+async function translateImdbId(normalizedType, rawId, tmdbBase, tmdbKey) {
+  if (!/^tt\d{5,10}$/i.test(rawId)) return rawId;
+  const imdbId = rawId.toLowerCase();
+  const cacheKey = `cf:tmdb:find:${normalizedType}:${imdbId}`;
   const cached = await edgeCacheGet(cacheKey);
   if (cached) return cached;
+  try {
+    const res = await fetch(
+      `${tmdbBase}/find/${encodeURIComponent(imdbId)}?api_key=${encodeURIComponent(tmdbKey)}&external_source=imdb_id`,
+      { headers: { Accept: 'application/json', 'User-Agent': USER_AGENT } }
+    );
+    if (res.ok) {
+      const data = await res.json();
+      const preferred = normalizedType === 'tv' ? data.tv_results : data.movie_results;
+      const other = normalizedType === 'tv' ? data.movie_results : data.tv_results;
+      const hit = (Array.isArray(preferred) && preferred[0]) || (Array.isArray(other) && other[0]) || null;
+      if (hit && hit.id) {
+        const resolved = String(hit.id);
+        await edgeCacheSet(cacheKey, resolved, 86400);
+        return resolved;
+      }
+    }
+  } catch {}
+  return rawId;
+}
+
+async function resolveTmdbMetadata(type, tmdbId, season = 1, episode = 1, env = {}) {
+  const normalizedType = type === 'tv' || type === 'series' ? 'tv' : 'movie';
+  const sNum = Math.max(1, parseInt(season || 1, 10));
+  const eNum = Math.max(1, parseInt(episode || 1, 10));
 
   const tmdbKey = env.TMDB_API_KEY || '47a1a7df542d3d483227f758a7317dff';
   const tmdbBase = (
@@ -390,6 +733,12 @@ async function resolveTmdbMetadata(type, tmdbId, season = 1, episode = 1, env = 
     runtimeState.tmdbBaseUrl ||
     'https://api.themoviedb.org/3'
   ).replace(/\/$/, '');
+  const cleanId = await translateImdbId(normalizedType, String(tmdbId).trim(), tmdbBase, tmdbKey);
+
+  const cacheKey = `cf:tmdb:v2:${normalizedType}:${cleanId}:s${sNum}:e${eNum}`;
+  const cached = await edgeCacheGet(cacheKey);
+  if (cached) return cached;
+
   let result = null;
 
   // A single failed TMDB call used to hand back a title-less metadata stub,
@@ -399,7 +748,9 @@ async function resolveTmdbMetadata(type, tmdbId, season = 1, episode = 1, env = 
   // quickly: Cloudflare's shared egress IPs hit TMDB rate limits more often
   // than a dedicated host would.
   let detailsData = null;
-  const detailsUrl = `${tmdbBase}/${normalizedType}/${cleanId}?api_key=${encodeURIComponent(tmdbKey)}&append_to_response=external_ids,alternative_titles&language=en-US`;
+  // `images` (logos) + tagline + rating feed the player's connect / paused
+  // screens; the selection logic is shared with Node (src/services/tmdbArtwork.js).
+  const detailsUrl = `${tmdbBase}/${normalizedType}/${cleanId}?api_key=${encodeURIComponent(tmdbKey)}&${tmdbArtwork.DETAILS_APPEND}&language=en-US`;
   for (let attempt = 0; attempt < 2; attempt += 1) {
     try {
       const detailsRes = await fetch(detailsUrl, {
@@ -488,6 +839,7 @@ async function resolveTmdbMetadata(type, tmdbId, season = 1, episode = 1, env = 
         overview: data.overview || '',
         backdrop: data.backdrop_path ? `https://image.tmdb.org/t/p/w1280${data.backdrop_path}` : null,
         poster: data.poster_path ? `https://image.tmdb.org/t/p/w500${data.poster_path}` : null,
+        ...tmdbArtwork.presentationFields(data),
         externalIds: {
           imdb_id: data.imdb_id || data.external_ids?.imdb_id || null,
           tvdb_id: data.external_ids?.tvdb_id || null,
@@ -594,137 +946,196 @@ async function resolveTmdbMetadata(type, tmdbId, season = 1, episode = 1, env = 
 }
 
 /**
- * 2. Resolve Skip Intro / Recap / Next Episode Segments (IntroDB + AniSkip)
+ * 2. Resolve Skip Intro / Recap / Credits segments.
+ *
+ * Providers are queried in parallel and merged by the shared
+ * src/services/skipSegments.js parsers (the same code the Node backend runs):
+ *   - TheIntroDB v3 keyed by TMDB id (movies + TV)
+ *   - IntroDB keyed by the IMDb id bridged from TMDB (movies + TV)
+ *   - AniSkip v2 keyed by MAL id (anime TV)
+ * Returns the normalised segment array the player consumes.
  */
-async function resolveSkipSegments(metadata) {
-  const { tmdbId, type, season = 1, episode = 1, externalIds = {} } = metadata;
-  const cacheKey = `cf:seg:${type}:${tmdbId}:s${season}:e${episode}`;
+const SEGMENT_FETCH_TIMEOUT_MS = 4500;
+const SEGMENT_POSITIVE_TTL_SECONDS = 6 * 3600;
+// Confirmed misses are cached as well: TheIntroDB allows 500 unauthenticated
+// requests a day per IP and every player load would otherwise re-ask for
+// titles that have no data.
+const SEGMENT_NEGATIVE_TTL_SECONDS = 15 * 60;
+// When a provider was unreachable (timeout, 5xx, 429) the empty answer is only
+// held briefly so a transient outage cannot hide segments for long.
+const SEGMENT_FAILED_TTL_SECONDS = 60;
+
+/**
+ * Fetch one provider. Resolves `{ answered, data }`: 200 -> data, 404 ->
+ * answered with null ("no data for this title"), anything else -> not answered.
+ */
+async function fetchSegmentJson(url, headers = {}) {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), SEGMENT_FETCH_TIMEOUT_MS);
+  try {
+    const res = await fetch(url, {
+      headers: { Accept: 'application/json', 'User-Agent': USER_AGENT, ...headers },
+      signal: controller.signal
+    });
+    if (res.status === 404) return { answered: true, data: null };
+    if (!res.ok) return { answered: false, data: null };
+    return { answered: true, data: await res.json() };
+  } catch {
+    return { answered: false, data: null };
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+async function resolveSkipSegments(metadata, env) {
+  const { tmdbId, type, season = 1, episode = 1, externalIds = {} } = metadata || {};
+  const mediaType = type === 'movie' ? 'movie' : 'tv';
+  const cacheKey = `cf:seg:v3:${mediaType}:${tmdbId}:s${season}:e${episode}`;
   const cached = await edgeCacheGet(cacheKey);
   if (cached) return cached;
 
-  const segments = [];
+  const theIntroDbBase = (env && env.THEINTRODB_URL) || skipSegments.DEFAULT_URLS.theIntroDbUrl;
+  const theIntroDbKey = (env && env.THEINTRODB_API_KEY) || '';
+  const introDbBase = (env && env.INTRODB_URL) || skipSegments.DEFAULT_URLS.introDbUrl;
+  const aniSkipBase = (env && env.ANISKIP_URL) || skipSegments.DEFAULT_URLS.aniSkipUrl;
 
-  if (externalIds.imdb_id && type === 'tv') {
-    try {
-      const res = await fetch(
-        `https://api.introdb.app/intro?imdb_id=${encodeURIComponent(externalIds.imdb_id)}&season=${season}&episode=${episode}`,
-        { headers: { Accept: 'application/json', 'User-Agent': USER_AGENT } }
-      );
-      if (res.ok) {
-        const data = await res.json();
-        const start = data.start_sec ?? data.start;
-        const end = data.end_sec ?? data.end;
-        if (typeof start === 'number' && typeof end === 'number' && end > start) {
-          segments.push({
-            type: 'intro',
-            label: 'Skip Intro',
-            start: Math.round(start * 10) / 10,
-            end: Math.round(end * 10) / 10,
-            source: 'introdb'
-          });
-        }
-      }
-    } catch {}
+  const lookups = [];
+  let allAnswered = true;
+  const parsed = (promise, parse) =>
+    promise.then(({ answered, data }) => {
+      if (!answered) allAnswered = false;
+      return parse(data, mediaType);
+    });
+
+  const theIntroDbUrl = skipSegments.buildTheIntroDbUrl(theIntroDbBase, {
+    tmdbId,
+    type: mediaType,
+    season,
+    episode
+  });
+  if (theIntroDbUrl) {
+    const headers = theIntroDbKey ? { Authorization: `Bearer ${theIntroDbKey}` } : {};
+    lookups.push(parsed(fetchSegmentJson(theIntroDbUrl, headers), skipSegments.parseTheIntroDb));
   }
 
-  if (externalIds.mal_id) {
-    try {
-      const res = await fetch(
-        `https://api.aniskip.com/v2/skip-times/${encodeURIComponent(externalIds.mal_id)}/${episode}?types[]=op&types[]=ed&types[]=recap&episodeLength=0`,
-        { headers: { Accept: 'application/json', 'User-Agent': USER_AGENT } }
-      );
-      if (res.ok) {
-        const data = await res.json();
-        if (data?.found && Array.isArray(data.results)) {
-          for (const item of data.results) {
-            const st = item.interval?.startTime;
-            const et = item.interval?.endTime;
-            if (typeof st === 'number' && typeof et === 'number' && et > st) {
-              const isOutro = item.skipType === 'ed';
-              segments.push({
-                type: isOutro ? 'outro' : 'intro',
-                label: isOutro ? 'Next Episode' : 'Skip Intro',
-                start: Math.round(st * 10) / 10,
-                end: Math.round(et * 10) / 10,
-                source: 'aniskip'
-              });
-            }
-          }
-        }
-      }
-    } catch {}
+  const introDbUrl = skipSegments.buildIntroDbUrl(introDbBase, {
+    imdbId: externalIds.imdb_id,
+    type: mediaType,
+    season,
+    episode
+  });
+  if (introDbUrl) {
+    lookups.push(parsed(fetchSegmentJson(introDbUrl), skipSegments.parseIntroDb));
   }
 
-  if (segments.length > 0) {
-    await edgeCacheSet(cacheKey, segments, 3600);
+  if (mediaType === 'tv') {
+    const aniSkipUrl = skipSegments.buildAniSkipUrl(aniSkipBase, { malId: externalIds.mal_id, episode });
+    if (aniSkipUrl) {
+      lookups.push(parsed(fetchSegmentJson(aniSkipUrl), skipSegments.parseAniSkip));
+    }
   }
+
+  const segments = skipSegments.mergeSegments(await Promise.all(lookups));
+  const ttl = segments.length > 0
+    ? SEGMENT_POSITIVE_TTL_SECONDS
+    : allAnswered
+      ? SEGMENT_NEGATIVE_TTL_SECONDS
+      : SEGMENT_FAILED_TTL_SECONDS;
+  await edgeCacheSet(cacheKey, segments, ttl);
   return segments;
 }
 
 /**
- * 3. Resolve Real Subtitles (OpenSubtitles REST API + OpenSubtitles Stremio v3)
+ * 3. Subtitles — OpenSubtitles (via Stremio's keyless v3 addon) + optional
+ *    keyed sources (Wyzie, SubDL). The retired rest.opensubtitles.org API is
+ *    gone: it answered every download with a "buy VIP" notice.
  */
-async function resolveSubtitles(metadata) {
+const SUBTITLE_FETCH_TIMEOUT_MS = 6500;
+const SUBTITLE_PROXY_TIMEOUT_MS = 10000;
+const SUBTITLE_MAX_BYTES = 4 * 1024 * 1024;
+
+function subtitleSourceConfig(env) {
+  const e = env || {};
+  const D = subtitleSources.DEFAULT_URLS;
+  return {
+    stremioBase: e.OPENSUBTITLES_STREMIO_URL || D.openSubtitlesStremioUrl,
+    wyzieBase: e.WYZIE_SUBS_URL || D.wyzieSubsUrl,
+    wyzieKey: e.WYZIE_API_KEY || '',
+    subdlBase: e.SUBDL_API_URL || D.subdlApiUrl,
+    subdlDownloadBase: e.SUBDL_DOWNLOAD_URL || D.subdlDownloadUrl,
+    subdlKey: e.SUBDL_API_KEY || '',
+    extraProxyHosts: e.SUBTITLE_PROXY_HOSTS || ''
+  };
+}
+
+async function fetchSubtitleJson(url, headers = {}) {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), SUBTITLE_FETCH_TIMEOUT_MS);
+  try {
+    const res = await fetch(url, {
+      headers: { Accept: 'application/json', 'User-Agent': USER_AGENT, ...headers },
+      signal: controller.signal
+    });
+    if (!res.ok) return null;
+    return await res.json();
+  } catch {
+    return null;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+async function resolveSubtitles(metadata, env) {
   const { tmdbId, type, season = 1, episode = 1, externalIds = {} } = metadata;
-  const cacheKey = `cf:subs:${type}:${tmdbId}:s${season}:e${episode}`;
+  const cacheKey = `cf:subs:v2:${type}:${tmdbId}:s${season}:e${episode}`;
   const cached = await edgeCacheGet(cacheKey);
   if (cached) return cached;
 
-  const tracks = [];
-  const seenLangs = new Set();
+  const cfg = subtitleSourceConfig(env);
+  const ids = { tmdbId, imdbId: externalIds.imdb_id, type, season, episode };
+  const lookups = [];
 
-  if (externalIds.imdb_id) {
-    const imdbDigits = String(externalIds.imdb_id).replace(/^tt/i, '');
-    const osPath =
-      type === 'tv'
-        ? `/search/episode-${episode}/imdbid-${imdbDigits}/season-${season}`
-        : `/search/imdbid-${imdbDigits}`;
+  const stremioUrl = subtitleSources.buildStremioUrl(cfg.stremioBase, ids);
+  if (stremioUrl) lookups.push(fetchSubtitleJson(stremioUrl).then(subtitleSources.parseStremio));
 
-    try {
-      const res = await fetch(`https://rest.opensubtitles.org${osPath}`, {
-        headers: {
-          Accept: 'application/json',
-          'User-Agent': USER_AGENT,
-          'X-User-Agent': 'TemporaryUserAgent'
-        }
-      });
-      if (res.ok) {
-        const data = await res.json();
-        if (Array.isArray(data)) {
-          const sorted = [...data].sort(
-            (a, b) => Number(b.SubDownloadsCnt || 0) - Number(a.SubDownloadsCnt || 0)
-          );
-          for (const item of sorted) {
-            if (!item.SubDownloadLink) continue;
-            const iso = (item.ISO639 || item.SubLanguageID || 'en').toLowerCase();
-            if (seenLangs.has(iso)) continue;
-            seenLangs.add(iso);
-            const label =
-              NATIVE_LANG_LABELS[iso] ||
-              NATIVE_LANG_LABELS[item.SubLanguageID] ||
-              item.LanguageName ||
-              iso.toUpperCase();
+  const wyzieUrl = subtitleSources.buildWyzieUrl(cfg.wyzieBase, { ...ids, key: cfg.wyzieKey });
+  if (wyzieUrl) lookups.push(fetchSubtitleJson(wyzieUrl).then(subtitleSources.parseWyzie));
 
-            tracks.push({
-              id: `os-${item.IDSubtitleFile || iso}`,
-              lang: iso.slice(0, 2),
-              label,
-              format: 'vtt',
-              url: `/api/subtitles/proxy?url=${encodeURIComponent(item.SubDownloadLink)}`,
-              default: iso === 'en',
-              source: 'opensubtitles'
-            });
-            if (tracks.length >= 24) break;
-          }
-        }
-      }
-    } catch {}
-  }
+  const subdlUrl = subtitleSources.buildSubdlUrl(cfg.subdlBase, { ...ids, key: cfg.subdlKey });
+  if (subdlUrl) lookups.push(fetchSubtitleJson(subdlUrl).then((data) => subtitleSources.parseSubdl(data, cfg.subdlDownloadBase)));
 
-  if (tracks.length > 0) {
-    await edgeCacheSet(cacheKey, tracks, 3600);
-  }
+  const lists = await Promise.all(lookups);
+  const tracks = subtitleSources.toApiTracks(subtitleSources.mergeSubtitleTracks(lists));
+  // Positive answers are stable for an hour; an empty answer is retried soon
+  // (a source outage should not pin "no subtitles" on a title).
+  await edgeCacheSet(cacheKey, tracks, tracks.length > 0 ? 3600 : 120);
   return tracks;
+}
+
+/** Fetch a subtitle file (srt / vtt / .gz / .zip, any charset) and return WebVTT text. */
+async function fetchSubtitleAsVtt(subUrl, { encoding = '', lang = '' } = {}) {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), SUBTITLE_PROXY_TIMEOUT_MS);
+  try {
+    const res = await fetch(subUrl, {
+      headers: { 'User-Agent': USER_AGENT, Accept: '*/*' },
+      signal: controller.signal
+    });
+    if (!res.ok) throw new Error(`Upstream subtitle HTTP ${res.status}`);
+    const arrBuf = await res.arrayBuffer();
+    if (arrBuf.byteLength > SUBTITLE_MAX_BYTES) throw new Error('Subtitle file too large');
+    const bytes = subtitleSources.unwrapSubtitlePayload(new Uint8Array(arrBuf), {
+      gunzip: (b) => new Uint8Array(zlib.gunzipSync(Buffer.from(b))),
+      inflateRaw: (b) => new Uint8Array(zlib.inflateRawSync(Buffer.from(b)))
+    });
+    const text = subtitleSources.decodeSubtitleBytes(bytes, { encoding, lang });
+    if (subtitleSources.looksLikePlaceholderSubtitle(text)) {
+      throw new Error('Upstream returned a placeholder instead of a subtitle');
+    }
+    return srtToVtt(text);
+  } finally {
+    clearTimeout(timer);
+  }
 }
 
 /**
@@ -2934,6 +3345,7 @@ async function resolveStreamWaterfall(metadata, requestedServer, preferredAudio,
     const latencyMs = Date.now() - t0;
 
     if (resolved && resolved.streamUrl) {
+      recordWorkerServerAttempt(srvId, true, latencyMs);
       const payload = {
         ...resolved,
         requestedServer: validServer,
@@ -3190,9 +3602,10 @@ async function handleProxyRequest(request, url) {
 }
 
 export default {
-  async fetch(request, env = {}) {
+  async fetch(request, env = {}, ctx = null) {
     const url = new URL(request.url);
     const { pathname } = url;
+    statsQueue.enabled = !!statsStub(env);
 
     if (request.method === 'OPTIONS') {
       return new Response(null, { status: 204, headers: corsHeaders() });
@@ -3201,6 +3614,15 @@ export default {
     // Support standalone proxy mode at root `/?url=https://...` or `/api/proxy?url=https://...`
     if (pathname === '/api/proxy' || (pathname === '/' && url.searchParams.has('url'))) {
       recordWorkerDomainHit(request, url, 'proxy');
+      // Segment hits come from the player page itself (Referer = this Worker),
+      // so they only count towards the totals, not towards a site.
+      const proxyCaller = extractCallerDomain(request, url);
+      recordStatsEvent(
+        env,
+        ctx,
+        { kind: 'proxy', domain: proxyCaller === url.hostname.toLowerCase() ? '' : proxyCaller },
+        { urgent: false }
+      );
       return handleProxyRequest(request, url);
     }
 
@@ -3217,7 +3639,33 @@ export default {
       }
 
       if (pathname === '/api/admin/overview' && request.method === 'GET') {
-        return jsonResponse({ ok: true, ...getWorkerAdminSnapshot() });
+        return jsonResponse({ ok: true, ...getWorkerAdminSnapshot(), stats: await fetchStatsSnapshot(env) });
+      }
+
+      // Dashboard feed for /reze: global counters + the live server catalog
+      // (names/badges are resolved here so the stats object only stores ids).
+      if (pathname === '/api/admin/stats' && request.method === 'GET') {
+        const limit = parseInt(url.searchParams.get('limit') || '25', 10);
+        const stats = await fetchStatsSnapshot(env, Number.isFinite(limit) ? limit : 25);
+        return jsonResponse({
+          ok: true,
+          stats,
+          catalog: SERVERS.map((s) => ({ id: s.id, name: s.name, badge: s.badge, priority: s.priority, enabled: s.enabled !== false })),
+          servers: getWorkerAdminSnapshot().servers,
+          runtime: { startedAt: runtimeState.startedAt, version: '2.3.0', adsEnabled: adsEnabled(env) }
+        });
+      }
+
+      if (pathname === '/api/admin/stats/reset' && request.method === 'POST') {
+        await resetStats(env);
+        return jsonResponse({ ok: true, stats: await fetchStatsSnapshot(env) });
+      }
+
+      if (pathname === '/api/admin/domains/block' && request.method === 'POST') {
+        const body = (await request.json().catch(() => null)) || {};
+        const blockedDomains = await setDomainBlocked(env, body.domain, body.blocked !== false);
+        if (!blockedDomains) return jsonResponse({ ok: false, error: 'domain is required' }, 400);
+        return jsonResponse({ ok: true, blockedDomains });
       }
 
       if (pathname === '/api/admin/probe' && request.method === 'POST') {
@@ -3304,6 +3752,18 @@ export default {
       });
     }
 
+    // Public, cacheable list of player-visible servers (ids are what `?server=`
+    // accepts). Provider/upstream names are never part of this payload.
+    if (pathname === '/api/servers' && ['GET', 'HEAD'].includes(request.method)) {
+      const servers = serverCatalog
+        .listableServers(SERVERS)
+        .map((s) => ({ id: s.id, name: s.name, badge: s.badge, priority: s.priority }));
+      return new Response(JSON.stringify({ ok: true, servers }), {
+        status: 200,
+        headers: corsHeaders({ 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'public, max-age=300' })
+      });
+    }
+
     if (pathname === '/api/catalog') {
       return jsonResponse({
         ok: true,
@@ -3315,20 +3775,23 @@ export default {
       });
     }
 
-    // GET /api/subtitles/proxy?url=...
+    // GET /api/subtitles/proxy?url=...&enc=<charset>&lang=<code>
+    // Only subtitle hosts (and the configured source mirrors) may be fetched:
+    // this endpoint must not be a general-purpose relay.
     if (pathname === '/api/subtitles/proxy') {
       const subUrl = url.searchParams.get('url');
       if (!subUrl) return new Response('Missing url', { status: 400, headers: corsHeaders() });
+      const cfg = subtitleSourceConfig(env);
+      const allowed = subtitleSources.isAllowedSubtitleUrl(subUrl, {
+        bases: [cfg.stremioBase, cfg.wyzieBase, cfg.subdlBase, cfg.subdlDownloadBase],
+        extraHosts: cfg.extraProxyHosts
+      });
+      if (!allowed) return new Response('Subtitle host not allowed', { status: 403, headers: corsHeaders() });
       try {
-        const res = await fetch(subUrl, {
-          headers: { 'User-Agent': USER_AGENT, 'X-User-Agent': 'TemporaryUserAgent' }
+        const vtt = await fetchSubtitleAsVtt(subUrl, {
+          encoding: url.searchParams.get('enc') || '',
+          lang: url.searchParams.get('lang') || ''
         });
-        const arrBuf = await res.arrayBuffer();
-        let buf = Buffer.from(arrBuf);
-        if ((buf.length >= 2 && buf[0] === 0x1f && buf[1] === 0x8b) || subUrl.endsWith('.gz')) {
-          buf = zlib.gunzipSync(buf);
-        }
-        const vtt = srtToVtt(buf.toString('utf8'));
         return new Response(vtt, {
           status: 200,
           headers: corsHeaders({
@@ -3363,27 +3826,35 @@ export default {
       const metadata = await resolveTmdbMetadata(rawType, tmdbId, season, episode, env);
 
       if (action === 'info') {
-        const segments = await resolveSkipSegments(metadata);
+        const segments = await resolveSkipSegments(metadata, env);
         return jsonResponse({ ok: true, metadata, segments, servers: serverCatalog.listableServers(SERVERS) });
       }
 
       if (action === 'segments') {
-        const segments = await resolveSkipSegments(metadata);
+        const segments = await resolveSkipSegments(metadata, env);
         return jsonResponse({ ok: true, tmdbId: metadata.tmdbId, segments });
       }
 
       if (action === 'subtitles') {
-        const tracks = await resolveSubtitles(metadata);
+        const tracks = await resolveSubtitles(metadata, env);
         return jsonResponse({ ok: true, tmdbId: metadata.tmdbId, tracks });
       }
 
       if (action === 'resolve') {
         const callerDomain = extractCallerDomain(request, url);
-        if (runtimeState.blockedDomains.has(callerDomain.replace(/^www\./, ''))) {
+        if (await isCallerBlocked(request, url, env)) {
           return jsonResponse({ ok: false, error: `Domain "${callerDomain}" is blocked by the embed owner.` }, 403);
         }
 
         recordWorkerDomainHit(request, url, 'resolve', metadata);
+        const statsBase = {
+          domain: callerDomain === url.hostname.toLowerCase() ? '' : callerDomain,
+          country: requestCountry(request),
+          ...statsMediaFields(metadata),
+          season: metadata.type === 'tv' ? season : null,
+          episode: metadata.type === 'tv' ? episode : null,
+          server
+        };
 
         // Check custom override first
         const ovKey =
@@ -3414,8 +3885,8 @@ export default {
                 servers: serverCatalog.buildServerPayload(SERVERS, null)
               })
             : resolveStreamWaterfall(metadata, server, audio, env),
-          resolveSubtitles(metadata),
-          resolveSkipSegments(metadata)
+          resolveSubtitles(metadata, env),
+          resolveSkipSegments(metadata, env)
         ]);
 
         if (!streamData || !streamData.streamUrl) {
@@ -3439,6 +3910,12 @@ export default {
             ? reasonMap[firstFailed.reason] || firstFailed.reason
             : 'No working server in the waterfall.';
           const humanDiag = firstFailed && firstFailed.diag ? firstFailed.diag.message : null;
+          recordStatsEvent(env, ctx, {
+            kind: 'resolve_error',
+            ...statsBase,
+            server: firstFailed ? firstFailed.server : server,
+            reason: firstFailed ? firstFailed.reason : (streamData && streamData.reason) || 'no_stream'
+          });
           return jsonResponse(
             {
               ok: false,
@@ -3457,6 +3934,7 @@ export default {
           );
         }
 
+        recordStatsEvent(env, ctx, { kind: 'resolve', ...statsBase, server: streamData.server || server });
         return jsonResponse({
           ok: true,
           metadata,
@@ -3480,21 +3958,33 @@ export default {
       if (!env.ASSETS) {
         return jsonResponse({ ok: false, error: 'Player assets are not configured' }, 503);
       }
+      const blockedCaller = await isCallerBlocked(request, url, env);
+      if (blockedCaller) {
+        return new Response(blockedEmbedHtml(blockedCaller), {
+          status: 403,
+          headers: { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-store' }
+        });
+      }
       recordWorkerDomainHit(request, url, 'embed');
+      const embedCaller = extractCallerDomain(request, url);
+      const embedMedia = parseEmbedMedia(url);
+      recordStatsEvent(env, ctx, {
+        kind: 'embed',
+        domain: embedCaller === url.hostname.toLowerCase() ? '' : embedCaller,
+        country: requestCountry(request),
+        ...(embedMedia || {}),
+        // IMDb-keyed embeds are attributed to the title once the resolve
+        // has translated the id; a `tt…` row would never get a name.
+        tmdbId: embedMedia && /^\d+$/.test(String(embedMedia.tmdbId)) ? embedMedia.tmdbId : null
+      });
       const embedReq = new Request(new URL('/embed.html', url.origin), { method: 'GET' });
       const assetRes = await env.ASSETS.fetch(embedReq);
       if (!assetRes.ok) {
         return jsonResponse({ ok: false, error: 'Player page is unavailable' }, assetRes.status);
       }
-      let html = await assetRes.text();
-      const apiBaseUrl = normalizeApiBaseUrl(env.API_BASE_URL);
-      // Inject the configured API Worker URL (may be '' for same-origin API).
-      const configScript = `<script>window.__LOL_EMBED_CONFIG__=${JSON.stringify({
-        apiBaseUrl
-      }).replace(/</g, '\\u003c')};</script>`;
-      html = html.includes('<!--LOL_EMBED_CONFIG-->')
-        ? html.replace('<!--LOL_EMBED_CONFIG-->', configScript)
-        : html.replace('</head>', `${configScript}\n</head>`);
+      let html = injectPageConfig(await assetRes.text(), { apiBaseUrl: normalizeApiBaseUrl(env.API_BASE_URL) });
+      // Ads ship by default; ADS_ENABLED = "false" serves an ad-free player.
+      if (!adsEnabled(env)) html = stripAdBlock(html);
       const headers = new Headers({
         'Content-Type': 'text/html; charset=utf-8',
         'Cache-Control': 'no-cache',
@@ -3503,6 +3993,37 @@ export default {
         'Access-Control-Allow-Origin': '*'
       });
       headers.delete('X-Frame-Options');
+      return new Response(html, { status: 200, headers });
+    }
+
+    // --- Documentation (/docs, alias /documentation) and owner dashboard (/reze) ---
+    // Self-contained pages (inline CSS/JS, no extra asset routes). `/` keeps
+    // its JSON descriptor + browser rickroll; the dashboard shell is public
+    // but every number on it comes from the key-protected /api/admin/stats.
+    const ownerPage = OWNER_PAGES[pathname.replace(/\/+$/, '') || '/'];
+    if (ownerPage && ['GET', 'HEAD'].includes(request.method)) {
+      if (!env.ASSETS) {
+        return jsonResponse({ ok: false, error: 'Page assets are not configured' }, 503);
+      }
+      const pageRes = await env.ASSETS.fetch(new Request(new URL(`/${ownerPage.file}`, url.origin), { method: 'GET' }));
+      if (!pageRes.ok) {
+        return jsonResponse({ ok: false, error: 'Page is unavailable' }, pageRes.status);
+      }
+      const html = injectPageConfig(await pageRes.text(), {
+        apiBaseUrl: normalizeApiBaseUrl(env.API_BASE_URL),
+        adsEnabled: adsEnabled(env),
+        servers: serverCatalog.listableServers(SERVERS).map((s) => ({ id: s.id, name: s.name, badge: s.badge }))
+      });
+      const headers = new Headers({
+        'Content-Type': 'text/html; charset=utf-8',
+        'Cache-Control': 'no-cache',
+        'Referrer-Policy': 'strict-origin-when-cross-origin'
+      });
+      if (ownerPage.private) {
+        headers.set('X-Robots-Tag', 'noindex, nofollow');
+        headers.set('X-Frame-Options', 'DENY');
+        headers.set('Content-Security-Policy', "frame-ancestors 'none';");
+      }
       return new Response(html, { status: 200, headers });
     }
 

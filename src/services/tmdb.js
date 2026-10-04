@@ -1,4 +1,5 @@
 const config = require('../config');
+const tmdbArtwork = require('./tmdbArtwork');
 const { cache } = require('../utils/cache');
 
 const USER_AGENT =
@@ -69,13 +70,38 @@ async function resolveMalId(title, releaseYear, type) {
  * Resolve TMDB ID -> Unified Metadata + External IDs (IMDb, TVDB, MAL) + Season/Episode Details.
  * Users only pass TMDB ID; this service bridges every external ID automatically.
  */
+/**
+ * IMDb ids (`tt1234567`) are accepted wherever a TMDB id is: translated once
+ * through TMDB's /find endpoint and cached for a day.
+ */
+async function translateImdbId(normalizedType, rawId) {
+  if (!/^tt\d{5,10}$/i.test(rawId)) return rawId;
+  const imdbId = rawId.toLowerCase();
+  const cacheKey = `tmdb:find:${normalizedType}:${imdbId}`;
+  const cached = await cache.get(cacheKey);
+  if (cached) return cached;
+  const apiKeyParam = config.tmdbApiKey ? `api_key=${encodeURIComponent(config.tmdbApiKey)}&` : '';
+  const data = await safeFetchJson(`${config.tmdbBaseUrl}/find/${encodeURIComponent(imdbId)}?${apiKeyParam}external_source=imdb_id`, {}, 5000);
+  if (data) {
+    const preferred = normalizedType === 'tv' ? data.tv_results : data.movie_results;
+    const other = normalizedType === 'tv' ? data.movie_results : data.tv_results;
+    const hit = (Array.isArray(preferred) && preferred[0]) || (Array.isArray(other) && other[0]) || null;
+    if (hit && hit.id) {
+      const resolved = String(hit.id);
+      await cache.set(cacheKey, resolved, 86400);
+      return resolved;
+    }
+  }
+  return rawId;
+}
+
 async function resolveTmdbMetadata(type, tmdbId, season = 1, episode = 1) {
   const normalizedType = type === 'tv' || type === 'series' ? 'tv' : 'movie';
-  const cleanId = String(tmdbId).trim();
+  const cleanId = await translateImdbId(normalizedType, String(tmdbId).trim());
   const sNum = Math.max(1, parseInt(season || 1, 10));
   const eNum = Math.max(1, parseInt(episode || 1, 10));
 
-  const cacheKey = `tmdb:v2:${normalizedType}:${cleanId}:s${sNum}:e${eNum}`;
+  const cacheKey = `tmdb:v3:${normalizedType}:${cleanId}:s${sNum}:e${eNum}`;
   const cached = await cache.get(cacheKey);
   if (cached) return cached;
 
@@ -87,7 +113,9 @@ async function resolveTmdbMetadata(type, tmdbId, season = 1, episode = 1) {
     // alternative_titles powers the TMDB-anchored identity gate used by the
     // name-search upstreams (CastleTV): a localized or original
     // title must be provably the same film, not just a title collision.
-    const detailsUrl = `${config.tmdbBaseUrl}/${normalizedType}/${cleanId}?${apiKeyParam}append_to_response=external_ids,alternative_titles&language=en-US`;
+    // `images` (logos) + tagline + rating feed the player's connect / paused
+    // screens; the selection logic is shared with the Worker (tmdbArtwork.js).
+    const detailsUrl = `${config.tmdbBaseUrl}/${normalizedType}/${cleanId}?${apiKeyParam}${tmdbArtwork.DETAILS_APPEND}&language=en-US`;
     const data = await safeFetchJson(detailsUrl);
 
     if (data && (data.id || data.title || data.name)) {
@@ -151,6 +179,7 @@ async function resolveTmdbMetadata(type, tmdbId, season = 1, episode = 1) {
         overview: data.overview || '',
         backdrop: data.backdrop_path ? `${config.tmdbImageBase}/w1280${data.backdrop_path}` : null,
         poster: data.poster_path ? `${config.tmdbImageBase}/w500${data.poster_path}` : null,
+        ...tmdbArtwork.presentationFields(data, config.tmdbImageBase),
         externalIds: {
           imdb_id: imdbId,
           tvdb_id: tvdbId,

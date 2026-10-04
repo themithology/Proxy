@@ -136,6 +136,16 @@ function startUpstreamMockServer() {
       const u = new URL(req.url, `http://${req.headers.host}`);
       const mockOrigin = `http://${req.headers.host}`;
 
+      // 0. TMDB /find — IMDb id translation (movie + tv fixtures)
+      if (u.pathname === '/tmdb/find/tt15239678') {
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        return res.end(JSON.stringify({ movie_results: [{ id: 693134, title: 'Dune: Part Two' }], tv_results: [] }));
+      }
+      if (u.pathname === '/tmdb/find/tt11126994') {
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        return res.end(JSON.stringify({ movie_results: [], tv_results: [{ id: 94605, name: 'Arcane' }] }));
+      }
+
       // 1. TMDB v3 TV Details
       if (u.pathname === '/tmdb/tv/94605') {
         res.writeHead(200, { 'Content-Type': 'application/json' });
@@ -150,6 +160,21 @@ function startUpstreamMockServer() {
             overview: 'Amid the stark discord of twin cities Piltover and Zaun, two sisters fight on rival sides.',
             backdrop_path: '/rkB4LyZHo1NHXFEDHl9vSD9r1lI.jpg',
             poster_path: '/fqldf2t8ztc9aiwn3k6mlX3tvRT.jpg',
+            tagline: 'The future of the city is in their hands.',
+            vote_average: 8.746,
+            vote_count: 5134,
+            // `images` is only present when the backend asked for it with
+            // include_image_language=en,null (the player's logo artwork).
+            images: u.searchParams.get('append_to_response')?.includes('images') && u.searchParams.get('include_image_language') === 'en,null'
+              ? {
+                  logos: [
+                    { file_path: '/arcane-fr.png', iso_639_1: 'fr', vote_average: 9 },
+                    { file_path: '/arcane-en.svg', iso_639_1: 'en', vote_average: 6 },
+                    { file_path: '/arcane-en.png', iso_639_1: 'en', vote_average: 5.3 },
+                    { file_path: '/arcane-null.png', iso_639_1: null, vote_average: 7 }
+                  ]
+                }
+              : undefined,
             external_ids: { imdb_id: 'tt11126994', tvdb_id: 371028 },
             seasons: [
               { season_number: 1, name: 'Season 1', episode_count: 9 },
@@ -220,7 +245,69 @@ function startUpstreamMockServer() {
         );
       }
 
-      // 4. IntroDB Skip Intro API
+      // 4a. TheIntroDB v3 (TMDB-keyed). Real shape: arrays per type with
+      // millisecond boundaries; `end_ms: null` means "until the end"; 404 when
+      // the title has no data at all.
+      if (u.pathname === '/theintrodb/v3/media') {
+        const tmdbId = u.searchParams.get('tmdb_id');
+        if (tmdbId === '94605' && u.searchParams.get('season') === '1' && u.searchParams.get('episode') === '1') {
+          res.writeHead(200, { 'Content-Type': 'application/json' });
+          return res.end(
+            JSON.stringify({
+              tmdb_id: 94605,
+              type: 'tv',
+              season: 1,
+              episode: 1,
+              intro: [{ start_ms: 200000, end_ms: 266000 }],
+              recap: [{ start_ms: null, end_ms: 45000 }],
+              credits: [{ start_ms: 2400000, end_ms: null }]
+            })
+          );
+        }
+        res.writeHead(404, { 'Content-Type': 'application/json' });
+        return res.end(JSON.stringify({ error: 'Media not found' }));
+      }
+
+      // 4b. IntroDB `/segments` (IMDb-keyed). Real shape: one object (or null)
+      // per type with both `_ms` and `_sec` boundaries. Boundaries deliberately
+      // disagree with TheIntroDB by a second so the merge precedence is
+      // observable. `post_credits` must never become a skip target.
+      if (u.pathname === '/introdb/segments') {
+        const imdbId = u.searchParams.get('imdb_id');
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        if (u.searchParams.get('is_movie') === 'true') {
+          return res.end(
+            JSON.stringify({
+              imdb_id: imdbId,
+              media_type: 'movie',
+              season: null,
+              episode: null,
+              intro: null,
+              recap: null,
+              outro: imdbId === 'tt15239678'
+                ? { start_ms: 9600000, end_ms: 10020000, start_sec: 9600, end_sec: 10020, confidence: 0.8, submission_count: 3 }
+                : null,
+              post_credits: null
+            })
+          );
+        }
+        return res.end(
+          JSON.stringify({
+            imdb_id: imdbId,
+            media_type: 'tv',
+            season: Number(u.searchParams.get('season') || 1),
+            episode: Number(u.searchParams.get('episode') || 1),
+            intro: { start_ms: 201000, end_ms: 267000, start_sec: 201, end_sec: 267, confidence: 0.92, submission_count: 14 },
+            recap: null,
+            outro: { start_ms: 2399000, end_ms: 2460000, start_sec: 2399, end_sec: 2460, confidence: 0.7, submission_count: 2 },
+            post_credits: { start_ms: 2460000, end_ms: 2500000, start_sec: 2460, end_sec: 2500, confidence: 0.5, submission_count: 1 }
+          })
+        );
+      }
+
+      // 4c. IntroDB legacy `/intro`: the real endpoint only ever returned
+      // millisecond fields. (The old resolver read `start_sec` here and so
+      // never produced a single segment in production.)
       if (u.pathname === '/introdb/intro') {
         res.writeHead(200, { 'Content-Type': 'application/json' });
         return res.end(
@@ -228,37 +315,38 @@ function startUpstreamMockServer() {
             imdb_id: u.searchParams.get('imdb_id'),
             season: Number(u.searchParams.get('season') || 1),
             episode: Number(u.searchParams.get('episode') || 1),
-            start_sec: 200,
-            end_sec: 266
+            start_ms: 200000,
+            end_ms: 266000,
+            confidence: 0.9,
+            submission_count: 12
           })
         );
       }
 
-      // 5. OpenSubtitles REST API + .srt.gz Gzipped Subtitle Stream
-      if (u.pathname.startsWith('/opensubtitles/search/')) {
+      // 5. OpenSubtitles via Stremio's v3 addon (the only keyless source left:
+      //    rest.opensubtitles.org is retired) + .srt.gz download fixtures.
+      //    Shape mirrors the live addon: {subtitles:[{id,url,lang(ISO 639-2),SubEncoding}]}.
+      const stremioMatch = u.pathname.match(/^\/stremio\/subtitles\/(movie|series)\/([^/]+)\.json$/);
+      if (stremioMatch) {
         res.writeHead(200, { 'Content-Type': 'application/json' });
         return res.end(
-          JSON.stringify([
-            {
-              IDSubtitleFile: '1957433621',
-              ISO639: 'en',
-              SubLanguageID: 'eng',
-              LanguageName: 'English',
-              SubHearingImpaired: '0',
-              SubDownloadsCnt: '329244',
-              SubDownloadLink: `${mockOrigin}/opensubtitles/download/1957433621.gz`
-            },
-            {
-              IDSubtitleFile: '1957440969',
-              ISO639: 'ar',
-              SubLanguageID: 'ara',
-              LanguageName: 'Arabic',
-              SubHearingImpaired: '0',
-              SubDownloadsCnt: '88178',
-              SubDownloadLink: `${mockOrigin}/opensubtitles/download/1957440969.gz`
-            }
-          ])
+          JSON.stringify({
+            subtitles: [
+              { id: '1957433621', url: `${mockOrigin}/opensubtitles/download/1957433621.gz`, lang: 'eng', SubEncoding: 'UTF-8', m: 'i', g: 'fileid' },
+              { id: '1957433622', url: `${mockOrigin}/opensubtitles/download/1957433622.gz`, lang: 'eng', SubEncoding: 'UTF-8' },
+              { id: '1957440969', url: `${mockOrigin}/opensubtitles/download/1957440969.gz`, lang: 'ara', SubEncoding: 'UTF-8' },
+              { id: '1957440970', url: `${mockOrigin}/opensubtitles/download/vip-notice.gz`, lang: 'pob', SubEncoding: 'UTF-8' },
+              { id: 'bogus', url: 'not a url', lang: 'fre' }
+            ]
+          })
         );
+      }
+
+      if (u.pathname === '/opensubtitles/download/vip-notice.gz') {
+        // What the retired OpenSubtitles.org downloads answer with today.
+        const notice = '1\r\n00:00:01,000 --> 00:00:30,000\r\nSubtitles downloaded from opensubtitles.org - become a VIP member\r\n';
+        res.writeHead(200, { 'Content-Type': 'application/x-gzip' });
+        return res.end(zlib.gzipSync(Buffer.from(notice, 'utf8')));
       }
 
       if (u.pathname.startsWith('/opensubtitles/download/')) {
@@ -267,6 +355,26 @@ function startUpstreamMockServer() {
         const gzBuf = zlib.gzipSync(Buffer.from(sampleSrt, 'utf8'));
         res.writeHead(200, { 'Content-Type': 'application/x-gzip' });
         return res.end(gzBuf);
+      }
+
+      // Windows-1251 Russian subtitle served as a deflated ZIP (SubDL style).
+      if (u.pathname === '/subdl-dl/subtitle/ru.zip') {
+        const cp1251 = Buffer.from([0xcf, 0xf0, 0xe8, 0xe2, 0xe5, 0xf2]); // "Привет"
+        const srt = Buffer.concat([Buffer.from('1\r\n00:00:01,000 --> 00:00:04,000\r\n'), cp1251, Buffer.from('\r\n\r\n2\r\n00:00:05,000 --> 00:00:06,000\r\nok\r\n')]);
+        const nameBuf = Buffer.from('Film.ru.srt');
+        const data = zlib.deflateRawSync(srt);
+        const lh = Buffer.alloc(30);
+        lh.writeUInt32LE(0x04034b50, 0); lh.writeUInt16LE(20, 4); lh.writeUInt16LE(8, 8);
+        lh.writeUInt32LE(data.length, 18); lh.writeUInt32LE(srt.length, 22); lh.writeUInt16LE(nameBuf.length, 26);
+        const ch = Buffer.alloc(46);
+        ch.writeUInt32LE(0x02014b50, 0); ch.writeUInt16LE(8, 10); ch.writeUInt32LE(data.length, 20); ch.writeUInt32LE(srt.length, 24);
+        ch.writeUInt16LE(nameBuf.length, 28); ch.writeUInt32LE(0, 42);
+        const cdOffset = lh.length + nameBuf.length + data.length;
+        const eocd = Buffer.alloc(22);
+        eocd.writeUInt32LE(0x06054b50, 0); eocd.writeUInt16LE(1, 8); eocd.writeUInt16LE(1, 10);
+        eocd.writeUInt32LE(ch.length + nameBuf.length, 12); eocd.writeUInt32LE(cdOffset, 16);
+        res.writeHead(200, { 'Content-Type': 'application/zip' });
+        return res.end(Buffer.concat([lh, nameBuf, data, ch, nameBuf, eocd]));
       }
 
       // 8b. HubCloud generator landing pages (Centaurus unroller fixtures).
@@ -672,7 +780,7 @@ async function runTests() {
   console.log('==========================================================\n');
 
   // 1. Cryptographic Unit Tests (AES-256-CBC + HMAC-SHA256 + Handshake Token)
-  console.log('[1/12] Testing HMAC proxy signing & handshake tokens...');
+  console.log('[1/13] Testing HMAC proxy signing & handshake tokens...');
   const exp = Math.floor(Date.now() / 1000) + 3600;
   const sig = signProxyParams('https://cdn.example.com/hls/master.m3u8', 'https://vidstuck.xyz/', exp);
   assert.strictEqual(
@@ -692,7 +800,7 @@ async function runTests() {
   console.log('  ✔ Passed cryptographic verification.');
 
   // 2. HiCine Multi-Quality Link Parser Unit Tests
-  console.log('[2/12] Testing HiCine Multi-Quality Link Parser...');
+  console.log('[2/13] Testing HiCine Multi-Quality Link Parser...');
   const sampleHicineSeason1 = [
     'Episode 1 : ',
     '480p : https://frosty-snowflake-407a.renker2364.workers.dev/?vcloud=https://vcloud.fit/ep1_480, https://pixeldrain.dev/u/AbCdEf123',
@@ -951,7 +1059,7 @@ async function runTests() {
   console.log('  ✔ Passed HiCine language parsing and multi-track payload tests.');
 
   // 3. SRT -> WebVTT Converter Unit Test
-  console.log('[3/12] Testing SubRip (.srt) to WebVTT (.vtt) Converter...');
+  console.log('[3/13] Testing SubRip (.srt) to WebVTT (.vtt) Converter...');
   const sampleSrt = `1\r\n00:00:02,500 --> 00:00:05,800\r\nWelcome to Piltover.\r\n\r\n2\r\n00:00:06,100 --> 00:00:09,450\r\nThe City of Progress.\r\n`;
   const convertedVtt = srtToVtt(sampleSrt);
   assert.ok(convertedVtt.startsWith('WEBVTT'), 'Output must start with WEBVTT header');
@@ -962,7 +1070,7 @@ async function runTests() {
   console.log('  ✔ Passed SRT -> VTT conversion.');
 
   // 4. M3U8 Manifest Rewriter Unit Test
-  console.log('[4/12] Testing M3U8 Master & Media Playlist Rewriter...');
+  console.log('[4/13] Testing M3U8 Master & Media Playlist Rewriter...');
   const sampleMasterM3u8 = [
     '#EXTM3U',
     '#EXT-X-VERSION:3',
@@ -996,7 +1104,10 @@ async function runTests() {
   const mockUpstream = await startUpstreamMockServer();
   config.tmdbBaseUrl = `${mockUpstream.url}/tmdb`;
   config.upstreams.introDbUrl = `${mockUpstream.url}/introdb`;
-  config.upstreams.openSubtitlesRestUrl = `${mockUpstream.url}/opensubtitles`;
+  config.upstreams.theIntroDbUrl = `${mockUpstream.url}/theintrodb/v3`;
+  config.upstreams.theIntroDbApiKey = '';
+  config.upstreams.openSubtitlesStremioUrl = `${mockUpstream.url}/stremio`;
+  config.upstreams.subdlDownloadUrl = `${mockUpstream.url}/subdl-dl`;
   config.upstreams.vidstuckBase = `${mockUpstream.url}/vidstuck`;
   // Andromeda's live tiers: point CastleTV + NetMirror at the mock so the
   // end-to-end suites resolve without touching real upstreams.
@@ -1302,7 +1413,7 @@ async function runTests() {
 
   try {
     // 5. Health & Handshake Endpoints
-    console.log('[5/12] Testing /api/health & /api/handshake...');
+    console.log('[5/13] Testing /api/health & /api/handshake...');
     const health = await httpRequest(baseUrl, '/api/health');
     assert.strictEqual(health.status, 200);
     assert.strictEqual(health.json.ok, true);
@@ -1356,7 +1467,7 @@ async function runTests() {
     console.log('  ✔ Passed /api/health & /api/handshake.');
 
     // 6. TMDB-ID Metadata & Real IntroDB Skip Segments Resolution
-    console.log('[6/12] Testing TMDB ID -> External IDs (IMDb/TVDB) & IntroDB Skip Intro Segments...');
+    console.log('[6/13] Testing TMDB ID -> External IDs (IMDb/TVDB) & IntroDB Skip Intro Segments...');
     const infoRes = await httpRequest(baseUrl, '/api/info/tv/94605?season=1&episode=1');
     assert.strictEqual(infoRes.status, 200);
     assert.strictEqual(infoRes.json.ok, true);
@@ -1364,14 +1475,84 @@ async function runTests() {
     assert.strictEqual(infoRes.json.metadata.externalIds.imdb_id, 'tt11126994');
     assert.strictEqual(infoRes.json.metadata.externalIds.tvdb_id, 371028);
     assert.ok(infoRes.json.metadata.episodes.length >= 2, 'Episodes list must be populated from TMDB');
-    assert.ok(
-      infoRes.json.segments.some((s) => s.type === 'intro' && s.start === 200 && s.end === 266),
-      'IntroDB skip intro segment (200s -> 266s) must be present'
+    const assertArcaneArtwork = (metadata, label) => {
+      assert.strictEqual(
+        metadata.logo,
+        'https://image.tmdb.org/t/p/w500/arcane-en.png',
+        `${label}: the English PNG logo must win over SVG, other languages and language-less logos`
+      );
+      assert.strictEqual(metadata.tagline, 'The future of the city is in their hands.', `${label}: tagline exposed`);
+      assert.strictEqual(metadata.rating, 8.7, `${label}: rating rounded to one decimal`);
+      assert.strictEqual(metadata.voteCount, 5134, `${label}: vote count exposed`);
+    };
+    assertArcaneArtwork(infoRes.json.metadata, 'Node /api/info');
+    const assertArcaneSegments = (segments, label) => {
+      assert.ok(Array.isArray(segments), `${label}: segments must be an array`);
+      assert.deepStrictEqual(
+        segments.map((s) => [s.type, s.label, s.start, s.end, s.source]),
+        [
+          ['recap', 'Skip Recap', 0, 45, 'theintrodb'],
+          ['intro', 'Skip Intro', 200, 266, 'theintrodb'],
+          ['outro', 'Next Episode', 2400, null, 'theintrodb']
+        ],
+        `${label}: segments must be converted from milliseconds, merged across providers (TheIntroDB wins ` +
+          'overlapping IntroDB entries), sorted by start, keep an open-ended credits segment and drop post_credits'
+      );
+    };
+    assertArcaneSegments(infoRes.json.segments, 'Node /api/info');
+
+    const segmentsRes = await httpRequest(baseUrl, '/api/segments/tv/94605?season=1&episode=1');
+    assert.strictEqual(segmentsRes.status, 200);
+    assertArcaneSegments(segmentsRes.json.segments, 'Node /api/segments');
+
+    // Movies get credits segments too (TheIntroDB 404 -> IntroDB `is_movie` lookup).
+    const movieSegmentsRes = await httpRequest(baseUrl, '/api/segments/movie/693134');
+    assert.strictEqual(movieSegmentsRes.status, 200);
+    assert.deepStrictEqual(
+      movieSegmentsRes.json.segments.map((s) => [s.type, s.label, s.start, s.end, s.source]),
+      [['outro', 'Skip Credits', 9600, 10020, 'introdb']],
+      'movie credits must resolve through IntroDB with is_movie=true'
     );
-    console.log('  ✔ Passed TMDB -> IMDb/TVDB bridging & IntroDB segments.');
+
+    // Parser regressions against the providers' real payloads.
+    const skipSegments = require('../src/services/skipSegments');
+    assert.deepStrictEqual(
+      skipSegments
+        .parseIntroDb({ imdb_id: 'tt11126994', season: 1, episode: 1, start_ms: 200000, end_ms: 266000 }, 'tv')
+        .map((s) => [s.type, s.start, s.end]),
+      [['intro', 200, 266]],
+      'legacy IntroDB /intro payloads only carry *_ms fields and must still parse'
+    );
+    assert.deepStrictEqual(
+      skipSegments
+        .parseAniSkip(
+          {
+            found: true,
+            results: [
+              { interval: { startTime: 60.44, endTime: 150.2 }, skipType: 'op' },
+              { interval: { startTime: 1300, endTime: 1390 }, skipType: 'mixed-ed' },
+              { interval: { startTime: 0, endTime: 0.5 }, skipType: 'recap' }
+            ]
+          },
+          'tv'
+        )
+        .map((s) => [s.type, s.start, s.end]),
+      [['intro', 60.4, 150.2], ['outro', 1300, 1390]],
+      'AniSkip op/ed/mixed types must map to intro/outro and sub-second noise must be dropped'
+    );
+    assert.strictEqual(
+      skipSegments.buildAniSkipUrl('https://api.aniskip.com/v2', { malId: 48583, episode: 3 }),
+      'https://api.aniskip.com/v2/skip-times/48583/3?types=op&types=ed&types=mixed-op&types=mixed-ed&types=recap&episodeLength=0'
+    );
+    assert.strictEqual(
+      skipSegments.buildIntroDbUrl('https://api.introdb.app', { imdbId: 'not-an-id', type: 'tv', season: 1, episode: 1 }),
+      null,
+      'IntroDB must not be queried without a valid IMDb id'
+    );
+    console.log('  ✔ Passed TMDB -> IMDb/TVDB bridging & TheIntroDB/IntroDB/AniSkip segments.');
 
     // 7. Full Production Stream Resolution + OpenSubtitles .srt.gz Decompression + M3U8 Proxy
-    console.log('[7/12] Testing /api/resolve/movie/693134, OpenSubtitles .srt.gz -> .vtt, & /api/proxy...');
+    console.log('[7/13] Testing /api/resolve/movie/693134, OpenSubtitles .srt.gz -> .vtt, & /api/proxy...');
     const resolveRes = await httpRequest(
       baseUrl,
       '/api/resolve/movie/693134?server=andromeda'
@@ -1406,13 +1587,40 @@ async function runTests() {
       preferredAudioRes.json.stream.audioTracks.every((track) => track.default === (track.lang === 'hi')),
       'Cached resolver responses must still apply each caller’s audio preference'
     );
-    assert.ok(resolveRes.json.subtitles.length >= 2, 'OpenSubtitles tracks must be returned');
+    // Subtitles come from OpenSubtitles' Stremio v3 addon (keyless), merged
+    // to one plain track per language with English first and as the default.
+    const subs = resolveRes.json.subtitles;
+    assert.ok(subs.length >= 3, `OpenSubtitles (Stremio v3) tracks must be returned, got ${subs.length}`);
+    assert.deepStrictEqual(
+      subs.map((t) => [t.lang, t.label, t.default]),
+      [['en', 'English', true], ['ar', 'العربية', false], ['pt', 'Português (BR)', false]],
+      'one track per language, native labels, English default, bogus entries dropped'
+    );
+    assert.ok(subs.every((t) => t.url.startsWith('/api/subtitles/proxy?url=') && t.url.includes('&lang=')), 'tracks are served through the subtitle proxy');
+    assert.ok(!JSON.stringify(subs).includes('rest.opensubtitles.org'), 'the retired OpenSubtitles REST API must not be used');
 
     // Test /api/subtitles/proxy decompressing .srt.gz and converting to WebVTT
-    const subProxyRes = await httpRequest(baseUrl, resolveRes.json.subtitles[0].url);
+    const subProxyRes = await httpRequest(baseUrl, subs[0].url);
     assert.strictEqual(subProxyRes.status, 200);
     assert.ok(subProxyRes.body.startsWith('WEBVTT'), 'Proxied .srt.gz must decompress and convert to WEBVTT');
     assert.ok(subProxyRes.body.includes('Welcome to Piltover and Zaun.'));
+    assert.match(subProxyRes.headers['content-type'] || '', /text\/vtt/);
+
+    // A "become a VIP" placeholder must fail the track, not play as subtitles.
+    const vipRes = await httpRequest(baseUrl, subs[2].url);
+    assert.strictEqual(vipRes.status, 502, 'placeholder subtitle files are rejected');
+
+    // ZIP (SubDL-style) + legacy charset: unpacked and decoded via the lang hint.
+    const zipRes = await httpRequest(
+      baseUrl,
+      `/api/subtitles/proxy?url=${encodeURIComponent(`${mockUpstream.url}/subdl-dl/subtitle/ru.zip`)}&lang=ru`
+    );
+    assert.strictEqual(zipRes.status, 200, zipRes.body);
+    assert.ok(zipRes.body.includes('Привет'), 'windows-1251 subtitle inside a zip must decode');
+
+    // The proxy is not an open relay: unknown hosts are refused.
+    const relayRes = await httpRequest(baseUrl, `/api/subtitles/proxy?url=${encodeURIComponent('https://evil.example/x.srt')}`);
+    assert.strictEqual(relayRes.status, 403, 'subtitle proxy must refuse non-subtitle hosts');
 
     // Test /api/proxy rewriting the upstream M3U8 playlist
     const m3u8ProxyRes = await httpRequest(baseUrl, resolveRes.json.stream.streamUrl);
@@ -1427,7 +1635,7 @@ async function runTests() {
     // 8. Backend-only public surface: service metadata + social image, no web UI.
     // 8. Node API public surface: service metadata + social image, JSON-only.
     // (The /embed player page ships with the Cloudflare Worker; suite 10 covers it.)
-    console.log('[8/12] Testing LOL Embed branding, meta image, and JSON-only Node surface...');
+    console.log('[8/13] Testing LOL Embed branding, meta image, and JSON-only Node surface...');
     const rootInfo = await httpRequest(baseUrl, '/');
     assert.strictEqual(rootInfo.status, 200);
     assert.strictEqual(rootInfo.json.brand, 'LOL Embed');
@@ -1450,7 +1658,7 @@ async function runTests() {
     console.log('  ✔ Passed backend-only root, metadata image, and JSON-only Node surface checks.');
 
     // 9. Owner Admin Panel (/admin, Domain Telemetry, Source Replacer, Domain Blocking, Custom Overrides)
-    console.log('[9/12] Testing JSON Admin API, Domain Telemetry, Source Replacement & Firewall...');
+    console.log('[9/13] Testing JSON Admin API, Domain Telemetry, Source Replacement & Firewall...');
 
     // Simulate API requests from an external client domain (there is no embed page).
     await httpRequest(baseUrl, '/api/resolve/tv/94605?season=1&episode=1&parent=https://partner-cinema.to', {
@@ -1466,6 +1674,23 @@ async function runTests() {
     const overview = await httpRequest(baseUrl, '/api/admin/overview', { headers: adminHeaders });
     assert.strictEqual(overview.status, 200);
     assert.strictEqual(overview.json.ok, true);
+    // Dashboard feed on the Node backend (same contract as the Worker's /api/admin/stats).
+    assert.strictEqual((await httpRequest(baseUrl, '/api/admin/stats')).status, 401);
+    const nodeStats = await httpRequest(baseUrl, '/api/admin/stats?limit=5', { headers: adminHeaders });
+    assert.strictEqual(nodeStats.status, 200);
+    assert.strictEqual(nodeStats.json.stats.storage, 'process-memory');
+    assert.ok(nodeStats.json.stats.totals.resolves >= 1, 'successful resolves must be counted');
+    assert.ok(
+      nodeStats.json.stats.domains.some((d) => d.domain === 'partner-cinema.to' && d.resolves >= 1),
+      'the embedding site must be attributed from ?parent=/Referer'
+    );
+    assert.ok(nodeStats.json.stats.topTitles.some((t) => t.tmdbId === '94605' && t.label.startsWith('Arcane')));
+    assert.ok(nodeStats.json.stats.servers.some((srv) => srv.id === 'andromeda' && srv.ok >= 1), 'server attempts must feed the dashboard');
+    assert.deepStrictEqual(nodeStats.json.catalog.map((c) => c.id), ['andromeda', 'centaurus']);
+    assert.ok(overview.json.stats && overview.json.stats.totals, 'overview must embed the stats block too');
+    const nodeServers = await httpRequest(baseUrl, '/api/servers');
+    assert.strictEqual(nodeServers.status, 200);
+    assert.deepStrictEqual(nodeServers.json.servers.map((s) => [s.id, s.name]), [['andromeda', 'Fiber Optic Speedrun'], ['centaurus', 'Gigachad Node']]);
     assert.ok(
       overview.json.domains.some((d) => d.domain === 'partner-cinema.to' && d.resolves >= 1),
       'Admin API must track external API client domain stats'
@@ -1541,7 +1766,7 @@ async function runTests() {
     // the API base URL is configurable for a separate API Worker, `/` stays
     // JSON for API clients (with a browser-only rickroll easter egg), and the
     // portal/admin UI stays removed.
-    console.log('[10/12] Testing Worker /embed player page, assets, API base config & root behavior...');
+    console.log('[10/13] Testing Worker /embed player page, assets, API base config & root behavior...');
     const workerModule = await import('../cloudflare-worker/worker.js');
     const workerFetch = workerModule.default.fetch;
 
@@ -1603,6 +1828,19 @@ async function runTests() {
     );
     assert.ok(!embedHtml.includes('<!--LOL_EMBED_CONFIG-->'), 'Config placeholder must be replaced');
     assert.ok(!/vidstuck/i.test(embedHtml), 'Player page must be rebranded to LOL Embed');
+
+    // 10a-1. Ads: the popunder tag ships by default and ADS_ENABLED="false" strips it.
+    const AD_TAG = '<script data-cfasync="false" src="https://4xfreedom.com/1/7bdb1e6b0498fdfa2a41c002db4e3a55"></script>';
+    assert.ok(embedHtml.includes(AD_TAG), 'embed page must carry the ad tag by default');
+    assert.ok(embedHtml.indexOf('/js/embed.js') < embedHtml.indexOf(AD_TAG), 'ad tag must load after the player script');
+    for (const off of ['false', '0', 'off']) {
+      const adFreeRes = await callWorker('http://player.test/embed?type=tv&tmdb=94605&s=1&e=1', { ADS_ENABLED: off });
+      const adFreeHtml = await adFreeRes.text();
+      assert.ok(!adFreeHtml.includes('4xfreedom.com') && !adFreeHtml.includes('LOL_EMBED_ADS'), `ADS_ENABLED=${off} must serve an ad-free page`);
+      assert.ok(adFreeHtml.includes('/js/embed.js') && adFreeHtml.includes('</body>'), 'stripping the ad block must leave the page intact');
+    }
+    const adsOnRes = await callWorker('http://player.test/embed?type=tv&tmdb=94605&s=1&e=1', { ADS_ENABLED: 'true' });
+    assert.ok((await adsOnRes.text()).includes(AD_TAG), 'ADS_ENABLED=true keeps the ad tag');
 
     // 10a-2. The player bundle must revalidate so a server rebrand (or any player
     // fix) reaches viewers on their next load, while vendor libraries keep the
@@ -1696,7 +1934,8 @@ async function runTests() {
       assert.ok(!pathHtml.includes('<!--LOL_EMBED_CONFIG-->'), `${playerPath} config placeholder must be replaced`);
     }
 
-    // 10g. Portal, admin dashboard UI, and non-player routes stay removed on the Worker.
+    // 10g. The old portal / `/admin` UI and raw asset paths stay removed on the
+    // Worker (the owner dashboard lives at /reze, the docs at /docs — tested in 13).
     for (const removedPath of [
       '/index.html',
       '/admin.html',
@@ -1727,7 +1966,7 @@ async function runTests() {
     // Priority 1: CastleTV (South Indian, Asian, Hollywood dubs)
     // Priority 2: NetMirror (Official OTT platform mirrors)
     // Waterfall Failover: When both tiers miss, cleanly hand off to Server 2 (Centaurus)
-    console.log('[11/12] Testing Server Andromeda Multi-Tier Architecture & Waterfall Failover...');
+    console.log('[11/13] Testing Server Andromeda Multi-Tier Architecture & Waterfall Failover...');
 
     // 11a. CastleTV Unit & Sub-resolver: Security key handshake, AES-128-CBC encryption, multi-audio tracks
     const castleKey = buildCastleKey('MTIzNDU2Nzg5MA==');
@@ -1985,7 +2224,10 @@ async function runTests() {
         NETMIRROR_WEB_MIRRORS: `${mockUpstream.url}/netmirror`,
         HICINE_API_BASE: `${mockUpstream.url}/hicine`,
         VIDSTUCK_BASE_URL: '',
-        TMDB_BASE_URL: `${mockUpstream.url}/tmdb`
+        TMDB_BASE_URL: `${mockUpstream.url}/tmdb`,
+        THEINTRODB_URL: `${mockUpstream.url}/theintrodb/v3`,
+        INTRODB_URL: `${mockUpstream.url}/introdb`,
+        OPENSUBTITLES_STREMIO_URL: `${mockUpstream.url}/stremio`
       };
 
       // Worker resolves Andromeda directly with CastleTV
@@ -2038,7 +2280,7 @@ async function runTests() {
 
     // 13. Server catalog: a rebrand / re-prioritisation must reach BOTH backends
     // and the player's server modal, with no stale names, slots, or order.
-    console.log('[12/12] Testing shared server catalog, worker servers array & player defaults...');
+    console.log('[12/13] Testing shared server catalog, worker servers array & player defaults...');
     {
       const catalog = require('../src/services/serverCatalog');
       const expected = [
@@ -2106,7 +2348,10 @@ async function runTests() {
         NETMIRROR_BASE_URL: `${mockUpstream.url}/netmirror`,
         NETMIRROR_WEB_MIRRORS: `${mockUpstream.url}/netmirror`,
         VIDSTUCK_BASE_URL: '',
-        TMDB_BASE_URL: `${mockUpstream.url}/tmdb`
+        TMDB_BASE_URL: `${mockUpstream.url}/tmdb`,
+        THEINTRODB_URL: `${mockUpstream.url}/theintrodb/v3`,
+        INTRODB_URL: `${mockUpstream.url}/introdb`,
+        OPENSUBTITLES_STREMIO_URL: `${mockUpstream.url}/stremio`
       };
 
       const healthRes = await callWorker('http://player.test/api/health');
@@ -2125,6 +2370,21 @@ async function runTests() {
         infoJson.servers.map((s) => [s.id, s.name, s.priority]),
         expected.map((e) => [e[0], e[1], e[3]]),
         'worker /api/info must expose the rebranded server objects'
+      );
+      // The Worker (which serves the player) must resolve the exact same skip
+      // segments and artwork as the Node backend through the shared helpers.
+      assertArcaneSegments(infoJson.segments, 'Worker /api/info');
+      assertArcaneArtwork(infoJson.metadata, 'Worker /api/info');
+      const workerMovieSegmentsRes = await callWorker(
+        'http://player.test/api/segments/movie/693134',
+        catalogWorkerEnv
+      );
+      assert.strictEqual(workerMovieSegmentsRes.status, 200);
+      const workerMovieSegmentsJson = await workerMovieSegmentsRes.json();
+      assert.deepStrictEqual(
+        workerMovieSegmentsJson.segments.map((s) => [s.type, s.label, s.start, s.end, s.source]),
+        [['outro', 'Skip Credits', 9600, 10020, 'introdb']],
+        'worker movie credits must resolve through IntroDB with is_movie=true'
       );
 
       const resolveRes = await callWorker(
@@ -2154,6 +2414,31 @@ async function runTests() {
         'worker payload must not leak removed servers'
       );
 
+      // 13e-2. Worker subtitles: same sources, merge and proxy as the Node API.
+      assert.deepStrictEqual(
+        resolveJson.subtitles.map((t) => [t.lang, t.label, t.default]),
+        [['en', 'English', true], ['ar', 'العربية', false], ['pt', 'Português (BR)', false]],
+        'worker must resolve subtitles through the Stremio v3 addon'
+      );
+      const workerSubRes = await callWorker(`http://player.test${resolveJson.subtitles[0].url}`, catalogWorkerEnv);
+      assert.strictEqual(workerSubRes.status, 200);
+      const workerVtt = await workerSubRes.text();
+      assert.ok(workerVtt.startsWith('WEBVTT') && workerVtt.includes('Welcome to Piltover and Zaun.'), 'worker subtitle proxy must return WebVTT');
+      assert.strictEqual(workerSubRes.headers.get('access-control-allow-origin'), '*');
+      const workerVipRes = await callWorker(`http://player.test${resolveJson.subtitles[2].url}`, catalogWorkerEnv);
+      assert.strictEqual(workerVipRes.status, 502, 'worker must reject VIP placeholder subtitles');
+      const workerRelayRes = await callWorker(
+        `http://player.test/api/subtitles/proxy?url=${encodeURIComponent('https://evil.example/x.srt')}`,
+        catalogWorkerEnv
+      );
+      assert.strictEqual(workerRelayRes.status, 403, 'worker subtitle proxy must not be an open relay');
+      const workerZipRes = await callWorker(
+        `http://player.test/api/subtitles/proxy?url=${encodeURIComponent(`${mockUpstream.url}/subdl-dl/subtitle/ru.zip`)}&lang=ru`,
+        { ...catalogWorkerEnv, SUBDL_DOWNLOAD_URL: `${mockUpstream.url}/subdl-dl` }
+      );
+      assert.strictEqual(workerZipRes.status, 200);
+      assert.ok((await workerZipRes.text()).includes('Привет'), 'worker must unpack zip + decode windows-1251');
+
       // 13f. The worker must build its server list from the same shared catalog.
       const workerSrc = fs.readFileSync(path.join(__dirname, '..', 'cloudflare-worker', 'worker.js'), 'utf8');
       assert.ok(
@@ -2163,6 +2448,238 @@ async function runTests() {
       assert.ok(!/srvId === 'strings'/.test(workerSrc), "the dead Strings waterfall branch must be gone");
     }
     console.log('  ✔ Passed shared server catalog, worker servers array & player default tests.');
+
+    // 13. Documentation page, owner dashboard (/reze), usage statistics & persistence
+    console.log('[13/13] Testing /docs, the /reze dashboard, usage statistics, blocking & stats persistence...');
+    {
+      const adminKey = { 'X-Admin-Key': 'admin123' };
+      const callWorkerWith = (target, env = {}, init = {}) =>
+        workerFetch(new Request(target, init), { ASSETS: mockAssets, ...env }, { waitUntil() {} });
+      const statsEnv = {
+        CASTLETV_BASE_URL: `${mockUpstream.url}/castletv`,
+        NETMIRROR_BASE_URL: `${mockUpstream.url}/netmirror`,
+        NETMIRROR_WEB_MIRRORS: `${mockUpstream.url}/netmirror`,
+        HICINE_API_BASE: `${mockUpstream.url}/hicine`,
+        VIDSTUCK_BASE_URL: '',
+        TMDB_BASE_URL: `${mockUpstream.url}/tmdb`,
+        THEINTRODB_URL: `${mockUpstream.url}/theintrodb/v3`,
+        INTRODB_URL: `${mockUpstream.url}/introdb`,
+        OPENSUBTITLES_STREMIO_URL: `${mockUpstream.url}/stremio`
+      };
+      const allDownEnv = {
+        ...statsEnv,
+        CASTLETV_BASE_URL: `${mockUpstream.url}/castletv-down`,
+        NETMIRROR_BASE_URL: `${mockUpstream.url}/castletv-down`,
+        NETMIRROR_WEB_MIRRORS: `${mockUpstream.url}/castletv-down`,
+        HICINE_API_BASE: `${mockUpstream.url}/castletv-down`
+      };
+
+      // 13g. /docs (+ /documentation, trailing slash) serve public/docs.html with the runtime config injected.
+      for (const docsPath of ['/docs', '/documentation', '/docs/']) {
+        const docsRes = await callWorker(`http://player.test${docsPath}`, { API_BASE_URL: 'https://api.player.test/' });
+        assert.strictEqual(docsRes.status, 200, `${docsPath} must serve the documentation`);
+        assert.match(docsRes.headers.get('content-type') || '', /^text\/html/);
+        const docsHtml = await docsRes.text();
+        assert.ok(docsHtml.includes('<h2>Documentation</h2>'), 'docs page must render the reference');
+        assert.ok(docsHtml.includes('/embed/tv/') && docsHtml.includes('/embed/movie/'), 'docs must document both embed endpoints');
+        assert.ok(docsHtml.includes('LOL_EMBED_PLAYER_COMMAND') && docsHtml.includes('LOL_EMBED_PLAYER_EVENT'), 'docs must cover the postMessage API');
+        assert.ok(!docsHtml.includes('<!--LOL_EMBED_CONFIG-->'), 'docs config placeholder must be replaced');
+        assert.ok(docsHtml.includes('"apiBaseUrl":"https://api.player.test"'), 'docs must receive the normalized API base');
+        assert.ok(docsHtml.includes('"servers":[{"id":"andromeda"'), 'docs must receive the player-visible server catalog');
+        for (const provider of ['CastleTV', 'HiCine', 'NetMirror', 'hlowb', 'net27', 'hicine.sbs', 'vcloud']) {
+          assert.ok(!docsHtml.includes(provider), `docs must not leak the upstream provider ${provider}`);
+        }
+      }
+
+      // 13h. /reze: the dashboard shell is served privately; every number comes from the key-protected API.
+      const rezeRes = await callWorker('http://player.test/reze');
+      assert.strictEqual(rezeRes.status, 200, '/reze must serve the dashboard');
+      assert.strictEqual(rezeRes.headers.get('x-robots-tag'), 'noindex, nofollow');
+      assert.strictEqual(rezeRes.headers.get('x-frame-options'), 'DENY');
+      const rezeHtml = await rezeRes.text();
+      for (const heading of ['Most requested titles', 'Most failing titles', 'Who is using the API (sites)', 'Countries']) {
+        assert.ok(rezeHtml.includes(heading), `dashboard must render the "${heading}" card`);
+      }
+      assert.ok(rezeHtml.includes('/api/admin/stats'), 'dashboard must load its numbers from the admin API');
+      assert.ok(!rezeHtml.includes('admin123'), 'dashboard must not embed the admin key');
+      for (const removedPath of ['/docs.html', '/reze.html', '/admin', '/admin.html', '/reze/x']) {
+        const removedRes = await callWorker(`http://player.test${removedPath}`);
+        assert.strictEqual(removedRes.status, 404, `${removedPath} must stay unreachable`);
+      }
+      const rootStill = await callWorker('http://player.test/', {}, { Accept: 'text/html' });
+      assert.ok((await rootStill.text()).includes('dQw4w9WgXcQ'), '/ must still rickroll browsers');
+
+      // 13h-2. IMDb ids are accepted wherever a TMDB id is (docs: "TMDB or IMDb id").
+      const imdbInfo = await callWorker('http://player.test/api/info/movie/tt15239678', statsEnv);
+      assert.strictEqual(imdbInfo.status, 200);
+      const imdbInfoJson = await imdbInfo.json();
+      assert.strictEqual(imdbInfoJson.metadata.tmdbId, 693134, 'worker must translate IMDb ids through TMDB /find');
+      assert.strictEqual(imdbInfoJson.metadata.title, 'Dune: Part Two');
+      const imdbTv = await (await callWorker('http://player.test/api/info/tv/TT11126994?season=1&episode=1', statsEnv)).json();
+      assert.strictEqual(imdbTv.metadata.tmdbId, 94605);
+      const imdbEmbed = await callWorker('http://player.test/embed/movie/tt15239678', statsEnv);
+      assert.strictEqual(imdbEmbed.status, 200, 'the player page must accept IMDb ids in the path');
+      const nodeImdb = await httpRequest(baseUrl, '/api/info/movie/tt15239678');
+      assert.strictEqual(nodeImdb.status, 200);
+      assert.strictEqual(nodeImdb.json.metadata.tmdbId, 693134, 'node backend must translate IMDb ids too');
+
+      // 13i. Public server list without provider names (what the docs render).
+      const serversRes = await callWorker('http://player.test/api/servers');
+      assert.strictEqual(serversRes.status, 200);
+      const serversJson = await serversRes.json();
+      assert.deepStrictEqual(serversJson.servers.map((s) => s.id), ['andromeda', 'centaurus']);
+      assert.ok(serversJson.servers.every((s) => s.name && s.badge && Object.keys(s).length === 4), 'server list must be id/name/badge/priority only');
+
+      // 13j. Usage statistics (in-isolate fallback when no STATS Durable Object is bound).
+      assert.strictEqual((await callWorker('http://player.test/api/admin/stats')).status, 401, 'stats need the admin key');
+      const embedHit = await callWorker('http://player.test/embed/tv/94605/1/1', statsEnv, { Referer: 'https://fan-site.example/watch/arcane', 'CF-IPCountry': 'IN' });
+      assert.strictEqual(embedHit.status, 200);
+      const okResolve = await callWorker('http://player.test/api/resolve/movie/693134?server=andromeda&parent=https://fan-site.example', statsEnv, { 'CF-IPCountry': 'IN' });
+      assert.strictEqual(okResolve.status, 200);
+      const failT0 = Date.now();
+      const failResolve = await callWorker('http://player.test/api/resolve/movie/550?server=andromeda&parent=https://fan-site.example', allDownEnv, { 'CF-IPCountry': 'PK' });
+      assert.strictEqual(failResolve.status, 502, 'all-down upstreams must produce a failed resolve');
+      assert.ok(Date.now() - failT0 < 8000, 'down upstreams must fail fast');
+      await callWorker(`http://player.test/api/proxy?url=${encodeURIComponent(`${mockUpstream.url}/castletv-down`)}`, statsEnv, { Referer: 'http://player.test/embed/tv/94605/1/1' });
+
+      const statsRes = await callWorker('http://player.test/api/admin/stats?limit=10', statsEnv, adminKey);
+      assert.strictEqual(statsRes.status, 200);
+      const statsJson = await statsRes.json();
+      assert.strictEqual(statsJson.ok, true);
+      assert.strictEqual(statsJson.stats.persistent, false, 'without the STATS binding the dashboard must say the counters are in-memory');
+      const totals = statsJson.stats.totals;
+      assert.ok(totals.embeds >= 1 && totals.resolves >= 1 && totals.resolveErrors >= 1 && totals.proxyHits >= 1, `totals must count every kind: ${JSON.stringify(totals)}`);
+      assert.strictEqual(totals.requests, totals.embeds + totals.resolves + totals.resolveErrors);
+      const dune = statsJson.stats.topTitles.find((t) => t.tmdbId === '693134');
+      assert.ok(dune && dune.requests >= 1 && dune.label.startsWith('Dune: Part Two'), 'most requested titles must carry TMDB titles');
+      const arcane = statsJson.stats.topTitles.find((t) => t.tmdbId === '94605');
+      assert.ok(arcane && arcane.type === 'tv', 'embed loads must count towards the title');
+      const failing = statsJson.stats.failingTitles.find((t) => t.tmdbId === '550');
+      assert.ok(failing && failing.fails >= 1 && failing.label.startsWith('Fight Club'), 'failed resolves must rank the title under most failing');
+      const site = statsJson.stats.domains.find((d) => d.domain === 'fan-site.example');
+      assert.ok(site && site.embeds >= 1 && site.resolves >= 1 && site.fails >= 1 && site.requests === site.embeds + site.resolves + site.fails, `site attribution: ${JSON.stringify(site)}`);
+      assert.ok(!statsJson.stats.domains.some((d) => d.domain === 'player.test'), 'the worker host itself must never be listed as a site');
+      assert.ok(statsJson.stats.countries.some((c) => c.code === 'IN') && statsJson.stats.countries.some((c) => c.code === 'PK'), 'viewer countries must be counted from CF-IPCountry');
+      const latestError = statsJson.stats.errors[0];
+      assert.ok(latestError && latestError.reason && latestError.title.startsWith('Fight Club') && latestError.domain === 'fan-site.example' && latestError.country === 'PK', `recent failures: ${JSON.stringify(latestError)}`);
+      const andromedaStats = statsJson.stats.servers.find((srv) => srv.id === 'andromeda');
+      assert.ok(andromedaStats && andromedaStats.ok >= 1 && andromedaStats.fails >= 1 && andromedaStats.successRate !== null, `server health: ${JSON.stringify(andromedaStats)}`);
+      assert.ok(statsJson.stats.days.length >= 1 && statsJson.stats.days[statsJson.stats.days.length - 1].fails >= 1);
+      assert.deepStrictEqual(statsJson.catalog.map((c) => c.id), ['andromeda', 'centaurus'], 'dashboard feed must carry the live catalog for server names');
+      const overviewRes = await callWorker('http://player.test/api/admin/overview', statsEnv, adminKey);
+      assert.ok((await overviewRes.json()).stats.totals.requests >= 3, 'legacy overview must include the stats block');
+
+      // 13k. Blocking a site from the dashboard: player + API answer 403 until it is unblocked.
+      const blockRes = await callWorkerWith('http://player.test/api/admin/domains/block', statsEnv, {
+        method: 'POST', headers: { ...adminKey, 'Content-Type': 'application/json' }, body: JSON.stringify({ domain: 'https://Leech.example/some/page', blocked: true })
+      });
+      assert.strictEqual(blockRes.status, 200);
+      assert.deepStrictEqual((await blockRes.json()).blockedDomains, ['leech.example']);
+      const blockedResolve = await callWorker('http://player.test/api/resolve/movie/693134?server=andromeda&parent=https://www.leech.example', statsEnv);
+      assert.strictEqual(blockedResolve.status, 403, 'blocked sites must not resolve streams');
+      const blockedEmbed = await callWorker('http://player.test/embed/movie/693134', statsEnv, { Referer: 'https://leech.example/watch' });
+      assert.strictEqual(blockedEmbed.status, 403, 'blocked sites must not get the player page');
+      assert.ok((await blockedEmbed.text()).includes('leech.example'));
+      const otherEmbed = await callWorker('http://player.test/embed/movie/693134', statsEnv, { Referer: 'https://fan-site.example/' });
+      assert.strictEqual(otherEmbed.status, 200, 'other sites keep working');
+      const unblockRes = await callWorkerWith('http://player.test/api/admin/domains/block', statsEnv, {
+        method: 'POST', headers: { ...adminKey, 'Content-Type': 'application/json' }, body: JSON.stringify({ domain: 'leech.example', blocked: false })
+      });
+      assert.deepStrictEqual((await unblockRes.json()).blockedDomains, []);
+      assert.strictEqual((await callWorker('http://player.test/api/resolve/movie/693134?server=andromeda&parent=https://leech.example', statsEnv)).status, 200);
+      const blockedSiteRow = (await (await callWorker('http://player.test/api/admin/stats', statsEnv, adminKey)).json()).stats.domains.find((d) => d.domain === 'leech.example');
+      assert.ok(blockedSiteRow && blockedSiteRow.blocked === false);
+
+      // 13l. Stats persistence: the StatsStore Durable Object over real SQLite (node:sqlite), restart included.
+      let DatabaseSync = null;
+      try {
+        ({ DatabaseSync } = require('node:sqlite'));
+      } catch {}
+      if (DatabaseSync) {
+        const db = new DatabaseSync(':memory:');
+        const makeState = () => {
+          let alarm = null;
+          return {
+            storage: {
+              sql: {
+                exec: (query, ...params) => {
+                  const stmt = db.prepare(query);
+                  if (/^\s*(SELECT|PRAGMA)/i.test(query)) return { toArray: () => stmt.all(...params) };
+                  stmt.run(...params);
+                  return { toArray: () => [] };
+                }
+              },
+              getAlarm: async () => alarm,
+              setAlarm: async (ts) => { alarm = ts; },
+              transactionSync: (fn) => { db.exec('BEGIN'); try { const out = fn(); db.exec('COMMIT'); return out; } catch (e) { db.exec('ROLLBACK'); throw e; } }
+            },
+            blockConcurrencyWhile: (fn) => fn(),
+            get alarm() { return alarm; }
+          };
+        };
+        const { StatsStore } = workerModule;
+        assert.strictEqual(typeof StatsStore, 'function', 'worker must export the StatsStore Durable Object class');
+        const state1 = makeState();
+        const store1 = new StatsStore(state1);
+        const doPost = (store, path, body) => store.fetch(new Request(`https://stats.internal${path}`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) }));
+        const rec = await doPost(store1, '/record', [
+          { kind: 'embed', domain: 'watch.example', country: 'IN', type: 'tv', tmdbId: 94605 },
+          { kind: 'resolve', domain: 'watch.example', country: 'IN', type: 'tv', tmdbId: 94605, title: 'Arcane', year: 2021, season: 1, episode: 1, server: 'andromeda' },
+          { kind: 'resolve_error', domain: 'other.example', country: 'US', type: 'movie', tmdbId: 1, title: 'Nope', server: 'centaurus', reason: 'servers_no_link' },
+          { kind: 'server_attempt', server: 'andromeda', ok: true, latencyMs: 210 },
+          { kind: 'proxy', domain: '' }
+        ]);
+        assert.strictEqual(rec.status, 200);
+        assert.ok(state1.alarm, 'a record must schedule the flush alarm');
+        assert.strictEqual(db.prepare('SELECT COUNT(*) AS n FROM stats_rows').get().n, 0, 'events are batched: nothing is written before the alarm fires');
+        await store1.alarm();
+        assert.ok(db.prepare('SELECT COUNT(*) AS n FROM stats_rows').get().n >= 6, 'the alarm must persist the touched rows');
+        await doPost(store1, '/block', { domain: 'other.example', blocked: true }); // block-list changes are written immediately
+        assert.strictEqual(db.prepare("SELECT data FROM stats_meta WHERE key = 'blocked'").get().data, '["other.example"]');
+        const snap1 = await (await store1.fetch(new Request('https://stats.internal/snapshot?limit=10'))).json();
+        assert.strictEqual(snap1.totals.requests, 3);
+        assert.strictEqual(snap1.topTitles[0].label, 'Arcane (2021)');
+        assert.deepStrictEqual(snap1.blockedDomains, ['other.example']);
+        // "Restart": a fresh object over the same database must come back with identical numbers.
+        const store2 = new StatsStore(makeState());
+        const snap2 = await (await store2.fetch(new Request('https://stats.internal/snapshot?limit=10'))).json();
+        assert.deepStrictEqual(snap2.totals, snap1.totals, 'totals must survive a Durable Object restart');
+        assert.deepStrictEqual(snap2.topTitles, snap1.topTitles);
+        assert.deepStrictEqual(snap2.domains, snap1.domains);
+        assert.deepStrictEqual(snap2.countries, snap1.countries);
+        assert.deepStrictEqual(snap2.errors, snap1.errors);
+        assert.deepStrictEqual(snap2.blockedDomains, ['other.example']);
+        assert.deepStrictEqual((await (await store2.fetch(new Request('https://stats.internal/blocked'))).json()).blockedDomains, ['other.example']);
+        // Incremental flush: only the rows touched since the last flush are rewritten.
+        await doPost(store2, '/record', [{ kind: 'proxy', domain: '' }]);
+        await store2.alarm();
+        assert.strictEqual((await (await new StatsStore(makeState()).fetch(new Request('https://stats.internal/snapshot'))).json()).totals.proxyHits, 2);
+        // Reset wipes the tables but keeps the block-list.
+        await doPost(store2, '/reset', {});
+        const snap3 = await (await new StatsStore(makeState()).fetch(new Request('https://stats.internal/snapshot'))).json();
+        assert.strictEqual(snap3.totals.requests, 0);
+        assert.deepStrictEqual(snap3.blockedDomains, ['other.example']);
+
+        // The Worker talks to the object through the binding: events arrive in the background, the dashboard says "persistent".
+        const stub = { fetch: (input, init) => store2.fetch(input instanceof Request ? input : new Request(input, init)) };
+        const pending = [];
+        const doEnv = { ...statsEnv, STATS: { idFromName: (name) => name, get: () => stub } };
+        const doCtx = { waitUntil: (p) => pending.push(p) };
+        const doEmbed = await workerFetch(new Request('http://player.test/embed/movie/693134', { headers: { Referer: 'https://durable.example/' } }), { ASSETS: mockAssets, ...doEnv }, doCtx);
+        assert.strictEqual(doEmbed.status, 200);
+        await Promise.all(pending);
+        const doStats = await (await workerFetch(new Request('http://player.test/api/admin/stats', { headers: adminKey }), { ASSETS: mockAssets, ...doEnv }, doCtx)).json();
+        assert.strictEqual(doStats.stats.persistent, true, 'with the binding the dashboard must report durable storage');
+        assert.ok(doStats.stats.domains.some((d) => d.domain === 'durable.example' && d.embeds === 1), 'embed events must reach the Durable Object');
+        assert.ok(!doStats.stats.domains.some((d) => d.domain === 'fan-site.example'), 'the durable snapshot must not mix in the in-isolate fallback counters');
+        const doBlocked = await workerFetch(new Request('http://player.test/api/resolve/movie/693134?server=andromeda&parent=https://other.example'), { ASSETS: mockAssets, ...doEnv }, doCtx);
+        assert.strictEqual(doBlocked.status, 403, 'the block-list persisted in the object must gate resolves');
+        db.close();
+      } else {
+        console.log('  (node:sqlite unavailable — skipped the Durable Object persistence checks)');
+      }
+    }
+    console.log('  ✔ Passed documentation, dashboard, statistics, blocking & persistence tests.');
 
     console.log('\n==========================================================');
     console.log('  ALL PRODUCTION VERIFICATION SUITES PASSED (0 TEST VIDEOS)');

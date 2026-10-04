@@ -1,7 +1,14 @@
 :root {
   /* LOL Embed monochrome palette: #000000 / #171717 / #404040 / #A3A3A3 / #FFFFFF */
   --accent: #ffffff;
+  /* Text colour used ON TOP of --accent (recomputed by the player for ?color=). */
+  --accent-contrast: #000000;
   --accent-glow: rgba(255, 255, 255, 0.35);
+  /* Skip-segment yellow: the one deliberate exception to the monochrome
+     palette. Marks intro / recap / credits ranges on the track and tints the
+     progress fill while the playhead is inside one. */
+  --segment-accent: #f5c518;
+  --segment-accent-soft: rgba(245, 197, 24, 0.42);
   --surface-modal: rgba(18, 18, 21, 0.96);
   --surface-popover: rgba(19, 19, 22, 0.97);
   --surface-card: rgba(32, 32, 36, 0.72);
@@ -13,6 +20,7 @@
   --sub-font-size: 22px;
   --sub-color: #ffffff;
   --sub-bg: rgba(0, 0, 0, 0.65);
+  --hud-bottom-offset: 150px;
 }
 
 * {
@@ -32,8 +40,37 @@ html, body {
   font-family: -apple-system, BlinkMacSystemFont, "Inter", "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
 }
 
+button {
+  font-family: inherit;
+}
+
 .hidden {
   display: none !important;
+}
+
+/* Visually hidden but readable by assistive tech */
+.sr-only {
+  position: absolute !important;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+/* Keyboard focus: the player is used in iframes where focus rings are the only
+   navigation cue. Mouse/touch users keep the clean look via :focus-visible. */
+:focus {
+  outline: none;
+}
+
+:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+  border-radius: 8px;
 }
 
 .player-root {
@@ -42,6 +79,11 @@ html, body {
   height: 100%;
   background: #000;
   overflow: hidden;
+}
+
+/* Hide the mouse cursor together with the HUD during playback */
+.player-root.controls-idle {
+  cursor: none;
 }
 
 .video-element {
@@ -57,7 +99,7 @@ html, body {
   position: absolute;
   left: 5%;
   right: 5%;
-  bottom: 130px;
+  bottom: var(--hud-bottom-offset);
   display: flex;
   justify-content: center;
   align-items: center;
@@ -82,13 +124,16 @@ html, body {
   color: var(--sub-color);
   background: var(--sub-bg);
   text-shadow: 0 2px 6px rgba(0, 0, 0, 0.95);
+  /* Keep the line breaks that SRT/VTT cues carry (two-line subtitles). */
+  white-space: pre-line;
+  unicode-bidi: plaintext;
 }
 
 .custom-subtitle-text:empty {
   display: none;
 }
 
-/* Loading Spinner Overlay */
+/* Loading Spinner Overlay (also the error state) */
 .loading-overlay {
   position: absolute;
   inset: 0;
@@ -96,13 +141,418 @@ html, body {
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: 14px;
-  background: rgba(0, 0, 0, 0.45);
-  z-index: 20;
+  padding: 24px;
+  background: #050507;
+  overflow: hidden;
+  /* Above the HUD (25) so the back / servers / error buttons receive clicks;
+     the overlay itself stays click-through. */
+  z-index: 30;
   pointer-events: none;
+  text-align: center;
   transition: opacity 0.25s ease;
 }
 
+/* Shared blurred-artwork background of the connect and paused screens. The
+   backdrop is oversized so the blur never shows a bright edge. */
+.screen-backdrop {
+  position: absolute;
+  inset: -40px;
+  background: #0b0b0e center / cover no-repeat;
+  filter: blur(26px) brightness(0.5) saturate(1.15);
+  transform: scale(1.08);
+  pointer-events: none;
+}
+
+.screen-scrim {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
+.connect-scrim {
+  background:
+    radial-gradient(ellipse at 50% 40%, rgba(0, 0, 0, 0.05), rgba(0, 0, 0, 0.55) 75%),
+    linear-gradient(to bottom, rgba(0, 0, 0, 0.6), rgba(0, 0, 0, 0.25) 35%, rgba(0, 0, 0, 0.35) 70%, rgba(0, 0, 0, 0.82));
+}
+
+.connect-topbar {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 20px 26px 0;
+  z-index: 2;
+}
+
+.connect-topbar .icon-btn {
+  pointer-events: auto;
+}
+
+.connect-topbar-right {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+
+.connect-branding {
+  display: inline-flex;
+  align-items: center;
+  max-width: 220px;
+  padding: 6px 14px;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  background: rgba(255, 255, 255, 0.08);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  color: rgba(255, 255, 255, 0.86);
+  font-size: 12.5px;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.connect-branding:empty {
+  display: none;
+}
+
+.connect-screen {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 14px;
+  width: 100%;
+  max-width: 640px;
+  padding: 36px 0 28px;
+}
+
+.connect-art {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  min-height: 48px;
+}
+
+/* TMDB title logo (transparent PNG); falls back to the plain title text */
+.title-logo {
+  display: block;
+  max-width: min(68%, 440px);
+  max-height: 26vh;
+  width: auto;
+  height: auto;
+  object-fit: contain;
+  filter: drop-shadow(0 10px 26px rgba(0, 0, 0, 0.7));
+  user-select: none;
+  -webkit-user-drag: none;
+}
+
+.title-logo-fallback {
+  font-size: clamp(24px, 4.6vw, 46px);
+  font-weight: 800;
+  letter-spacing: -0.02em;
+  line-height: 1.1;
+  color: #ffffff;
+  text-shadow: 0 4px 22px rgba(0, 0, 0, 0.75);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+}
+
+.title-logo-fallback:empty {
+  display: none;
+}
+
+.connect-genres {
+  font-size: 12.5px;
+  font-weight: 600;
+  letter-spacing: 0.32em;
+  text-transform: uppercase;
+  color: rgba(255, 255, 255, 0.62);
+  margin-top: -2px;
+}
+
+.connect-genres:empty {
+  display: none;
+}
+
+.connect-status-line {
+  display: inline-flex;
+  align-items: baseline;
+  margin-top: 18px;
+  font-family: ui-monospace, "SF Mono", Menlo, Consolas, "Liberation Mono", monospace;
+  font-size: 15px;
+  font-weight: 600;
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+  color: rgba(255, 255, 255, 0.92);
+}
+
+.loading-status-text {
+  max-width: 560px;
+  line-height: 1.45;
+}
+
+.connect-cursor {
+  margin-left: 2px;
+  animation: cursor-blink 1s steps(2, start) infinite;
+}
+
+@keyframes cursor-blink {
+  to { visibility: hidden; }
+}
+
+.connect-progress {
+  position: relative;
+  width: min(420px, 72%);
+  height: 3px;
+  border-radius: 2px;
+  background: rgba(255, 255, 255, 0.16);
+  overflow: hidden;
+}
+
+.connect-progress-fill {
+  height: 100%;
+  width: 0;
+  border-radius: 2px;
+  background: #ffffff;
+  box-shadow: 0 0 12px rgba(255, 255, 255, 0.6);
+  transition: width 0.6s ease;
+}
+
+.connect-progress-fill.is-creeping {
+  transition: width 5s cubic-bezier(0.1, 0.6, 0.3, 1);
+}
+
+.connect-source-line {
+  display: inline-flex;
+  align-items: center;
+  font-size: 16px;
+  font-weight: 500;
+  color: rgba(255, 255, 255, 0.88);
+}
+
+.connect-slash {
+  margin: 0 10px;
+  color: rgba(255, 255, 255, 0.4);
+}
+
+.connect-tip {
+  position: absolute;
+  left: 24px;
+  right: 24px;
+  bottom: 26px;
+  z-index: 1;
+  font-size: 14px;
+  color: rgba(255, 255, 255, 0.78);
+  text-shadow: 0 2px 10px rgba(0, 0, 0, 0.7);
+  animation: tip-in 0.5s ease;
+}
+
+@keyframes tip-in {
+  from { opacity: 0; transform: translateY(4px); }
+  to { opacity: 1; transform: none; }
+}
+
+.loading-status-detail {
+  font-size: 12.5px;
+  color: var(--text-secondary);
+  max-width: 480px;
+  line-height: 1.45;
+}
+
+.loading-error-icon {
+  display: none;
+  color: rgba(255, 255, 255, 0.8);
+}
+
+.loading-overlay.is-leaving {
+  opacity: 0;
+}
+
+.loading-overlay.is-error .screen-backdrop {
+  filter: blur(30px) brightness(0.3) saturate(0.6);
+}
+
+.loading-overlay.is-error .loading-error-icon {
+  display: block;
+}
+
+/* Error state: playful headline + hint, then the technical reason (status
+   text + detail) in a muted block, then the servers to pick from. */
+.connect-error-title,
+.connect-error-hint {
+  display: none;
+}
+
+.loading-overlay.is-error .connect-error-title {
+  display: block;
+  font-size: clamp(18px, 2.6vw, 24px);
+  font-weight: 800;
+  letter-spacing: -0.01em;
+  color: #ffffff;
+  text-shadow: 0 2px 14px rgba(0, 0, 0, 0.7);
+}
+
+.loading-overlay.is-error .connect-error-hint {
+  display: block;
+  margin-top: -6px;
+  font-size: 15px;
+  font-weight: 500;
+  color: rgba(255, 255, 255, 0.72);
+}
+
+.loading-overlay.is-error .connect-status-line {
+  order: 1;
+  font-family: inherit;
+  font-size: 12.5px;
+  font-weight: 500;
+  letter-spacing: 0.01em;
+  text-transform: none;
+  color: rgba(255, 255, 255, 0.55);
+  margin-top: 2px;
+}
+
+.loading-overlay.is-error .loading-status-detail {
+  order: 1;
+  margin-top: -8px;
+}
+
+.loading-overlay.is-error .connect-servers,
+.loading-overlay.is-error .loading-actions {
+  order: 2;
+}
+
+.loading-overlay.is-error .connect-art,
+.loading-overlay.is-error .connect-genres {
+  order: -2;
+}
+
+.loading-overlay.is-error .loading-error-icon {
+  order: -1;
+  width: 32px;
+  height: 32px;
+  margin-top: 4px;
+}
+
+.connect-servers {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 8px;
+  max-width: 560px;
+  margin-top: 6px;
+  pointer-events: auto;
+}
+
+.connect-server-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 9px;
+  padding: 9px 14px 9px 11px;
+  border-radius: 10px;
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  background: rgba(255, 255, 255, 0.08);
+  color: #ffffff;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  text-align: left;
+  transition: background 0.15s ease, border-color 0.15s ease, transform 0.15s ease;
+}
+
+.connect-server-btn:hover {
+  background: rgba(255, 255, 255, 0.16);
+  border-color: rgba(255, 255, 255, 0.3);
+}
+
+.connect-server-btn:active {
+  transform: scale(0.97);
+}
+
+.connect-server-btn.is-current {
+  border-color: rgba(255, 255, 255, 0.45);
+}
+
+.connect-server-btn .server-state {
+  width: 20px;
+  height: 20px;
+  flex-shrink: 0;
+}
+
+.connect-server-btn small {
+  display: block;
+  margin-top: 1px;
+  font-size: 11px;
+  font-weight: 500;
+  color: rgba(255, 255, 255, 0.55);
+}
+
+.connect-server-btn.is-failed small,
+.connect-server-btn.is-failed .server-state {
+  color: rgba(255, 255, 255, 0.45);
+}
+
+.loading-overlay.is-error .connect-cursor,
+.loading-overlay.is-error .connect-progress,
+.loading-overlay.is-error .connect-source-line,
+.loading-overlay.is-error .connect-tip {
+  display: none;
+}
+
+.loading-actions {
+  display: flex;
+  gap: 10px;
+  margin-top: 4px;
+  pointer-events: auto;
+}
+
+.loading-action-btn {
+  background: rgba(255, 255, 255, 0.1);
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  color: #ffffff;
+  font-size: 13px;
+  font-weight: 600;
+  padding: 9px 18px;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: background 0.15s ease, transform 0.15s ease;
+}
+
+.loading-action-btn:hover {
+  background: rgba(255, 255, 255, 0.18);
+}
+
+.loading-action-btn:active {
+  transform: scale(0.97);
+}
+
+.loading-action-btn.primary {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: var(--accent-contrast);
+}
+
+.loading-action-btn.primary:hover {
+  filter: brightness(0.92);
+}
+
+/* The HUD stays out of the way while the connect screen is up: the screen
+   has its own Back / Servers buttons. */
+.player-root.is-loading .controls-hud {
+  opacity: 0;
+  pointer-events: none;
+}
+
+/* Spinner kept for the mid-playback buffering indicator */
 .spinner-ring {
   width: 44px;
   height: 44px;
@@ -112,15 +562,121 @@ html, body {
   animation: spin 0.8s linear infinite;
 }
 
-.loading-status-text {
-  font-size: 13px;
-  font-weight: 500;
-  color: rgba(255, 255, 255, 0.78);
-  letter-spacing: 0.02em;
+.spinner-ring.small {
+  width: 36px;
+  height: 36px;
+  border-width: 3px;
+}
+
+/* Buffering spinner shown during stalls / seeks once playback has started */
+.buffering-indicator {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  z-index: 19;
+  pointer-events: none;
 }
 
 @keyframes spin {
   to { transform: rotate(360deg); }
+}
+
+/* Center transport (play / pause, plus -15 / +15 in the compact layout) */
+.center-controls {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 34px;
+  z-index: 26;
+  pointer-events: none;
+}
+
+.center-play-btn {
+  width: 78px;
+  height: 78px;
+  transform: scale(1);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  border: 1px solid rgba(255, 255, 255, 0.22);
+  background: rgba(20, 20, 24, 0.72);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  color: #ffffff;
+  cursor: pointer;
+  pointer-events: auto;
+  box-shadow: 0 10px 34px rgba(0, 0, 0, 0.6);
+  transition: opacity 0.2s ease, transform 0.2s ease, background 0.15s ease;
+}
+
+.center-play-btn svg {
+  margin-left: 3px;
+}
+
+.center-play-btn #icon-center-pause {
+  margin-left: 0;
+}
+
+.center-play-btn:hover {
+  background: rgba(40, 40, 46, 0.86);
+  transform: scale(1.06);
+}
+
+.center-play-btn:active {
+  transform: scale(0.96);
+}
+
+/* Hidden while playing on mouse devices, while loading/erroring, and with the HUD */
+.player-root.is-playing .center-play-btn,
+.player-root.is-loading .center-play-btn,
+.player-root.controls-idle .center-play-btn {
+  opacity: 0;
+  pointer-events: none;
+  transform: scale(0.9);
+}
+
+/* Touch devices get a persistent center play/pause (like native mobile players) */
+@media (pointer: coarse) {
+  .player-root.is-playing:not(.controls-idle):not(.is-loading) .center-play-btn {
+    opacity: 1;
+    pointer-events: auto;
+    transform: scale(1);
+  }
+}
+
+/* -15 / +15 beside the centre button: compact layout only (see below) */
+.center-seek-btn {
+  display: none;
+  width: 56px;
+  height: 56px;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  background: rgba(20, 20, 24, 0.55);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  color: #ffffff;
+  cursor: pointer;
+  pointer-events: auto;
+  opacity: 0;
+  transform: scale(0.9);
+  transition: opacity 0.2s ease, transform 0.2s ease, background 0.15s ease;
+}
+
+.center-seek-btn:hover {
+  background: rgba(40, 40, 46, 0.8);
+  transform: scale(1.06);
+}
+
+.center-seek-btn:active {
+  transform: scale(0.94);
 }
 
 /* Double-tap seek feedback */
@@ -148,24 +704,156 @@ html, body {
   transform: translateY(-50%) scale(1);
 }
 
-/* Fullscreen / Status Toast (Screenshot 5) */
-.player-toast {
+/* Hold-to-fast-forward badge: shown while the picture is pressed and held. */
+.speed-boost-badge {
   position: absolute;
-  bottom: 18px;
+  top: 22px;
   left: 50%;
   transform: translateX(-50%);
   background: rgba(38, 41, 48, 0.94);
   backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
   color: #f4f4f5;
-  padding: 12px 22px;
-  border-radius: 14px;
+  padding: 8px 16px;
+  border-radius: 999px;
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.65);
+  z-index: 27;
+  pointer-events: none;
+  animation: boost-badge-in 0.18s ease;
+}
+
+@keyframes boost-badge-in {
+  from { opacity: 0; transform: translateX(-50%) translateY(-6px); }
+  to { opacity: 1; transform: translateX(-50%) translateY(0); }
+}
+
+/* Status Toast — top-centre, clear of the title row, control bar and subtitles. */
+.player-toast {
+  position: absolute;
+  top: 22px;
+  left: 50%;
+  transform: translate(-50%, -8px);
+  background: rgba(38, 41, 48, 0.94);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  color: #f4f4f5;
+  padding: 11px 20px;
+  border-radius: 12px;
   font-size: 13.5px;
   line-height: 1.4;
-  max-width: 460px;
+  max-width: min(460px, calc(100% - 140px));
   width: max-content;
+  text-align: center;
   box-shadow: 0 10px 30px rgba(0, 0, 0, 0.65);
   z-index: 35;
   pointer-events: none;
+  opacity: 0;
+  visibility: hidden;
+  transition: opacity 0.2s ease, transform 0.2s ease, visibility 0s linear 0.2s;
+}
+
+.player-toast.is-visible {
+  opacity: 1;
+  visibility: visible;
+  transform: translate(-50%, 0);
+  transition: opacity 0.2s ease, transform 0.2s ease, visibility 0s;
+}
+
+/* Up Next card */
+.up-next-card {
+  position: absolute;
+  right: 26px;
+  bottom: var(--hud-bottom-offset);
+  width: 300px;
+  max-width: calc(100% - 32px);
+  background: var(--surface-popover);
+  border: 1px solid var(--border-strong);
+  border-radius: 14px;
+  padding: 14px 16px 14px;
+  z-index: 36;
+  box-shadow: 0 20px 50px rgba(0, 0, 0, 0.8);
+  animation: popIn 0.18s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.player-root.controls-idle .up-next-card {
+  bottom: 24px;
+}
+
+.up-next-eyebrow {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-secondary);
+}
+
+.up-next-title {
+  margin-top: 4px;
+  font-size: 15px;
+  font-weight: 700;
+  color: #ffffff;
+  line-height: 1.3;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.up-next-progress {
+  margin-top: 12px;
+  height: 3px;
+  width: 100%;
+  background: rgba(255, 255, 255, 0.14);
+  border-radius: 999px;
+  overflow: hidden;
+}
+
+.up-next-progress-fill {
+  height: 100%;
+  width: 0%;
+  background: var(--accent);
+  border-radius: 999px;
+  transition: width 0.25s linear;
+}
+
+.up-next-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.up-next-btn {
+  flex: 1;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  color: #ffffff;
+  font-size: 13px;
+  font-weight: 600;
+  padding: 9px 10px;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: background 0.15s ease;
+}
+
+.up-next-btn:hover {
+  background: rgba(255, 255, 255, 0.16);
+}
+
+.up-next-btn.primary {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: var(--accent-contrast);
+}
+
+.up-next-btn.primary:hover {
+  filter: brightness(0.92);
 }
 
 /* Main HUD Overlay */
@@ -206,6 +894,7 @@ html, body {
 }
 
 .icon-btn {
+  position: relative;
   background: transparent;
   border: none;
   color: rgba(255, 255, 255, 0.86);
@@ -215,7 +904,7 @@ html, body {
   justify-content: center;
   padding: 6px;
   border-radius: 8px;
-  transition: color 0.15s ease, transform 0.15s ease, background 0.15s ease;
+  transition: color 0.15s ease, transform 0.15s ease, background 0.15s ease, opacity 0.15s ease;
 }
 
 .icon-btn:hover {
@@ -226,6 +915,30 @@ html, body {
 
 .icon-btn:active {
   transform: scale(0.95);
+}
+
+.icon-btn:disabled {
+  opacity: 0.35;
+  cursor: default;
+  transform: none;
+  background: transparent;
+}
+
+.icon-btn.is-open {
+  color: #ffffff;
+  background: rgba(255, 255, 255, 0.14);
+}
+
+/* Small dot that marks "subtitles on" on the CC button */
+.btn-active-dot {
+  position: absolute;
+  right: 5px;
+  bottom: 5px;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--accent);
+  box-shadow: 0 0 0 2px rgba(0, 0, 0, 0.6);
 }
 
 .center-click-zone {
@@ -253,6 +966,7 @@ html, body {
   display: flex;
   flex-direction: column;
   gap: 6px;
+  min-width: 0;
 }
 
 .watching-eyebrow {
@@ -276,12 +990,22 @@ html, body {
 }
 
 .media-title {
-  font-size: clamp(22px, 3.2vw, 34px);
+  font-size: clamp(20px, 3.2vw, 34px);
   font-weight: 800;
   color: #ffffff;
   letter-spacing: -0.02em;
   line-height: 1.12;
   text-shadow: 0 2px 12px rgba(0, 0, 0, 0.7);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+}
+
+.media-title.is-placeholder {
+  color: rgba(255, 255, 255, 0.45);
+  font-weight: 600;
 }
 
 .media-tags {
@@ -292,6 +1016,10 @@ html, body {
   flex-wrap: wrap;
 }
 
+.media-tags:empty {
+  display: none;
+}
+
 .media-tag-pill {
   background: rgba(255, 255, 255, 0.09);
   border: 1px solid rgba(255, 255, 255, 0.11);
@@ -300,20 +1028,26 @@ html, body {
   font-weight: 600;
   padding: 3px 11px;
   border-radius: 999px;
+  white-space: nowrap;
 }
 
-/* Skip Intro Button (Screenshot 1, 2, 3, 5) */
+/* Skip Intro Button */
 .skip-btn-wrapper {
   display: flex;
   align-items: center;
+  flex-shrink: 0;
 }
 
 .btn-skip-intro {
+  position: relative;
+  isolation: isolate;
+  overflow: hidden;
   display: inline-flex;
   align-items: center;
   gap: 8px;
   background: rgba(34, 34, 38, 0.88);
   backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
   border: 1px solid rgba(255, 255, 255, 0.16);
   color: #ffffff;
   font-size: 13.5px;
@@ -321,8 +1055,10 @@ html, body {
   padding: 8px 15px;
   border-radius: 8px;
   cursor: pointer;
+  white-space: nowrap;
   box-shadow: 0 4px 16px rgba(0, 0, 0, 0.45);
   transition: background 0.15s ease, border-color 0.15s ease, transform 0.15s ease;
+  animation: popIn 0.18s cubic-bezier(0.16, 1, 0.3, 1);
 }
 
 .btn-skip-intro:hover {
@@ -331,7 +1067,48 @@ html, body {
   transform: translateY(-1px);
 }
 
-/* Segmented Timeline Row (Screenshot 1 & 5) */
+/* Progressive fill: grows left -> right as the segment elapses (width is
+   driven by the player's render loop), so the button doubles as a countdown. */
+.skip-progress-fill {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  width: 0%;
+  background: rgba(255, 255, 255, 0.26);
+  pointer-events: none;
+  z-index: 0;
+  transition: width 0.12s linear;
+}
+
+.btn-skip-intro .skip-intro-label,
+.btn-skip-intro .skip-intro-arrow {
+  position: relative;
+  z-index: 1;
+}
+
+/* While a skip segment is active the button must outlive the idle HUD
+   (nobody moves the mouse during an intro): keep the HUD mounted, drop its
+   gradient and hide every other control, leaving only the button clickable. */
+.player-root.controls-idle.is-in-segment .controls-hud {
+  opacity: 1;
+  background: none;
+  pointer-events: none;
+}
+
+.player-root.controls-idle.is-in-segment .controls-hud > :not(.bottom-section),
+.player-root.controls-idle.is-in-segment .bottom-section > :not(.above-timeline-row),
+.player-root.controls-idle.is-in-segment .above-timeline-row > :not(.skip-btn-wrapper) {
+  opacity: 0;
+  pointer-events: none;
+}
+
+.player-root.controls-idle.is-in-segment .skip-btn-wrapper,
+.player-root.controls-idle.is-in-segment .btn-skip-intro {
+  pointer-events: auto;
+}
+
+/* Segmented Timeline Row */
 .timeline-row {
   display: flex;
   align-items: center;
@@ -354,15 +1131,21 @@ html, body {
 .timeline-slider {
   position: relative;
   flex: 1;
-  height: 18px;
+  height: 22px;
   display: flex;
   align-items: center;
   cursor: pointer;
+  /* Pointer-event scrubbing: never let the browser pan/scroll instead. */
+  touch-action: none;
+}
+
+.timeline-slider:focus-visible {
+  outline-offset: 4px;
 }
 
 .timeline-hover-tooltip {
   position: absolute;
-  bottom: 24px;
+  bottom: 26px;
   transform: translateX(-50%);
   background: rgba(18, 18, 22, 0.92);
   color: #ffffff;
@@ -373,6 +1156,12 @@ html, body {
   border-radius: 5px;
   pointer-events: none;
   white-space: nowrap;
+}
+
+.timeline-hover-tooltip .tooltip-chapter {
+  font-weight: 600;
+  color: rgba(255, 255, 255, 0.65);
+  margin-right: 6px;
 }
 
 .timeline-segments-bg {
@@ -386,6 +1175,7 @@ html, body {
   width: 100%;
   overflow: hidden;
   border-radius: 3px;
+  transition: height 0.15s ease;
 }
 
 .timeline-segment-piece {
@@ -395,13 +1185,21 @@ html, body {
   transition: height 0.15s ease, background 0.15s ease;
 }
 
-.timeline-segment-piece.is-intro {
-  background: rgba(255, 255, 255, 0.34);
+/* Intro / recap / credits / preview ranges are highlighted on the track so
+   the viewer can see where the skip lands. */
+.timeline-segment-piece.is-intro,
+.timeline-segment-piece.is-recap,
+.timeline-segment-piece.is-outro,
+.timeline-segment-piece.is-preview {
+  background: var(--segment-accent-soft);
 }
 
 .timeline-slider:hover .timeline-segments-bg,
 .timeline-slider:hover .timeline-buffered,
-.timeline-slider:hover .timeline-progress {
+.timeline-slider:hover .timeline-progress,
+.timeline-slider.is-dragging .timeline-segments-bg,
+.timeline-slider.is-dragging .timeline-buffered,
+.timeline-slider.is-dragging .timeline-progress {
   height: 7px;
 }
 
@@ -413,6 +1211,7 @@ html, body {
   background: rgba(255, 255, 255, 0.36);
   border-radius: 3px;
   pointer-events: none;
+  transition: height 0.15s ease;
 }
 
 .timeline-progress {
@@ -423,9 +1222,17 @@ html, body {
   background: var(--accent);
   border-radius: 3px;
   pointer-events: none;
+  transition: height 0.15s ease, background 0.2s ease;
 }
 
-/* Vertical White Pill Scrubber Thumb (Screenshot 1, 2, 3, 5) */
+/* Playhead inside an intro / recap / credits segment: the fill and thumb turn
+   yellow for as long as the skip button is offered. */
+.player-root.is-in-segment .timeline-progress,
+.player-root.is-in-segment .timeline-thumb {
+  background: var(--segment-accent);
+}
+
+/* Vertical White Pill Scrubber Thumb */
 .timeline-thumb {
   position: absolute;
   left: 0%;
@@ -439,7 +1246,8 @@ html, body {
   transition: transform 0.12s ease, height 0.12s ease;
 }
 
-.timeline-slider:hover .timeline-thumb {
+.timeline-slider:hover .timeline-thumb,
+.timeline-slider.is-dragging .timeline-thumb {
   height: 17px;
   transform: translateX(-50%) scaleX(1.15);
 }
@@ -449,6 +1257,7 @@ html, body {
   display: flex;
   align-items: center;
   justify-content: space-between;
+  gap: 12px;
 }
 
 .controls-left,
@@ -474,28 +1283,42 @@ html, body {
 }
 
 .volume-group:hover .volume-range,
-.volume-range:focus {
+.volume-range:focus-visible {
   width: 76px;
   opacity: 1;
 }
 
 /* =================================================================== */
-/* POPOVERS: AUDIO (Screenshot 2) & SUBTITLES (Screenshot 3)           */
+/* POPOVERS: AUDIO & SUBTITLES                                         */
 /* =================================================================== */
 .floating-popover {
   position: absolute;
   right: 26px;
   bottom: 76px;
   width: 310px;
-  max-width: calc(100vw - 32px);
+  max-width: calc(100% - 32px);
+  max-height: calc(100% - 100px);
+  display: flex;
+  flex-direction: column;
   background: var(--surface-popover);
   backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
   border: 1px solid var(--border-subtle);
   border-radius: 12px;
   box-shadow: 0 20px 50px rgba(0, 0, 0, 0.8);
   z-index: 40;
   overflow: hidden;
   animation: popIn 0.16s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.floating-popover > div {
+  min-height: 0;
+}
+
+#subtitle-main-view {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
 }
 
 @keyframes popIn {
@@ -519,6 +1342,7 @@ html, body {
   font-size: 11.5px;
   font-weight: 700;
   letter-spacing: 0.08em;
+  flex-shrink: 0;
 }
 
 .popover-header-icon {
@@ -528,12 +1352,13 @@ html, body {
 }
 
 .popover-scroll-list {
-  max-height: 280px;
+  max-height: min(280px, 45vh);
   overflow-y: auto;
   padding: 8px;
   display: flex;
   flex-direction: column;
   gap: 2px;
+  overscroll-behavior: contain;
 }
 
 .popover-scroll-list::-webkit-scrollbar {
@@ -558,8 +1383,16 @@ html, body {
   display: flex;
   align-items: center;
   justify-content: space-between;
+  gap: 10px;
   text-align: left;
   transition: background 0.14s ease, color 0.14s ease;
+}
+
+.popover-item-btn > span:first-child {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .popover-item-btn:hover {
@@ -573,22 +1406,42 @@ html, body {
   font-weight: 600;
 }
 
+.popover-item-btn.is-upload {
+  color: var(--text-secondary);
+}
+
+.popover-item-btn:disabled {
+  cursor: default;
+  color: var(--text-muted);
+  background: transparent;
+}
+
 .popover-check {
   font-size: 14px;
   color: #ffffff;
   opacity: 0;
+  flex-shrink: 0;
 }
 
 .popover-item-btn.active .popover-check {
   opacity: 1;
 }
 
-/* Subtitles Popover Split Footer (Style | Delay — Screenshot 3) */
+.popover-empty {
+  padding: 14px 12px;
+  font-size: 12.5px;
+  line-height: 1.45;
+  color: var(--text-muted);
+  text-align: center;
+}
+
+/* Subtitles Popover Split Footer (Style | Delay) */
 .popover-footer-split {
   display: flex;
   align-items: center;
   border-top: 1px solid var(--border-subtle);
   background: rgba(14, 14, 16, 0.95);
+  flex-shrink: 0;
 }
 
 .popover-footer-btn {
@@ -612,6 +1465,12 @@ html, body {
   color: #ffffff;
 }
 
+.footer-btn-icon {
+  font-size: 12px;
+  font-weight: 800;
+  color: var(--text-secondary);
+}
+
 .popover-footer-divider {
   width: 1px;
   height: 22px;
@@ -620,6 +1479,7 @@ html, body {
 
 .popover-subview {
   padding: 12px 14px 16px;
+  overflow-y: auto;
 }
 
 .subview-top {
@@ -670,20 +1530,54 @@ html, body {
   font-size: 12px;
   font-weight: 600;
   cursor: pointer;
+  transition: background 0.14s ease, color 0.14s ease;
 }
 
+.pill-choice:hover {
+  background: rgba(255, 255, 255, 0.14);
+}
+
+/* Active pill uses the accent as background — the text must contrast with it
+   (with the default white accent, white text used to be invisible). */
 .pill-choice.active {
   background: var(--accent);
   border-color: var(--accent);
-  color: #fff;
+  color: var(--accent-contrast);
+}
+
+.style-preview-row {
+  display: flex;
+  justify-content: center;
+  padding: 10px 8px 2px;
+  border-top: 1px solid var(--border-subtle);
+}
+
+.style-preview-text {
+  display: inline-block;
+  padding: 3px 10px;
+  border-radius: 5px;
+  font-size: calc(var(--sub-font-size) * 0.65);
+  font-weight: 600;
+  color: var(--sub-color);
+  background: var(--sub-bg);
+  text-shadow: 0 2px 6px rgba(0, 0, 0, 0.95);
 }
 
 .delay-display {
   text-align: center;
   font-size: 20px;
   font-weight: 800;
-  margin: 8px 0 12px;
+  font-variant-numeric: tabular-nums;
+  margin: 8px 0 6px;
   color: #fff;
+}
+
+.delay-hint {
+  text-align: center;
+  font-size: 11.5px;
+  color: var(--text-muted);
+  margin-bottom: 12px;
+  line-height: 1.4;
 }
 
 .delay-btn-row {
@@ -708,13 +1602,14 @@ html, body {
 }
 
 /* =================================================================== */
-/* MODALS: PLAYER SETTINGS (Screenshot 1) & EPISODES (Screenshot 4)    */
+/* MODALS: PLAYER SETTINGS, EPISODES & SERVERS                         */
 /* =================================================================== */
 .modal-backdrop {
   position: absolute;
   inset: 0;
   background: rgba(0, 0, 0, 0.55);
   backdrop-filter: blur(4px);
+  -webkit-backdrop-filter: blur(4px);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -728,10 +1623,15 @@ html, body {
   to { opacity: 1; }
 }
 
+@keyframes sheetUp {
+  from { transform: translateY(24px); opacity: 0; }
+  to { transform: translateY(0); opacity: 1; }
+}
+
 .settings-modal-card {
   width: 490px;
   max-width: 100%;
-  max-height: calc(100vh - 36px);
+  max-height: calc(100% - 20px);
   background: var(--surface-modal);
   border: 1px solid var(--border-subtle);
   border-radius: 14px;
@@ -739,6 +1639,14 @@ html, body {
   flex-direction: column;
   box-shadow: 0 24px 64px rgba(0, 0, 0, 0.85);
   overflow: hidden;
+  animation: sheetUp 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+#settings-main-panel,
+#settings-drill-panel {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
 }
 
 .modal-drag-handle {
@@ -753,6 +1661,7 @@ html, body {
 .settings-header {
   padding: 12px 22px 14px;
   border-bottom: 1px solid var(--border-subtle);
+  flex-shrink: 0;
 }
 
 .settings-title {
@@ -772,6 +1681,7 @@ html, body {
   padding: 10px 14px;
   overflow-y: auto;
   max-height: 60vh;
+  overscroll-behavior: contain;
 }
 
 .settings-sections-scroll::-webkit-scrollbar {
@@ -808,6 +1718,7 @@ html, body {
   display: flex;
   align-items: center;
   justify-content: space-between;
+  gap: 12px;
   transition: background 0.14s ease;
 }
 
@@ -819,6 +1730,7 @@ html, body {
   display: flex;
   align-items: center;
   gap: 12px;
+  min-width: 0;
 }
 
 .settings-icon-box {
@@ -833,6 +1745,7 @@ html, body {
   font-size: 11px;
   font-weight: 700;
   color: rgba(255, 255, 255, 0.78);
+  flex-shrink: 0;
 }
 
 .settings-row-title {
@@ -847,11 +1760,56 @@ html, body {
   gap: 8px;
   font-size: 13.5px;
   color: var(--text-secondary);
+  min-width: 0;
+}
+
+.settings-row-right > span:first-child {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 180px;
 }
 
 .chevron {
   font-size: 17px;
   color: var(--text-muted);
+}
+
+/* Toggle switch (Mirror / Picture-in-Picture) */
+.toggle-switch {
+  position: relative;
+  display: inline-block;
+  width: 38px;
+  height: 22px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.14);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  transition: background 0.18s ease, border-color 0.18s ease;
+  flex-shrink: 0;
+}
+
+.toggle-switch::after {
+  content: "";
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: #ffffff;
+  opacity: 0.85;
+  transition: transform 0.18s ease, opacity 0.18s ease;
+}
+
+.toggle-switch.on {
+  background: var(--accent);
+  border-color: var(--accent);
+}
+
+.toggle-switch.on::after {
+  transform: translateX(16px);
+  background: var(--accent-contrast);
+  opacity: 1;
 }
 
 .settings-drill-header {
@@ -860,6 +1818,7 @@ html, body {
   gap: 12px;
   padding: 12px 18px;
   border-bottom: 1px solid var(--border-subtle);
+  flex-shrink: 0;
 }
 
 .drill-back-btn {
@@ -884,6 +1843,7 @@ html, body {
   padding: 12px 18px 16px;
   border-top: 1px solid var(--border-subtle);
   background: rgba(14, 14, 17, 0.98);
+  flex-shrink: 0;
 }
 
 .modal-close-full-btn {
@@ -904,12 +1864,12 @@ html, body {
 }
 
 /* =================================================================== */
-/* EPISODES DRAWER MODAL (Matches Screenshot 4)                        */
+/* EPISODES DRAWER MODAL                                               */
 /* =================================================================== */
 .episodes-modal-card {
   width: 920px;
   max-width: 96vw;
-  max-height: calc(100vh - 32px);
+  max-height: calc(100% - 20px);
   background: var(--surface-modal);
   border: 1px solid var(--border-subtle);
   border-radius: 14px;
@@ -917,20 +1877,24 @@ html, body {
   flex-direction: column;
   box-shadow: 0 24px 64px rgba(0, 0, 0, 0.88);
   overflow: hidden;
+  animation: sheetUp 0.2s cubic-bezier(0.16, 1, 0.3, 1);
 }
 
 .episodes-modal-header {
   display: flex;
   align-items: center;
   justify-content: space-between;
+  gap: 12px;
   padding: 12px 22px 16px;
   border-bottom: 1px solid var(--border-subtle);
+  flex-shrink: 0;
 }
 
 .episodes-header-left {
   display: flex;
   align-items: center;
   gap: 12px;
+  min-width: 0;
 }
 
 .episodes-header-icon {
@@ -948,6 +1912,9 @@ html, body {
 .episodes-header-subtitle {
   font-size: 12.5px;
   color: var(--text-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .season-select-dropdown {
@@ -960,6 +1927,7 @@ html, body {
   border-radius: 8px;
   cursor: pointer;
   outline: none;
+  max-width: 180px;
 }
 
 .season-select-dropdown option {
@@ -974,24 +1942,20 @@ html, body {
   padding: 18px 22px;
   overflow-y: auto;
   max-height: 62vh;
+  overscroll-behavior: contain;
+  min-height: 120px;
 }
 
-@media (max-width: 780px) {
-  .episodes-grid {
-    grid-template-columns: repeat(2, 1fr);
-  }
+.episodes-grid.is-loading {
+  opacity: 0.45;
+  pointer-events: none;
 }
 
-@media (max-width: 520px) {
-  .episodes-grid {
-    grid-template-columns: 1fr;
-  }
-  .top-bar {
-    padding: 14px 16px 0;
-  }
-  .bottom-section {
-    padding: 0 16px 14px;
-  }
+.episodes-empty {
+  padding: 36px 22px;
+  text-align: center;
+  font-size: 13px;
+  color: var(--text-muted);
 }
 
 .episode-card {
@@ -1001,6 +1965,12 @@ html, body {
   cursor: pointer;
   border-radius: 10px;
   transition: transform 0.16s ease;
+  background: transparent;
+  border: none;
+  color: inherit;
+  text-align: left;
+  padding: 0;
+  min-width: 0;
 }
 
 .episode-card:hover {
@@ -1013,7 +1983,7 @@ html, body {
   aspect-ratio: 16 / 9;
   border-radius: 8px;
   overflow: hidden;
-  background: #18181b;
+  background: linear-gradient(135deg, #1f1f23 0%, #0f0f11 100%);
   border: 2px solid transparent;
   transition: border-color 0.15s ease;
 }
@@ -1028,6 +1998,74 @@ html, body {
   height: 100%;
   object-fit: cover;
   display: block;
+  transition: transform 0.25s ease;
+}
+
+.episode-card:hover .episode-thumb-img {
+  transform: scale(1.04);
+}
+
+.episode-thumb-img.is-missing {
+  display: none;
+}
+
+.episode-thumb-number {
+  position: absolute;
+  left: 8px;
+  top: 8px;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: rgba(0, 0, 0, 0.62);
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  color: rgba(255, 255, 255, 0.9);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+}
+
+.episode-now-playing {
+  position: absolute;
+  right: 8px;
+  top: 8px;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: var(--accent);
+  color: var(--accent-contrast);
+  font-size: 10.5px;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.episode-progress {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 4px;
+  background: rgba(255, 255, 255, 0.18);
+}
+
+.episode-progress-fill {
+  height: 100%;
+  width: 0%;
+  background: var(--accent);
+}
+
+.episode-thumb-play {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  opacity: 0;
+  background: rgba(0, 0, 0, 0.35);
+  color: #fff;
+  transition: opacity 0.18s ease;
+}
+
+.episode-card:hover .episode-thumb-play {
+  opacity: 1;
 }
 
 .episode-title {
@@ -1035,11 +2073,20 @@ html, body {
   font-weight: 700;
   color: #ffffff;
   line-height: 1.3;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
 }
 
 .episode-meta {
   font-size: 12px;
   color: var(--text-muted);
+}
+
+.episode-meta:empty {
+  display: none;
 }
 
 .episode-desc {
@@ -1052,51 +2099,750 @@ html, body {
   overflow: hidden;
 }
 
+.episode-desc:empty {
+  display: none;
+}
+
 /* Server Card Row inside Servers Modal */
+/* Servers & sources popover (anchored under the cloud button, top-right) */
+.floating-popover.servers-popover {
+  top: 68px;
+  right: 26px;
+  bottom: auto;
+  width: 340px;
+  max-height: calc(100% - 150px);
+}
+
+.popover-header-svg {
+  color: var(--text-secondary);
+  flex-shrink: 0;
+}
+
+.popover-footer {
+  padding: 11px 16px;
+  border-top: 1px solid var(--border-subtle);
+  font-size: 12px;
+  color: var(--text-muted);
+  text-align: center;
+  flex-shrink: 0;
+}
+
+.servers-scroll-list {
+  max-height: min(440px, 60vh);
+  padding: 8px;
+  gap: 4px;
+}
+
+.server-group {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+/* Server row: name, tagline and a state mark on the right. */
 .server-row-card {
   width: 100%;
-  background: rgba(255, 255, 255, 0.04);
-  border: 1px solid var(--border-subtle);
+  background: transparent;
+  border: 1px solid transparent;
   border-radius: 10px;
-  padding: 12px 14px;
-  margin-bottom: 8px;
+  padding: 11px 12px;
   cursor: pointer;
   display: flex;
   align-items: center;
   justify-content: space-between;
+  gap: 12px;
   color: #fff;
   text-align: left;
   transition: background 0.15s ease, border-color 0.15s ease;
 }
 
 .server-row-card:hover {
-  background: rgba(255, 255, 255, 0.08);
+  background: rgba(255, 255, 255, 0.06);
 }
 
 .server-row-card.active {
   background: rgba(255, 255, 255, 0.1);
-  border-color: var(--accent);
+  border-color: var(--border-subtle);
+}
+
+.server-row-main {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
 }
 
 .server-name-line {
   display: flex;
   align-items: center;
   gap: 8px;
-  font-size: 14.5px;
-  font-weight: 700;
+  font-size: 15px;
+  font-weight: 600;
 }
 
 .server-desc-line {
-  font-size: 12px;
+  font-size: 12.5px;
   color: var(--text-secondary);
   margin-top: 3px;
 }
 
-.server-badge-pill {
-  font-size: 11px;
+/* State mark: ✓ ready · — not checked · ✕ unavailable · spinner checking */
+.server-state {
+  width: 22px;
+  height: 22px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  color: rgba(255, 255, 255, 0.92);
+  font-size: 14px;
   font-weight: 700;
-  padding: 4px 9px;
-  border-radius: 999px;
-  background: rgba(163, 163, 163, 0.16);
-  color: #a3a3a3;
+}
+
+.server-state.is-unknown,
+.server-state.is-failed {
+  color: var(--text-muted);
+}
+
+.server-state-spinner {
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  border: 2px solid rgba(255, 255, 255, 0.18);
+  border-top-color: rgba(255, 255, 255, 0.85);
+  animation: spin 0.8s linear infinite;
+}
+
+/* Sources nested under a server, indented behind a guide line. */
+.server-sources {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  margin: 0 0 4px 14px;
+  padding-left: 12px;
+  border-left: 2px solid var(--border-strong);
+}
+
+.server-source-row {
+  width: 100%;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  padding: 9px 12px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  color: #fff;
+  font-size: 14px;
+  font-weight: 500;
+  text-align: left;
+  transition: background 0.15s ease;
+}
+
+.server-source-row:hover {
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.server-source-row.active {
+  background: rgba(255, 255, 255, 0.12);
+  border-color: var(--border-subtle);
+}
+
+.source-status {
+  font-size: 12.5px;
+  font-weight: 600;
+  white-space: nowrap;
+  color: var(--text-secondary);
+}
+
+/* Status colour: the only non-monochrome text in the picker, like the reference. */
+.source-status.is-ready,
+.source-status.is-playing {
+  color: #4ade80;
+}
+
+.source-status.is-failed {
+  color: var(--text-muted);
+}
+
+.server-source-note {
+  margin: 0 0 4px 14px;
+  padding: 6px 0 6px 12px;
+  border-left: 2px solid var(--border-subtle);
+  font-size: 12.5px;
+  color: var(--text-muted);
+}
+
+/* =================================================================== */
+/* PAUSED SCREEN                                                       */
+/* =================================================================== */
+.paused-overlay {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  padding: 6% 7%;
+  overflow: hidden;
+  /* Above the HUD (25) and centre transport (26), below the connect screen
+     (30) and toasts; click-through so any tap/move reaches the HUD and
+     dismisses it. */
+  z-index: 28;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 0.35s ease;
+}
+
+.player-root.is-paused-info .paused-overlay {
+  opacity: 1;
+}
+
+.paused-scrim {
+  background:
+    linear-gradient(to right, rgba(0, 0, 0, 0.82), rgba(0, 0, 0, 0.5) 55%, rgba(0, 0, 0, 0.3)),
+    linear-gradient(to top, rgba(0, 0, 0, 0.6), transparent 40%);
+}
+
+.paused-content {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 14px;
+  width: min(62%, 640px);
+  animation: paused-in 0.45s ease both;
+}
+
+@keyframes paused-in {
+  from { opacity: 0; transform: translateY(10px); }
+  to { opacity: 1; transform: none; }
+}
+
+.paused-eyebrow {
+  font-size: 12.5px;
+  font-weight: 700;
+  letter-spacing: 0.3em;
+  text-transform: uppercase;
+  color: rgba(255, 255, 255, 0.62);
+}
+
+.paused-content .title-logo {
+  max-width: min(78%, 460px);
+  max-height: 30vh;
+  filter: drop-shadow(0 12px 30px rgba(0, 0, 0, 0.75));
+}
+
+.paused-content .title-logo-fallback {
+  text-align: left;
+  font-size: clamp(26px, 5vw, 52px);
+}
+
+.paused-episode {
+  font-size: 16px;
+  font-weight: 700;
+  color: #ffffff;
+  letter-spacing: 0.01em;
+}
+
+.paused-tagline {
+  font-size: 17px;
+  font-style: italic;
+  font-weight: 400;
+  color: rgba(255, 255, 255, 0.8);
+  line-height: 1.4;
+}
+
+.paused-meta {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px 10px;
+  font-size: 15px;
+  font-weight: 600;
+  color: rgba(255, 255, 255, 0.8);
+  font-variant-numeric: tabular-nums;
+}
+
+.paused-meta:empty,
+.paused-genres:empty,
+.paused-overview:empty {
+  display: none;
+}
+
+.paused-meta-dot {
+  color: rgba(255, 255, 255, 0.4);
+}
+
+.paused-meta-rating {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.paused-meta-rating svg {
+  width: 15px;
+  height: 15px;
+  margin-top: -1px;
+}
+
+.paused-genres {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.paused-divider {
+  width: 96px;
+  height: 1px;
+  background: rgba(255, 255, 255, 0.28);
+  margin: 2px 0;
+}
+
+.paused-overview {
+  font-size: 15.5px;
+  line-height: 1.6;
+  color: rgba(255, 255, 255, 0.78);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  display: -webkit-box;
+  -webkit-line-clamp: 4;
+  -webkit-box-orient: vertical;
+}
+
+.player-root.is-paused-info .controls-hud,
+.player-root.is-paused-info .center-controls,
+.player-root.is-paused-info .custom-subtitle-overlay {
+  opacity: 0;
+  pointer-events: none;
+}
+
+/* =================================================================== */
+/* COMPACT LAYOUT (small embeds: < 720px wide or < 440px tall)         */
+/* =================================================================== */
+.top-left-group {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+  flex: 1;
+}
+
+.top-title-block {
+  display: none;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.top-title-block .watching-accent-bar {
+  height: 11px;
+}
+
+.top-title-block .watching-label {
+  font-size: 11.5px;
+}
+
+.top-media-title {
+  font-size: 15px;
+  font-weight: 800;
+  color: #ffffff;
+  letter-spacing: -0.01em;
+  line-height: 1.2;
+  text-shadow: 0 2px 10px rgba(0, 0, 0, 0.7);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.player-root.is-compact .top-bar {
+  padding: 10px 14px 0;
+}
+
+.player-root.is-compact .top-title-block {
+  display: flex;
+}
+
+.player-root.is-compact .top-right-actions {
+  gap: 8px;
+}
+
+.player-root.is-compact .media-meta-block {
+  display: none;
+}
+
+.player-root.is-compact .above-timeline-row {
+  justify-content: flex-end;
+}
+
+.player-root.is-compact .bottom-section {
+  padding: 0 14px 8px;
+  gap: 4px;
+}
+
+/* Timeline: full width, with the times beneath its two ends */
+.player-root.is-compact .timeline-row {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  grid-template-areas:
+    "slider slider"
+    "current duration";
+  gap: 0 8px;
+  padding: 0;
+}
+
+.player-root.is-compact .timeline-slider {
+  grid-area: slider;
+  height: 20px;
+}
+
+.player-root.is-compact #time-current {
+  grid-area: current;
+}
+
+.player-root.is-compact #time-duration {
+  grid-area: duration;
+}
+
+.player-root.is-compact .time-label {
+  font-size: 11.5px;
+  min-width: 0;
+  color: rgba(255, 255, 255, 0.7);
+  margin-top: -2px;
+}
+
+/* Bottom row: play / -15 / +15 live in the centre of the picture instead */
+.player-root.is-compact #btn-play,
+.player-root.is-compact #btn-rewind,
+.player-root.is-compact #btn-forward {
+  display: none;
+}
+
+.player-root.is-compact .bottom-controls-row {
+  justify-content: center;
+  gap: 4px;
+}
+
+.player-root.is-compact .controls-left,
+.player-root.is-compact .controls-right {
+  gap: 4px;
+}
+
+.player-root.is-compact .icon-btn {
+  padding: 5px;
+}
+
+.player-root.is-compact .center-controls {
+  gap: 26px;
+}
+
+.player-root.is-compact .center-play-btn {
+  width: 64px;
+  height: 64px;
+}
+
+.player-root.is-compact .center-play-btn svg {
+  width: 28px;
+  height: 28px;
+}
+
+.player-root.is-compact .center-seek-btn {
+  display: inline-flex;
+  width: 50px;
+  height: 50px;
+}
+
+.player-root.is-compact .center-seek-btn svg {
+  width: 26px;
+  height: 26px;
+}
+
+/* In the compact layout the whole centre transport follows the HUD, even on
+   mouse devices while playing (the bottom row has no play button there). */
+.player-root.is-compact:not(.controls-idle):not(.is-loading) .center-play-btn,
+.player-root.is-compact:not(.controls-idle):not(.is-loading) .center-seek-btn {
+  opacity: 1;
+  pointer-events: auto;
+  transform: scale(1);
+}
+
+.player-root.is-compact:not(.controls-idle):not(.is-loading) .center-play-btn:hover,
+.player-root.is-compact:not(.controls-idle):not(.is-loading) .center-seek-btn:hover {
+  transform: scale(1.06);
+}
+
+.player-root.is-compact:not(.controls-idle):not(.is-loading) .center-play-btn:active,
+.player-root.is-compact:not(.controls-idle):not(.is-loading) .center-seek-btn:active {
+  transform: scale(0.95);
+}
+
+.player-root.is-compact .floating-popover.servers-popover {
+  top: 52px;
+  right: 14px;
+}
+
+/* Connect / paused screens scale down with the embed */
+.player-root.is-compact .connect-topbar {
+  padding: 10px 14px 0;
+}
+
+.player-root.is-compact .connect-screen {
+  gap: 10px;
+  padding: 28px 0 24px;
+}
+
+.player-root.is-compact .title-logo {
+  max-width: min(60%, 300px);
+  max-height: 22vh;
+}
+
+.player-root.is-compact .title-logo-fallback {
+  font-size: clamp(20px, 5vw, 32px);
+}
+
+.player-root.is-compact .connect-genres {
+  font-size: 11px;
+  letter-spacing: 0.26em;
+}
+
+.player-root.is-compact .connect-status-line {
+  margin-top: 8px;
+  font-size: 12.5px;
+  letter-spacing: 0.18em;
+}
+
+.player-root.is-compact .connect-source-line {
+  font-size: 13.5px;
+}
+
+.player-root.is-compact .connect-tip {
+  bottom: 14px;
+  font-size: 12.5px;
+}
+
+.player-root.is-compact .paused-overlay {
+  padding: 5% 6%;
+}
+
+.player-root.is-compact .paused-content {
+  gap: 8px;
+  width: min(72%, 520px);
+}
+
+.player-root.is-compact .paused-content .title-logo {
+  max-width: min(70%, 300px);
+  max-height: 24vh;
+}
+
+.player-root.is-compact .paused-eyebrow {
+  font-size: 11px;
+}
+
+.player-root.is-compact .paused-episode,
+.player-root.is-compact .paused-tagline {
+  font-size: 13.5px;
+}
+
+.player-root.is-compact .paused-meta {
+  font-size: 13px;
+}
+
+.player-root.is-compact .paused-divider {
+  width: 64px;
+  margin: 0;
+}
+
+.player-root.is-compact .paused-overview {
+  font-size: 13px;
+  line-height: 1.5;
+  -webkit-line-clamp: 3;
+}
+
+.player-root.is-compact .paused-genres .media-tag-pill {
+  font-size: 10.5px;
+  padding: 2px 8px;
+}
+
+/* =================================================================== */
+/* RESPONSIVE                                                          */
+/* =================================================================== */
+@media (max-width: 780px) {
+  .episodes-grid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+
+@media (max-width: 640px) {
+  :root {
+    --hud-bottom-offset: 132px;
+  }
+  .top-bar {
+    padding: 14px 16px 0;
+  }
+  .bottom-section {
+    padding: 0 16px 12px;
+    gap: 8px;
+  }
+  .controls-left,
+  .controls-right {
+    gap: 6px;
+  }
+  .icon-btn {
+    padding: 5px;
+  }
+  .watching-eyebrow {
+    display: none;
+  }
+  .media-title {
+    font-size: 17px;
+    -webkit-line-clamp: 1;
+  }
+  .media-tag-pill {
+    font-size: 10.5px;
+    padding: 2px 8px;
+  }
+  .btn-skip-intro {
+    font-size: 12.5px;
+    padding: 7px 12px;
+  }
+  .time-label {
+    font-size: 12px;
+    min-width: 34px;
+  }
+  .timeline-row {
+    gap: 10px;
+  }
+  .floating-popover,
+  .up-next-card {
+    right: 12px;
+  }
+  .player-toast {
+    font-size: 12.5px;
+    padding: 9px 14px;
+    max-width: calc(100% - 120px);
+  }
+  .center-play-btn {
+    width: 64px;
+    height: 64px;
+  }
+  .center-play-btn svg {
+    width: 28px;
+    height: 28px;
+  }
+}
+
+@media (max-width: 520px) {
+  .episodes-grid {
+    grid-template-columns: 1fr;
+    gap: 14px;
+    padding: 14px 16px;
+  }
+  .episode-card {
+    display: grid;
+    grid-template-columns: 132px 1fr;
+    grid-template-rows: auto auto 1fr;
+    column-gap: 12px;
+    row-gap: 3px;
+  }
+  .episode-card .episode-thumb-wrap {
+    grid-row: 1 / span 3;
+  }
+  .episode-desc {
+    -webkit-line-clamp: 2;
+  }
+  .episodes-modal-header {
+    padding: 10px 16px 12px;
+  }
+  .episodes-header-subtitle {
+    display: none;
+  }
+  .media-tags {
+    display: none;
+  }
+  /* Modals become bottom sheets on phones */
+  .modal-backdrop {
+    align-items: flex-end;
+    padding: 0;
+  }
+  .settings-modal-card,
+  .episodes-modal-card {
+    width: 100%;
+    max-width: 100%;
+    max-height: 88%;
+    border-radius: 16px 16px 0 0;
+    border-bottom: none;
+  }
+  .settings-footer,
+  .episodes-modal-footer {
+    padding-bottom: calc(12px + env(safe-area-inset-bottom, 0px));
+  }
+  .seek-feedback.left { left: 8%; }
+  .seek-feedback.right { right: 8%; }
+}
+
+/* Short viewports (landscape phones): compact the HUD so the picture is visible */
+@media (max-height: 420px) {
+  :root {
+    --hud-bottom-offset: 110px;
+  }
+  .top-bar {
+    padding-top: 10px;
+  }
+  .bottom-section {
+    gap: 4px;
+    padding-bottom: 8px;
+  }
+  .watching-eyebrow,
+  .media-tags {
+    display: none;
+  }
+  .media-title {
+    font-size: 16px;
+    -webkit-line-clamp: 1;
+  }
+  .icon-btn svg {
+    width: 20px;
+    height: 20px;
+  }
+  .center-play-btn {
+    width: 56px;
+    height: 56px;
+  }
+  .center-play-btn svg {
+    width: 24px;
+    height: 24px;
+  }
+  .floating-popover {
+    bottom: 60px;
+    max-height: calc(100% - 70px);
+  }
+  .floating-popover.servers-popover {
+    top: 56px;
+    bottom: auto;
+    left: 12px;
+    right: 12px;
+    width: auto;
+    max-height: calc(100% - 130px);
+  }
+  .servers-scroll-list {
+    max-height: min(360px, 55vh);
+  }
+  .popover-scroll-list {
+    max-height: 38vh;
+  }
+  .settings-sections-scroll,
+  .episodes-grid {
+    max-height: 50vh;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
 }

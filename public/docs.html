@@ -1,0 +1,1080 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>LOL Embed — Documentation</title>
+<meta name="description" content="Complete reference for embedding, customizing and controlling the LOL Embed movie & TV player on your website.">
+<meta property="og:title" content="LOL Embed — Documentation">
+<meta property="og:description" content="Embed movies and TV shows with one iframe. URL reference, customization, events and postMessage API.">
+<meta property="og:image" content="/meta-image.gif">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%23000'/%3E%3Cpath d='M12 9.5v13l10-6.5z' fill='%23fff'/%3E%3C/svg%3E">
+<!--LOL_EMBED_CONFIG-->
+<style>
+  :root {
+    --bg: #000;
+    --bg-2: #0a0a0a;
+    --panel: #0f0f0f;
+    --panel-2: #141414;
+    --line: rgba(255, 255, 255, 0.09);
+    --line-2: rgba(255, 255, 255, 0.16);
+    --fg: #f5f5f5;
+    --fg-2: #c7c7c7;
+    --muted: #8a8a8a;
+    --code-bg: #0c0c0c;
+    --ok: #4ade80;
+    --warn: #eab308;
+    --bad: #f87171;
+    --radius: 14px;
+    --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
+    --sans: Inter, system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  }
+  * { box-sizing: border-box; }
+  html { scroll-behavior: smooth; scroll-padding-top: 84px; }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--fg);
+    font-family: var(--sans);
+    font-size: 15px;
+    line-height: 1.6;
+    -webkit-font-smoothing: antialiased;
+  }
+  a { color: var(--fg); text-decoration: none; }
+  a:hover { text-decoration: underline; text-underline-offset: 3px; }
+  code, pre, kbd { font-family: var(--mono); }
+  code {
+    background: rgba(255, 255, 255, 0.07);
+    border: 1px solid var(--line);
+    border-radius: 6px;
+    padding: 0.1em 0.4em;
+    font-size: 0.9em;
+    color: var(--fg);
+    word-break: break-word;
+  }
+  pre {
+    margin: 0;
+    padding: 16px 18px;
+    background: var(--code-bg);
+    border: 1px solid var(--line);
+    border-radius: 12px;
+    overflow: auto;
+    font-size: 13px;
+    line-height: 1.6;
+    color: var(--fg-2);
+    tab-size: 2;
+  }
+  pre code { background: none; border: 0; padding: 0; font-size: inherit; color: inherit; }
+  .tok-k { color: #fff; font-weight: 600; }
+  .tok-v { color: #fff; }
+  .tok-c { color: var(--muted); font-style: italic; }
+  kbd {
+    display: inline-block;
+    min-width: 1.6em;
+    text-align: center;
+    padding: 0.05em 0.45em;
+    border: 1px solid var(--line-2);
+    border-bottom-width: 2px;
+    border-radius: 6px;
+    background: var(--panel-2);
+    font-size: 0.82em;
+    color: var(--fg);
+  }
+  h1, h2, h3, h4 { margin: 0; line-height: 1.2; letter-spacing: -0.01em; }
+  h2 { font-size: 1.65rem; font-weight: 700; }
+  h3 { font-size: 1.15rem; font-weight: 650; }
+  h4 { font-size: 0.78rem; font-weight: 700; letter-spacing: 0.14em; text-transform: uppercase; color: var(--muted); }
+  p { margin: 0.5rem 0 0; color: var(--fg-2); }
+  .wrap { width: min(1140px, calc(100% - 40px)); margin: 0 auto; }
+
+  /* Top bar */
+  .top {
+    position: sticky; top: 0; z-index: 20;
+    background: rgba(0, 0, 0, 0.82);
+    backdrop-filter: blur(14px);
+    -webkit-backdrop-filter: blur(14px);
+    border-bottom: 1px solid var(--line);
+  }
+  .top .wrap { display: flex; align-items: center; gap: 18px; height: 60px; }
+  .brand { display: flex; align-items: center; gap: 10px; font-weight: 700; letter-spacing: 0.02em; }
+  .brand .logo { width: 26px; height: 26px; border-radius: 7px; background: #fff; display: grid; place-items: center; }
+  .brand .logo svg { width: 14px; height: 14px; fill: #000; }
+  .brand .tag { font-size: 0.72rem; font-weight: 600; letter-spacing: 0.14em; text-transform: uppercase; color: var(--muted); border-left: 1px solid var(--line-2); padding-left: 10px; }
+  .topnav { display: flex; gap: 4px; margin-left: auto; }
+  .topnav a { font-size: 0.86rem; color: var(--fg-2); padding: 6px 10px; border-radius: 8px; }
+  .topnav a:hover { background: rgba(255, 255, 255, 0.06); text-decoration: none; color: #fff; }
+  .btn {
+    display: inline-flex; align-items: center; gap: 8px;
+    padding: 9px 14px; border-radius: 10px; border: 1px solid var(--line-2);
+    background: transparent; color: var(--fg); font: inherit; font-size: 0.86rem; font-weight: 600;
+    cursor: pointer; white-space: nowrap; transition: background 0.15s, border-color 0.15s;
+  }
+  .btn:hover { background: rgba(255, 255, 255, 0.07); text-decoration: none; }
+  .btn.primary { background: #fff; color: #000; border-color: #fff; }
+  .btn.primary:hover { background: #e5e5e5; }
+  .btn.small { padding: 5px 10px; font-size: 0.76rem; border-radius: 8px; }
+
+  /* Hero */
+  .hero { padding: 72px 0 40px; border-bottom: 1px solid var(--line); position: relative; overflow: hidden; }
+  .hero::before {
+    content: ""; position: absolute; inset: -40% -10% auto; height: 420px; pointer-events: none;
+    background: radial-gradient(60% 60% at 50% 0%, rgba(255, 255, 255, 0.08), transparent 70%);
+  }
+  .eyebrow { font-size: 0.74rem; font-weight: 700; letter-spacing: 0.18em; text-transform: uppercase; color: var(--muted); }
+  .hero h1 { font-size: clamp(2.1rem, 4.6vw, 3.4rem); font-weight: 800; margin-top: 12px; letter-spacing: -0.03em; }
+  .hero p.lead { font-size: 1.08rem; max-width: 680px; margin-top: 14px; }
+  .hero .actions { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 24px; }
+  .domain-note {
+    margin-top: 28px; display: inline-flex; flex-wrap: wrap; align-items: center; gap: 10px 14px;
+    padding: 10px 14px; border: 1px solid var(--line); border-radius: 12px; background: var(--panel);
+    font-size: 0.9rem; color: var(--fg-2);
+  }
+  .domain-note code { font-size: 0.95em; }
+  .pills { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 26px; }
+  .pill { font-size: 0.78rem; color: var(--fg-2); border: 1px solid var(--line); border-radius: 999px; padding: 4px 11px; background: rgba(255, 255, 255, 0.03); }
+
+  /* Layout */
+  .layout { display: grid; grid-template-columns: 220px minmax(0, 1fr); gap: 48px; padding: 48px 0 96px; }
+  .side { position: sticky; top: 84px; align-self: start; display: flex; flex-direction: column; gap: 4px; }
+  .side h4 { margin: 10px 0 6px; }
+  .side a { font-size: 0.86rem; color: var(--fg-2); padding: 5px 10px; border-radius: 8px; border-left: 2px solid transparent; }
+  .side a:hover, .side a.active { color: #fff; background: rgba(255, 255, 255, 0.05); text-decoration: none; }
+  .side a.active { border-left-color: #fff; }
+  section.block { padding: 8px 0 56px; border-bottom: 1px solid var(--line); margin-bottom: 56px; }
+  section.block:last-child { border-bottom: 0; margin-bottom: 0; }
+  .block-head { margin-bottom: 22px; }
+  .block-head p { max-width: 720px; }
+
+  /* Cards & tables */
+  .card { background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); padding: 22px; }
+  .card + .card { margin-top: 18px; }
+  .card h3 { display: flex; align-items: center; gap: 10px; }
+  .card h3 .chip { font-size: 0.7rem; font-weight: 700; letter-spacing: 0.12em; text-transform: uppercase; color: var(--muted); border: 1px solid var(--line-2); border-radius: 6px; padding: 2px 7px; }
+  .sub { margin: 22px 0 10px; }
+  .grid-2 { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 18px; }
+  .grid-3 { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 14px; }
+  .feature { padding: 18px; border: 1px solid var(--line); border-radius: 12px; background: var(--panel); }
+  .feature .n { font-family: var(--mono); font-size: 0.74rem; color: var(--muted); letter-spacing: 0.1em; }
+  .feature h3 { margin-top: 6px; font-size: 1rem; }
+  .feature p { font-size: 0.9rem; }
+  table { width: 100%; border-collapse: collapse; font-size: 0.9rem; }
+  th, td { text-align: left; vertical-align: top; padding: 10px 12px; border-top: 1px solid var(--line); }
+  th { font-size: 0.72rem; font-weight: 700; letter-spacing: 0.12em; text-transform: uppercase; color: var(--muted); border-top: 0; }
+  td:first-child { white-space: nowrap; }
+  td { color: var(--fg-2); }
+  td code { white-space: nowrap; }
+  .table-wrap { overflow-x: auto; border: 1px solid var(--line); border-radius: 12px; background: var(--code-bg); }
+  .table-wrap table { min-width: 560px; }
+  .table-wrap th, .table-wrap td { padding: 11px 14px; }
+
+  /* Endpoint rows */
+  .endpoint {
+    display: flex; align-items: center; gap: 12px; flex-wrap: wrap;
+    padding: 12px 14px; border: 1px solid var(--line); border-radius: 12px; background: var(--code-bg);
+    font-family: var(--mono); font-size: 0.9rem; color: var(--fg-2);
+  }
+  .endpoint .method { font-size: 0.7rem; font-weight: 700; letter-spacing: 0.12em; color: #000; background: #fff; border-radius: 6px; padding: 2px 7px; }
+  .endpoint .url { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+  .endpoint .url .host { color: var(--muted); }
+  .endpoint .url .var { color: #fff; background: rgba(255, 255, 255, 0.1); border-radius: 5px; padding: 0 5px; }
+  .endpoint .url .q { color: var(--muted); }
+  .params { display: grid; gap: 8px; }
+  .param { display: grid; grid-template-columns: 170px minmax(0, 1fr); gap: 14px; padding: 10px 12px; border: 1px solid var(--line); border-radius: 10px; background: rgba(255, 255, 255, 0.015); font-size: 0.9rem; }
+  .param code { justify-self: start; }
+  .param span { color: var(--fg-2); }
+  .param .default { color: var(--muted); font-size: 0.82em; margin-left: 6px; }
+  .examples { display: grid; gap: 8px; }
+  .example { display: flex; gap: 10px; align-items: center; padding: 9px 12px; border: 1px solid var(--line); border-radius: 10px; background: var(--code-bg); font-family: var(--mono); font-size: 0.86rem; color: var(--fg-2); }
+  .example a { flex: 1; min-width: 0; overflow-wrap: anywhere; color: var(--fg-2); }
+  .example a .host { color: var(--muted); }
+  .example a .hl { color: #fff; }
+
+  /* Tabs */
+  .tabs { display: flex; gap: 4px; flex-wrap: wrap; border-bottom: 1px solid var(--line); margin-bottom: 26px; }
+  .tab { appearance: none; background: none; border: 0; border-bottom: 2px solid transparent; margin-bottom: -1px; padding: 10px 14px; color: var(--muted); font: inherit; font-size: 0.9rem; font-weight: 600; cursor: pointer; }
+  .tab:hover { color: var(--fg); }
+  .tab.active { color: #fff; border-bottom-color: #fff; }
+  .panel { display: none; }
+  .panel.active { display: block; animation: fade 0.18s ease-out; }
+  @keyframes fade { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: none; } }
+
+  /* Code blocks with copy */
+  .codeblock { position: relative; }
+  .codeblock .copy { position: absolute; top: 10px; right: 10px; }
+  .copy { appearance: none; border: 1px solid var(--line-2); background: var(--panel-2); color: var(--fg-2); border-radius: 8px; padding: 4px 9px; font: inherit; font-size: 0.74rem; font-weight: 600; cursor: pointer; }
+  .copy:hover { color: #fff; background: #1c1c1c; }
+  .copy.done { color: var(--ok); border-color: rgba(74, 222, 128, 0.4); }
+  .note { margin-top: 14px; padding: 12px 14px; border-left: 2px solid var(--line-2); background: rgba(255, 255, 255, 0.025); border-radius: 0 10px 10px 0; font-size: 0.9rem; color: var(--fg-2); }
+  .note strong { color: #fff; }
+  ul.list { margin: 10px 0 0; padding-left: 18px; color: var(--fg-2); }
+  ul.list li { margin: 5px 0; }
+  ul.list li::marker { color: var(--muted); }
+
+  /* Builder */
+  .builder { display: grid; grid-template-columns: minmax(0, 320px) minmax(0, 1fr); gap: 22px; }
+  .field { display: grid; gap: 5px; margin-bottom: 12px; }
+  .field label { font-size: 0.74rem; font-weight: 700; letter-spacing: 0.1em; text-transform: uppercase; color: var(--muted); }
+  .field input, .field select {
+    width: 100%; padding: 9px 11px; border-radius: 9px; border: 1px solid var(--line-2); background: var(--code-bg); color: var(--fg); font: inherit; font-size: 0.9rem;
+  }
+  .field input:focus, .field select:focus { outline: none; border-color: #fff; }
+  .field.row { grid-template-columns: 1fr 1fr; gap: 10px; }
+  .field.row > div { display: grid; gap: 5px; }
+  .checks { display: grid; gap: 8px; margin: 4px 0 12px; }
+  .checks label { display: flex; gap: 10px; align-items: center; font-size: 0.9rem; color: var(--fg-2); cursor: pointer; }
+  .checks input { accent-color: #fff; width: 16px; height: 16px; }
+  .preview { margin-top: 16px; aspect-ratio: 16 / 9; border: 1px solid var(--line); border-radius: 12px; background: var(--code-bg); display: grid; place-items: center; color: var(--muted); font-size: 0.9rem; overflow: hidden; position: relative; }
+  .preview iframe { position: absolute; inset: 0; width: 100%; height: 100%; border: 0; }
+
+  /* Status */
+  .status-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 14px; }
+  .status { display: flex; align-items: center; gap: 12px; padding: 14px 16px; border: 1px solid var(--line); border-radius: 12px; background: var(--panel); }
+  .dot { width: 10px; height: 10px; border-radius: 50%; background: var(--muted); box-shadow: 0 0 0 4px rgba(255, 255, 255, 0.05); flex: none; }
+  .dot.ok { background: var(--ok); box-shadow: 0 0 0 4px rgba(74, 222, 128, 0.12); }
+  .dot.bad { background: var(--bad); box-shadow: 0 0 0 4px rgba(248, 113, 113, 0.12); }
+  .status .name { font-weight: 650; }
+  .status .meta { font-size: 0.8rem; color: var(--muted); }
+  .status .right { margin-left: auto; font-family: var(--mono); font-size: 0.78rem; color: var(--fg-2); }
+
+  /* Events */
+  .events { display: flex; flex-wrap: wrap; gap: 6px; }
+  .events code { font-size: 0.82rem; }
+
+  footer { border-top: 1px solid var(--line); padding: 28px 0 40px; color: var(--muted); font-size: 0.84rem; }
+  footer .wrap { display: flex; flex-wrap: wrap; gap: 10px 24px; align-items: center; }
+  footer a { color: var(--fg-2); }
+  .toast { position: fixed; left: 50%; bottom: 24px; transform: translate(-50%, 20px); background: #fff; color: #000; padding: 9px 14px; border-radius: 10px; font-size: 0.86rem; font-weight: 600; opacity: 0; pointer-events: none; transition: opacity 0.2s, transform 0.2s; z-index: 50; }
+  .toast.show { opacity: 1; transform: translate(-50%, 0); }
+
+  @media (max-width: 900px) {
+    .layout { grid-template-columns: 1fr; gap: 24px; }
+    .side { position: static; flex-direction: row; flex-wrap: wrap; gap: 6px; }
+    .side h4 { display: none; }
+    .side a { border-left: 0; border: 1px solid var(--line); }
+    .builder { grid-template-columns: 1fr; }
+    .topnav { display: none; }
+    .param { grid-template-columns: 1fr; gap: 4px; }
+  }
+</style>
+</head>
+<body>
+
+<header class="top">
+  <div class="wrap">
+    <a class="brand" href="#top" aria-label="LOL Embed documentation">
+      <span class="logo" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg></span>
+      <span class="js-brand">LOL Embed</span>
+      <span class="tag">Docs</span>
+    </a>
+    <nav class="topnav" aria-label="Sections">
+      <a href="#quick-start">Quick start</a>
+      <a href="#reference">Reference</a>
+      <a href="#builder">Embed builder</a>
+      <a href="#status">Status</a>
+      <a href="#faq">FAQ</a>
+    </nav>
+    <a class="btn small" id="demo-link" href="/embed/tv/94605/1/1" target="_blank" rel="noopener">Open player ↗</a>
+  </div>
+</header>
+
+<main id="top">
+  <section class="hero">
+    <div class="wrap">
+      <div class="eyebrow">Embedding solution</div>
+      <h1>Seamless movie &amp; TV embedding.</h1>
+      <p class="lead">Drop one iframe on your page and get a full-featured streaming player: multiple servers with automatic failover, multi-audio, subtitles, skip-intro, resume, and a stable postMessage API for your own controls.</p>
+      <div class="actions">
+        <a class="btn primary" href="#quick-start">Get started</a>
+        <a class="btn" href="#builder">Build an embed URL</a>
+        <a class="btn" href="#postmessage">PostMessage API</a>
+      </div>
+      <div class="domain-note">
+        <span>Use this domain for embed URLs:</span>
+        <code class="js-host">your-worker.example</code>
+        <button class="copy" data-copy-text="host" type="button">Copy</button>
+      </div>
+      <div class="pills">
+        <span class="pill">TMDB &amp; IMDb ids</span>
+        <span class="pill">Movies &amp; TV</span>
+        <span class="pill">Multi-audio</span>
+        <span class="pill">Subtitles</span>
+        <span class="pill">Skip intro / recap / credits</span>
+        <span class="pill">Resume playback</span>
+        <span class="pill">Auto failover</span>
+        <span class="pill">Keyboard &amp; touch</span>
+        <span class="pill">postMessage API</span>
+      </div>
+    </div>
+  </section>
+
+  <div class="wrap layout">
+    <aside class="side" aria-label="On this page">
+      <h4>On this page</h4>
+      <a href="#quick-start" data-nav>Quick start</a>
+      <a href="#reference" data-nav>Reference</a>
+      <a href="#endpoints" data-nav data-tab-link="endpoints">— Endpoints</a>
+      <a href="#implementation" data-nav data-tab-link="implementation">— Implementation</a>
+      <a href="#customization" data-nav data-tab-link="customization">— Customization</a>
+      <a href="#events" data-nav data-tab-link="events">— Events</a>
+      <a href="#postmessage" data-nav data-tab-link="postmessage">— PostMessage</a>
+      <a href="#builder" data-nav>Embed builder</a>
+      <a href="#status" data-nav>Status</a>
+      <a href="#faq" data-nav>FAQ</a>
+    </aside>
+
+    <div class="content">
+
+      <!-- ============================================================ -->
+      <section class="block" id="quick-start">
+        <div class="block-head">
+          <h2>Quick start</h2>
+          <p>Three steps. No account, no API key, no SDK — the player is a plain URL.</p>
+        </div>
+        <div class="grid-3">
+          <div class="feature">
+            <div class="n">01</div>
+            <h3>Find the id</h3>
+            <p>Open the title on <a href="https://www.themoviedb.org" target="_blank" rel="noopener">themoviedb.org</a>. The number in the URL is the id — <code>…/tv/94605-arcane</code> → <code>94605</code>. IMDb ids (<code>tt15239678</code>) work too.</p>
+          </div>
+          <div class="feature">
+            <div class="n">02</div>
+            <h3>Build the URL</h3>
+            <p>Movies: <code>/embed/movie/{id}</code>. TV: <code>/embed/tv/{id}/{season}/{episode}</code>. Add options as query parameters.</p>
+          </div>
+          <div class="feature">
+            <div class="n">03</div>
+            <h3>Embed it</h3>
+            <p>Put the URL in an <code>&lt;iframe&gt;</code> with <code>allowfullscreen</code>. That's it — the player handles servers, audio, subtitles and resume.</p>
+          </div>
+        </div>
+        <div class="codeblock" style="margin-top:18px">
+          <button class="copy" data-copy="#code-quick" type="button">Copy</button>
+<pre id="code-quick"><code>&lt;iframe
+  src="<span class="js-origin">https://your-worker.example</span>/embed/tv/94605/1/1"
+  width="100%" height="100%"
+  frameborder="0"
+  allowfullscreen
+  allow="autoplay; fullscreen; encrypted-media; picture-in-picture"&gt;
+&lt;/iframe&gt;</code></pre>
+        </div>
+      </section>
+
+      <!-- ============================================================ -->
+      <section class="block" id="reference">
+        <div class="block-head">
+          <h2>Documentation</h2>
+          <p>Complete reference guide for embedding and customizing the player on your website.</p>
+        </div>
+
+        <div class="tabs" role="tablist" aria-label="Reference">
+          <button class="tab active" role="tab" data-tab="endpoints" type="button">Endpoints</button>
+          <button class="tab" role="tab" data-tab="implementation" type="button">Implementation</button>
+          <button class="tab" role="tab" data-tab="customization" type="button">Customization</button>
+          <button class="tab" role="tab" data-tab="events" type="button">Events</button>
+          <button class="tab" role="tab" data-tab="postmessage" type="button">PostMessage</button>
+        </div>
+
+        <!-- ------------------------------ Endpoints ------------------------------ -->
+        <div class="panel active" id="endpoints" data-panel="endpoints" role="tabpanel">
+
+          <div class="card">
+            <h3>Movie Embed <span class="chip">GET</span></h3>
+            <h4 class="sub">Endpoint</h4>
+            <div class="endpoint">
+              <span class="method">GET</span>
+              <span class="url"><span class="host js-origin">https://your-worker.example</span>/embed/movie/<span class="var">{id}</span><span class="q">?t=0</span></span>
+              <button class="copy" data-copy-text="movie-endpoint" type="button">Copy</button>
+            </div>
+            <h4 class="sub">Required parameters</h4>
+            <div class="params">
+              <div class="param"><code>{id}</code><span>Movie identifier — <a href="https://www.themoviedb.org" target="_blank" rel="noopener">TMDB</a> (numeric, e.g. <code>693134</code>) or IMDb (<code>tt15239678</code>)</span></div>
+            </div>
+            <h4 class="sub">Optional parameters</h4>
+            <div class="params">
+              <div class="param"><code>t</code><span>Start the video at a position — seconds (<code>t=754</code>), <code>1h2m3s</code> or <code>12:34</code>. Also accepted as <code>start</code>. Applies once, to the link that was opened.</span></div>
+              <div class="param"><code>sub</code><span>Default subtitle language (<code>en</code>, <code>es</code>, <code>ar</code>, …), matched against the available tracks</span></div>
+              <div class="param"><code>lang</code><span>Preferred audio language when the title has several dubs (<code>hi</code>, <code>en</code>, <code>ta</code>, …)</span></div>
+              <div class="param"><code>server</code><span>Default server for the player — one of the ids listed under <a href="#status">Status</a> (<span class="js-server-ids"><code>andromeda</code>, <code>centaurus</code></span>). Unknown ids fall back to the primary server.</span></div>
+              <div class="param"><code>autoskip</code><span><code>1</code> skips intros and recaps automatically (credits keep the manual <em>Next Episode</em> button); <code>0</code> turns it off. The viewer's choice is remembered.</span></div>
+              <div class="param"><code>color</code><span>Accent color as a hex code (<code>16A085</code>, <code>#e50914</code>) or a name: <code>netflix</code>, <code>red</code>, <code>yellow</code>, <code>blue</code>, <code>purple</code>, <code>green</code>, <code>pink</code>, <code>orange</code>. Default is monochrome.</span></div>
+              <div class="param"><code>branding</code><span>Text shown as the player branding on the connect screen<span class="default">default: LOL Embed</span></span></div>
+              <div class="param"><code>back</code><span><code>false</code> hides the back button in the top-left corner</span></div>
+              <div class="param"><code>origin</code><span>Origin of your page (<code>https://watch.example</code>). Locks the <a href="#postmessage">postMessage API</a> to that origin — recommended when you control the player.</span></div>
+            </div>
+            <h4 class="sub">Examples</h4>
+            <div class="examples">
+              <div class="example"><a class="js-example" data-path="/embed/movie/693134" target="_blank" rel="noopener"></a><button class="copy" data-copy-prev type="button">Copy</button></div>
+              <div class="example"><a class="js-example" data-path="/embed/movie/533535?color=16A085" target="_blank" rel="noopener"></a><button class="copy" data-copy-prev type="button">Copy</button></div>
+              <div class="example"><a class="js-example" data-path="/embed/movie/693134?sub=en&amp;t=12m30s&amp;autoskip=1" target="_blank" rel="noopener"></a><button class="copy" data-copy-prev type="button">Copy</button></div>
+            </div>
+          </div>
+
+          <div class="card">
+            <h3>TV Show Embed <span class="chip">GET</span></h3>
+            <h4 class="sub">Endpoint</h4>
+            <div class="endpoint">
+              <span class="method">GET</span>
+              <span class="url"><span class="host js-origin">https://your-worker.example</span>/embed/tv/<span class="var">{id}</span>/<span class="var">{season}</span>/<span class="var">{episode}</span><span class="q">?autoskip=1</span></span>
+              <button class="copy" data-copy-text="tv-endpoint" type="button">Copy</button>
+            </div>
+            <h4 class="sub">Required parameters</h4>
+            <div class="params">
+              <div class="param"><code>{id}</code><span>TV show identifier — <a href="https://www.themoviedb.org" target="_blank" rel="noopener">TMDB</a> (numeric, e.g. <code>94605</code>) or IMDb (<code>tt11126994</code>)</span></div>
+              <div class="param"><code>{season}</code><span>The season number (1-based)</span></div>
+              <div class="param"><code>{episode}</code><span>The episode number (1-based)</span></div>
+            </div>
+            <h4 class="sub">Optional parameters</h4>
+            <div class="params">
+              <div class="param"><code>t</code><span>Start position — seconds, <code>1h2m3s</code> or <code>12:34</code> (also <code>start</code>). One-shot: it does not carry over to the next episode.</span></div>
+              <div class="param"><code>sub</code><span>Default subtitle language (e.g. <code>en</code>, <code>es</code>, <code>fr</code>)</span></div>
+              <div class="param"><code>lang</code><span>Preferred audio language for multi-audio titles</span></div>
+              <div class="param"><code>server</code><span>Default server (<span class="js-server-ids"><code>andromeda</code>, <code>centaurus</code></span>)</span></div>
+              <div class="param"><code>autoskip</code><span><code>1</code> auto-skips intro / recap / preview segments. Credits always show a manual <em>Next Episode</em> button; the next episode plays after an 8-second countdown when the episode ends.</span></div>
+              <div class="param"><code>color</code>, <code>branding</code>, <code>back</code>, <code>origin</code><span>Same as for movies (see above)</span></div>
+            </div>
+            <h4 class="sub">Examples</h4>
+            <div class="examples">
+              <div class="example"><a class="js-example" data-path="/embed/tv/94605/1/1" target="_blank" rel="noopener"></a><button class="copy" data-copy-prev type="button">Copy</button></div>
+              <div class="example"><a class="js-example" data-path="/embed/tv/1396/2/5?autoskip=1&amp;sub=en" target="_blank" rel="noopener"></a><button class="copy" data-copy-prev type="button">Copy</button></div>
+              <div class="example"><a class="js-example" data-path="/embed/tv/94605/2/1?lang=hi&amp;color=blue&amp;branding=MySite" target="_blank" rel="noopener"></a><button class="copy" data-copy-prev type="button">Copy</button></div>
+            </div>
+          </div>
+
+          <div class="card">
+            <h3>Other URL forms</h3>
+            <p>Every form below serves the same player and accepts the same query parameters. Use whichever fits your router.</p>
+            <div class="table-wrap" style="margin-top:14px">
+              <table>
+                <thead><tr><th>Form</th><th>Pattern</th><th>Example</th></tr></thead>
+                <tbody>
+                  <tr><td>Path (movie)</td><td><code>/embed/movie/{id}</code></td><td><code>/embed/movie/693134</code></td></tr>
+                  <tr><td>Path (TV)</td><td><code>/embed/tv/{id}/{season}/{episode}</code></td><td><code>/embed/tv/94605/2/1</code></td></tr>
+                  <tr><td>Query</td><td><code>/embed?type={movie|tv}&amp;tmdb={id}&amp;s={season}&amp;e={episode}</code></td><td><code>/embed?type=tv&amp;tmdb=94605&amp;s=1&amp;e=1</code></td></tr>
+                  <tr><td>Short (movie)</td><td><code>/movie/{id}</code></td><td><code>/movie/693134</code></td></tr>
+                  <tr><td>Short (TV)</td><td><code>/tv/{id}/{season}/{episode}</code></td><td><code>/tv/94605/2/1</code></td></tr>
+                  <tr><td>IMDb id</td><td><code>/embed/movie/{imdb}</code></td><td><code>/embed/movie/tt15239678</code></td></tr>
+                </tbody>
+              </table>
+            </div>
+            <div class="note">When the viewer moves to another episode the player rewrites its own URL in place (<code>history.replaceState</code>) using the form it was opened with, so a reload resumes the episode that is actually playing. A season or episode that is omitted defaults to <code>1</code>.</div>
+          </div>
+        </div>
+
+        <!-- ------------------------------ Implementation ------------------------------ -->
+        <div class="panel" id="implementation" data-panel="implementation" role="tabpanel">
+          <div class="card">
+            <h3>Basic iframe</h3>
+            <p>The player is served with <code>Content-Security-Policy: frame-ancestors *</code>, so it can be embedded on any site. Always allow fullscreen and autoplay.</p>
+            <div class="codeblock" style="margin-top:14px">
+              <button class="copy" data-copy="#code-basic" type="button">Copy</button>
+<pre id="code-basic"><code>&lt;iframe
+  src="<span class="js-origin">https://your-worker.example</span>/embed/movie/693134"
+  width="100%" height="100%"
+  frameborder="0"
+  allowfullscreen
+  allow="autoplay; fullscreen; encrypted-media; picture-in-picture"&gt;
+&lt;/iframe&gt;</code></pre>
+            </div>
+          </div>
+
+          <div class="card">
+            <h3>Responsive 16:9 player</h3>
+            <p>Wrap the iframe in a container with an aspect ratio and let it fill the box. The player adapts its own layout below 720 px wide (compact controls, centred transport).</p>
+            <div class="codeblock" style="margin-top:14px">
+              <button class="copy" data-copy="#code-responsive" type="button">Copy</button>
+<pre id="code-responsive"><code>&lt;div class="player"&gt;
+  &lt;iframe
+    src="<span class="js-origin">https://your-worker.example</span>/embed/tv/94605/1/1"
+    allowfullscreen
+    allow="autoplay; fullscreen; encrypted-media; picture-in-picture"&gt;
+  &lt;/iframe&gt;
+&lt;/div&gt;
+
+&lt;style&gt;
+  .player { position: relative; width: 100%; aspect-ratio: 16 / 9; background: #000; }
+  .player iframe { position: absolute; inset: 0; width: 100%; height: 100%; border: 0; }
+&lt;/style&gt;</code></pre>
+            </div>
+          </div>
+
+          <div class="card">
+            <h3>React / Next.js</h3>
+            <div class="codeblock" style="margin-top:14px">
+              <button class="copy" data-copy="#code-react" type="button">Copy</button>
+<pre id="code-react"><code>export function Player({ type, id, season = 1, episode = 1, options = {} }) {
+  const base = "<span class="js-origin">https://your-worker.example</span>";
+  const path = type === "movie" ? `/embed/movie/${id}` : `/embed/tv/${id}/${season}/${episode}`;
+  const query = new URLSearchParams(options).toString();
+  return (
+    &lt;div style={{ position: "relative", aspectRatio: "16 / 9" }}&gt;
+      &lt;iframe
+        src={`${base}${path}${query ? `?${query}` : ""}`}
+        style={{ position: "absolute", inset: 0, width: "100%", height: "100%", border: 0 }}
+        allowFullScreen
+        allow="autoplay; fullscreen; encrypted-media; picture-in-picture"
+      /&gt;
+    &lt;/div&gt;
+  );
+}
+
+// &lt;Player type="tv" id={94605} season={1} episode={1} options={{ autoskip: 1, sub: "en" }} /&gt;</code></pre>
+            </div>
+          </div>
+
+          <div class="card">
+            <h3>Good to know</h3>
+            <ul class="list">
+              <li><strong>Sandboxing.</strong> Prefer no <code>sandbox</code> attribute. If your CSP requires one, it must include <code>allow-scripts allow-same-origin allow-forms allow-popups allow-popups-to-escape-sandbox allow-presentation</code> — the player stores preferences in <code>localStorage</code>, opens fullscreen and may open windows.</li>
+              <li><strong>Referrer.</strong> Leave the browser's default referrer policy on the iframe. The player identifies your site to the backend through the parent origin; stripping it (<code>referrerpolicy="no-referrer"</code>) still works, but your site shows up as anonymous.</li>
+              <li><strong>Autoplay.</strong> Browsers only allow unmuted autoplay after a user gesture on <em>your</em> page. The player starts automatically when it may and shows a centre play button otherwise.</li>
+              <li><strong>Resume &amp; preferences.</strong> Progress, subtitle/audio choices, volume and quality live in the viewer's <code>localStorage</code> for the player origin — nothing to wire up on your side.</li>
+              <li><strong>Deep links.</strong> Append <code>?t=</code> to open an episode at a timestamp; the player's <em>Settings → Copy link at current time</em> creates such a link and also raises a <code>share</code> event you can intercept.</li>
+            </ul>
+          </div>
+        </div>
+
+        <!-- ------------------------------ Customization ------------------------------ -->
+        <div class="panel" id="customization" data-panel="customization" role="tabpanel">
+          <div class="card">
+            <h3>Query parameters</h3>
+            <p>All parameters work on every URL form. Values are case-insensitive unless noted.</p>
+            <div class="table-wrap" style="margin-top:14px">
+              <table>
+                <thead><tr><th>Parameter</th><th>Values</th><th>Description</th></tr></thead>
+                <tbody>
+                  <tr><td><code>color</code></td><td>hex / name</td><td>Accent color for the progress bar, buttons and highlights. <code>16A085</code>, <code>#e50914</code> or <code>netflix</code> · <code>red</code> · <code>yellow</code> · <code>blue</code> · <code>purple</code> · <code>green</code> · <code>pink</code> · <code>orange</code>. The default theme is monochrome.</td></tr>
+                  <tr><td><code>branding</code></td><td>text</td><td>Name shown on the connect screen (defaults to <code>LOL Embed</code>). Keep it short; it is rendered as text, never as HTML.</td></tr>
+                  <tr><td><code>back</code></td><td><code>false</code> / <code>0</code></td><td>Hides the back button. When shown, pressing it posts a <code>back</code> event to your page (see <a href="#events">Events</a>) and otherwise goes back in history.</td></tr>
+                  <tr><td><code>sub</code></td><td>language code</td><td>Subtitle language to enable on load (<code>en</code>, <code>pt</code>, <code>ar</code>, …). Matched against the resolved tracks. A viewer's own choice for that title is remembered and wins on later visits.</td></tr>
+                  <tr><td><code>lang</code></td><td>language code</td><td>Preferred audio language for titles with several dubs (<code>hi</code>, <code>en</code>, <code>ta</code>). Also remembered per title.</td></tr>
+                  <tr><td><code>t</code> / <code>start</code></td><td>seconds · <code>1h2m3s</code> · <code>12:34</code></td><td>Start position. Beats the saved resume position for the link that was opened; not re-applied when the viewer changes episode.</td></tr>
+                  <tr><td><code>autoskip</code></td><td><code>1</code> / <code>0</code></td><td>Automatically skip intro, recap and preview segments. Credits are never auto-skipped (the <em>Next Episode</em> button is shown instead). Persists for the viewer.</td></tr>
+                  <tr><td><code>server</code></td><td>server id</td><td>Server to try first (<span class="js-server-ids"><code>andromeda</code>, <code>centaurus</code></span>). When it fails the player falls through to the next one automatically.</td></tr>
+                  <tr><td><code>origin</code></td><td>origin URL</td><td>Only accept postMessage commands from, and deliver events to, this origin. Use it for watch-party or sync integrations.</td></tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+          <div class="card">
+            <h3>Built-in player behaviour</h3>
+            <div class="grid-2" style="margin-top:14px">
+              <div>
+                <h4>Playback</h4>
+                <ul class="list">
+                  <li>Connect screen with the title's logo artwork on every load and server change.</li>
+                  <li>Automatic server failover; the servers menu lists each server's sources as <em>Source 1…N</em>.</li>
+                  <li>Adaptive HLS/DASH with a quality menu; the chosen quality is remembered.</li>
+                  <li>Multi-audio and subtitle menus with subtitle styling, size and delay controls.</li>
+                  <li>Skip intro / recap / credits buttons from real segment data; timeline highlights the ranges.</li>
+                  <li>Resume where the viewer left off; episodes drawer with watched progress; <em>Up next</em> countdown.</li>
+                  <li>Paused title card after two idle seconds; Picture-in-Picture; hold the picture for 2× speed.</li>
+                </ul>
+              </div>
+              <div>
+                <h4>Keyboard shortcuts</h4>
+                <div class="table-wrap" style="margin-top:8px">
+                  <table style="min-width:0">
+                    <tbody>
+                      <tr><td><kbd>Space</kbd> / <kbd>K</kbd></td><td>Play / pause</td></tr>
+                      <tr><td><kbd>←</kbd> <kbd>→</kbd> / <kbd>J</kbd> <kbd>L</kbd></td><td>Seek ±15 s</td></tr>
+                      <tr><td><kbd>↑</kbd> <kbd>↓</kbd></td><td>Volume</td></tr>
+                      <tr><td><kbd>M</kbd></td><td>Mute</td></tr>
+                      <tr><td><kbd>C</kbd></td><td>Captions on / off</td></tr>
+                      <tr><td><kbd>F</kbd></td><td>Fullscreen</td></tr>
+                      <tr><td><kbd>S</kbd></td><td>Skip intro / recap / credits</td></tr>
+                      <tr><td><kbd>0</kbd>–<kbd>9</kbd></td><td>Seek to 0–90 %</td></tr>
+                      <tr><td><kbd>Shift</kbd>+<kbd>N</kbd></td><td>Next episode</td></tr>
+                      <tr><td><kbd>Esc</kbd></td><td>Close menus</td></tr>
+                    </tbody>
+                  </table>
+                </div>
+                <p style="font-size:.86rem">Touch: double-tap left / right to seek, double-tap centre for fullscreen, press and hold for 2×.</p>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- ------------------------------ Events ------------------------------ -->
+        <div class="panel" id="events" data-panel="events" role="tabpanel">
+          <div class="card">
+            <h3>Listening to player events</h3>
+            <p>The player posts a message to your page for everything that happens. Each message carries <code>source: "lol-embed-player"</code>, <code>type: "LOL_EMBED_PLAYER_EVENT"</code>, the <code>event</code> name and the <strong>full state snapshot</strong> — you never need to ask for the state after an event.</p>
+            <div class="codeblock" style="margin-top:14px">
+              <button class="copy" data-copy="#code-events" type="button">Copy</button>
+<pre id="code-events"><code>const PLAYER_ORIGIN = "<span class="js-origin">https://your-worker.example</span>";
+
+window.addEventListener("message", (e) =&gt; {
+  if (e.origin !== PLAYER_ORIGIN) return;
+  const m = e.data;
+  if (!m || m.source !== "lol-embed-player" || m.type !== "LOL_EMBED_PLAYER_EVENT") return;
+
+  switch (m.event) {
+    case "timeupdate":   console.log(m.currentTime, "/", m.mediaDuration); break;
+    case "statechange":  console.log(m.previousState, "→", m.state);        break;
+    case "episodechange": console.log("now S", m.season, "E", m.episode);   break;
+    case "ended":        showMyOwnUpNextRail();                              break;
+    case "share":        navigator.clipboard.writeText(m.url);              break;
+    case "back":         history.back();                                    break;
+  }
+});</code></pre>
+            </div>
+          </div>
+
+          <div class="card">
+            <h3>Event names</h3>
+            <div class="events" style="margin-top:12px">
+              <code>init</code><code>loadstart</code><code>sourcechange</code><code>ready</code><code>loadedmetadata</code><code>durationchange</code><code>play</code><code>playing</code><code>pause</code><code>waiting</code><code>seeking</code><code>seeked</code><code>timeupdate</code><code>ratechange</code><code>volumechange</code><code>ended</code><code>error</code><code>statechange</code><code>serverchange</code><code>episodechange</code><code>audiotrackchange</code><code>subtitlechange</code><code>fullscreenchange</code><code>share</code><code>back</code>
+            </div>
+            <ul class="list" style="margin-top:14px">
+              <li><code>init</code> is sent as soon as the player script is ready, before anything loads — a good moment to send your first commands.</li>
+              <li><code>timeupdate</code> fires about four times per second while playing.</li>
+              <li><code>statechange</code> is de-duplicated (one message per transition) and carries <code>previousState</code>.</li>
+              <li><code>error</code> carries <code>error</code> and <code>serverExplanation</code>; <code>share</code> carries <code>url</code> and <code>time</code>; <code>episodechange</code> carries <code>season</code> and <code>episode</code>.</li>
+              <li>With <code>?origin=</code> on the embed URL events are delivered only to that origin; otherwise to the parent page.</li>
+            </ul>
+          </div>
+
+          <div class="card">
+            <h3>State snapshot</h3>
+            <p>Included in every event and every command response.</p>
+            <div class="table-wrap" style="margin-top:14px">
+              <table>
+                <thead><tr><th>Field</th><th>Meaning</th></tr></thead>
+                <tbody>
+                  <tr><td><code>protocol</code></td><td><code>1</code></td></tr>
+                  <tr><td><code>tmdbId</code>, <code>mediaType</code>, <code>season</code>, <code>episode</code>, <code>title</code></td><td>What is loaded. <code>season</code> / <code>episode</code> are <code>null</code> for movies.</td></tr>
+                  <tr><td><code>state</code></td><td><code>loading</code> · <code>error</code> · <code>ready</code> · <code>playing</code> · <code>buffering</code> · <code>paused</code> · <code>ended</code>. Buffering is its own state — a stalled stream is never reported as paused.</td></tr>
+                  <tr><td><code>paused</code>, <code>buffering</code>, <code>seeking</code>, <code>ended</code></td><td>The raw flags behind <code>state</code></td></tr>
+                  <tr><td><code>currentTime</code>, <code>playbackRate</code>, <code>volume</code>, <code>muted</code>, <code>fullscreen</code></td><td>Playback position and output state</td></tr>
+                  <tr><td><code>mediaDuration</code></td><td>Real duration of the attached file in seconds, or <code>null</code> until the browser knows it. Use it to detect different cuts of the same episode.</td></tr>
+                  <tr><td><code>duration</code></td><td>What the timeline shows: <code>mediaDuration</code> when known, otherwise the runtime estimate (never 0).</td></tr>
+                  <tr><td><code>server</code>, <code>sourceIndex</code>, <code>sourceId</code></td><td>Server id, 1-based source index and the combined <code>"server/index"</code> fingerprint. Same <code>sourceId</code> on two viewers means the same upstream source.</td></tr>
+                  <tr><td><code>sourceHash</code></td><td>Short hash of the exact stream URL</td></tr>
+                  <tr><td><code>audio</code>, <code>subtitle</code></td><td><code>{ id, lang, label }</code> of the active tracks, or <code>null</code></td></tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+
+        <!-- ------------------------------ PostMessage ------------------------------ -->
+        <div class="panel" id="postmessage" data-panel="postmessage" role="tabpanel">
+          <div class="card">
+            <h3>Controlling the player</h3>
+            <p>Send commands with <code>iframe.contentWindow.postMessage({ type: "LOL_EMBED_PLAYER_COMMAND", command, requestId, ...args }, PLAYER_ORIGIN)</code>. Only the page that contains the iframe is obeyed (with <code>?origin=</code>: only that origin). Include a <code>requestId</code> and the player answers with <code>{ type: "LOL_EMBED_PLAYER_RESPONSE", requestId, ok, error, ...snapshot }</code>.</p>
+            <div class="codeblock" style="margin-top:14px">
+              <button class="copy" data-copy="#code-commands" type="button">Copy</button>
+<pre id="code-commands"><code>const PLAYER_ORIGIN = "<span class="js-origin">https://your-worker.example</span>";
+const player = document.querySelector("iframe").contentWindow;
+
+function send(command, args = {}) {
+  const requestId = `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+  return new Promise((resolve) =&gt; {
+    const onMessage = (e) =&gt; {
+      const m = e.data;
+      if (e.origin !== PLAYER_ORIGIN || !m || m.type !== "LOL_EMBED_PLAYER_RESPONSE" || m.requestId !== requestId) return;
+      window.removeEventListener("message", onMessage);
+      resolve(m);
+    };
+    window.addEventListener("message", onMessage);
+    player.postMessage({ type: "LOL_EMBED_PLAYER_COMMAND", command, requestId, ...args }, PLAYER_ORIGIN);
+  });
+}
+
+await send("play");
+await send("seek", { time: 754 });
+await send("setSubtitle", { lang: "en" });
+const { currentTime, mediaDuration } = await send("getState");</code></pre>
+            </div>
+          </div>
+
+          <div class="card">
+            <h3>Commands</h3>
+            <div class="table-wrap" style="margin-top:14px">
+              <table>
+                <thead><tr><th>Command</th><th>Arguments</th><th>Notes</th></tr></thead>
+                <tbody>
+                  <tr><td><code>play</code> / <code>pause</code> / <code>togglePlay</code></td><td>—</td><td><code>play</code> resolves once the browser accepted it; an autoplay refusal answers <code>ok: false, error: "NotAllowedError"</code></td></tr>
+                  <tr><td><code>seek</code></td><td><code>time</code> (seconds)</td><td>Clamped to the media</td></tr>
+                  <tr><td><code>seekBy</code></td><td><code>delta</code> (seconds)</td><td>Relative seek</td></tr>
+                  <tr><td><code>setVolume</code></td><td><code>volume</code> 0–1, optional <code>muted</code></td><td></td></tr>
+                  <tr><td><code>setMuted</code></td><td><code>muted</code></td><td></td></tr>
+                  <tr><td><code>setPlaybackRate</code></td><td><code>rate</code> 0.25–4</td><td></td></tr>
+                  <tr><td><code>setSubtitle</code></td><td><code>lang</code> or <code>id</code>, or <code>"off"</code></td><td>Remembered for the title like a menu choice</td></tr>
+                  <tr><td><code>setAudio</code></td><td><code>lang</code> or <code>id</code></td><td>Same as choosing it in the audio menu</td></tr>
+                  <tr><td><code>setServer</code></td><td><code>server</code> id</td><td>Re-resolves on that server, keeping the position</td></tr>
+                  <tr><td><code>setEpisode</code></td><td><code>season</code>, <code>episode</code></td><td>TV only</td></tr>
+                  <tr><td><code>nextEpisode</code></td><td>—</td><td><code>ok: false</code> when there is none</td></tr>
+                  <tr><td><code>skipSegment</code></td><td>—</td><td>Skips the intro / recap / credits segment at the playhead, if any</td></tr>
+                  <tr><td><code>setAutoSkip</code></td><td><code>enabled</code></td><td>Same switch as Settings → Auto-skip</td></tr>
+                  <tr><td><code>getState</code> / <code>getTime</code> / <code>getDuration</code> / <code>ping</code></td><td>—</td><td>Query only; always answered</td></tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+          <div class="card">
+            <h3>Watch-party sync in 20 lines</h3>
+            <p>Drive everything from <code>statechange</code>, <code>seeked</code> and <code>timeupdate</code>; compare <code>sourceId</code> + <code>mediaDuration</code> to make sure every participant plays the same cut.</p>
+            <div class="codeblock" style="margin-top:14px">
+              <button class="copy" data-copy="#code-party" type="button">Copy</button>
+<pre id="code-party"><code>// host side
+window.addEventListener("message", (e) =&gt; {
+  const m = e.data;
+  if (e.origin !== PLAYER_ORIGIN || m?.source !== "lol-embed-player" || m.type !== "LOL_EMBED_PLAYER_EVENT") return;
+  if (["statechange", "seeked", "episodechange"].includes(m.event)) {
+    socket.send(JSON.stringify({ state: m.state, time: m.currentTime, season: m.season, episode: m.episode, sourceId: m.sourceId }));
+  }
+});
+
+// guest side
+socket.onmessage = async ({ data }) =&gt; {
+  const r = JSON.parse(data);
+  if (r.season != null) await send("setEpisode", { season: r.season, episode: r.episode });
+  if (Math.abs((await send("getTime")).currentTime - r.time) &gt; 1.5) await send("seek", { time: r.time });
+  await send(r.state === "playing" ? "play" : "pause");
+};</code></pre>
+            </div>
+            <div class="note">Legacy shapes are still accepted so older integrations keep working: a bare <code>{ command: "play" | "pause" | "seek" | "setVolume" | "nextEpisode" }</code> and <code>{ type: "VIDBOLT_PLAY" | "VIDBOLT_PAUSE" }</code>.</div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ============================================================ -->
+      <section class="block" id="builder">
+        <div class="block-head">
+          <h2>Embed builder</h2>
+          <p>Fill in a title and options, copy the URL or the iframe code, and preview it right here.</p>
+        </div>
+        <div class="card builder">
+          <form id="builder-form" autocomplete="off" onsubmit="return false">
+            <div class="field">
+              <label for="b-type">Type</label>
+              <select id="b-type"><option value="tv">TV show</option><option value="movie">Movie</option></select>
+            </div>
+            <div class="field">
+              <label for="b-id">TMDB or IMDb id</label>
+              <input id="b-id" value="94605" placeholder="94605 or tt11126994" spellcheck="false">
+            </div>
+            <div class="field row" id="b-tv-fields">
+              <div><label for="b-season">Season</label><input id="b-season" inputmode="numeric" value="1"></div>
+              <div><label for="b-episode">Episode</label><input id="b-episode" inputmode="numeric" value="1"></div>
+            </div>
+            <div class="field">
+              <label for="b-server">Server</label>
+              <select id="b-server"><option value="">Default (primary)</option></select>
+            </div>
+            <div class="field row">
+              <div><label for="b-sub">Subtitles</label><input id="b-sub" placeholder="en" maxlength="5"></div>
+              <div><label for="b-lang">Audio</label><input id="b-lang" placeholder="hi" maxlength="5"></div>
+            </div>
+            <div class="field row">
+              <div><label for="b-color">Color</label><input id="b-color" placeholder="16A085 or netflix"></div>
+              <div><label for="b-start">Start at</label><input id="b-start" placeholder="12m30s"></div>
+            </div>
+            <div class="field">
+              <label for="b-branding">Branding</label>
+              <input id="b-branding" placeholder="LOL Embed" maxlength="40">
+            </div>
+            <div class="checks">
+              <label><input type="checkbox" id="b-autoskip"> Auto-skip intros &amp; recaps</label>
+              <label><input type="checkbox" id="b-noback"> Hide back button</label>
+              <label><input type="checkbox" id="b-origin"> Lock postMessage to this page's origin</label>
+            </div>
+          </form>
+          <div>
+            <h4>Embed URL</h4>
+            <div class="codeblock" style="margin-top:8px">
+              <button class="copy" data-copy="#b-url" type="button">Copy</button>
+              <pre id="b-url"></pre>
+            </div>
+            <h4 class="sub">Iframe code</h4>
+            <div class="codeblock" style="margin-top:8px">
+              <button class="copy" data-copy="#b-code" type="button">Copy</button>
+              <pre id="b-code"></pre>
+            </div>
+            <div style="display:flex;gap:10px;flex-wrap:wrap;margin-top:14px">
+              <button class="btn primary" id="b-preview-btn" type="button">Load preview</button>
+              <a class="btn" id="b-open" href="#" target="_blank" rel="noopener">Open in new tab ↗</a>
+            </div>
+            <div class="preview" id="b-preview"><span>Preview loads on demand.</span></div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ============================================================ -->
+      <section class="block" id="status">
+        <div class="block-head">
+          <h2>Status</h2>
+          <p>Live view of this deployment. Server ids below are the values accepted by the <code>server</code> parameter.</p>
+        </div>
+        <div class="status-grid" id="status-grid">
+          <div class="status"><span class="dot"></span><div><div class="name">API</div><div class="meta">Checking…</div></div></div>
+        </div>
+        <p style="font-size:.86rem;margin-top:12px" id="status-foot"></p>
+      </section>
+
+      <!-- ============================================================ -->
+      <section class="block" id="faq">
+        <div class="block-head">
+          <h2>FAQ</h2>
+        </div>
+        <div class="card">
+          <h3>Which ids are supported?</h3>
+          <p>TMDB ids (the numeric id from <code>themoviedb.org</code> URLs) and IMDb ids (<code>tt…</code>). IMDb ids are translated to the TMDB entry once and cached; the TMDB id is what the player and the host API report.</p>
+        </div>
+        <div class="card">
+          <h3>A title doesn't play. What now?</h3>
+          <p>The player tries every server before giving up and then shows the server list on the error screen, so viewers can retry another one. If nothing works for a title, it is simply not available upstream right now — try again later.</p>
+        </div>
+        <div class="card">
+          <h3>Can I style the player?</h3>
+          <p>Use <code>color</code> for the accent, <code>branding</code> for the name, <code>back=false</code> to drop the back button. The layout itself is fixed and adapts to the iframe size.</p>
+        </div>
+        <div class="card">
+          <h3>Is there a rate limit or an API key?</h3>
+          <p>No key is needed to embed. Please embed the player rather than scraping its backend; sites that abuse the service can be blocked by the operator.</p>
+        </div>
+        <div class="card">
+          <h3>Will it work inside a sandboxed iframe or a strict CSP?</h3>
+          <p>Yes, if you allow scripts, same-origin storage, fullscreen and popups (see <a href="#implementation">Implementation → Good to know</a>). Your <code>frame-src</code> / <code>child-src</code> directive must list <code class="js-origin">https://your-worker.example</code>.</p>
+        </div>
+      </section>
+
+    </div>
+  </div>
+</main>
+
+<footer>
+  <div class="wrap">
+    <span><strong class="js-brand" style="color:#fff">LOL Embed</strong> · Documentation</span>
+    <a href="/docs">/docs</a>
+    <a href="/documentation">/documentation</a>
+    <a id="foot-demo" href="/embed/tv/94605/1/1" target="_blank" rel="noopener">Player demo</a>
+    <span style="margin-left:auto">Content is provided by third-party sources; this service hosts no files.</span>
+  </div>
+</footer>
+
+<div class="toast" id="toast" role="status" aria-live="polite">Copied</div>
+
+<script>
+(function () {
+  'use strict';
+  var cfg = window.__LOL_EMBED_CONFIG__ || {};
+  var origin = window.location.origin;
+  var host = window.location.host;
+  var apiBase = (cfg.apiBaseUrl || '').replace(/\/+$/, '');
+  var servers = Array.isArray(cfg.servers) && cfg.servers.length
+    ? cfg.servers
+    : [{ id: 'andromeda', name: 'Fiber Optic Speedrun', badge: 'Multi-Audio • Primary' }, { id: 'centaurus', name: 'Gigachad Node', badge: 'Adaptive • Multi-Quality' }];
+
+  function $(sel, root) { return (root || document).querySelector(sel); }
+  function $$(sel, root) { return Array.prototype.slice.call((root || document).querySelectorAll(sel)); }
+  function esc(s) { return String(s).replace(/[&<>"']/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]; }); }
+
+  // --- Host / origin substitution -------------------------------------------
+  $$('.js-origin').forEach(function (el) { el.textContent = origin; });
+  $$('.js-host').forEach(function (el) { el.textContent = host; });
+  $$('.js-example').forEach(function (a) {
+    var path = a.getAttribute('data-path');
+    a.href = origin + path;
+    var parts = path.split('?');
+    a.innerHTML = '<span class="host">' + esc(origin) + '</span><span class="hl">' + esc(parts[0]) + '</span>' + (parts[1] ? '<span class="host">?' + esc(parts[1]) + '</span>' : '');
+  });
+  var serverIdsHtml = servers.map(function (s) { return '<code>' + esc(s.id) + '</code>'; }).join(', ');
+  $$('.js-server-ids').forEach(function (el) { el.innerHTML = serverIdsHtml; });
+
+  // --- Copy buttons -------------------------------------------------------------
+  var toast = $('#toast');
+  var toastTimer = null;
+  function showToast(text) {
+    toast.textContent = text;
+    toast.classList.add('show');
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(function () { toast.classList.remove('show'); }, 1400);
+  }
+  function copyText(text, btn) {
+    var done = function () {
+      if (btn) { btn.classList.add('done'); btn.textContent = 'Copied'; setTimeout(function () { btn.classList.remove('done'); btn.textContent = 'Copy'; }, 1400); }
+      showToast('Copied to clipboard');
+    };
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(text).then(done, function () { fallbackCopy(text); done(); });
+    } else { fallbackCopy(text); done(); }
+  }
+  function fallbackCopy(text) {
+    var ta = document.createElement('textarea');
+    ta.value = text; ta.setAttribute('readonly', ''); ta.style.position = 'fixed'; ta.style.opacity = '0';
+    document.body.appendChild(ta); ta.select();
+    try { document.execCommand('copy'); } catch (e) {}
+    document.body.removeChild(ta);
+  }
+  var copyTexts = {
+    host: function () { return host; },
+    'movie-endpoint': function () { return origin + '/embed/movie/{id}'; },
+    'tv-endpoint': function () { return origin + '/embed/tv/{id}/{season}/{episode}'; }
+  };
+  document.addEventListener('click', function (e) {
+    var btn = e.target.closest('.copy');
+    if (!btn) return;
+    var text = '';
+    if (btn.hasAttribute('data-copy')) {
+      var target = $(btn.getAttribute('data-copy'));
+      text = target ? target.textContent : '';
+    } else if (btn.hasAttribute('data-copy-text')) {
+      var fn = copyTexts[btn.getAttribute('data-copy-text')];
+      text = fn ? fn() : '';
+    } else if (btn.hasAttribute('data-copy-prev')) {
+      var prev = btn.previousElementSibling;
+      text = prev ? (prev.href || prev.textContent) : '';
+    }
+    if (text) copyText(text.replace(/\n+$/, ''), btn);
+  });
+
+  // --- Tabs ------------------------------------------------------------------
+  var tabs = $$('.tab');
+  var panels = $$('.panel');
+  function activateTab(name, scroll) {
+    if (!panels.some(function (p) { return p.getAttribute('data-panel') === name; })) return false;
+    tabs.forEach(function (t) { t.classList.toggle('active', t.getAttribute('data-tab') === name); t.setAttribute('aria-selected', t.getAttribute('data-tab') === name ? 'true' : 'false'); });
+    panels.forEach(function (p) { p.classList.toggle('active', p.getAttribute('data-panel') === name); });
+    $$('[data-tab-link]').forEach(function (a) { a.classList.toggle('active', a.getAttribute('data-tab-link') === name); });
+    if (scroll) {
+      var ref = $('#reference');
+      if (ref) ref.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }
+    return true;
+  }
+  tabs.forEach(function (t) {
+    t.addEventListener('click', function () {
+      var name = t.getAttribute('data-tab');
+      activateTab(name, false);
+      if (history.replaceState) history.replaceState(null, '', '#' + name);
+    });
+  });
+  function routeHash() {
+    var name = (location.hash || '').replace(/^#/, '');
+    if (name && activateTab(name, true)) return;
+  }
+  window.addEventListener('hashchange', routeHash);
+  document.addEventListener('click', function (e) {
+    var a = e.target.closest('a[href^="#"]');
+    if (!a) return;
+    var name = a.getAttribute('href').slice(1);
+    if (panels.some(function (p) { return p.getAttribute('data-panel') === name; })) {
+      e.preventDefault();
+      activateTab(name, true);
+      if (history.replaceState) history.replaceState(null, '', '#' + name);
+    }
+  });
+  routeHash();
+
+  // Sidebar highlight
+  var navLinks = $$('[data-nav]');
+  var sections = $$('section.block');
+  if ('IntersectionObserver' in window) {
+    var io = new IntersectionObserver(function (entries) {
+      entries.forEach(function (en) {
+        if (!en.isIntersecting) return;
+        var id = en.target.id;
+        navLinks.forEach(function (a) {
+          if (a.hasAttribute('data-tab-link')) return;
+          a.classList.toggle('active', a.getAttribute('href') === '#' + id);
+        });
+      });
+    }, { rootMargin: '-30% 0px -60% 0px' });
+    sections.forEach(function (s) { io.observe(s); });
+  }
+
+  // --- Embed builder -----------------------------------------------------------
+  var bType = $('#b-type'), bId = $('#b-id'), bSeason = $('#b-season'), bEpisode = $('#b-episode'), bServer = $('#b-server');
+  var bSub = $('#b-sub'), bLang = $('#b-lang'), bColor = $('#b-color'), bStart = $('#b-start'), bBranding = $('#b-branding');
+  var bAutoskip = $('#b-autoskip'), bNoback = $('#b-noback'), bOrigin = $('#b-origin');
+  var bUrl = $('#b-url'), bCode = $('#b-code'), bOpen = $('#b-open'), bPreview = $('#b-preview'), bPreviewBtn = $('#b-preview-btn');
+  servers.forEach(function (s) {
+    var opt = document.createElement('option');
+    opt.value = s.id; opt.textContent = s.name + ' (' + s.id + ')';
+    bServer.appendChild(opt);
+  });
+  function num(el, fallback) { var v = parseInt(String(el.value).trim(), 10); return Number.isFinite(v) && v > 0 ? v : fallback; }
+  function buildUrl() {
+    var type = bType.value === 'movie' ? 'movie' : 'tv';
+    var rawId = String(bId.value).trim().toLowerCase();
+    var id = /^tt\d{5,10}$/.test(rawId) ? rawId : rawId.replace(/[^0-9]/g, '') || (type === 'movie' ? '693134' : '94605');
+    var path = type === 'movie' ? '/embed/movie/' + id : '/embed/tv/' + id + '/' + num(bSeason, 1) + '/' + num(bEpisode, 1);
+    var q = new URLSearchParams();
+    if (bServer.value) q.set('server', bServer.value);
+    if (bSub.value.trim()) q.set('sub', bSub.value.trim().toLowerCase());
+    if (bLang.value.trim()) q.set('lang', bLang.value.trim().toLowerCase());
+    if (bColor.value.trim()) q.set('color', bColor.value.trim().replace(/^#/, ''));
+    if (bStart.value.trim()) q.set('t', bStart.value.trim());
+    if (bBranding.value.trim()) q.set('branding', bBranding.value.trim());
+    if (bAutoskip.checked) q.set('autoskip', '1');
+    if (bNoback.checked) q.set('back', 'false');
+    if (bOrigin.checked) q.set('origin', origin);
+    var qs = q.toString();
+    return origin + path + (qs ? '?' + qs : '');
+  }
+  function renderBuilder() {
+    $('#b-tv-fields').style.display = bType.value === 'movie' ? 'none' : '';
+    var url = buildUrl();
+    bUrl.textContent = url;
+    bCode.textContent = '<iframe\n  src="' + url + '"\n  width="100%" height="100%"\n  frameborder="0"\n  allowfullscreen\n  allow="autoplay; fullscreen; encrypted-media; picture-in-picture">\n</iframe>';
+    bOpen.href = url;
+    var frame = bPreview.querySelector('iframe');
+    if (frame && frame.getAttribute('src') !== url) {
+      bPreview.innerHTML = '<span>Options changed — load the preview again.</span>';
+      bPreviewBtn.textContent = 'Load preview';
+    }
+  }
+  $$('#builder-form input, #builder-form select').forEach(function (el) {
+    el.addEventListener('input', renderBuilder);
+    el.addEventListener('change', renderBuilder);
+  });
+  bPreviewBtn.addEventListener('click', function () {
+    var url = buildUrl();
+    bPreview.innerHTML = '';
+    var frame = document.createElement('iframe');
+    frame.src = url;
+    frame.setAttribute('allowfullscreen', '');
+    frame.setAttribute('allow', 'autoplay; fullscreen; encrypted-media; picture-in-picture');
+    frame.title = 'Player preview';
+    bPreview.appendChild(frame);
+    bPreviewBtn.textContent = 'Reload preview';
+  });
+  renderBuilder();
+
+  // --- Status ----------------------------------------------------------------
+  var grid = $('#status-grid');
+  var foot = $('#status-foot');
+  function statusCard(dotClass, name, meta, right) {
+    return '<div class="status"><span class="dot ' + dotClass + '"></span><div><div class="name">' + esc(name) + '</div><div class="meta">' + esc(meta) + '</div></div>' + (right ? '<div class="right">' + esc(right) + '</div>' : '') + '</div>';
+  }
+  function renderServers(list, ok) {
+    return list.map(function (s) {
+      return statusCard(ok ? 'ok' : '', s.name || s.id, (s.badge || '') + (ok ? ' · Operational' : ''), 'server=' + s.id);
+    }).join('');
+  }
+  function loadStatus() {
+    var started = Date.now();
+    var healthUrl = apiBase + '/api/health';
+    var serversUrl = apiBase + '/api/servers';
+    Promise.all([
+      fetch(healthUrl, { cache: 'no-store' }).then(function (r) { return r.ok ? r.json() : null; }).catch(function () { return null; }),
+      fetch(serversUrl, { cache: 'no-store' }).then(function (r) { return r.ok ? r.json() : null; }).catch(function () { return null; })
+    ]).then(function (res) {
+      var health = res[0], srv = res[1];
+      var ms = Date.now() - started;
+      var ok = !!(health && health.ok);
+      var list = srv && Array.isArray(srv.servers) && srv.servers.length ? srv.servers : servers;
+      grid.innerHTML = statusCard(ok ? 'ok' : 'bad', 'API', ok ? 'Operational · ' + (health.runtime || 'edge') : 'Unreachable', ok ? ms + ' ms' : '') + renderServers(list, ok);
+      foot.textContent = 'Checked ' + new Date().toLocaleTimeString() + (apiBase ? ' · API at ' + apiBase : '') + '. Server availability is per title; the player falls back automatically.';
+    });
+  }
+  loadStatus();
+  setInterval(loadStatus, 60000);
+})();
+</script>
+</body>
+</html>

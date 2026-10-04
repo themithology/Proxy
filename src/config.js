@@ -34,8 +34,13 @@ const config = {
   tmdbBaseUrl: 'https://api.themoviedb.org/3',
   tmdbImageBase: 'https://image.tmdb.org/t/p',
 
-  // Wyzie Subtitles optional API key (free key from https://store.wyzie.io/redeem)
+  // Optional keyed subtitle sources. OpenSubtitles (via Stremio's v3 addon)
+  // needs no key; Wyzie (free key: https://store.wyzie.io/redeem) and SubDL
+  // (free key from a SubDL account) add coverage when configured.
   wyzieApiKey: process.env.WYZIE_API_KEY || '',
+  subdlApiKey: process.env.SUBDL_API_KEY || '',
+  // Extra host suffixes the subtitle proxy may fetch from (comma-separated).
+  subtitleProxyHosts: process.env.SUBTITLE_PROXY_HOSTS || '',
 
   // Security & Handshake Signing
   adminSecret: process.env.ADMIN_SECRET || 'admin123',
@@ -105,8 +110,14 @@ const config = {
     vidstuckBase: process.env.VIDSTUCK_BASE_URL || 'https://vidstuck.xyz',
     hicineApiBase: process.env.HICINE_API_BASE || 'https://api.hicine.sbs',
     wyzieSubsUrl: process.env.WYZIE_SUBS_URL || 'https://sub.wyzie.ru',
-    openSubtitlesRestUrl: 'https://rest.opensubtitles.org',
-    openSubtitlesStremioUrl: 'https://opensubtitles-v3.strem.io',
+    openSubtitlesStremioUrl: process.env.OPENSUBTITLES_STREMIO_URL || 'https://opensubtitles-v3.strem.io',
+    subdlApiUrl: process.env.SUBDL_API_URL || 'https://api.subdl.com/api/v1',
+    subdlDownloadUrl: process.env.SUBDL_DOWNLOAD_URL || 'https://dl.subdl.com',
+    // Skip-segment providers (intro / recap / credits). TheIntroDB is keyed by
+    // TMDB id, IntroDB by IMDb id, AniSkip by MAL id. The API key is optional
+    // and only raises TheIntroDB's daily quota (500 -> 1000 requests per IP).
+    theIntroDbUrl: process.env.THEINTRODB_URL || 'https://api.theintrodb.org/v3',
+    theIntroDbApiKey: process.env.THEINTRODB_API_KEY || '',
     introDbUrl: process.env.INTRODB_URL || 'https://api.introdb.app',
     aniSkipUrl: process.env.ANISKIP_URL || 'https://api.aniskip.com/v2',
     cinemetaUrl: 'https://v3-cinemeta.strem.io'

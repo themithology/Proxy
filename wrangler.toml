@@ -4,20 +4,52 @@ compatibility_date = "2025-01-01"
 compatibility_flags = ["nodejs_compat"]
 
 # The public directory holds the /embed player page, its CSS/JS/vendor assets,
-# and the LOL Embed social/meta GIF. No landing page, portal, or admin UI.
+# the documentation page (/docs), the owner dashboard (/reze) and the LOL Embed
+# social/meta GIF. Nothing is served from it unless the Worker routes to it.
 [assets]
 directory = "./public"
 binding = "ASSETS"
 html_handling = "none"
 run_worker_first = true
 
+# Usage statistics behind the owner dashboard (/reze): one SQLite-backed
+# Durable Object keeps the global counters (titles, sites, countries, server
+# health, blocked domains). Works on the Workers Free plan; nothing to create
+# by hand — `wrangler deploy` applies the migration. Remove both blocks to run
+# with in-memory (per-isolate, non-persistent) counters instead.
+[[durable_objects.bindings]]
+name = "STATS"
+class_name = "StatsStore"
+
+[[migrations]]
+tag = "v1"
+new_sqlite_classes = ["StatsStore"]
+
 [vars]
+# Key for /reze and /api/admin/* — change it before deploying.
 ADMIN_SECRET = "admin123"
 TMDB_API_KEY = "47a1a7df542d3d483227f758a7317dff"
 PROXY_SECRET = "vidstuck-edge-hmac-secret-key-2026-9f8e7d6c5b4a"
 CASTLETV_BASE_URL = "https://api.hlowb.com"
 NETMIRROR_BASE_URL = "https://net27.cc"
 HICINE_API_BASE = "https://api.hicine.sbs"
+# Skip Intro / Recap / Credits providers. TheIntroDB (TMDB-keyed) and IntroDB
+# (IMDb-keyed) work without keys; THEINTRODB_API_KEY only raises the quota.
+THEINTRODB_URL = "https://api.theintrodb.org/v3"
+THEINTRODB_API_KEY = ""
+INTRODB_URL = "https://api.introdb.app"
+ANISKIP_URL = "https://api.aniskip.com/v2"
+# Subtitles. OpenSubtitles via Stremio's v3 addon needs no key; Wyzie
+# (store.wyzie.io/redeem) and SubDL (subdl.com account) are optional extras.
+OPENSUBTITLES_STREMIO_URL = "https://opensubtitles-v3.strem.io"
+WYZIE_API_KEY = ""
+SUBDL_API_KEY = ""
+# Extra hosts the subtitle proxy may fetch from (comma-separated).
+SUBTITLE_PROXY_HOSTS = ""
+
+# Ads on the /embed player page (the popunder tag in public/embed.html).
+# "true" (default) serves it; "false" strips it for an ad-free player.
+ADS_ENABLED = "true"
 
 # Base URL of the API Worker/backend the /embed player should call.
 # Leave empty ("") when this Worker serves both the player and the API
@@ -35,6 +67,7 @@ ADMIN_SECRET = "preview-admin-secret-not-production"
 TMDB_API_KEY = "47a1a7df542d3d483227f758a7317dff"
 PROXY_SECRET = "preview-proxy-secret-not-production"
 API_BASE_URL = ""
+ADS_ENABLED = "false"
 CASTLETV_BASE_URL = "https://api.hlowb.com"
 NETMIRROR_BASE_URL = "https://net27.cc"
 HICINE_API_BASE = "https://api.hicine.sbs"

@@ -1,8 +1,12 @@
 const config = require('../config');
+const statsAggregate = require('./statsAggregate');
 
 class TelemetryAndAdminEngine {
   constructor() {
     this.startedAt = new Date().toISOString();
+    // Dashboard statistics (same model as the Worker's StatsStore Durable
+    // Object, kept in process memory here): titles, sites, countries, servers.
+    this.stats = statsAggregate.createStatsAggregate();
     // Map<domain, { domain, embeds, resolves, proxyHits, firstSeen, lastSeen, topTitles: Map, userAgents: Set }>
     this.domains = new Map();
     this.blockedDomains = new Set(
@@ -11,6 +15,8 @@ class TelemetryAndAdminEngine {
         .map((d) => d.trim().toLowerCase())
         .filter(Boolean)
     );
+
+    for (const domain of this.blockedDomains) this.stats.setBlocked(domain, true);
 
     // Per-server health & staleness stats
     this.serverMetrics = new Map();
@@ -76,13 +82,56 @@ class TelemetryAndAdminEngine {
   }
 
   setDomainBlocked(domain, blocked = true) {
-    const clean = String(domain).trim().toLowerCase().replace(/^www\./, '');
+    const clean = statsAggregate.cleanDomain(domain);
     if (!clean) return;
     if (blocked) {
       this.blockedDomains.add(clean);
     } else {
       this.blockedDomains.delete(clean);
     }
+    this.stats.setBlocked(clean, blocked);
+  }
+
+  /** Viewer country from the usual edge headers (Cloudflare, Vercel, nginx geoip). */
+  requestCountry(req) {
+    const h = req.headers || {};
+    return h['cf-ipcountry'] || h['x-vercel-ip-country'] || h['x-country-code'] || '';
+  }
+
+  /** Site the request is attributed to, or '' when it is this backend itself. */
+  statsDomain(req) {
+    const domain = this.extractDomain(req);
+    const selfHost = (req.headers?.host || '').split(':')[0].toLowerCase();
+    return !domain || domain === selfHost || domain === 'direct-access' ? '' : domain;
+  }
+
+  /**
+   * Outcome of a stream resolve for the dashboard: successful resolves and
+   * failures are counted separately (most requested vs. most failing titles).
+   */
+  recordResolveOutcome(req, metadata, ok, { server = null, reason = null, season = null, episode = null } = {}) {
+    if (!metadata) return;
+    this.stats.record({
+      kind: ok ? 'resolve' : 'resolve_error',
+      domain: this.statsDomain(req),
+      country: this.requestCountry(req),
+      type: metadata.type === 'movie' ? 'movie' : 'tv',
+      tmdbId: metadata.tmdbId,
+      title: metadata.title || '',
+      year: metadata.releaseYear || null,
+      season: metadata.type === 'tv' ? season : null,
+      episode: metadata.type === 'tv' ? episode : null,
+      server,
+      reason
+    });
+  }
+
+  getStatsSnapshot(limit = 25) {
+    return { persistent: false, storage: 'process-memory', ...this.stats.snapshot({ limit }) };
+  }
+
+  resetStats() {
+    this.stats.reset();
   }
 
   /**
@@ -111,6 +160,20 @@ class TelemetryAndAdminEngine {
     else if (eventType === 'resolve') entry.resolves += 1;
     else if (eventType === 'proxy') entry.proxyHits += 1;
 
+    // Dashboard counters. Resolves are recorded by outcome (recordResolveOutcome).
+    if (eventType === 'embed') {
+      this.stats.record({
+        kind: 'embed',
+        domain: this.statsDomain(req),
+        country: this.requestCountry(req),
+        type: mediaInfo && mediaInfo.type === 'movie' ? 'movie' : 'tv',
+        tmdbId: mediaInfo ? mediaInfo.tmdbId : null,
+        title: mediaInfo ? mediaInfo.title : ''
+      });
+    } else if (eventType === 'proxy') {
+      this.stats.record({ kind: 'proxy', domain: this.statsDomain(req) });
+    }
+
     if (mediaInfo && (mediaInfo.title || mediaInfo.tmdbId)) {
       const label = mediaInfo.title
         ? `${mediaInfo.title} (#${mediaInfo.tmdbId})`
@@ -128,6 +191,7 @@ class TelemetryAndAdminEngine {
 
     const now = new Date().toISOString();
     metric.lastLatencyMs = Math.round(latencyMs);
+    this.stats.record({ kind: 'server_attempt', server: serverId, ok: !!success, latencyMs, reason: success ? null : errorMsg });
 
     if (success) {
       metric.successCount += 1;
@@ -363,7 +427,8 @@ class TelemetryAndAdminEngine {
       servers,
       upstreams: { ...config.upstreams },
       externalProxyPool: [...config.externalProxyPool],
-      customOverrides: Array.from(this.customOverrides.values())
+      customOverrides: Array.from(this.customOverrides.values()),
+      stats: this.getStatsSnapshot()
     };
   }
 }

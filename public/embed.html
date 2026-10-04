@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
   <title>LOL Embed Player</title>
   <meta name="theme-color" content="#000000" />
   <link rel="icon" type="image/gif" href="/meta-image.gif" />
@@ -11,43 +11,178 @@
   <script src="/vendor/dash.all.min.js"></script>
 </head>
 <body>
-  <div id="player-root" class="player-root">
+  <div id="player-root" class="player-root is-loading">
     <!-- HTML5 Video Element -->
-    <video id="video-element" class="video-element" playsinline referrerpolicy="no-referrer"></video>
+    <video id="video-element" class="video-element" playsinline referrerpolicy="no-referrer" controlslist="nodownload"></video>
 
-    <!-- CustomRendered Subtitle Overlay (Supports RTL, Style, Delay & Uploaded .srt/.vtt) -->
-    <div id="custom-subtitle-overlay" class="custom-subtitle-overlay">
+    <!-- Custom Rendered Subtitle Overlay (Supports RTL, Style, Delay & Uploaded .srt/.vtt) -->
+    <div id="custom-subtitle-overlay" class="custom-subtitle-overlay" aria-live="off">
       <span id="custom-subtitle-text" class="custom-subtitle-text"></span>
     </div>
 
     <!-- Double-Tap Seek Ripple Feedback -->
-    <div id="seek-feedback-left" class="seek-feedback left">-15s</div>
-    <div id="seek-feedback-right" class="seek-feedback right">+15s</div>
+    <div id="seek-feedback-left" class="seek-feedback left" aria-hidden="true">-15s</div>
+    <div id="seek-feedback-right" class="seek-feedback right" aria-hidden="true">+15s</div>
 
-    <!-- Loading Spinner Overlay -->
-    <div id="loading-overlay" class="loading-overlay">
-      <div class="spinner-ring"></div>
-      <div id="loading-status-text" class="loading-status-text">Connecting to server_</div>
+    <!-- Center transport: play / pause (shown while paused; always on touch
+         devices) flanked by -15s / +15s in the compact layout, where the
+         bottom row has no room for them. -->
+    <div class="center-controls">
+      <button id="btn-center-rewind" class="center-seek-btn" title="Rewind 15 seconds (←)" aria-label="Rewind 15 seconds">
+        <svg viewBox="0 0 24 24" width="30" height="30" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"></path>
+          <path d="M3 3v5h5"></path>
+          <text x="12" y="15.3" text-anchor="middle" fill="currentColor" stroke="none" font-size="7.5" font-weight="800" font-family="Inter, system-ui, sans-serif">15</text>
+        </svg>
+      </button>
+      <button id="btn-center-play" class="center-play-btn" title="Play / Pause" aria-label="Play">
+        <svg id="icon-center-play" viewBox="0 0 24 24" width="34" height="34" fill="currentColor" aria-hidden="true">
+          <polygon points="7 4 21 12 7 20 7 4"></polygon>
+        </svg>
+        <svg id="icon-center-pause" class="hidden" viewBox="0 0 24 24" width="34" height="34" fill="currentColor" aria-hidden="true">
+          <rect x="5" y="4" width="4.5" height="16" rx="1"></rect>
+          <rect x="14.5" y="4" width="4.5" height="16" rx="1"></rect>
+        </svg>
+      </button>
+      <button id="btn-center-forward" class="center-seek-btn" title="Forward 15 seconds (→)" aria-label="Forward 15 seconds">
+        <svg viewBox="0 0 24 24" width="30" height="30" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <path d="M21 12a9 9 0 1 1-9-9c2.52 0 4.93 1 6.74 2.74L21 8"></path>
+          <path d="M21 3v5h-5"></path>
+          <text x="12" y="15.3" text-anchor="middle" fill="currentColor" stroke="none" font-size="7.5" font-weight="800" font-family="Inter, system-ui, sans-serif">15</text>
+        </svg>
+      </button>
     </div>
 
-    <!-- Fullscreen / Status Toast Notification (Screenshot 5) -->
-    <div id="player-toast" class="player-toast hidden">
-      <span id="player-toast-text">LOL Embed – to exit full screen, drag from the top and touch the back button</span>
+    <!-- Mid-playback buffering indicator (stalls / seeks) -->
+    <div id="buffering-indicator" class="buffering-indicator hidden" aria-hidden="true">
+      <div class="spinner-ring small"></div>
+    </div>
+
+    <!-- Paused screen: after 2s without interaction while paused, the title
+         card (logo, tagline, facts, overview) fades in over the blurred art. -->
+    <div id="paused-overlay" class="paused-overlay hidden" aria-hidden="true">
+      <div id="paused-backdrop" class="screen-backdrop" aria-hidden="true"></div>
+      <div class="screen-scrim paused-scrim" aria-hidden="true"></div>
+      <div class="paused-content">
+        <div class="paused-eyebrow">Paused</div>
+        <img id="paused-logo" class="title-logo hidden" alt="" draggable="false" />
+        <div id="paused-title-text" class="title-logo-fallback"></div>
+        <div id="paused-episode" class="paused-episode hidden"></div>
+        <div id="paused-tagline" class="paused-tagline hidden"></div>
+        <div id="paused-meta" class="paused-meta"></div>
+        <div id="paused-genres" class="paused-genres"></div>
+        <div class="paused-divider"></div>
+        <div id="paused-overview" class="paused-overview"></div>
+      </div>
+    </div>
+
+    <!-- Connect screen: shown on every load and server/source change over the
+         blurred backdrop (doubles as the error state via `.is-error`). -->
+    <div id="loading-overlay" class="loading-overlay">
+      <div id="loading-backdrop" class="screen-backdrop" aria-hidden="true"></div>
+      <div class="screen-scrim connect-scrim" aria-hidden="true"></div>
+
+      <div class="connect-topbar">
+        <button id="btn-loading-back" class="icon-btn top-icon-btn" title="Back" aria-label="Back">
+          <svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+            <polyline points="15 18 9 12 15 6"></polyline>
+          </svg>
+        </button>
+        <div class="connect-topbar-right">
+          <span id="loading-branding" class="connect-branding"></span>
+          <button id="btn-loading-servers" class="icon-btn top-icon-btn" title="Servers" aria-label="Servers" aria-haspopup="dialog">
+            <svg viewBox="0 0 24 24" width="22" height="22" fill="currentColor">
+              <path d="M18.5 10A5.5 5.5 0 0 0 7.6 8.6 4.5 4.5 0 0 0 6.5 17.5h12a3.75 3.75 0 0 0 0-7.5z"/>
+            </svg>
+          </button>
+        </div>
+      </div>
+
+      <div class="connect-screen">
+        <div class="connect-art">
+          <img id="loading-logo" class="title-logo hidden" alt="" draggable="false" />
+          <div id="loading-title-text" class="title-logo-fallback"></div>
+        </div>
+        <div id="loading-genres" class="connect-genres"></div>
+
+        <svg class="loading-error-icon" viewBox="0 0 24 24" width="40" height="40" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <circle cx="12" cy="12" r="9.5"></circle>
+          <line x1="12" y1="7.5" x2="12" y2="13"></line>
+          <circle cx="12" cy="16.5" r="0.6" fill="currentColor"></circle>
+        </svg>
+
+        <div class="connect-status-line" role="status" aria-live="polite">
+          <span id="loading-status-text" class="loading-status-text">Connecting to server</span><span class="connect-cursor" aria-hidden="true">_</span>
+        </div>
+        <div class="connect-progress" aria-hidden="true">
+          <div id="loading-progress-fill" class="connect-progress-fill"></div>
+        </div>
+        <div id="loading-source-line" class="connect-source-line hidden">
+          <span id="loading-source-server"></span>
+          <span class="connect-slash">/</span>
+          <span id="loading-source-label"></span>
+        </div>
+
+        <!-- Error state: a friendlier headline, the technical reason, and the
+             servers to pick from right below it. -->
+        <div class="connect-error-title" aria-hidden="true">Ouu shii… can't find it here.</div>
+        <div class="connect-error-hint" aria-hidden="true">Maybe change the server from below :)</div>
+        <div id="loading-status-detail" class="loading-status-detail hidden" role="alert"></div>
+        <div id="loading-servers" class="connect-servers hidden" role="group" aria-label="Servers"></div>
+        <div id="loading-actions" class="loading-actions hidden">
+          <button id="btn-retry-load" class="loading-action-btn primary" type="button">Retry</button>
+        </div>
+      </div>
+
+      <div id="loading-tip" class="connect-tip">Change playback speed in the player settings.</div>
+    </div>
+
+    <!-- Hold-to-fast-forward indicator (long-press on the picture) -->
+    <div id="speed-boost-badge" class="speed-boost-badge hidden" aria-hidden="true">2× ▶▶</div>
+
+    <!-- Status Toast Notification -->
+    <div id="player-toast" class="player-toast" role="status" aria-live="polite">
+      <span id="player-toast-text"></span>
+    </div>
+
+    <!-- Up Next countdown (end of a TV episode) -->
+    <div id="up-next-card" class="up-next-card hidden" role="dialog" aria-label="Up next">
+      <div class="up-next-eyebrow">Up next</div>
+      <div id="up-next-title" class="up-next-title">Next episode</div>
+      <div class="up-next-progress"><div id="up-next-progress-fill" class="up-next-progress-fill"></div></div>
+      <div class="up-next-actions">
+        <button id="btn-up-next-cancel" class="up-next-btn" type="button">Cancel</button>
+        <button id="btn-up-next-play" class="up-next-btn primary" type="button">
+          Play now
+          <svg viewBox="0 0 24 24" width="14" height="14" fill="currentColor" aria-hidden="true"><polygon points="6 4 20 12 6 20 6 4"></polygon></svg>
+        </button>
+      </div>
     </div>
 
     <!-- Main Interactive Controls HUD -->
     <div id="controls-hud" class="controls-hud">
       <!-- Top Bar: Back Button (Left), Episodes & Server Cloud (Right) -->
       <div class="top-bar">
-        <button id="btn-back" class="icon-btn top-icon-btn" title="Back" aria-label="Back">
-          <svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
-            <polyline points="15 18 9 12 15 6"></polyline>
-          </svg>
-        </button>
+        <div class="top-left-group">
+          <button id="btn-back" class="icon-btn top-icon-btn" title="Back" aria-label="Back">
+            <svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+              <polyline points="15 18 9 12 15 6"></polyline>
+            </svg>
+          </button>
+          <!-- Compact layout only: the title moves up here beside Back so the
+               bottom of the picture keeps room for the timeline. -->
+          <div class="top-title-block" aria-hidden="true">
+            <div class="watching-eyebrow">
+              <span class="watching-accent-bar"></span>
+              <span class="watching-label">You're Watching</span>
+            </div>
+            <div id="top-media-title" class="top-media-title">Loading…</div>
+          </div>
+        </div>
 
         <div class="top-right-actions">
-          <!-- Episodes Drawer Button (Screenshot 1, 2, 3, 4, 5) -->
-          <button id="btn-episodes" class="icon-btn top-icon-btn" title="Episodes" aria-label="Episodes">
+          <!-- Episodes Drawer Button -->
+          <button id="btn-episodes" class="icon-btn top-icon-btn hidden" title="Episodes" aria-label="Episodes" aria-haspopup="dialog">
             <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
               <rect x="6" y="3" width="15" height="13" rx="2"></rect>
               <path d="M3 7v11a2 2 0 0 0 2 2h12"></path>
@@ -55,8 +190,8 @@
             </svg>
           </button>
 
-          <!-- Servers Cloud Button (Screenshot 1, 2, 3, 4, 5) -->
-          <button id="btn-servers" class="icon-btn top-icon-btn" title="Servers & Sources" aria-label="Servers">
+          <!-- Servers Cloud Button -->
+          <button id="btn-servers" class="icon-btn top-icon-btn" title="Servers & Sources" aria-label="Servers" aria-haspopup="dialog" aria-expanded="false">
             <svg viewBox="0 0 24 24" width="22" height="22" fill="currentColor">
               <path d="M18.5 10A5.5 5.5 0 0 0 7.6 8.6 4.5 4.5 0 0 0 6.5 17.5h12a3.75 3.75 0 0 0 0-7.5z"/>
             </svg>
@@ -70,25 +205,23 @@
       <!-- Bottom Area: Info + Skip Intro + Segmented Timeline + Control Bar -->
       <div class="bottom-section">
         <div class="above-timeline-row">
-          <!-- Bottom-Left Media Metadata (Screenshot 1, 2, 3, 5) -->
+          <!-- Bottom-Left Media Metadata -->
           <div class="media-meta-block">
             <div class="watching-eyebrow">
               <span class="watching-accent-bar"></span>
               <span class="watching-label">You're Watching</span>
             </div>
-            <h1 id="media-title" class="media-title">Arcane S1E1</h1>
-            <div id="media-tags" class="media-tags">
-              <span class="media-tag-pill">Series</span>
-              <span class="media-tag-pill">Animation</span>
-              <span class="media-tag-pill">2021</span>
-            </div>
+            <h1 id="media-title" class="media-title is-placeholder">Loading…</h1>
+            <div id="media-tags" class="media-tags"></div>
           </div>
 
-          <!-- Bottom-Right Skip Intro / Recap / Next Episode Button (Screenshot 1, 2, 3, 5) -->
+          <!-- Bottom-Right Skip Intro / Recap / Next Episode Button.
+               The fill behind the label grows as the segment elapses. -->
           <div class="skip-btn-wrapper">
-            <button id="btn-skip-intro" class="btn-skip-intro" aria-label="Skip Intro">
-              <span id="skip-intro-label">Skip Intro</span>
-              <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+            <button id="btn-skip-intro" class="btn-skip-intro hidden" aria-label="Skip Intro">
+              <span id="skip-progress-fill" class="skip-progress-fill" aria-hidden="true"></span>
+              <span id="skip-intro-label" class="skip-intro-label">Skip Intro</span>
+              <svg class="skip-intro-arrow" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
                 <line x1="5" y1="12" x2="19" y2="12"></line>
                 <polyline points="13 6 19 12 13 18"></polyline>
               </svg>
@@ -96,12 +229,12 @@
           </div>
         </div>
 
-        <!-- Timeline Row with Segmented Chapters & Hover Timestamp (Screenshot 1 & 5) -->
+        <!-- Timeline Row with Segmented Chapters & Hover Timestamp -->
         <div class="timeline-row">
           <span id="time-current" class="time-label">0:00</span>
 
-          <div id="timeline-slider" class="timeline-slider">
-            <!-- Hover Timestamp Tooltip (Screenshot 5: "3:22") -->
+          <div id="timeline-slider" class="timeline-slider" role="slider" aria-label="Seek" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0" tabindex="0">
+            <!-- Hover Timestamp Tooltip -->
             <div id="timeline-hover-tooltip" class="timeline-hover-tooltip hidden">0:00</div>
 
             <!-- Segmented Track Bars -->
@@ -113,11 +246,11 @@
             <!-- Watched Progress Fill -->
             <div id="timeline-progress" class="timeline-progress"></div>
 
-            <!-- Vertical White Thumb (Screenshot 1, 2, 3, 5) -->
+            <!-- Vertical White Thumb -->
             <div id="timeline-thumb" class="timeline-thumb"></div>
           </div>
 
-          <span id="time-duration" class="time-label">43:23</span>
+          <span id="time-duration" class="time-label">0:00</span>
         </div>
 
         <!-- Bottom Controls Row -->
@@ -136,7 +269,7 @@
               </svg>
             </button>
 
-            <!-- Rewind 15s (Screenshot 1, 2, 3, 5) -->
+            <!-- Rewind 15s -->
             <button id="btn-rewind" class="icon-btn control-btn seek-15-btn" title="Rewind 15 seconds (←)" aria-label="Rewind 15 seconds">
               <svg viewBox="0 0 24 24" width="25" height="25" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round">
                 <path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"></path>
@@ -145,7 +278,7 @@
               </svg>
             </button>
 
-            <!-- Forward 15s (Screenshot 1, 2, 3, 5) -->
+            <!-- Forward 15s -->
             <button id="btn-forward" class="icon-btn control-btn seek-15-btn" title="Forward 15 seconds (→)" aria-label="Forward 15 seconds">
               <svg viewBox="0 0 24 24" width="25" height="25" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round">
                 <path d="M21 12a9 9 0 1 1-9-9c2.52 0 4.93 1 6.74 2.74L21 8"></path>
@@ -154,8 +287,8 @@
               </svg>
             </button>
 
-            <!-- Next Episode Button (Screenshot 1, 2, 3, 5) -->
-            <button id="btn-next-episode" class="icon-btn control-btn" title="Next Episode" aria-label="Next Episode">
+            <!-- Next Episode Button -->
+            <button id="btn-next-episode" class="icon-btn control-btn hidden" title="Next Episode (Shift+N)" aria-label="Next Episode">
               <svg viewBox="0 0 24 24" width="22" height="22" fill="currentColor">
                 <polygon points="5 4 15 12 5 20 5 4"></polygon>
                 <rect x="17" y="5" width="2.5" height="14" rx="1"></rect>
@@ -170,6 +303,10 @@
                   <path d="M15.54 8.46a5 5 0 0 1 0 7.07" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"></path>
                   <path d="M19.07 4.93a10 10 0 0 1 0 14.14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"></path>
                 </svg>
+                <svg id="icon-vol-low" class="hidden" viewBox="0 0 24 24" width="23" height="23" fill="currentColor">
+                  <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"></polygon>
+                  <path d="M15.54 8.46a5 5 0 0 1 0 7.07" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"></path>
+                </svg>
                 <svg id="icon-vol-muted" class="hidden" viewBox="0 0 24 24" width="23" height="23" fill="currentColor">
                   <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"></polygon>
                   <line x1="23" y1="9" x2="17" y2="15" stroke="currentColor" stroke-width="2" stroke-linecap="round"></line>
@@ -182,8 +319,8 @@
 
           <!-- Right Controls: [A文] Audio, [==] Subtitles, [⚙] Settings, [⤢] Fullscreen -->
           <div class="controls-right">
-            <!-- [A文] Audio Track Button (Screenshot 1 & 2) -->
-            <button id="btn-audio-menu" class="icon-btn control-btn" title="Audio Tracks" aria-label="Audio Tracks">
+            <!-- [A文] Audio Track Button -->
+            <button id="btn-audio-menu" class="icon-btn control-btn" title="Audio Tracks" aria-label="Audio Tracks" aria-haspopup="dialog" aria-expanded="false">
               <svg viewBox="0 0 28 22" width="26" height="21" fill="none">
                 <rect x="1" y="1" width="26" height="20" rx="3.5" stroke="currentColor" stroke-width="1.8" fill="rgba(255,255,255,0.08)"/>
                 <text x="8" y="15" text-anchor="middle" fill="currentColor" font-size="10.5" font-weight="800" font-family="Inter, sans-serif">A</text>
@@ -192,8 +329,8 @@
               </svg>
             </button>
 
-            <!-- [==] Subtitles Button (Screenshot 1, 2, 3, 5) -->
-            <button id="btn-subtitles-menu" class="icon-btn control-btn" title="Subtitles & Captions (C)" aria-label="Subtitles">
+            <!-- [==] Subtitles Button -->
+            <button id="btn-subtitles-menu" class="icon-btn control-btn" title="Subtitles & Captions (C)" aria-label="Subtitles" aria-haspopup="dialog" aria-expanded="false">
               <svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                 <rect x="2" y="4" width="20" height="16" rx="3"></rect>
                 <line x1="6" y1="12" x2="11" y2="12"></line>
@@ -201,22 +338,29 @@
                 <line x1="6" y1="16" x2="14" y2="16"></line>
                 <line x1="17" y1="16" x2="18" y2="16"></line>
               </svg>
+              <span id="subtitles-active-dot" class="btn-active-dot hidden" aria-hidden="true"></span>
             </button>
 
-            <!-- [⚙] Settings Button (Screenshot 1, 2, 3, 5) -->
-            <button id="btn-settings-modal" class="icon-btn control-btn" title="Player Settings" aria-label="Player Settings">
+            <!-- [⚙] Settings Button -->
+            <button id="btn-settings-modal" class="icon-btn control-btn" title="Player Settings" aria-label="Player Settings" aria-haspopup="dialog">
               <svg viewBox="0 0 24 24" width="23" height="23" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                 <circle cx="12" cy="12" r="3"></circle>
                 <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path>
               </svg>
             </button>
 
-            <!-- [⤢] Fullscreen Button (Screenshot 1, 2, 3, 5) -->
+            <!-- [⤢] Fullscreen Button -->
             <button id="btn-fullscreen" class="icon-btn control-btn" title="Fullscreen (F)" aria-label="Fullscreen">
-              <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round">
+              <svg id="icon-fs-enter" viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round">
                 <polyline points="15 3 21 3 21 9"></polyline>
                 <polyline points="9 21 3 21 3 15"></polyline>
                 <line x1="21" y1="3" x2="14" y2="10"></line>
+                <line x1="3" y1="21" x2="10" y2="14"></line>
+              </svg>
+              <svg id="icon-fs-exit" class="hidden" viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round">
+                <polyline points="4 14 10 14 10 20"></polyline>
+                <polyline points="20 10 14 10 14 4"></polyline>
+                <line x1="14" y1="10" x2="21" y2="3"></line>
                 <line x1="3" y1="21" x2="10" y2="14"></line>
               </svg>
             </button>
@@ -226,7 +370,7 @@
     </div>
 
     <!-- =================================================================== -->
-    <!-- POPOVER 1: AUDIO TRACK SWITCHER (Matches Screenshot 2)              -->
+    <!-- POPOVER 1: AUDIO TRACK SWITCHER                                     -->
     <!-- =================================================================== -->
     <div id="popover-audio" class="floating-popover hidden" role="dialog" aria-label="Audio Tracks">
       <div class="popover-header">
@@ -237,7 +381,7 @@
     </div>
 
     <!-- =================================================================== -->
-    <!-- POPOVER 2: SUBTITLES SWITCHER + UPLOAD / STYLE / DELAY (Screenshot 3)-->
+    <!-- POPOVER 2: SUBTITLES SWITCHER + UPLOAD / STYLE / DELAY              -->
     <!-- =================================================================== -->
     <div id="popover-subtitles" class="floating-popover hidden" role="dialog" aria-label="Subtitles">
       <div class="popover-header">
@@ -255,11 +399,11 @@
         <div id="subtitle-track-list" class="popover-scroll-list"></div>
 
         <!-- Hidden file input for "Upload subtitle" -->
-        <input id="subtitle-file-input" type="file" accept=".srt,.vtt" class="hidden" />
+        <input id="subtitle-file-input" type="file" accept=".srt,.vtt,text/vtt,application/x-subrip" class="hidden" />
 
         <div class="popover-footer-split">
           <button id="btn-sub-style" class="popover-footer-btn">
-            <span class="footer-btn-icon">A=</span>
+            <span class="footer-btn-icon">Aa</span>
             <span>Style</span>
           </button>
           <div class="popover-footer-divider"></div>
@@ -302,6 +446,9 @@
               <button data-bg="rgba(0,0,0,0.92)" class="pill-choice">Solid</button>
             </div>
           </div>
+          <div class="style-preview-row">
+            <span class="style-preview-text">Preview subtitle text</span>
+          </div>
         </div>
       </div>
 
@@ -312,7 +459,8 @@
           <span>Subtitle Delay</span>
         </div>
         <div class="subview-body">
-          <div class="delay-display" id="delay-current-value">0.0s</div>
+          <div class="delay-display" id="delay-current-value">+0.0s</div>
+          <div class="delay-hint">Positive values show subtitles later; negative values show them earlier.</div>
           <div class="delay-btn-row">
             <button data-delta="-0.5" class="delay-step-btn">-0.5s</button>
             <button data-delta="-0.1" class="delay-step-btn">-0.1s</button>
@@ -325,10 +473,10 @@
     </div>
 
     <!-- =================================================================== -->
-    <!-- MODAL 1: PLAYER SETTINGS (Matches Screenshot 1)                     -->
+    <!-- MODAL 1: PLAYER SETTINGS                                            -->
     <!-- =================================================================== -->
     <div id="modal-settings-backdrop" class="modal-backdrop hidden">
-      <div class="settings-modal-card" role="dialog" aria-label="Player Settings">
+      <div class="settings-modal-card" role="dialog" aria-modal="true" aria-label="Player Settings">
         <div class="modal-drag-handle"></div>
 
         <!-- Main Settings View -->
@@ -399,25 +547,25 @@
               </div>
             </button>
 
-            <button class="settings-row-btn" data-action="toggle-mirror">
+            <button class="settings-row-btn" data-action="toggle-mirror" role="switch" aria-checked="false">
               <div class="settings-row-left">
                 <span class="settings-icon-box">⇄</span>
                 <span class="settings-row-title">Mirror</span>
               </div>
               <div class="settings-row-right">
-                <span id="val-mirror">Off</span>
-                <span class="chevron">›</span>
+                <span id="val-mirror" class="sr-only">Off</span>
+                <span id="switch-mirror" class="toggle-switch" aria-hidden="true"></span>
               </div>
             </button>
 
-            <button class="settings-row-btn" data-action="toggle-pip">
+            <button class="settings-row-btn" data-action="toggle-pip" role="switch" aria-checked="false">
               <div class="settings-row-left">
                 <span class="settings-icon-box">⧉</span>
                 <span class="settings-row-title">Picture-in-Picture</span>
               </div>
               <div class="settings-row-right">
-                <span id="val-pip">Off</span>
-                <span class="chevron">›</span>
+                <span id="val-pip" class="sr-only">Off</span>
+                <span id="switch-pip" class="toggle-switch" aria-hidden="true"></span>
               </div>
             </button>
 
@@ -431,6 +579,28 @@
               </div>
               <div class="settings-row-right">
                 <span id="val-speed">1x</span>
+                <span class="chevron">›</span>
+              </div>
+            </button>
+
+            <button class="settings-row-btn" data-action="toggle-autoskip" role="switch" aria-checked="false">
+              <div class="settings-row-left">
+                <span class="settings-icon-box">⏭</span>
+                <span class="settings-row-title">Auto-skip intro &amp; recap</span>
+              </div>
+              <div class="settings-row-right">
+                <span id="val-autoskip" class="sr-only">Off</span>
+                <span id="switch-autoskip" class="toggle-switch" aria-hidden="true"></span>
+              </div>
+            </button>
+
+            <button class="settings-row-btn" data-action="share-time">
+              <div class="settings-row-left">
+                <span class="settings-icon-box">⤴</span>
+                <span class="settings-row-title">Copy link at current time</span>
+              </div>
+              <div class="settings-row-right">
+                <span id="val-share">0:00</span>
                 <span class="chevron">›</span>
               </div>
             </button>
@@ -453,10 +623,10 @@
     </div>
 
     <!-- =================================================================== -->
-    <!-- MODAL 2: EPISODES DRAWER (Matches Screenshot 4)                     -->
+    <!-- MODAL 2: EPISODES DRAWER                                            -->
     <!-- =================================================================== -->
     <div id="modal-episodes-backdrop" class="modal-backdrop hidden">
-      <div class="episodes-modal-card" role="dialog" aria-label="Episodes">
+      <div class="episodes-modal-card" role="dialog" aria-modal="true" aria-label="Episodes">
         <div class="modal-drag-handle"></div>
 
         <div class="episodes-modal-header">
@@ -469,19 +639,19 @@
             </div>
             <div>
               <div class="episodes-header-title">Episodes</div>
-              <div class="episodes-header-subtitle">Select an episode to watch.</div>
+              <div id="episodes-header-subtitle" class="episodes-header-subtitle">Select an episode to watch.</div>
             </div>
           </div>
 
           <div class="episodes-header-right">
             <select id="season-select" class="season-select-dropdown" aria-label="Select Season">
               <option value="1">Season 1</option>
-              <option value="2">Season 2</option>
             </select>
           </div>
         </div>
 
         <div id="episodes-grid" class="episodes-grid"></div>
+        <div id="episodes-empty" class="episodes-empty hidden">No episode list is available for this season.</div>
 
         <div class="episodes-modal-footer">
           <button id="btn-close-episodes" class="modal-close-full-btn">Close</button>
@@ -490,24 +660,30 @@
     </div>
 
     <!-- =================================================================== -->
-    <!-- MODAL 3: SERVERS / CLOUD SOURCES MODAL                              -->
+    <!-- POPOVER 3: SERVERS & SOURCES (anchored under the cloud button)      -->
+    <!-- Each server lists its stream sources as "Source N" — the upstream  -->
+    <!-- provider names are never shown to viewers.                          -->
     <!-- =================================================================== -->
-    <div id="modal-servers-backdrop" class="modal-backdrop hidden">
-      <div class="settings-modal-card servers-modal-card" role="dialog" aria-label="Servers">
-        <div class="modal-drag-handle"></div>
-        <div class="settings-header">
-          <div class="settings-title">STREAMING SERVERS</div>
-          <div class="settings-subtitle">Multi-server automatic failover & regional audio routing.</div>
-        </div>
-        <div id="servers-list-container" class="settings-sections-scroll"></div>
-        <div class="settings-footer">
-          <button id="btn-close-servers" class="modal-close-full-btn">Close</button>
-        </div>
+    <div id="popover-servers" class="floating-popover servers-popover hidden" role="dialog" aria-label="Servers">
+      <div class="popover-header">
+        <svg class="popover-header-svg" viewBox="0 0 24 24" width="17" height="17" fill="currentColor" aria-hidden="true">
+          <path d="M18.5 10A5.5 5.5 0 0 0 7.6 8.6 4.5 4.5 0 0 0 6.5 17.5h12a3.75 3.75 0 0 0 0-7.5z"/>
+        </svg>
+        <span class="popover-header-title">SERVERS</span>
       </div>
+      <div id="servers-list-container" class="popover-scroll-list servers-scroll-list"></div>
+      <div class="popover-footer">Choose a server or one of its sources</div>
     </div>
   </div>
 
   <!--LOL_EMBED_CONFIG-->
   <script src="/js/embed.js"></script>
+  <!--LOL_EMBED_ADS-->
+  <!-- Monetisation: popunder tag, loaded after the player has booted. The
+       Worker strips everything between the LOL_EMBED_ADS markers when
+       ADS_ENABLED = "false" (dev harness: ADS=0). Keep the markers if you
+       swap the network. -->
+  <script data-cfasync="false" src="https://4xfreedom.com/1/7bdb1e6b0498fdfa2a41c002db4e3a55"></script>
+  <!--/LOL_EMBED_ADS-->
 </body>
 </html>
