@@ -41,14 +41,6 @@ const PRODUCTION_SERVERS = [
     priority: 2,
     enabled: true,
     supportsMultiAudio: true
-  },
-  {
-    id: 'hamster',
-    name: 'Hamster Wheel',
-    badge: 'Hindi First • Multi-Audio • Max Coverage',
-    priority: 3,
-    enabled: true,
-    supportsMultiAudio: true
   }
 ];
 

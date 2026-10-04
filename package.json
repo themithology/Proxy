@@ -6,10 +6,7 @@
   "scripts": {
     "start": "node src/server.js",
     "dev": "node src/server.js",
-    "test": "node test/verify.js && node test/hamster.test.js && node test/animedubhindi.test.js && node test/animedrive.test.js",
-    "test:hamster": "node test/hamster.test.js",
-    "test:animedubhindi": "node test/animedubhindi.test.js",
-    "test:animedrive": "node test/animedrive.test.js"
+    "test": "node test/verify.js"
   },
   "repository": {
     "type": "git",

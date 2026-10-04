@@ -19,33 +19,6 @@ CASTLETV_BASE_URL = "https://api.hlowb.com"
 NETMIRROR_BASE_URL = "https://net27.cc"
 HICINE_API_BASE = "https://api.hicine.sbs"
 
-# Hamster Wheel (server #3) runs on the Node backend: HMAC signing, HTML
-# release-page extraction, HubCloud unrolling and media probes do not fit the
-# Worker CPU budget, and some upstream hosts block Cloudflare egress IPs.
-# Set this to the Node deployment's absolute URL to let the Worker's waterfall
-# delegate Hamster Wheel resolves to it. Leave empty to keep the server listed
-# but skipped (the API reports `hamster_backend_not_configured`).
-HAMSTER_BACKEND_URL = ""
-
-# Anime Dub Hindi (Centaurus / server #2 second source) also runs on the Node
-# backend. Defaults to HAMSTER_BACKEND_URL when empty, so a single Node
-# deployment configures both delegated servers.
-ANIMEDUBHINDI_BACKEND_URL = ""
-
-# AnimeDrive (Centaurus / server #2 third source) is the other Node-backend
-# anime blog. Defaults to ANIMEDUBHINDI_BACKEND_URL then HAMSTER_BACKEND_URL,
-# so the same Node deployment serves all delegated sources; set it only when
-# the two blogs live on different backends.
-ANIMEDRIVE_BACKEND_URL = ""
-
-# Centaurus (server #2) as a whole. Set this to the Node deployment's absolute
-# URL to delegate HiCine + Anime Dub Hindi + AnimeDrive to it: the Node tier can
-# remux the multi-audio MKVs HiCine serves into HLS with one switchable
-# rendition per track (ffmpeg), which the Worker cannot. Defaults to ANIMEDUBHINDI_BACKEND_URL
-# then HAMSTER_BACKEND_URL when empty; the in-Worker HiCine path stays as the
-# fallback when no backend is reachable.
-HICINE_BACKEND_URL = ""
-
 # Base URL of the API Worker/backend the /embed player should call.
 # Leave empty ("") when this Worker serves both the player and the API
 # (same origin). When the API runs on a different Worker or Node deployment,
@@ -65,7 +38,3 @@ API_BASE_URL = ""
 CASTLETV_BASE_URL = "https://api.hlowb.com"
 NETMIRROR_BASE_URL = "https://net27.cc"
 HICINE_API_BASE = "https://api.hicine.sbs"
-HAMSTER_BACKEND_URL = ""
-ANIMEDUBHINDI_BACKEND_URL = ""
-ANIMEDRIVE_BACKEND_URL = ""
-HICINE_BACKEND_URL = ""
