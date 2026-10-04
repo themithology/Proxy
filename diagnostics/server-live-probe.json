@@ -1,5 +1,5 @@
 {
-  "startedAt": "2026-10-04T09:57:28.866Z",
+  "startedAt": "2026-10-04T10:02:34.663Z",
   "runner": "github-actions",
   "node": "v22.23.3",
   "serversRequested": [
@@ -81,7 +81,7 @@
       "servers": {
         "ursa": {
           "workerEndToEnd": {
-            "latencyMs": 3418,
+            "latencyMs": 6877,
             "status": 200,
             "ok": true,
             "error": null,
@@ -94,16 +94,31 @@
               "provider": null,
               "tier": "4khdhub",
               "format": "mp4",
-              "streamUrl": "https://d33f51dyacx7bd.cloudfront.net/",
+              "streamUrl": "https://video-downloads.googleusercontent.com/ADGPM2nnYDU-svHld6wt8hIyEq48LsZ_tG8EimiU5ElUDe_XH6rZ-_K-eTcvGVyQKCiTfvJeUwkIlgBtN8HBAWEbJ1m-unw-uz-4ptxR8ZzCmjfcbSHU5g_nWbwhoiHX1QP11BM_PKB5bzbG0VZ7hJmyXkZh16oXS1IP1PuyS_xJ_iMw0iW3MRa9emCTEIjZ5uIVMnZxBrjslfq1TYqydfKkGA9UUWBVHv1N100N2-8cDa3Gisglzj4",
               "streamUrlIsRelative": false,
-              "rawUrl": "https://d33f51dyacx7bd.cloudfront.net/",
+              "rawUrl": "https://video-downloads.googleusercontent.com/ADGPM2nnYDU-svHld6wt8hIyEq48LsZ_tG8EimiU5ElUDe_XH6rZ-_K-eTcvGVyQKCiTfvJeUwkIlgBtN8HBAWEbJ1m-unw-uz-4ptxR8ZzCmjfcbSHU5g_nWbwhoiHX1QP11BM_PKB5bzbG0VZ7hJmyXkZh16oXS1IP1PuyS_xJ_iMw0iW3MRa9emCTEIjZ5uIVMnZxBrjslfq1TYqydfKkGA9UUWBVHv1N100N2-8cDa3Gisglzj4",
               "rawUrlKind": "other",
               "qualityDegraded": false,
               "qualities": [
                 {
                   "label": "2160p (4K)",
                   "height": 2160,
-                  "url": "https://d33f51dyacx7bd.cloudfront.net/"
+                  "url": "https://video-downloads.googleusercontent.com/ADGPM2nnYDU-svHld6wt8hIyEq48LsZ_tG8EimiU5ElUDe_XH6rZ-_K-eTcvGVyQKCiTfvJeUwkIlgBtN8HBAWEbJ1m-unw-uz-4ptxR8ZzCmjfcbSHU5g_nWbwhoiHX1QP11BM_PKB5bzbG0VZ7hJmyXkZh16oXS1IP1PuyS_xJ_iMw0iW3MRa9emCTEIjZ5uIVMnZxBrjslfq1TYqydfKkGA9UUWBVHv1N100N2-8cDa3Gisglzj4"
+                },
+                {
+                  "label": "2160p (4K DV HDR)",
+                  "height": 2160,
+                  "url": "https://myfiles.directfile.workers.dev/ae62d80343bc912f0e34f0e90a773aaf78d0045e3e23085e57b666c53d410151e028ef139050bf69634035daf1d49f90::0ea07149002ef1b7c1d7a6e426802992/1398009276/Dune%20-%20Part%20Two%20(2024)%202160p%20UHD%20BluRay%20DV%20HDR%2010bit%20HEVC%20[Hindi%20DDP%205.1%20+%20English%20TrueHD%20Atmos%207.1]%20x265%20(W4NK3R-LUMiX)%204KHDHub.com.mkv"
+                },
+                {
+                  "label": "1080p",
+                  "height": 1080,
+                  "url": "https://hubloud-downloadcdn.vi-isp.workers.dev/a053551cd6fc68491e2ffc76dda49b7a69c4f88524a48835d866891e6f6bfe35092237d351ebc53d0781883a1352c8ac::58bc1e066c68a58ddc4b0bb7d4447eb1/1398009276/Dune%20-%20Part%20Two%20(2024)%201080p%20Hybrid%20BluRay%20[Hindi%20DDP%205.1%20+%20English%20DDP%207.1]%20x264%20(c0kE-LUMiX)%204KHDHub.com.mkv"
+                },
+                {
+                  "label": "1080p (SDR)",
+                  "height": 1080,
+                  "url": "https://pixeldrain.dev/api/file/ENbe9c4d"
                 }
               ],
               "audioTracks": [
@@ -114,7 +129,7 @@
                   "default": true
                 }
               ],
-              "backupUrlCount": 3
+              "backupUrlCount": 6
             },
             "serverAttempts": [],
             "playerServerList": [
@@ -155,6 +170,8 @@
               }
             ],
             "playback": {
+              "resolvedTarget": "https://video-downloads.googleusercontent.com/ADGPM2nnYDU-svHld6wt8hIyEq48LsZ_tG8EimiU5ElUDe_XH6rZ-_K-eTcvGVyQKCiTfvJeUwkIlgBtN8HBAWEbJ1m-unw-uz-4ptxR8ZzCmjfcbSHU5g_nWbwhoiHX1QP11BM_PKB5bzbG0VZ7hJmyXkZh16oXS1IP1PuyS_xJ_iMw0iW3MRa9emCTEIjZ5uIVMnZxBrjslfq1TYqydfKkGA9UUWBVHv1N100N2-8cDa3Gisglzj4",
+              "proxyTarget": "https://video-downloads.googleusercontent.com/ADGPM2nnYDU-svHld6wt8hIyEq48LsZ_tG8EimiU5ElUDe_XH6rZ-_K-eTcvGVyQKCiTfvJeUwkIlgBtN8HBAWEbJ1m-unw-uz-4ptxR8ZzCmjfcbSHU5g_nWbwhoiHX1QP11BM_PKB5bzbG0VZ7hJmyXkZh16oXS1IP1PuyS_xJ_iMw0iW3MRa9emCTEIjZ5uIVMnZxBrjslfq1TYqydfKkGA9UUWBVHv1N100N2-8cDa3Gisglzj4",
               "proxy": {
                 "ok": false,
                 "status": 404,
@@ -162,23 +179,21 @@
                 "contentLengthHeader": null,
                 "firstBytes": 32,
                 "magic": "7b226f6b223a66616c73652c22657272",
+                "headText": "{\"ok\":false,\"err",
                 "looksLikeHtml": false,
-                "latencyMs": 0
+                "looksLikeScript": false,
+                "latencyMs": 1
               },
               "direct": {
-                "ok": true,
-                "status": 206,
-                "contentType": null,
-                "contentLengthHeader": "2048",
-                "firstBytes": 2048,
-                "magic": "2866756e6374696f6e28297b76617220",
-                "looksLikeHtml": false,
-                "latencyMs": 46
+                "ok": false,
+                "status": 0,
+                "error": "This operation was aborted",
+                "latencyMs": 20001
               }
             }
           },
           "nodeDirect": {
-            "latencyMs": 1337,
+            "latencyMs": 5602,
             "ok": true,
             "reason": null,
             "selectedTier": "4khdhub",
@@ -198,16 +213,31 @@
               "provider": null,
               "tier": "4khdhub",
               "format": "mp4",
-              "streamUrl": "https://d33f51dyacx7bd.cloudfront.net/",
+              "streamUrl": "https://video-downloads.googleusercontent.com/ADGPM2nnYDU-svHld6wt8hIyEq48LsZ_tG8EimiU5ElUDe_XH6rZ-_K-eTcvGVyQKCiTfvJeUwkIlgBtN8HBAWEbJ1m-unw-uz-4ptxR8ZzCmjfcbSHU5g_nWbwhoiHX1QP11BM_PKB5bzbG0VZ7hJmyXkZh16oXS1IP1PuyS_xJ_iMw0iW3MRa9emCTEIjZ5uIVMnZxBrjslfq1TYqydfKkGA9UUWBVHv1N100N2-8cDa3Gisglzj4",
               "streamUrlIsRelative": false,
-              "rawUrl": "https://d33f51dyacx7bd.cloudfront.net/",
+              "rawUrl": "https://video-downloads.googleusercontent.com/ADGPM2nnYDU-svHld6wt8hIyEq48LsZ_tG8EimiU5ElUDe_XH6rZ-_K-eTcvGVyQKCiTfvJeUwkIlgBtN8HBAWEbJ1m-unw-uz-4ptxR8ZzCmjfcbSHU5g_nWbwhoiHX1QP11BM_PKB5bzbG0VZ7hJmyXkZh16oXS1IP1PuyS_xJ_iMw0iW3MRa9emCTEIjZ5uIVMnZxBrjslfq1TYqydfKkGA9UUWBVHv1N100N2-8cDa3Gisglzj4",
               "rawUrlKind": "other",
               "qualityDegraded": false,
               "qualities": [
                 {
                   "label": "2160p (4K)",
                   "height": 2160,
-                  "url": "https://d33f51dyacx7bd.cloudfront.net/"
+                  "url": "https://video-downloads.googleusercontent.com/ADGPM2nnYDU-svHld6wt8hIyEq48LsZ_tG8EimiU5ElUDe_XH6rZ-_K-eTcvGVyQKCiTfvJeUwkIlgBtN8HBAWEbJ1m-unw-uz-4ptxR8ZzCmjfcbSHU5g_nWbwhoiHX1QP11BM_PKB5bzbG0VZ7hJmyXkZh16oXS1IP1PuyS_xJ_iMw0iW3MRa9emCTEIjZ5uIVMnZxBrjslfq1TYqydfKkGA9UUWBVHv1N100N2-8cDa3Gisglzj4"
+                },
+                {
+                  "label": "2160p (4K DV HDR)",
+                  "height": 2160,
+                  "url": "https://myfiles.directfile.workers.dev/ae62d80343bc912f0e34f0e90a773aaf78d0045e3e23085e57b666c53d410151e028ef139050bf69634035daf1d49f90::0ea07149002ef1b7c1d7a6e426802992/1398009276/Dune%20-%20Part%20Two%20(2024)%202160p%20UHD%20BluRay%20DV%20HDR%2010bit%20HEVC%20[Hindi%20DDP%205.1%20+%20English%20TrueHD%20Atmos%207.1]%20x265%20(W4NK3R-LUMiX)%204KHDHub.com.mkv"
+                },
+                {
+                  "label": "1080p",
+                  "height": 1080,
+                  "url": "https://hubloud-downloadcdn.vi-isp.workers.dev/a053551cd6fc68491e2ffc76dda49b7a69c4f88524a48835d866891e6f6bfe35092237d351ebc53d0781883a1352c8ac::58bc1e066c68a58ddc4b0bb7d4447eb1/1398009276/Dune%20-%20Part%20Two%20(2024)%201080p%20Hybrid%20BluRay%20[Hindi%20DDP%205.1%20+%20English%20DDP%207.1]%20x264%20(c0kE-LUMiX)%204KHDHub.com.mkv"
+                },
+                {
+                  "label": "1080p (SDR)",
+                  "height": 1080,
+                  "url": "https://pixeldrain.dev/api/file/ENbe9c4d"
                 }
               ],
               "audioTracks": [
@@ -218,11 +248,11 @@
                   "default": true
                 }
               ],
-              "backupUrlCount": 3
+              "backupUrlCount": 6
             }
           },
           "nodeWaterfall": {
-            "latencyMs": 2657,
+            "latencyMs": 2391,
             "ok": true,
             "reason": null,
             "requestedServer": "ursa",
@@ -232,16 +262,31 @@
               "provider": null,
               "tier": "4khdhub",
               "format": "mp4",
-              "streamUrl": "https://d33f51dyacx7bd.cloudfront.net/",
+              "streamUrl": "https://video-downloads.googleusercontent.com/ADGPM2nnYDU-svHld6wt8hIyEq48LsZ_tG8EimiU5ElUDe_XH6rZ-_K-eTcvGVyQKCiTfvJeUwkIlgBtN8HBAWEbJ1m-unw-uz-4ptxR8ZzCmjfcbSHU5g_nWbwhoiHX1QP11BM_PKB5bzbG0VZ7hJmyXkZh16oXS1IP1PuyS_xJ_iMw0iW3MRa9emCTEIjZ5uIVMnZxBrjslfq1TYqydfKkGA9UUWBVHv1N100N2-8cDa3Gisglzj4",
               "streamUrlIsRelative": false,
-              "rawUrl": "https://d33f51dyacx7bd.cloudfront.net/",
+              "rawUrl": "https://video-downloads.googleusercontent.com/ADGPM2nnYDU-svHld6wt8hIyEq48LsZ_tG8EimiU5ElUDe_XH6rZ-_K-eTcvGVyQKCiTfvJeUwkIlgBtN8HBAWEbJ1m-unw-uz-4ptxR8ZzCmjfcbSHU5g_nWbwhoiHX1QP11BM_PKB5bzbG0VZ7hJmyXkZh16oXS1IP1PuyS_xJ_iMw0iW3MRa9emCTEIjZ5uIVMnZxBrjslfq1TYqydfKkGA9UUWBVHv1N100N2-8cDa3Gisglzj4",
               "rawUrlKind": "other",
               "qualityDegraded": false,
               "qualities": [
                 {
                   "label": "2160p (4K)",
                   "height": 2160,
-                  "url": "https://d33f51dyacx7bd.cloudfront.net/"
+                  "url": "https://video-downloads.googleusercontent.com/ADGPM2nnYDU-svHld6wt8hIyEq48LsZ_tG8EimiU5ElUDe_XH6rZ-_K-eTcvGVyQKCiTfvJeUwkIlgBtN8HBAWEbJ1m-unw-uz-4ptxR8ZzCmjfcbSHU5g_nWbwhoiHX1QP11BM_PKB5bzbG0VZ7hJmyXkZh16oXS1IP1PuyS_xJ_iMw0iW3MRa9emCTEIjZ5uIVMnZxBrjslfq1TYqydfKkGA9UUWBVHv1N100N2-8cDa3Gisglzj4"
+                },
+                {
+                  "label": "2160p (4K DV HDR)",
+                  "height": 2160,
+                  "url": "https://myfiles.directfile.workers.dev/ae62d80343bc912f0e34f0e90a773aaf78d0045e3e23085e57b666c53d410151e028ef139050bf69634035daf1d49f90::0ea07149002ef1b7c1d7a6e426802992/1398009276/Dune%20-%20Part%20Two%20(2024)%202160p%20UHD%20BluRay%20DV%20HDR%2010bit%20HEVC%20[Hindi%20DDP%205.1%20+%20English%20TrueHD%20Atmos%207.1]%20x265%20(W4NK3R-LUMiX)%204KHDHub.com.mkv"
+                },
+                {
+                  "label": "1080p",
+                  "height": 1080,
+                  "url": "https://hubloud-downloadcdn.vi-isp.workers.dev/a053551cd6fc68491e2ffc76dda49b7a69c4f88524a48835d866891e6f6bfe35092237d351ebc53d0781883a1352c8ac::58bc1e066c68a58ddc4b0bb7d4447eb1/1398009276/Dune%20-%20Part%20Two%20(2024)%201080p%20Hybrid%20BluRay%20[Hindi%20DDP%205.1%20+%20English%20DDP%207.1]%20x264%20(c0kE-LUMiX)%204KHDHub.com.mkv"
+                },
+                {
+                  "label": "1080p (SDR)",
+                  "height": 1080,
+                  "url": "https://pixeldrain.dev/api/file/ENbe9c4d"
                 }
               ],
               "audioTracks": [
@@ -252,32 +297,70 @@
                   "default": true
                 }
               ],
-              "backupUrlCount": 3
+              "backupUrlCount": 6
             },
             "serverAttempts": []
           },
           "tiers": {
-            "latencyMs": 1303,
+            "latencyMs": 21475,
             "4khdhub": {
               "ok": true,
               "reason": null,
-              "rawUrl": "https://d33f51dyacx7bd.cloudfront.net/",
+              "rawUrl": "https://video-downloads.googleusercontent.com/ADGPM2nnYDU-svHld6wt8hIyEq48LsZ_tG8EimiU5ElUDe_XH6rZ-_K-eTcvGVyQKCiTfvJeUwkIlgBtN8HBAWEbJ1m-unw-uz-4ptxR8ZzCmjfcbSHU5g_nWbwhoiHX1QP11BM_PKB5bzbG0VZ7hJmyXkZh16oXS1IP1PuyS_xJ_iMw0iW3MRa9emCTEIjZ5uIVMnZxBrjslfq1TYqydfKkGA9UUWBVHv1N100N2-8cDa3Gisglzj4",
+              "rawUrlFull": "https://video-downloads.googleusercontent.com/ADGPM2nnYDU-svHld6wt8hIyEq48LsZ_tG8EimiU5ElUDe_XH6rZ-_K-eTcvGVyQKCiTfvJeUwkIlgBtN8HBAWEbJ1m-unw-uz-4ptxR8ZzCmjfcbSHU5g_nWbwhoiHX1QP11BM_PKB5bzbG0VZ7hJmyXkZh16oXS1IP1PuyS_xJ_iMw0iW3MRa9emCTEIjZ5uIVMnZxBrjslfq1TYqydfKkGA9UUWBVHv1N100N2-8cDa3Gisglzj4",
+              "score": 100,
+              "qualifiesViaScoreOnly": true,
+              "playback": {
+                "ok": false,
+                "status": 0,
+                "error": "This operation was aborted",
+                "latencyMs": 20001
+              },
               "qualities": [
-                "2160p (4K)"
+                "2160p (4K)",
+                "2160p (4K DV HDR)",
+                "1080p",
+                "1080p (SDR)"
               ]
             },
             "moviesdrive4k": {
               "ok": true,
               "reason": null,
-              "rawUrl": "https://d33f51dyacx7bd.cloudfront.net/",
+              "rawUrl": "https://fancy-mountain-7dfb.terapiyo232.workers.dev/a2c68228ce0b7da387b26b929830d2317251c895b2dc92bcd177e6a385108e1e7915fc82f87dd9ee40cc14f772bc4fed::22d90364f02c15a6104e65ebf0ce2f2d/1398009276/[Moviesdrives.com]-Dune.Part.Two.2024.2160p.4K.AMZN.WEB-DL.SDR.[Hindi.DDP5.1+English.DDPA5.1].H.265.[moviesdrives.com].mkv",
+              "rawUrlFull": "https://fancy-mountain-7dfb.terapiyo232.workers.dev/a2c68228ce0b7da387b26b929830d2317251c895b2dc92bcd177e6a385108e1e7915fc82f87dd9ee40cc14f772bc4fed::22d90364f02c15a6104e65ebf0ce2f2d/1398009276/[Moviesdrives.com]-Dune.Part.Two.2024.2160p.4K.AMZN.WEB-DL.SDR.[Hindi.DDP5.1+English.DDPA5.1].H.265.[movie",
+              "score": 60,
+              "qualifiesViaScoreOnly": true,
+              "playback": {
+                "ok": true,
+                "status": 206,
+                "contentType": "video/x-matroska",
+                "contentLengthHeader": "2048",
+                "firstBytes": 2048,
+                "magic": "1a45dfa3a34286810142f7810142f281",
+                "headText": ".E..B...B...B.",
+                "looksLikeHtml": false,
+                "looksLikeScript": false,
+                "latencyMs": 559
+              },
               "qualities": [
-                "2160p (4K)"
+                "2160p (4K)",
+                "1080p",
+                "1080p (Alt)"
               ]
             },
             "hicine4k": {
               "ok": true,
               "reason": null,
-              "rawUrl": "https://video-downloads.googleusercontent.com/ADGPM2kPcyJ_bb6gGnHup2mGAA7R4p8ZddvfIBA3DDVf0xr5P2JAdXMGM8TaIoWpfffDKkpDEn-tdh-AIUzDb_8G4ajvnN0vHOg0Zrd0gupX4I5hd9_4wIwEwXjfWwbTBdw4sFvpB0C3uySZ0OUpcUhGAxvxeJH4YN6Ulv3V88LtiQTFU5cZcho2dyl3PT8VI_ENqHEmc7a6mFfxO2B5CcC6uBCcPQWu5o-dkwPWYh8vf4msDC60r5qz284MG6R_R4ZrkrZB7vgnFCoUQOiEVeR-P0llUm0eIt4D7eycJQPE9lskpy6Th5UHtdpOJYOqIghTxTiwc-B8xqsutxzdTqoFC43W6mhnqOqcai8JzhtfA827Uyu7TjmUPGh8EKUImEeQp2XxzirTa-09PxpxmJo0-Sww4AiWHOPtOBVM2vFcaBUR5TOjFdm8LXrNObNCqJrVGBUM7pVTr7HcSXWPbEmy_O4kIDUNR8JKom8cT93u_cV3VyfFre-nsDTRZX1AU2k16O_dh6TAxsRF2I4vbTkO3wJBb7vE4lXeBxNiMXeFRWOCG3SSyvXCVX-QccQ0hvVSR80pMkazEerjuosRR1XgQ1YlgjR5fxW1szYGKktgaCU5O0lxElV_ppFkdRDNraILNPUahlNFC36g3K5KAEAmvPvBnsPOTViF-RmvAy5yxVmseHtU3ccMb52pdTFVfOYb01RduIQFTjN8L2-E2cCPIyISg7HdB3CbwM1MV7i-oWmgZuxHgSRkkK7_mXJnftNB2M1lhIKG1vi1PHNib_fGY-fRbutJxESmsIHoxnGVObPh3DMPKafZnkPmHF5S-Fyu-AATH35DP3Tdx-KNYdDqnXosyI4ENPNfQg_4RJW7FWKo8KxdTl1xfTGLzo15WYxIFU-ZpjpTp_TSwbMAFtE0DZv8h0Zq_sUfqvU9PUTq86VCNwXT7LyqpfBCNDEh1XNS8KgPTbvWrb9eIwVtCdeLreDDJNialfWt_z41cD-KKsi4YsFeUyLH3Tdcy8As5wiLLYAOIJ6eStxlXq3MY1EB_3s-yRsMxLHRAbKsKUy-au2T0wwrNuLc3vUDb9sztEmKI1W_Ke1MMaaezS62a4x_bKNw95ymsgv6ysyOfkjMX3XJSwk7FiIrJfprLKx4Hugvd_X6h3IYw3kc5-UHhPen-eYdX2XPwA",
+              "rawUrl": "https://video-downloads.googleusercontent.com/ADGPM2mvKFKCoJpCnJ9KDCNwMHbWFvaJPmS9WLX705MBIlRfi-nsvSgJ2Hb3uqzryjsEwM9goi9FGNBULpLd0mS1ILrbEksR2jEssK2fWpfk--jTYa7LaN8ysXXalDQ85qLavRbRs3y4W90hUrJbCoxV7idU5zJ2aj0LVWvAwKu6ALjJ5HbsZFdiyEOXQhkail0yxSsNteBT4HOttTru3ds7zWXwdYsHeAIOm0IAiPM_fix_GXqPURbkNeTZq1uIQtyfuW6SoDPXF_JYBtritsJXMkVMb7WQssXQub-gZ8fuMQhY4AxeG0RK95pakl7fYFnf4MPWQwq54wnV84-c39QaAk99Fo-3FVgzSqh9rHs-2ESNreHnMxqJOmOsEiY22rD3EbgeCSYs5FyPcG4c7MxvWwHpigPcH2zzCQ9ZwvAwkb7sV41nDbqyYB5h4lGw_Ggt0K2ApMUMW9N4X7vY6i39EVvqF6rnPRXWhaPCPk6WzhAXJXrM0YMhtt-Tjc9VsFVDA9dYomz00yAA5NKK1RrenvmLzy822q8f8Qx6YqXlKWlwbQohR1xTXkegBsxNsQ_Xg3-oQkiZj-GE-tf-QqoQt92x0dzPQGa--U6mg6CZXnQ1Iwfog77kVINr9WC1vkWBDw6FJB3UefGVdIBPmOtctbmmnSUh8wx72XKRt-mHuQgjLfHFrUNKIktQh3JLOHzWnLzM6J-JTMdLEAGK6dyOr8p7Cgsu0fe0hhb7ntZU-rX3g8TAjKZJY5IHs_sSOowABonUdP1RPra2T41ofFZf9kJVwMB3o5-O7dGeZgf85rgI4RWv7H9XvjUR_NheGqCAaTfsPmaJ2MANRHZORYWCGTiPDlad8BJcW9B5tk66h6EEDxUsPD3SEmSq0a4i2iioeeo9ShzEZGAXtQYCSMIKpFBr60W4gEbCh0LzylgFquHEEaEME2GYzp9XIU1xxDd7uD1DP5YO4znFaLF1NRh8vJAMa140DZQCT8-BVSCsk4nVUFezgOZuT3zjKFe1TN-z3SCzT5LXUuHU-VbkeNleg-qK9sC2kjtS6a3luQjcm-sZlepw8ROQim3SpIrLHRATSDx_8E2O1i6dTxoHYWQAc2nJEqQmHYPiDA4PrtPTzflbxgcibdBx3QVx43JG2LRkikMyHbfahiPSMuVNjfzA28V36uZGQA",
+              "rawUrlFull": "https://video-downloads.googleusercontent.com/ADGPM2mvKFKCoJpCnJ9KDCNwMHbWFvaJPmS9WLX705MBIlRfi-nsvSgJ2Hb3uqzryjsEwM9goi9FGNBULpLd0mS1ILrbEksR2jEssK2fWpfk--jTYa7LaN8ysXXalDQ85qLavRbRs3y4W90hUrJbCoxV7idU5zJ2aj0LVWvAwKu6ALjJ5HbsZFdiyEOXQhkail0yxSsNteBT4HOttTru3ds7zWXwdYsHeAIOm0IAiPM_fix_GXqPURbkNeTZq1",
+              "score": 100,
+              "qualifiesViaScoreOnly": true,
+              "playback": {
+                "ok": false,
+                "status": 0,
+                "error": "This operation was aborted",
+                "latencyMs": 20001
+              },
               "qualities": [
                 "2160p (4K)",
                 "1080p",
@@ -288,161 +371,23 @@
               "ok": false,
               "reason": "dahmer4k_directory_not_found",
               "rawUrl": null,
+              "rawUrlFull": null,
+              "score": null,
+              "qualifiesViaScoreOnly": false,
+              "playback": null,
               "qualities": []
             }
           }
         },
         "hamster": {
           "workerEndToEnd": {
-            "latencyMs": 10571,
+            "latencyMs": 10384,
             "status": 200,
             "ok": true,
             "error": null,
             "explanation": null,
             "requestedServer": null,
             "failedReason": null,
-            "resolvedByServer": "andromeda",
-            "stream": {
-              "server": "andromeda",
-              "provider": null,
-              "tier": null,
-              "format": "hls",
-              "streamUrl": "server-live-probe.test/api/proxy",
-              "streamUrlIsRelative": true,
-              "rawUrl": "https://img1.hlnom.com/myhls_mps/2024/8yue/Dune2/Hindi_720/index_363.m3u8",
-              "rawUrlKind": "hls",
-              "qualityDegraded": false,
-              "qualities": [
-                {
-                  "label": "Auto",
-                  "height": 0,
-                  "url": "server-live-probe.test/api/proxy"
-                }
-              ],
-              "audioTracks": [
-                {
-                  "id": "castle-1018",
-                  "lang": "hi",
-                  "label": "Hindi",
-                  "default": true
-                },
-                {
-                  "id": "castle-1033",
-                  "lang": "ta",
-                  "label": "Tamil",
-                  "default": false
-                },
-                {
-                  "id": "castle-1037",
-                  "lang": "te",
-                  "label": "Telugu",
-                  "default": false
-                },
-                {
-                  "id": "castle-1035",
-                  "lang": "kn",
-                  "label": "Kannada",
-                  "default": false
-                }
-              ],
-              "backupUrlCount": 1
-            },
-            "serverAttempts": [],
-            "playerServerList": [
-              {
-                "id": "andromeda",
-                "order": 1,
-                "name": "Fiber Optic Speedrun",
-                "badge": "Multi-Audio • Primary",
-                "active": true
-              },
-              {
-                "id": "centaurus",
-                "order": 2,
-                "name": "Gigachad Node",
-                "badge": "Adaptive • Multi-Quality",
-                "active": false
-              },
-              {
-                "id": "ursa",
-                "order": 3,
-                "name": "FBI Surveillance Van",
-                "badge": "4K UHD • Multi-Audio",
-                "active": false
-              },
-              {
-                "id": "hamster",
-                "order": 4,
-                "name": "Hamster Wheel",
-                "badge": "Multi-Language • OMSS Cascade",
-                "active": false
-              },
-              {
-                "id": "atlas",
-                "order": 5,
-                "name": "Atlas",
-                "badge": "Adaptive • Backup",
-                "active": false
-              }
-            ],
-            "playback": {
-              "proxy": {
-                "ok": true,
-                "status": 200,
-                "contentType": "application/vnd.apple.mpegurl; charset=utf-8",
-                "contentLengthHeader": null,
-                "firstBytes": 4476,
-                "magic": "234558544d33550a234558542d582d56",
-                "looksLikeHtml": false,
-                "latencyMs": 285
-              },
-              "direct": {
-                "ok": true,
-                "status": 206,
-                "contentType": "application/vnd.apple.mpegurl",
-                "contentLengthHeader": "2048",
-                "firstBytes": 2048,
-                "magic": "234558544d33550a234558542d582d56",
-                "looksLikeHtml": false,
-                "latencyMs": 236
-              }
-            }
-          },
-          "nodeDirect": {
-            "latencyMs": 10487,
-            "ok": false,
-            "reason": "hamster_all_sources_exhausted",
-            "selectedTier": null,
-            "diagMessage": "All Hamster Wheel providers (Videasy, Peachify, VidSrc) failed to resolve a stream.",
-            "diagSteps": [
-              "videasy_attempt: Querying Videasy multi-language upstream...",
-              "videasy_miss: Videasy returned no playable streams for this title.",
-              "peachify_attempt: Querying Peachify dub/sub upstream...",
-              "peachify_miss: Peachify returned no playable streams for this title.",
-              "vidsrc_attempt: Querying VidSrc fallback upstream...",
-              "vidsrc_miss: VidSrc returned no playable streams for this title.",
-              "hamster_exhausted: All Hamster Wheel providers (Videasy, Peachify, VidSrc) failed to resolve a stream."
-            ],
-            "stream": {
-              "server": null,
-              "provider": null,
-              "tier": null,
-              "format": null,
-              "streamUrl": null,
-              "streamUrlIsRelative": true,
-              "rawUrl": null,
-              "rawUrlKind": "other",
-              "qualityDegraded": false,
-              "qualities": [],
-              "audioTracks": [],
-              "backupUrlCount": 0
-            }
-          },
-          "nodeWaterfall": {
-            "latencyMs": 11644,
-            "ok": true,
-            "reason": null,
-            "requestedServer": "hamster",
             "resolvedByServer": "andromeda",
             "stream": {
               "server": "andromeda",
@@ -489,17 +434,165 @@
               ],
               "backupUrlCount": 1
             },
+            "serverAttempts": [],
+            "playerServerList": [
+              {
+                "id": "andromeda",
+                "order": 1,
+                "name": "Fiber Optic Speedrun",
+                "badge": "Multi-Audio • Primary",
+                "active": true
+              },
+              {
+                "id": "centaurus",
+                "order": 2,
+                "name": "Gigachad Node",
+                "badge": "Adaptive • Multi-Quality",
+                "active": false
+              },
+              {
+                "id": "ursa",
+                "order": 3,
+                "name": "FBI Surveillance Van",
+                "badge": "4K UHD • Multi-Audio",
+                "active": false
+              },
+              {
+                "id": "hamster",
+                "order": 4,
+                "name": "Hamster Wheel",
+                "badge": "Multi-Language • OMSS Cascade",
+                "active": false
+              },
+              {
+                "id": "atlas",
+                "order": 5,
+                "name": "Atlas",
+                "badge": "Adaptive • Backup",
+                "active": false
+              }
+            ],
+            "playback": {
+              "resolvedTarget": "https://img1.flowxn.com/myhls_mps/2024/8yue/Dune2/Hindi_720/index_375.m3u8?auth_key=UbKPiYp4j2hLPk92H77usr%2FbGSMdk9P4%2FDIy4Ip%2BSgI%3D&expire=1791119021364",
+              "proxyTarget": "/api/proxy?url=https%3A%2F%2Fimg1.flowxn.com%2Fmyhls_mps%2F2024%2F8yue%2FDune2%2FHindi_720%2Findex_375.m3u8%3Fauth_key%3DUbKPiYp4j2hLPk92H77usr%252FbGSMdk9P4%252FDIy4Ip%252BSgI%253D%26expire%3D1791119021364&mode=full&referer=https%3A%2F%2Fapi.hlowb.com%2F",
+              "proxy": {
+                "ok": true,
+                "status": 200,
+                "contentType": "application/vnd.apple.mpegurl; charset=utf-8",
+                "contentLengthHeader": null,
+                "firstBytes": 4470,
+                "magic": "234558544d33550a234558542d582d56",
+                "headText": "#EXTM3U.#EXT-X-V",
+                "looksLikeHtml": false,
+                "looksLikeScript": false,
+                "latencyMs": 263
+              },
+              "direct": {
+                "ok": true,
+                "status": 206,
+                "contentType": "application/vnd.apple.mpegurl",
+                "contentLengthHeader": "2048",
+                "firstBytes": 2048,
+                "magic": "234558544d33550a234558542d582d56",
+                "headText": "#EXTM3U.#EXT-X-V",
+                "looksLikeHtml": false,
+                "looksLikeScript": false,
+                "latencyMs": 328
+              }
+            }
+          },
+          "nodeDirect": {
+            "latencyMs": 10441,
+            "ok": false,
+            "reason": "hamster_all_sources_exhausted",
+            "selectedTier": null,
+            "diagMessage": "All Hamster Wheel providers (Videasy, Peachify, VidSrc) failed to resolve a stream.",
+            "diagSteps": [
+              "videasy_attempt: Querying Videasy multi-language upstream...",
+              "videasy_miss: Videasy returned no playable streams for this title.",
+              "peachify_attempt: Querying Peachify dub/sub upstream...",
+              "peachify_miss: Peachify returned no playable streams for this title.",
+              "vidsrc_attempt: Querying VidSrc fallback upstream...",
+              "vidsrc_miss: VidSrc returned no playable streams for this title.",
+              "hamster_exhausted: All Hamster Wheel providers (Videasy, Peachify, VidSrc) failed to resolve a stream."
+            ],
+            "stream": {
+              "server": null,
+              "provider": null,
+              "tier": null,
+              "format": null,
+              "streamUrl": null,
+              "streamUrlIsRelative": true,
+              "rawUrl": null,
+              "rawUrlKind": "other",
+              "qualityDegraded": false,
+              "qualities": [],
+              "audioTracks": [],
+              "backupUrlCount": 0
+            }
+          },
+          "nodeWaterfall": {
+            "latencyMs": 11252,
+            "ok": true,
+            "reason": null,
+            "requestedServer": "hamster",
+            "resolvedByServer": "andromeda",
+            "stream": {
+              "server": "andromeda",
+              "provider": null,
+              "tier": null,
+              "format": "hls",
+              "streamUrl": "server-live-probe.test/api/proxy",
+              "streamUrlIsRelative": true,
+              "rawUrl": "https://img1.hlnom.com/myhls_mps/2024/8yue/Dune2/Hindi_720/index_363.m3u8",
+              "rawUrlKind": "hls",
+              "qualityDegraded": false,
+              "qualities": [
+                {
+                  "label": "Auto",
+                  "height": 0,
+                  "url": "server-live-probe.test/api/proxy"
+                }
+              ],
+              "audioTracks": [
+                {
+                  "id": "castle-1018",
+                  "lang": "hi",
+                  "label": "Hindi",
+                  "default": true
+                },
+                {
+                  "id": "castle-1033",
+                  "lang": "ta",
+                  "label": "Tamil",
+                  "default": false
+                },
+                {
+                  "id": "castle-1037",
+                  "lang": "te",
+                  "label": "Telugu",
+                  "default": false
+                },
+                {
+                  "id": "castle-1035",
+                  "lang": "kn",
+                  "label": "Kannada",
+                  "default": false
+                }
+              ],
+              "backupUrlCount": 1
+            },
             "serverAttempts": [
               {
                 "server": "hamster",
-                "latencyMs": 10523,
+                "latencyMs": 10187,
                 "reason": "hamster_all_sources_exhausted",
                 "diagMessage": "All Hamster Wheel providers (Videasy, Peachify, VidSrc) failed to resolve a stream."
               }
             ]
           },
           "providers": {
-            "latencyMs": 9500,
+            "latencyMs": 9502,
             "videasy": {
               "ok": false,
               "reason": "videasy_no_sources",
@@ -523,6 +616,498 @@
             }
           }
         }
+      },
+      "fourKChain": {
+        "latencyMs": 587,
+        "host": "https://4khdhub.one",
+        "searchUrl": null,
+        "cards": [
+          {
+            "title": "Dune: Part Two",
+            "year": 2024,
+            "href": "https://4khdhub.one/dune-part-two-movie-199/",
+            "isSeries": false
+          }
+        ],
+        "buttons": [
+          {
+            "href": "https://greenmotors.club/?id=Q1dxTzFnbjhrQm5kMG5lL01tQzcvdEhwZ0JtZVdjNUEvbXdPRHcyWGVHVWFBOGpaLyt2TnVqOWZ0dDdqRTBTdTVQMkphWUdMQnUyT3FDeVVlMDZHQlE9PQ==",
+            "decoded": {
+              "type": "direct",
+              "url": "https://hubcloud.ist/drive/0jaa4qvapqbab1x"
+            },
+            "generator": "https://hubcloud.ist/drive/0jaa4qvapqbab1x",
+            "candidates": [
+              {
+                "url": "https://use.fontawesome.com/releases/v5.8.1/css/all.css",
+                "score": -1,
+                "isGenerator": false
+              },
+              {
+                "url": "https://cdn.jsdelivr.net/npm/bootstrap@5.1.0/dist/css/bootstrap.min.css",
+                "score": -1,
+                "isGenerator": false
+              },
+              {
+                "url": "https://fonts.googleapis.com/css?family=Nunito:200,200i,300,300i,400,400i,600,600i,700,700i,800,800i,900,900i",
+                "score": -1,
+                "isGenerator": false
+              },
+              {
+                "url": "https://unpkg.com/sweetalert/dist/sweetalert.min.js",
+                "score": -1,
+                "isGenerator": false
+              },
+              {
+                "url": "https://hubcloud.cx/favicon.png",
+                "score": -1,
+                "isGenerator": true
+              },
+              {
+                "url": "https://static.cloudflareinsights.com/beacon.min.js",
+                "score": -1,
+                "isGenerator": false
+              },
+              {
+                "url": "https://greenanalytics.autos/recaptcha/v4_enc.js",
+                "score": -1,
+                "isGenerator": false
+              },
+              {
+                "url": "https://www.googletagmanager.com/gtag/js?id=G-VPX61DM9S8",
+                "score": -1,
+                "isGenerator": false
+              },
+              {
+                "url": "https://hubcloud.fans/",
+                "score": -1,
+                "isGenerator": true
+              },
+              {
+                "url": "https://hubcloud.ist/drive/admin",
+                "score": -1,
+                "isGenerator": true
+              },
+              {
+                "url": "https://HDhub4u.ms",
+                "score": -1,
+                "isGenerator": false
+              },
+              {
+                "url": "https://winexch.com/?btag=52330173",
+                "score": -1,
+                "isGenerator": false
+              },
+              {
+                "url": "https://hubcloud.club/drive/assets/header.gif",
+                "score": -1,
+                "isGenerator": true
+              },
+              {
+                "url": "http://www.w3.org/2000/svg",
+                "score": -1,
+                "isGenerator": false
+              }
+            ],
+            "landingFinalUrl": "https://greenmotors.cc/?id=Q1dxTzFnbjhrQm5kMG5lL01tQzcvdEhwZ0JtZVdjNUEvbXdPRHcyWGVHVWFBOGpaLyt2TnVqOWZ0dDdqRTBTdTVQMkphWUdMQnUyT3FDeVVlMDZHQlE9PQ==",
+            "generatorStatus": 200,
+            "generatorFinalUrl": "https://hubcloud.ist/drive/0jaa4qvapqbab1x",
+            "generatorHtmlHead": "<html>\n<head>\n<title>Dune - Part Two (2024) 2160p UHD BluRay REMUX DV HDR 10bit HEVC [Hindi DDP 5.1 + English TrueHD Atmos 7.1] x265 (FraMeSToR-LUMiX) 4KHDHub.com.mkv</title>\n<meta charset=\"utf-8\">\n<meta name=\"referrer\" content=\"no-referrer\"/>\n\n<link rel=\"stylesheet\" href=\"https://use.fontawesome.com/releases/v5.8.1/css/all.css\" integrity=\"sha384-50oBUHEmvpQ+1lW4y57PTFmhCaXp0ML5d60M1M7uH2+nqUivzIebhndOJK28anvf\" crossorigin=\"anonymous\">\n\n<link href=\"https://cdn.jsdelivr.net/npm/bootstrap@5.1.0/dist/css/bootstrap.min.css\" rel=\"stylesheet\" integrity=\"sha384-KyZXEAg3QhqLMpG8r+8fhAXLRk2vvoC2f3B09zVXn8CA5QIVfZOJ3BCsw2P0p/We\" crossorigin=\"anonymous\">\n\n<link href=\"https://fonts.googleapis.com/css?fa"
+          },
+          {
+            "href": "https://greenmotors.club/?id=Q1dxTzFnbjhrQm5kMG5lL01tQzcvZ2VtanlnUnRUdGU4dlppaDJXMUxUVEN4SzRzVG9JM3pZSGp0dWF3L0l6ZFg0d3hUVXlWejROTHBzeGJ5UnlxVUE9PQ==",
+            "decoded": {
+              "type": "direct",
+              "url": "https://hubdrive.pics/file/2791613473"
+            },
+            "generator": "https://hubdrive.pics/file/2791613473",
+            "candidates": [
+              {
+                "url": "https://cdn.jsdelivr.net/clipboard.js/1.5.12/clipboard.min.js",
+                "score": -1,
+                "isGenerator": false
+              },
+              {
+                "url": "https://unpkg.com/sweetalert@2.1.2/dist/sweetalert.min.js",
+                "score": -1,
+                "isGenerator": false
+              },
+              {
+                "url": "https://ajax.googleapis.com/ajax/libs/jquery/3.4.1/jquery.min.js",
+                "score": -1,
+                "isGenerator": false
+              },
+              {
+                "url": "https://use.fontawesome.com/746f656c7a.js",
+                "score": -1,
+                "isGenerator": false
+              },
+              {
+                "url": "https://fonts.googleapis.com/css?family=Nunito:200,200i,300,300i,400,400i,600,600i,700,700i,800,800i,900,900i",
+                "score": -1,
+                "isGenerator": false
+              },
+              {
+                "url": "https://www.googletagmanager.com/gtag/js?id=G-8QTNRD0R4M",
+                "score": -1,
+                "isGenerator": false
+              },
+              {
+                "url": "https://llvpn.com/tag.min.js",
+                "score": -1,
+                "isGenerator": false
+              },
+              {
+                "url": "https://hubdrive.pics",
+                "score": -1,
+                "isGenerator": false
+              },
+              {
+                "url": "https://catimages.org/images/2024/04/23/1b1be1f6932ecf270.png",
+                "score": -1,
+                "isGenerator": false
+              },
+              {
+                "url": "http://caniuse.com/#feat=referrer-policy",
+                "score": -1,
+                "isGenerator": false
+              },
+              {
+                "url": "https://cdnjs.cloudflare.com/ajax/libs/font-awesome/4.7.0/css/font-awesome.min.css",
+                "score": -1,
+                "isGenerator": false
+              },
+              {
+                "url": "https://kit.fontawesome.com/a076d05399.js",
+                "score": -1,
+                "isGenerator": false
+              }
+            ],
+            "landingFinalUrl": "https://greenmotors.cc/?id=Q1dxTzFnbjhrQm5kMG5lL01tQzcvZ2VtanlnUnRUdGU4dlppaDJXMUxUVEN4SzRzVG9JM3pZSGp0dWF3L0l6ZFg0d3hUVXlWejROTHBzeGJ5UnlxVUE9PQ==",
+            "generatorStatus": 200,
+            "generatorFinalUrl": "https://hubdrive.pics/file/2791613473",
+            "generatorHtmlHead": "<!DOCTYPE html>\n<html lang=\"en\">\n   <head>\n<meta http-equiv=\"Content-Type\" content=\"text/html; charset=utf-8\">\n<meta http-equiv=\"X-UA-Compatible\" content=\"IE=edge\">\n<meta name=\"viewport\" content=\"width=device-width, initial-scale=1, shrink-to-fit=no\">\n<meta name=\"robots\" content=\"noindex, nofollow\">\n<meta name=\"googlebot\" content=\"noindex,nofollow\">\n<meta name=\"referrer\" content=\"no-referrer\"/>\n<meta name=\"referrer\" content=\"none\"/>\n<meta http-equiv=\"Content-Type\" content=\"text/html; charset=utf-8\">\n<meta http-equiv=\"X-UA-Compatible\" content=\"IE=edge\">\n<meta name=\"viewport\" content=\"width=device-width, initial-scale=1, shrink-to-fit=no\">\n<meta property=\"og:image\" content=\"/assets/img/favicon"
+          },
+          {
+            "href": "https://greenmotors.club/?id=Q1dxTzFnbjhrQm5kMG5lL01tQzcvdEhwZ0JtZVdjNUEvbXdPRHcyWGVHWFJtVHpEZWVPb2xpK0V5QVZSU2g1alN1QVduRXdJTDF5eHdjODdKZlRWS2c9PQ==",
+            "decoded": {
+              "type": "direct",
+              "url": "https://hubcloud.ist/drive/9bhwvihnjeznjvk"
+            },
+            "generator": "https://hubcloud.ist/drive/9bhwvihnjeznjvk",
+            "candidates": [
+              {
+                "url": "https://use.fontawesome.com/releases/v5.8.1/css/all.css",
+                "score": -1,
+                "isGenerator": false
+              },
+              {
+                "url": "https://cdn.jsdelivr.net/npm/bootstrap@5.1.0/dist/css/bootstrap.min.css",
+                "score": -1,
+                "isGenerator": false
+              },
+              {
+                "url": "https://fonts.googleapis.com/css?family=Nunito:200,200i,300,300i,400,400i,600,600i,700,700i,800,800i,900,900i",
+                "score": -1,
+                "isGenerator": false
+              },
+              {
+                "url": "https://unpkg.com/sweetalert/dist/sweetalert.min.js",
+                "score": -1,
+                "isGenerator": false
+              },
+              {
+                "url": "https://hubcloud.cx/favicon.png",
+                "score": -1,
+                "isGenerator": true
+              },
+              {
+                "url": "https://static.cloudflareinsights.com/beacon.min.js",
+                "score": -1,
+                "isGenerator": false
+              },
+              {
+                "url": "https://greenanalytics.autos/recaptcha/v4_enc.js",
+                "score": -1,
+                "isGenerator": false
+              },
+              {
+                "url": "https://www.googletagmanager.com/gtag/js?id=G-VPX61DM9S8",
+                "score": -1,
+                "isGenerator": false
+              },
+              {
+                "url": "https://hubcloud.fans/",
+                "score": -1,
+                "isGenerator": true
+              },
+              {
+                "url": "https://hubcloud.ist/drive/admin",
+                "score": -1,
+                "isGenerator": true
+              },
+              {
+                "url": "https://HDhub4u.ms",
+                "score": -1,
+                "isGenerator": false
+              },
+              {
+                "url": "https://winexch.com/?btag=52330173",
+                "score": -1,
+                "isGenerator": false
+              },
+              {
+                "url": "https://hubcloud.club/drive/assets/header.gif",
+                "score": -1,
+                "isGenerator": true
+              },
+              {
+                "url": "http://www.w3.org/2000/svg",
+                "score": -1,
+                "isGenerator": false
+              }
+            ],
+            "landingFinalUrl": "https://greenmotors.cc/?id=Q1dxTzFnbjhrQm5kMG5lL01tQzcvdEhwZ0JtZVdjNUEvbXdPRHcyWGVHWFJtVHpEZWVPb2xpK0V5QVZSU2g1alN1QVduRXdJTDF5eHdjODdKZlRWS2c9PQ==",
+            "generatorStatus": 200,
+            "generatorFinalUrl": "https://hubcloud.ist/drive/9bhwvihnjeznjvk",
+            "generatorHtmlHead": "<html>\n<head>\n<title>Dune - Part Two (2024) 2160p UHD BluRay DV HDR 10bit HEVC [Hindi DDP 5.1 + English TrueHD Atmos 7.1] x265 (W4NK3R-LUMiX) 4KHDHub.com.mkv</title>\n<meta charset=\"utf-8\">\n<meta name=\"referrer\" content=\"no-referrer\"/>\n\n<link rel=\"stylesheet\" href=\"https://use.fontawesome.com/releases/v5.8.1/css/all.css\" integrity=\"sha384-50oBUHEmvpQ+1lW4y57PTFmhCaXp0ML5d60M1M7uH2+nqUivzIebhndOJK28anvf\" crossorigin=\"anonymous\">\n\n<link href=\"https://cdn.jsdelivr.net/npm/bootstrap@5.1.0/dist/css/bootstrap.min.css\" rel=\"stylesheet\" integrity=\"sha384-KyZXEAg3QhqLMpG8r+8fhAXLRk2vvoC2f3B09zVXn8CA5QIVfZOJ3BCsw2P0p/We\" crossorigin=\"anonymous\">\n\n<link href=\"https://fonts.googleapis.com/css?family=Nuni"
+          },
+          {
+            "href": "https://greenmotors.club/?id=Q1dxTzFnbjhrQm5kMG5lL01tQzcvZ2VtanlnUnRUdGU4dlppaDJXMUxUUkFIaUd4SFRXVjQ0cFpUTCtJKzRLOXBCdEFhMEZDQTdDbGhOL0IvYitsWWc9PQ==",
+            "decoded": {
+              "type": "direct",
+              "url": "https://hubdrive.pics/file/28365053007"
+            },
+            "generator": "https://hubdrive.pics/file/28365053007",
+            "candidates": [
+              {
+                "url": "https://cdn.jsdelivr.net/clipboard.js/1.5.12/clipboard.min.js",
+                "score": -1,
+                "isGenerator": false
+              },
+              {
+                "url": "https://unpkg.com/sweetalert@2.1.2/dist/sweetalert.min.js",
+                "score": -1,
+                "isGenerator": false
+              },
+              {
+                "url": "https://ajax.googleapis.com/ajax/libs/jquery/3.4.1/jquery.min.js",
+                "score": -1,
+                "isGenerator": false
+              },
+              {
+                "url": "https://use.fontawesome.com/746f656c7a.js",
+                "score": -1,
+                "isGenerator": false
+              },
+              {
+                "url": "https://fonts.googleapis.com/css?family=Nunito:200,200i,300,300i,400,400i,600,600i,700,700i,800,800i,900,900i",
+                "score": -1,
+                "isGenerator": false
+              },
+              {
+                "url": "https://www.googletagmanager.com/gtag/js?id=G-8QTNRD0R4M",
+                "score": -1,
+                "isGenerator": false
+              },
+              {
+                "url": "https://llvpn.com/tag.min.js",
+                "score": -1,
+                "isGenerator": false
+              },
+              {
+                "url": "https://hubdrive.pics",
+                "score": -1,
+                "isGenerator": false
+              },
+              {
+                "url": "https://catimages.org/images/2024/04/23/1b1be1f6932ecf270.png",
+                "score": -1,
+                "isGenerator": false
+              },
+              {
+                "url": "http://caniuse.com/#feat=referrer-policy",
+                "score": -1,
+                "isGenerator": false
+              },
+              {
+                "url": "https://cdnjs.cloudflare.com/ajax/libs/font-awesome/4.7.0/css/font-awesome.min.css",
+                "score": -1,
+                "isGenerator": false
+              },
+              {
+                "url": "https://kit.fontawesome.com/a076d05399.js",
+                "score": -1,
+                "isGenerator": false
+              }
+            ],
+            "landingFinalUrl": "https://greenmotors.cc/?id=Q1dxTzFnbjhrQm5kMG5lL01tQzcvZ2VtanlnUnRUdGU4dlppaDJXMUxUUkFIaUd4SFRXVjQ0cFpUTCtJKzRLOXBCdEFhMEZDQTdDbGhOL0IvYitsWWc9PQ==",
+            "generatorStatus": 200,
+            "generatorFinalUrl": "https://hubdrive.pics/file/28365053007",
+            "generatorHtmlHead": "<!DOCTYPE html>\n<html lang=\"en\">\n   <head>\n<meta http-equiv=\"Content-Type\" content=\"text/html; charset=utf-8\">\n<meta http-equiv=\"X-UA-Compatible\" content=\"IE=edge\">\n<meta name=\"viewport\" content=\"width=device-width, initial-scale=1, shrink-to-fit=no\">\n<meta name=\"robots\" content=\"noindex, nofollow\">\n<meta name=\"googlebot\" content=\"noindex,nofollow\">\n<meta name=\"referrer\" content=\"no-referrer\"/>\n<meta name=\"referrer\" content=\"none\"/>\n<meta http-equiv=\"Content-Type\" content=\"text/html; charset=utf-8\">\n<meta http-equiv=\"X-UA-Compatible\" content=\"IE=edge\">\n<meta name=\"viewport\" content=\"width=device-width, initial-scale=1, shrink-to-fit=no\">\n<meta property=\"og:image\" content=\"/assets/img/favicon"
+          },
+          {
+            "href": "https://greenmotors.club/?id=Q1dxTzFnbjhrQm5kMG5lL01tQzcvdEhwZ0JtZVdjNUEvbXdPRHcyWGVHV3N6U0VHV25GWkdzMlVVNy9tR3djN0o0U08xRXdRbktRZG5Ycis3ZFk3bUE9PQ==",
+            "decoded": {
+              "type": "direct",
+              "url": "https://hubcloud.ist/drive/1qgca6lzcmccjdv"
+            },
+            "generator": "https://hubcloud.ist/drive/1qgca6lzcmccjdv",
+            "candidates": [
+              {
+                "url": "https://use.fontawesome.com/releases/v5.8.1/css/all.css",
+                "score": -1,
+                "isGenerator": false
+              },
+              {
+                "url": "https://cdn.jsdelivr.net/npm/bootstrap@5.1.0/dist/css/bootstrap.min.css",
+                "score": -1,
+                "isGenerator": false
+              },
+              {
+                "url": "https://fonts.googleapis.com/css?family=Nunito:200,200i,300,300i,400,400i,600,600i,700,700i,800,800i,900,900i",
+                "score": -1,
+                "isGenerator": false
+              },
+              {
+                "url": "https://unpkg.com/sweetalert/dist/sweetalert.min.js",
+                "score": -1,
+                "isGenerator": false
+              },
+              {
+                "url": "https://hubcloud.cx/favicon.png",
+                "score": -1,
+                "isGenerator": true
+              },
+              {
+                "url": "https://static.cloudflareinsights.com/beacon.min.js",
+                "score": -1,
+                "isGenerator": false
+              },
+              {
+                "url": "https://greenanalytics.autos/recaptcha/v4_enc.js",
+                "score": -1,
+                "isGenerator": false
+              },
+              {
+                "url": "https://www.googletagmanager.com/gtag/js?id=G-VPX61DM9S8",
+                "score": -1,
+                "isGenerator": false
+              },
+              {
+                "url": "https://hubcloud.fans/",
+                "score": -1,
+                "isGenerator": true
+              },
+              {
+                "url": "https://hubcloud.ist/drive/admin",
+                "score": -1,
+                "isGenerator": true
+              },
+              {
+                "url": "https://HDhub4u.ms",
+                "score": -1,
+                "isGenerator": false
+              },
+              {
+                "url": "https://winexch.com/?btag=52330173",
+                "score": -1,
+                "isGenerator": false
+              },
+              {
+                "url": "https://hubcloud.club/drive/assets/header.gif",
+                "score": -1,
+                "isGenerator": true
+              },
+              {
+                "url": "http://www.w3.org/2000/svg",
+                "score": -1,
+                "isGenerator": false
+              }
+            ],
+            "landingFinalUrl": "https://greenmotors.cc/?id=Q1dxTzFnbjhrQm5kMG5lL01tQzcvdEhwZ0JtZVdjNUEvbXdPRHcyWGVHV3N6U0VHV25GWkdzMlVVNy9tR3djN0o0U08xRXdRbktRZG5Ycis3ZFk3bUE9PQ==",
+            "generatorStatus": 200,
+            "generatorFinalUrl": "https://hubcloud.ist/drive/1qgca6lzcmccjdv",
+            "generatorHtmlHead": "<html>\n<head>\n<title>Dune - Part Two (2024) 1080p BluRay REMUX AVC [Hindi DDP 5.1 + English TrueHD Atmos 7.1] x264 (FraMeSToR-LUMiX) 4KHDHub.com.mkv</title>\n<meta charset=\"utf-8\">\n<meta name=\"referrer\" content=\"no-referrer\"/>\n\n<link rel=\"stylesheet\" href=\"https://use.fontawesome.com/releases/v5.8.1/css/all.css\" integrity=\"sha384-50oBUHEmvpQ+1lW4y57PTFmhCaXp0ML5d60M1M7uH2+nqUivzIebhndOJK28anvf\" crossorigin=\"anonymous\">\n\n<link href=\"https://cdn.jsdelivr.net/npm/bootstrap@5.1.0/dist/css/bootstrap.min.css\" rel=\"stylesheet\" integrity=\"sha384-KyZXEAg3QhqLMpG8r+8fhAXLRk2vvoC2f3B09zVXn8CA5QIVfZOJ3BCsw2P0p/We\" crossorigin=\"anonymous\">\n\n<link href=\"https://fonts.googleapis.com/css?family=Nunito:200,20"
+          },
+          {
+            "href": "https://greenmotors.club/?id=Q1dxTzFnbjhrQm5kMG5lL01tQzcvZ2VtanlnUnRUdGU4dlppaDJXMUxUUVhrd2pRQTBhbGh2eFpUbDMvdEtoVC9sWnBtOHBOZXM2ZkhHS2VFazJybkE9PQ==",
+            "decoded": {
+              "type": "direct",
+              "url": "https://hubdrive.pics/file/30769122685"
+            },
+            "generator": "https://hubdrive.pics/file/30769122685",
+            "candidates": [
+              {
+                "url": "https://cdn.jsdelivr.net/clipboard.js/1.5.12/clipboard.min.js",
+                "score": -1,
+                "isGenerator": false
+              },
+              {
+                "url": "https://unpkg.com/sweetalert@2.1.2/dist/sweetalert.min.js",
+                "score": -1,
+                "isGenerator": false
+              },
+              {
+                "url": "https://ajax.googleapis.com/ajax/libs/jquery/3.4.1/jquery.min.js",
+                "score": -1,
+                "isGenerator": false
+              },
+              {
+                "url": "https://use.fontawesome.com/746f656c7a.js",
+                "score": -1,
+                "isGenerator": false
+              },
+              {
+                "url": "https://fonts.googleapis.com/css?family=Nunito:200,200i,300,300i,400,400i,600,600i,700,700i,800,800i,900,900i",
+                "score": -1,
+                "isGenerator": false
+              },
+              {
+                "url": "https://www.googletagmanager.com/gtag/js?id=G-8QTNRD0R4M",
+                "score": -1,
+                "isGenerator": false
+              },
+              {
+                "url": "https://llvpn.com/tag.min.js",
+                "score": -1,
+                "isGenerator": false
+              },
+              {
+                "url": "https://hubdrive.pics",
+                "score": -1,
+                "isGenerator": false
+              },
+              {
+                "url": "https://catimages.org/images/2024/04/23/1b1be1f6932ecf270.png",
+                "score": -1,
+                "isGenerator": false
+              },
+              {
+                "url": "http://caniuse.com/#feat=referrer-policy",
+                "score": -1,
+                "isGenerator": false
+              },
+              {
+                "url": "https://cdnjs.cloudflare.com/ajax/libs/font-awesome/4.7.0/css/font-awesome.min.css",
+                "score": -1,
+                "isGenerator": false
+              },
+              {
+                "url": "https://kit.fontawesome.com/a076d05399.js",
+                "score": -1,
+                "isGenerator": false
+              }
+            ],
+            "landingFinalUrl": "https://greenmotors.cc/?id=Q1dxTzFnbjhrQm5kMG5lL01tQzcvZ2VtanlnUnRUdGU4dlppaDJXMUxUUVhrd2pRQTBhbGh2eFpUbDMvdEtoVC9sWnBtOHBOZXM2ZkhHS2VFazJybkE9PQ==",
+            "generatorStatus": 200,
+            "generatorFinalUrl": "https://hubdrive.pics/file/30769122685",
+            "generatorHtmlHead": "<!DOCTYPE html>\n<html lang=\"en\">\n   <head>\n<meta http-equiv=\"Content-Type\" content=\"text/html; charset=utf-8\">\n<meta http-equiv=\"X-UA-Compatible\" content=\"IE=edge\">\n<meta name=\"viewport\" content=\"width=device-width, initial-scale=1, shrink-to-fit=no\">\n<meta name=\"robots\" content=\"noindex, nofollow\">\n<meta name=\"googlebot\" content=\"noindex,nofollow\">\n<meta name=\"referrer\" content=\"no-referrer\"/>\n<meta name=\"referrer\" content=\"none\"/>\n<meta http-equiv=\"Content-Type\" content=\"text/html; charset=utf-8\">\n<meta http-equiv=\"X-UA-Compatible\" content=\"IE=edge\">\n<meta name=\"viewport\" content=\"width=device-width, initial-scale=1, shrink-to-fit=no\">\n<meta property=\"og:image\" content=\"/assets/img/favicon"
+          }
+        ],
+        "searchStatus": 200,
+        "detailUrl": "https://4khdhub.one/dune-part-two-movie-199/",
+        "detailStatus": 200
       }
     },
     "movie:550": {
@@ -544,7 +1129,7 @@
       "servers": {
         "ursa": {
           "workerEndToEnd": {
-            "latencyMs": 2036,
+            "latencyMs": 4558,
             "status": 200,
             "ok": true,
             "error": null,
@@ -557,16 +1142,26 @@
               "provider": null,
               "tier": "4khdhub",
               "format": "mp4",
-              "streamUrl": "https://d33f51dyacx7bd.cloudfront.net/",
+              "streamUrl": "https://c6b1e8c93683bdde581e2164cb9657c9.r2.cloudflarestorage.com/hub/bc953c1f1cee5b851b6a0a9112531074",
               "streamUrlIsRelative": false,
-              "rawUrl": "https://d33f51dyacx7bd.cloudfront.net/",
+              "rawUrl": "https://c6b1e8c93683bdde581e2164cb9657c9.r2.cloudflarestorage.com/hub/bc953c1f1cee5b851b6a0a9112531074",
               "rawUrlKind": "other",
               "qualityDegraded": false,
               "qualities": [
                 {
                   "label": "2160p (4K)",
                   "height": 2160,
-                  "url": "https://d33f51dyacx7bd.cloudfront.net/"
+                  "url": "https://c6b1e8c93683bdde581e2164cb9657c9.r2.cloudflarestorage.com/hub/bc953c1f1cee5b851b6a0a9112531074"
+                },
+                {
+                  "label": "2160p (4K HDR)",
+                  "height": 2160,
+                  "url": "https://shiny-scene-663c.terapiyo246.workers.dev/8ffe38b39d9c8102c9aa6b5f7d93babdf39307864161c6bad9fcc9380c3cf0572f1b00eb4d73002b1439d02990f0889f::ff6e80abe4a0a6f12294895e68e5da9b/1398009276/Fight%20Club%20(1999)%202160p%20UHD%20BluRay%20HDR%2010bit%20HEVC%20[Hindi%20DDP%202.0%20+%20English%20DTS-HD%20MA%205.1]%20x265%20(j3rico-LUMiX).mkv"
+                },
+                {
+                  "label": "1080p",
+                  "height": 1080,
+                  "url": "https://c6b1e8c93683bdde581e2164cb9657c9.r2.cloudflarestorage.com/hub/429254543198c6f1e0f43bc5d39e6d09"
                 }
               ],
               "audioTracks": [
@@ -577,7 +1172,7 @@
                   "default": true
                 }
               ],
-              "backupUrlCount": 3
+              "backupUrlCount": 5
             },
             "serverAttempts": [],
             "playerServerList": [
@@ -618,6 +1213,8 @@
               }
             ],
             "playback": {
+              "resolvedTarget": "https://c6b1e8c93683bdde581e2164cb9657c9.r2.cloudflarestorage.com/hub/bc953c1f1cee5b851b6a0a9112531074?X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Credential=ce3806fdca997f65e356f3b6fc2f735d%2F20261004%2Fauto%2Fs3%2Faws4_request&X-Amz-Date=20261004T100414Z&X-Amz-Expires=28800&X-Amz-SignedHeaders=host&res",
+              "proxyTarget": "https://c6b1e8c93683bdde581e2164cb9657c9.r2.cloudflarestorage.com/hub/bc953c1f1cee5b851b6a0a9112531074?X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Credential=ce3806fdca997f65e356f3b6fc2f735d%2F20261004%2Fauto%2Fs3%2Faws4_request&X-Amz-Date=20261004T100414Z&X-Amz-Expires=28800&X-Amz-SignedHeaders=host&res",
               "proxy": {
                 "ok": false,
                 "status": 404,
@@ -625,23 +1222,27 @@
                 "contentLengthHeader": null,
                 "firstBytes": 32,
                 "magic": "7b226f6b223a66616c73652c22657272",
+                "headText": "{\"ok\":false,\"err",
                 "looksLikeHtml": false,
-                "latencyMs": 0
+                "looksLikeScript": false,
+                "latencyMs": 1
               },
               "direct": {
                 "ok": true,
                 "status": 206,
-                "contentType": null,
+                "contentType": "application/octet-stream",
                 "contentLengthHeader": "2048",
                 "firstBytes": 2048,
-                "magic": "2866756e6374696f6e28297b76617220",
+                "magic": "1a45dfa3a34286810142f7810142f281",
+                "headText": ".E..B...B...B.",
                 "looksLikeHtml": false,
-                "latencyMs": 31
+                "looksLikeScript": false,
+                "latencyMs": 165
               }
             }
           },
           "nodeDirect": {
-            "latencyMs": 1445,
+            "latencyMs": 4574,
             "ok": true,
             "reason": null,
             "selectedTier": "4khdhub",
@@ -661,16 +1262,26 @@
               "provider": null,
               "tier": "4khdhub",
               "format": "mp4",
-              "streamUrl": "https://d33f51dyacx7bd.cloudfront.net/",
+              "streamUrl": "https://c6b1e8c93683bdde581e2164cb9657c9.r2.cloudflarestorage.com/hub/bc953c1f1cee5b851b6a0a9112531074",
               "streamUrlIsRelative": false,
-              "rawUrl": "https://d33f51dyacx7bd.cloudfront.net/",
+              "rawUrl": "https://c6b1e8c93683bdde581e2164cb9657c9.r2.cloudflarestorage.com/hub/bc953c1f1cee5b851b6a0a9112531074",
               "rawUrlKind": "other",
               "qualityDegraded": false,
               "qualities": [
                 {
                   "label": "2160p (4K)",
                   "height": 2160,
-                  "url": "https://d33f51dyacx7bd.cloudfront.net/"
+                  "url": "https://c6b1e8c93683bdde581e2164cb9657c9.r2.cloudflarestorage.com/hub/bc953c1f1cee5b851b6a0a9112531074"
+                },
+                {
+                  "label": "2160p (4K HDR)",
+                  "height": 2160,
+                  "url": "https://shiny-scene-663c.terapiyo246.workers.dev/8ffe38b39d9c8102c9aa6b5f7d93babdf39307864161c6bad9fcc9380c3cf0572f1b00eb4d73002b1439d02990f0889f::ff6e80abe4a0a6f12294895e68e5da9b/1398009276/Fight%20Club%20(1999)%202160p%20UHD%20BluRay%20HDR%2010bit%20HEVC%20[Hindi%20DDP%202.0%20+%20English%20DTS-HD%20MA%205.1]%20x265%20(j3rico-LUMiX).mkv"
+                },
+                {
+                  "label": "1080p",
+                  "height": 1080,
+                  "url": "https://c6b1e8c93683bdde581e2164cb9657c9.r2.cloudflarestorage.com/hub/429254543198c6f1e0f43bc5d39e6d09"
                 }
               ],
               "audioTracks": [
@@ -681,11 +1292,11 @@
                   "default": true
                 }
               ],
-              "backupUrlCount": 3
+              "backupUrlCount": 5
             }
           },
           "nodeWaterfall": {
-            "latencyMs": 1452,
+            "latencyMs": 1855,
             "ok": true,
             "reason": null,
             "requestedServer": "ursa",
@@ -695,16 +1306,26 @@
               "provider": null,
               "tier": "4khdhub",
               "format": "mp4",
-              "streamUrl": "https://d33f51dyacx7bd.cloudfront.net/",
+              "streamUrl": "https://c6b1e8c93683bdde581e2164cb9657c9.r2.cloudflarestorage.com/hub/bc953c1f1cee5b851b6a0a9112531074",
               "streamUrlIsRelative": false,
-              "rawUrl": "https://d33f51dyacx7bd.cloudfront.net/",
+              "rawUrl": "https://c6b1e8c93683bdde581e2164cb9657c9.r2.cloudflarestorage.com/hub/bc953c1f1cee5b851b6a0a9112531074",
               "rawUrlKind": "other",
               "qualityDegraded": false,
               "qualities": [
                 {
                   "label": "2160p (4K)",
                   "height": 2160,
-                  "url": "https://d33f51dyacx7bd.cloudfront.net/"
+                  "url": "https://c6b1e8c93683bdde581e2164cb9657c9.r2.cloudflarestorage.com/hub/bc953c1f1cee5b851b6a0a9112531074"
+                },
+                {
+                  "label": "2160p (4K HDR)",
+                  "height": 2160,
+                  "url": "https://shiny-scene-663c.terapiyo246.workers.dev/8ffe38b39d9c8102c9aa6b5f7d93babdf39307864161c6bad9fcc9380c3cf0572f1b00eb4d73002b1439d02990f0889f::ff6e80abe4a0a6f12294895e68e5da9b/1398009276/Fight%20Club%20(1999)%202160p%20UHD%20BluRay%20HDR%2010bit%20HEVC%20[Hindi%20DDP%202.0%20+%20English%20DTS-HD%20MA%205.1]%20x265%20(j3rico-LUMiX).mkv"
+                },
+                {
+                  "label": "1080p",
+                  "height": 1080,
+                  "url": "https://c6b1e8c93683bdde581e2164cb9657c9.r2.cloudflarestorage.com/hub/429254543198c6f1e0f43bc5d39e6d09"
                 }
               ],
               "audioTracks": [
@@ -715,30 +1336,60 @@
                   "default": true
                 }
               ],
-              "backupUrlCount": 3
+              "backupUrlCount": 5
             },
             "serverAttempts": []
           },
           "tiers": {
-            "latencyMs": 1453,
+            "latencyMs": 21260,
             "4khdhub": {
               "ok": true,
               "reason": null,
-              "rawUrl": "https://d33f51dyacx7bd.cloudfront.net/",
+              "rawUrl": "https://c6b1e8c93683bdde581e2164cb9657c9.r2.cloudflarestorage.com/hub/bc953c1f1cee5b851b6a0a9112531074",
+              "rawUrlFull": "https://c6b1e8c93683bdde581e2164cb9657c9.r2.cloudflarestorage.com/hub/bc953c1f1cee5b851b6a0a9112531074?X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Credential=ce3806fdca997f65e356f3b6fc2f735d%2F20261004%2Fauto%2Fs3%2Faws4_request&X-Amz-Date=20261004T100414Z&X-Amz-Expires=28800&X-Amz-SignedHeaders=host&res",
+              "score": 92,
+              "qualifiesViaScoreOnly": true,
+              "playback": {
+                "ok": true,
+                "status": 206,
+                "contentType": "application/octet-stream",
+                "contentLengthHeader": "2048",
+                "firstBytes": 2048,
+                "magic": "1a45dfa3a34286810142f7810142f281",
+                "headText": ".E..B...B...B.",
+                "looksLikeHtml": false,
+                "looksLikeScript": false,
+                "latencyMs": 187
+              },
               "qualities": [
-                "2160p (4K)"
+                "2160p (4K)",
+                "2160p (4K HDR)",
+                "1080p"
               ]
             },
             "moviesdrive4k": {
               "ok": false,
               "reason": "moviesdrive4k_unroll_failed",
               "rawUrl": null,
+              "rawUrlFull": null,
+              "score": null,
+              "qualifiesViaScoreOnly": false,
+              "playback": null,
               "qualities": []
             },
             "hicine4k": {
               "ok": true,
               "reason": null,
-              "rawUrl": "https://video-downloads.googleusercontent.com/ADGPM2n0Hq9sXrUUP7IxBxynJky3hLrtp4cOKlCicmhtHcQ1BZf_wDYFjAVffo2eB0CAMliMzMlZqji3n9mbRwA2P-Z7HHPAlvVrAMd9CtKKi6I01iNhwwRDBKgmm_KqexYuMsuaOIRAHnJ1F9weUhNb5vCdmXOAoJVaekVtz97gmxCUHh7EZXadz_6kJYmjZWWj8EC_e9qLQfr4lkQsImR6-AxuJ5VqEtEcxAcb6V_BU5Eo1oyccv2zUhyxo8w4EZRvbukh5FKjxkLvsU2-vTHGxHQDNFhiG-Q0GN_opJK6wyFWs-9TJ6-6YtFInD9J9f2adcVhoaRgcvhZKBXP-P2AAfD5N_xeiT9ZPX0F99H2Qp7GG9nE4xKRDqGbDgGwq-iLaU_5euEh8xb_2-HFITTaHjpG0dxuPV0znielVMbwtzSHGc24h5JX_yeZqILJOqHC-fUR6qk80YKmHHAZbwRMCixyTxn6QMzxLb-MV-v2q8we-ncQAvzO1c56jugLqqrnx0zqW2KaVCxYmmpTxWPzyhaZZF8TEOswSHrzlokD4ZFNoKLNObXyYTJeRPS5jIvGDNV9Uyst3gkVWPgmGyRMN1N0fjbPvsPmsFhcw2IVfF4UI67h7WwYCzSvXppUy_8ixYbbUgwGUpeTjQErgKZSqk6b_LGq9NpRMlk-eG6LLiQ1dZ9rDz_96wa_ERllGhN7bQPvQab33NmrbijEGGdYGgvWZxney5u-OeDCB63aQAjECjTK53gWj7PuxU_yg41bCS7lLLkJflrGsg_OuhOljg1kZ-4szDAbksT77hBmbo8ad6RVwMnYKGEu2PPRXXseMfJK2YQFd9J6R5lSHBTX37XZaUnuhSsPepCUrUbNArhZAOjheqlSgq52td6tUlo4UcsgT-jLugZKm7h_4JkZFzDLXVM3kNRfpmApATCd1rVzudwyT4rrIZQIjWxim8d8M4YwBAE__mHN3xD0jBgGnSem6StxmT7U-rlhLtWHJWKn1iVCTnOPb7_2Fr5aMyt5uOMPA2Fp1TyGZzK4DjYghL7eRQ7P4uWblin70I78C7F1dVISoZ3-eY-UoDWzKLzQN5iuBbO5J2Bi8MHQNb-7Z4TqusiOlJ10dhUlX9BVec-ga2hLPPGiG05mw3MTt5Gxmt3dMODe8jltQUpgFvI1FQgS_2Zzfg",
+              "rawUrl": "https://video-downloads.googleusercontent.com/ADGPM2k4bGrYFvHS1fxh--tV-3jUAAb78FBVtLEJAjiaq2BnUbxO8SVAIeUt7WhybUaZX_WOgytls9qJvi1yVVYkD5iCweVE7JWo-CUwxHEGUCyAD3Yx94UMnf6-p3uhaIlzGei_2KW1nzGxDNuKp5gcmu0tQ4P_zFVZgQpAQEfW3iPsZGbM9WiwRszELCrtrM8M4QmfINV4wqZmYrUhxsVv6-QqS3lgdTdWjTxHYjHlJhBMpWAZrtcEzhEeidIZGuwnFPbpShczABmp0qILvGNXy6hSo8Z_aEjztvfORNoXcv95Wg4mh9Q0OXSDZOWIs1tL5SnvdSC5AtGy2Lm_ZcS9FhLVrohGtgnvj2HOtqIqGu9s2Xa-uFoRfHJEcMkZSe89wPiN9tu7ENL4aKx7KvmHaSdf8P3cnGzJ0bysMytv09TICXT7AQhRFULWNvjhDqmEKinhrrCNpZDhxjdS8haoJaKn3nR5Yayq_ZKH3-ALkuWebCmb9An9QQKPsjifo_JNtakP70ycWt5OdrLXPRQ23YiQ6_-fKL3nbz4GvuRQUgDXDM_hvMBA15yMGoY3n2wTGeMIvbFDE_j7dSV3UtnwrWiftQCevUb6XoWC-pIdx_lvoPyvreGKn40uAXt0bJrqFh3XHaM-Qy2WggRFmJ57KaXHNZoCsaKCEJ9pgxsHDtsBMZ1e4D5YKoGl6DtcTWVXnV_3YoRiP0jg6xcCU8pZAj9VR7YFWptr1nsVwT74JWyaSTWFpMUuhrLW4CXyCRCg0hkTTiaajoTD474x1_hAoZJYs8pJnaXPu576roLJQ4rfjFQPFycOYJ0jclLbpKvKJ0rxBD1Ix9cGWHxMbapr7HggLDaSTMAkiL5tvDQkh2nudvjTwIiB801yOVMNaOOsA5It5vAbcxoflqhHUbjd6P6AmqWBdFF2qRcOy8HYE24cF0rgdImuMWOPwhL0Rv5cFkBbF5BQ8II8m8ub34F9DKUs5qgBohx160XeNNvY2-nGu6Tj0VDRzb4y5it3cO-RgfwL81IRye5opeqy-C6XFzXPqsIZR-2271CuLkv7Bovq8aMqPfsTQMRpsRfb6CTWi7_rgRjQbJ5z6Y8XQNnHDePBv2qtFaRBlY_Q9RLFPGWhTjXwAnEvnBIB_LwzJEiLYjFCd5RqtRYiXma5G6X7M8YnA3u8Ng",
+              "rawUrlFull": "https://video-downloads.googleusercontent.com/ADGPM2k4bGrYFvHS1fxh--tV-3jUAAb78FBVtLEJAjiaq2BnUbxO8SVAIeUt7WhybUaZX_WOgytls9qJvi1yVVYkD5iCweVE7JWo-CUwxHEGUCyAD3Yx94UMnf6-p3uhaIlzGei_2KW1nzGxDNuKp5gcmu0tQ4P_zFVZgQpAQEfW3iPsZGbM9WiwRszELCrtrM8M4QmfINV4wqZmYrUhxsVv6-QqS3lgdTdWjTxHYjHlJhBMpWAZrtcEzhEeid",
+              "score": 100,
+              "qualifiesViaScoreOnly": true,
+              "playback": {
+                "ok": false,
+                "status": 0,
+                "error": "This operation was aborted",
+                "latencyMs": 20001
+              },
               "qualities": [
                 "1080p",
                 "1080p (Alt)",
@@ -750,13 +1401,17 @@
               "ok": false,
               "reason": "dahmer4k_directory_not_found",
               "rawUrl": null,
+              "rawUrlFull": null,
+              "score": null,
+              "qualifiesViaScoreOnly": false,
+              "playback": null,
               "qualities": []
             }
           }
         },
         "hamster": {
           "workerEndToEnd": {
-            "latencyMs": 1093,
+            "latencyMs": 1074,
             "status": 200,
             "ok": true,
             "error": null,
@@ -771,7 +1426,7 @@
               "format": "hls",
               "streamUrl": "server-live-probe.test/api/proxy",
               "streamUrlIsRelative": true,
-              "rawUrl": "https://img1.hlnom.com/hls/78164859/720/index_363.m3u8",
+              "rawUrl": "https://img1.klnwm.com/hls/78164859/720/index_364.m3u8",
               "rawUrlKind": "hls",
               "qualityDegraded": false,
               "qualities": [
@@ -830,6 +1485,8 @@
               }
             ],
             "playback": {
+              "resolvedTarget": "https://img1.klnwm.com/hls/78164859/720/index_364.m3u8?auth_key=bg7gdOXlLcdW1rnYwpMmT9jNILuO0NRhnZXsk0r%2BDcQ%3D&expire=1791119087281",
+              "proxyTarget": "/api/proxy?url=https%3A%2F%2Fimg1.klnwm.com%2Fhls%2F78164859%2F720%2Findex_364.m3u8%3Fauth_key%3Dbg7gdOXlLcdW1rnYwpMmT9jNILuO0NRhnZXsk0r%252BDcQ%253D%26expire%3D1791119087281&mode=full&referer=https%3A%2F%2Fapi.hlowb.com%2F",
               "proxy": {
                 "ok": true,
                 "status": 200,
@@ -837,8 +1494,10 @@
                 "contentLengthHeader": null,
                 "firstBytes": 4844,
                 "magic": "234558544d33550a234558542d582d56",
+                "headText": "#EXTM3U.#EXT-X-V",
                 "looksLikeHtml": false,
-                "latencyMs": 244
+                "looksLikeScript": false,
+                "latencyMs": 259
               },
               "direct": {
                 "ok": true,
@@ -847,8 +1506,10 @@
                 "contentLengthHeader": "2048",
                 "firstBytes": 2048,
                 "magic": "234558544d33550a234558542d582d56",
+                "headText": "#EXTM3U.#EXT-X-V",
                 "looksLikeHtml": false,
-                "latencyMs": 252
+                "looksLikeScript": false,
+                "latencyMs": 217
               }
             }
           },
@@ -883,7 +1544,7 @@
             }
           },
           "nodeWaterfall": {
-            "latencyMs": 835,
+            "latencyMs": 856,
             "ok": true,
             "reason": null,
             "requestedServer": "hamster",
@@ -949,6 +1610,528 @@
             }
           }
         }
+      },
+      "fourKChain": {
+        "latencyMs": 509,
+        "host": "https://4khdhub.one",
+        "searchUrl": null,
+        "cards": [
+          {
+            "title": "Fight Club",
+            "year": 1999,
+            "href": "https://4khdhub.one/fight-club-movie-540/",
+            "isSeries": false
+          }
+        ],
+        "buttons": [
+          {
+            "href": "https://greenmotors.club/?id=Q1dxTzFnbjhrQm5kMG5lL01tQzcvdEhwZ0JtZVdjNUEvbXdPRHcyWGVHVVI5cmg5am83K0JPTDNGMzhCbk03NVNCUTljWUV5aUZlc0ZwbkZiTGpXOVE9PQ==",
+            "decoded": {
+              "type": "direct",
+              "url": "https://hubcloud.ist/drive/kbknun5urmsaang"
+            },
+            "generator": "https://hubcloud.ist/drive/kbknun5urmsaang",
+            "candidates": [
+              {
+                "url": "https://use.fontawesome.com/releases/v5.8.1/css/all.css",
+                "score": -1,
+                "isGenerator": false
+              },
+              {
+                "url": "https://cdn.jsdelivr.net/npm/bootstrap@5.1.0/dist/css/bootstrap.min.css",
+                "score": -1,
+                "isGenerator": false
+              },
+              {
+                "url": "https://fonts.googleapis.com/css?family=Nunito:200,200i,300,300i,400,400i,600,600i,700,700i,800,800i,900,900i",
+                "score": -1,
+                "isGenerator": false
+              },
+              {
+                "url": "https://unpkg.com/sweetalert/dist/sweetalert.min.js",
+                "score": -1,
+                "isGenerator": false
+              },
+              {
+                "url": "https://hubcloud.cx/favicon.png",
+                "score": -1,
+                "isGenerator": true
+              },
+              {
+                "url": "https://static.cloudflareinsights.com/beacon.min.js",
+                "score": -1,
+                "isGenerator": false
+              },
+              {
+                "url": "https://greenanalytics.autos/recaptcha/v4_enc.js",
+                "score": -1,
+                "isGenerator": false
+              },
+              {
+                "url": "https://www.googletagmanager.com/gtag/js?id=G-VPX61DM9S8",
+                "score": -1,
+                "isGenerator": false
+              },
+              {
+                "url": "https://hubcloud.fans/",
+                "score": -1,
+                "isGenerator": true
+              },
+              {
+                "url": "https://hubcloud.ist/drive/admin",
+                "score": -1,
+                "isGenerator": true
+              },
+              {
+                "url": "https://winexch.com/?btag=52330173",
+                "score": -1,
+                "isGenerator": false
+              },
+              {
+                "url": "https://hubcloud.club/drive/assets/header.gif",
+                "score": -1,
+                "isGenerator": true
+              },
+              {
+                "url": "http://www.w3.org/2000/svg",
+                "score": -1,
+                "isGenerator": false
+              },
+              {
+                "url": "http://www.w3.org/1999/xlink",
+                "score": -1,
+                "isGenerator": false
+              }
+            ],
+            "landingFinalUrl": "https://greenmotors.cc/?id=Q1dxTzFnbjhrQm5kMG5lL01tQzcvdEhwZ0JtZVdjNUEvbXdPRHcyWGVHVVI5cmg5am83K0JPTDNGMzhCbk03NVNCUTljWUV5aUZlc0ZwbkZiTGpXOVE9PQ==",
+            "generatorStatus": 200,
+            "generatorFinalUrl": "https://hubcloud.ist/drive/kbknun5urmsaang",
+            "generatorHtmlHead": "<html>\n<head>\n<title>Fight Club (1999) REPACK 2160p UHD BluRay REMUX HDR 10bit HEVC [Hindi DDP 2.0 + English DTS-HD MA 5.1] x265 (CiNEPHiLES-LUMiX).mkv</title>\n<meta charset=\"utf-8\">\n<meta name=\"referrer\" content=\"no-referrer\"/>\n\n<link rel=\"stylesheet\" href=\"https://use.fontawesome.com/releases/v5.8.1/css/all.css\" integrity=\"sha384-50oBUHEmvpQ+1lW4y57PTFmhCaXp0ML5d60M1M7uH2+nqUivzIebhndOJK28anvf\" crossorigin=\"anonymous\">\n\n<link href=\"https://cdn.jsdelivr.net/npm/bootstrap@5.1.0/dist/css/bootstrap.min.css\" rel=\"stylesheet\" integrity=\"sha384-KyZXEAg3QhqLMpG8r+8fhAXLRk2vvoC2f3B09zVXn8CA5QIVfZOJ3BCsw2P0p/We\" crossorigin=\"anonymous\">\n\n<link href=\"https://fonts.googleapis.com/css?family=Nunito:200"
+          },
+          {
+            "href": "https://greenmotors.club/?id=Q1dxTzFnbjhrQm5kMG5lL01tQzcvdEhwZ0JtZVdjNUEvbXdPRHcyWGVHVVI5cmg5am83K0JPTDNGMzhCbk03NVNCUTljWUV5aUZlc0ZwbkZiTGpXOVE9PQ==",
+            "decoded": {
+              "type": "direct",
+              "url": "https://hubcloud.ist/drive/kbknun5urmsaang"
+            },
+            "generator": "https://hubcloud.ist/drive/kbknun5urmsaang",
+            "candidates": [
+              {
+                "url": "https://use.fontawesome.com/releases/v5.8.1/css/all.css",
+                "score": -1,
+                "isGenerator": false
+              },
+              {
+                "url": "https://cdn.jsdelivr.net/npm/bootstrap@5.1.0/dist/css/bootstrap.min.css",
+                "score": -1,
+                "isGenerator": false
+              },
+              {
+                "url": "https://fonts.googleapis.com/css?family=Nunito:200,200i,300,300i,400,400i,600,600i,700,700i,800,800i,900,900i",
+                "score": -1,
+                "isGenerator": false
+              },
+              {
+                "url": "https://unpkg.com/sweetalert/dist/sweetalert.min.js",
+                "score": -1,
+                "isGenerator": false
+              },
+              {
+                "url": "https://hubcloud.cx/favicon.png",
+                "score": -1,
+                "isGenerator": true
+              },
+              {
+                "url": "https://static.cloudflareinsights.com/beacon.min.js",
+                "score": -1,
+                "isGenerator": false
+              },
+              {
+                "url": "https://greenanalytics.autos/recaptcha/v4_enc.js",
+                "score": -1,
+                "isGenerator": false
+              },
+              {
+                "url": "https://www.googletagmanager.com/gtag/js?id=G-VPX61DM9S8",
+                "score": -1,
+                "isGenerator": false
+              },
+              {
+                "url": "https://hubcloud.fans/",
+                "score": -1,
+                "isGenerator": true
+              },
+              {
+                "url": "https://hubcloud.ist/drive/admin",
+                "score": -1,
+                "isGenerator": true
+              },
+              {
+                "url": "https://winexch.com/?btag=52330173",
+                "score": -1,
+                "isGenerator": false
+              },
+              {
+                "url": "https://hubcloud.club/drive/assets/header.gif",
+                "score": -1,
+                "isGenerator": true
+              },
+              {
+                "url": "http://www.w3.org/2000/svg",
+                "score": -1,
+                "isGenerator": false
+              },
+              {
+                "url": "http://www.w3.org/1999/xlink",
+                "score": -1,
+                "isGenerator": false
+              }
+            ],
+            "landingFinalUrl": "https://greenmotors.cc/?id=Q1dxTzFnbjhrQm5kMG5lL01tQzcvdEhwZ0JtZVdjNUEvbXdPRHcyWGVHVVI5cmg5am83K0JPTDNGMzhCbk03NVNCUTljWUV5aUZlc0ZwbkZiTGpXOVE9PQ==",
+            "generatorStatus": 200,
+            "generatorFinalUrl": "https://hubcloud.ist/drive/kbknun5urmsaang",
+            "generatorHtmlHead": "<html>\n<head>\n<title>Fight Club (1999) REPACK 2160p UHD BluRay REMUX HDR 10bit HEVC [Hindi DDP 2.0 + English DTS-HD MA 5.1] x265 (CiNEPHiLES-LUMiX).mkv</title>\n<meta charset=\"utf-8\">\n<meta name=\"referrer\" content=\"no-referrer\"/>\n\n<link rel=\"stylesheet\" href=\"https://use.fontawesome.com/releases/v5.8.1/css/all.css\" integrity=\"sha384-50oBUHEmvpQ+1lW4y57PTFmhCaXp0ML5d60M1M7uH2+nqUivzIebhndOJK28anvf\" crossorigin=\"anonymous\">\n\n<link href=\"https://cdn.jsdelivr.net/npm/bootstrap@5.1.0/dist/css/bootstrap.min.css\" rel=\"stylesheet\" integrity=\"sha384-KyZXEAg3QhqLMpG8r+8fhAXLRk2vvoC2f3B09zVXn8CA5QIVfZOJ3BCsw2P0p/We\" crossorigin=\"anonymous\">\n\n<link href=\"https://fonts.googleapis.com/css?family=Nunito:200"
+          },
+          {
+            "href": "https://greenmotors.club/?id=Q1dxTzFnbjhrQm5kMG5lL01tQzcvdEhwZ0JtZVdjNUEvbXdPRHcyWGVHWGFUalNXZDlUU1VOUE90NWhFUXhQeTRZNkhCLzQyR1pEL29qQnFLWC8vUHc9PQ==",
+            "decoded": {
+              "type": "direct",
+              "url": "https://hubcloud.ist/drive/qubclcvkkn9n2qk"
+            },
+            "generator": "https://hubcloud.ist/drive/qubclcvkkn9n2qk",
+            "candidates": [
+              {
+                "url": "https://use.fontawesome.com/releases/v5.8.1/css/all.css",
+                "score": -1,
+                "isGenerator": false
+              },
+              {
+                "url": "https://cdn.jsdelivr.net/npm/bootstrap@5.1.0/dist/css/bootstrap.min.css",
+                "score": -1,
+                "isGenerator": false
+              },
+              {
+                "url": "https://fonts.googleapis.com/css?family=Nunito:200,200i,300,300i,400,400i,600,600i,700,700i,800,800i,900,900i",
+                "score": -1,
+                "isGenerator": false
+              },
+              {
+                "url": "https://unpkg.com/sweetalert/dist/sweetalert.min.js",
+                "score": -1,
+                "isGenerator": false
+              },
+              {
+                "url": "https://hubcloud.cx/favicon.png",
+                "score": -1,
+                "isGenerator": true
+              },
+              {
+                "url": "https://static.cloudflareinsights.com/beacon.min.js",
+                "score": -1,
+                "isGenerator": false
+              },
+              {
+                "url": "https://greenanalytics.autos/recaptcha/v4_enc.js",
+                "score": -1,
+                "isGenerator": false
+              },
+              {
+                "url": "https://www.googletagmanager.com/gtag/js?id=G-VPX61DM9S8",
+                "score": -1,
+                "isGenerator": false
+              },
+              {
+                "url": "https://hubcloud.fans/",
+                "score": -1,
+                "isGenerator": true
+              },
+              {
+                "url": "https://hubcloud.ist/drive/admin",
+                "score": -1,
+                "isGenerator": true
+              },
+              {
+                "url": "https://winexch.com/?btag=52330173",
+                "score": -1,
+                "isGenerator": false
+              },
+              {
+                "url": "https://hubcloud.club/drive/assets/header.gif",
+                "score": -1,
+                "isGenerator": true
+              },
+              {
+                "url": "http://www.w3.org/2000/svg",
+                "score": -1,
+                "isGenerator": false
+              },
+              {
+                "url": "http://www.w3.org/1999/xlink",
+                "score": -1,
+                "isGenerator": false
+              }
+            ],
+            "landingFinalUrl": "https://greenmotors.cc/?id=Q1dxTzFnbjhrQm5kMG5lL01tQzcvdEhwZ0JtZVdjNUEvbXdPRHcyWGVHWGFUalNXZDlUU1VOUE90NWhFUXhQeTRZNkhCLzQyR1pEL29qQnFLWC8vUHc9PQ==",
+            "generatorStatus": 200,
+            "generatorFinalUrl": "https://hubcloud.ist/drive/qubclcvkkn9n2qk",
+            "generatorHtmlHead": "<html>\n<head>\n<title>Fight Club (1999) 2160p UHD BluRay HDR 10bit HEVC [Hindi DDP 2.0 + English DTS-HD MA 5.1] x265 (j3rico-LUMiX).mkv</title>\n<meta charset=\"utf-8\">\n<meta name=\"referrer\" content=\"no-referrer\"/>\n\n<link rel=\"stylesheet\" href=\"https://use.fontawesome.com/releases/v5.8.1/css/all.css\" integrity=\"sha384-50oBUHEmvpQ+1lW4y57PTFmhCaXp0ML5d60M1M7uH2+nqUivzIebhndOJK28anvf\" crossorigin=\"anonymous\">\n\n<link href=\"https://cdn.jsdelivr.net/npm/bootstrap@5.1.0/dist/css/bootstrap.min.css\" rel=\"stylesheet\" integrity=\"sha384-KyZXEAg3QhqLMpG8r+8fhAXLRk2vvoC2f3B09zVXn8CA5QIVfZOJ3BCsw2P0p/We\" crossorigin=\"anonymous\">\n\n<link href=\"https://fonts.googleapis.com/css?family=Nunito:200,200i,300,300i,40"
+          },
+          {
+            "href": "https://greenmotors.club/?id=Q1dxTzFnbjhrQm5kMG5lL01tQzcvdEhwZ0JtZVdjNUEvbXdPRHcyWGVHWGFUalNXZDlUU1VOUE90NWhFUXhQeTRZNkhCLzQyR1pEL29qQnFLWC8vUHc9PQ==",
+            "decoded": {
+              "type": "direct",
+              "url": "https://hubcloud.ist/drive/qubclcvkkn9n2qk"
+            },
+            "generator": "https://hubcloud.ist/drive/qubclcvkkn9n2qk",
+            "candidates": [
+              {
+                "url": "https://use.fontawesome.com/releases/v5.8.1/css/all.css",
+                "score": -1,
+                "isGenerator": false
+              },
+              {
+                "url": "https://cdn.jsdelivr.net/npm/bootstrap@5.1.0/dist/css/bootstrap.min.css",
+                "score": -1,
+                "isGenerator": false
+              },
+              {
+                "url": "https://fonts.googleapis.com/css?family=Nunito:200,200i,300,300i,400,400i,600,600i,700,700i,800,800i,900,900i",
+                "score": -1,
+                "isGenerator": false
+              },
+              {
+                "url": "https://unpkg.com/sweetalert/dist/sweetalert.min.js",
+                "score": -1,
+                "isGenerator": false
+              },
+              {
+                "url": "https://hubcloud.cx/favicon.png",
+                "score": -1,
+                "isGenerator": true
+              },
+              {
+                "url": "https://static.cloudflareinsights.com/beacon.min.js",
+                "score": -1,
+                "isGenerator": false
+              },
+              {
+                "url": "https://greenanalytics.autos/recaptcha/v4_enc.js",
+                "score": -1,
+                "isGenerator": false
+              },
+              {
+                "url": "https://www.googletagmanager.com/gtag/js?id=G-VPX61DM9S8",
+                "score": -1,
+                "isGenerator": false
+              },
+              {
+                "url": "https://hubcloud.fans/",
+                "score": -1,
+                "isGenerator": true
+              },
+              {
+                "url": "https://hubcloud.ist/drive/admin",
+                "score": -1,
+                "isGenerator": true
+              },
+              {
+                "url": "https://winexch.com/?btag=52330173",
+                "score": -1,
+                "isGenerator": false
+              },
+              {
+                "url": "https://hubcloud.club/drive/assets/header.gif",
+                "score": -1,
+                "isGenerator": true
+              },
+              {
+                "url": "http://www.w3.org/2000/svg",
+                "score": -1,
+                "isGenerator": false
+              },
+              {
+                "url": "http://www.w3.org/1999/xlink",
+                "score": -1,
+                "isGenerator": false
+              }
+            ],
+            "landingFinalUrl": "https://greenmotors.cc/?id=Q1dxTzFnbjhrQm5kMG5lL01tQzcvdEhwZ0JtZVdjNUEvbXdPRHcyWGVHWGFUalNXZDlUU1VOUE90NWhFUXhQeTRZNkhCLzQyR1pEL29qQnFLWC8vUHc9PQ==",
+            "generatorStatus": 200,
+            "generatorFinalUrl": "https://hubcloud.ist/drive/qubclcvkkn9n2qk",
+            "generatorHtmlHead": "<html>\n<head>\n<title>Fight Club (1999) 2160p UHD BluRay HDR 10bit HEVC [Hindi DDP 2.0 + English DTS-HD MA 5.1] x265 (j3rico-LUMiX).mkv</title>\n<meta charset=\"utf-8\">\n<meta name=\"referrer\" content=\"no-referrer\"/>\n\n<link rel=\"stylesheet\" href=\"https://use.fontawesome.com/releases/v5.8.1/css/all.css\" integrity=\"sha384-50oBUHEmvpQ+1lW4y57PTFmhCaXp0ML5d60M1M7uH2+nqUivzIebhndOJK28anvf\" crossorigin=\"anonymous\">\n\n<link href=\"https://cdn.jsdelivr.net/npm/bootstrap@5.1.0/dist/css/bootstrap.min.css\" rel=\"stylesheet\" integrity=\"sha384-KyZXEAg3QhqLMpG8r+8fhAXLRk2vvoC2f3B09zVXn8CA5QIVfZOJ3BCsw2P0p/We\" crossorigin=\"anonymous\">\n\n<link href=\"https://fonts.googleapis.com/css?family=Nunito:200,200i,300,300i,40"
+          },
+          {
+            "href": "https://greenmotors.club/?id=Q1dxTzFnbjhrQm5kMG5lL01tQzcvdEhwZ0JtZVdjNUEvbXdPRHcyWGVHWDBIdGN4Mm9wS0tJZVJWSzY1eXNlOGdhRTc1MStJWDJTc1ZSSHZPbkNJL2c9PQ==",
+            "decoded": {
+              "type": "direct",
+              "url": "https://hubcloud.ist/drive/nhfpxzp4kkxkkfe"
+            },
+            "generator": "https://hubcloud.ist/drive/nhfpxzp4kkxkkfe",
+            "candidates": [
+              {
+                "url": "https://use.fontawesome.com/releases/v5.8.1/css/all.css",
+                "score": -1,
+                "isGenerator": false
+              },
+              {
+                "url": "https://cdn.jsdelivr.net/npm/bootstrap@5.1.0/dist/css/bootstrap.min.css",
+                "score": -1,
+                "isGenerator": false
+              },
+              {
+                "url": "https://fonts.googleapis.com/css?family=Nunito:200,200i,300,300i,400,400i,600,600i,700,700i,800,800i,900,900i",
+                "score": -1,
+                "isGenerator": false
+              },
+              {
+                "url": "https://unpkg.com/sweetalert/dist/sweetalert.min.js",
+                "score": -1,
+                "isGenerator": false
+              },
+              {
+                "url": "https://hubcloud.cx/favicon.png",
+                "score": -1,
+                "isGenerator": true
+              },
+              {
+                "url": "https://static.cloudflareinsights.com/beacon.min.js",
+                "score": -1,
+                "isGenerator": false
+              },
+              {
+                "url": "https://greenanalytics.autos/recaptcha/v4_enc.js",
+                "score": -1,
+                "isGenerator": false
+              },
+              {
+                "url": "https://www.googletagmanager.com/gtag/js?id=G-VPX61DM9S8",
+                "score": -1,
+                "isGenerator": false
+              },
+              {
+                "url": "https://hubcloud.fans/",
+                "score": -1,
+                "isGenerator": true
+              },
+              {
+                "url": "https://hubcloud.ist/drive/admin",
+                "score": -1,
+                "isGenerator": true
+              },
+              {
+                "url": "https://winexch.com/?btag=52330173",
+                "score": -1,
+                "isGenerator": false
+              },
+              {
+                "url": "https://hubcloud.club/drive/assets/header.gif",
+                "score": -1,
+                "isGenerator": true
+              },
+              {
+                "url": "http://www.w3.org/2000/svg",
+                "score": -1,
+                "isGenerator": false
+              },
+              {
+                "url": "http://www.w3.org/1999/xlink",
+                "score": -1,
+                "isGenerator": false
+              }
+            ],
+            "landingFinalUrl": "https://greenmotors.cc/?id=Q1dxTzFnbjhrQm5kMG5lL01tQzcvdEhwZ0JtZVdjNUEvbXdPRHcyWGVHWDBIdGN4Mm9wS0tJZVJWSzY1eXNlOGdhRTc1MStJWDJTc1ZSSHZPbkNJL2c9PQ==",
+            "generatorStatus": 200,
+            "generatorFinalUrl": "https://hubcloud.ist/drive/nhfpxzp4kkxkkfe",
+            "generatorHtmlHead": "<html>\n<head>\n<title>Fight Club (1999) 1080p BluRay REMUX AVC [Hindi DDP 2.0 + English DTS-HD MA 5.1] x264-LUMiX.mkv</title>\n<meta charset=\"utf-8\">\n<meta name=\"referrer\" content=\"no-referrer\"/>\n\n<link rel=\"stylesheet\" href=\"https://use.fontawesome.com/releases/v5.8.1/css/all.css\" integrity=\"sha384-50oBUHEmvpQ+1lW4y57PTFmhCaXp0ML5d60M1M7uH2+nqUivzIebhndOJK28anvf\" crossorigin=\"anonymous\">\n\n<link href=\"https://cdn.jsdelivr.net/npm/bootstrap@5.1.0/dist/css/bootstrap.min.css\" rel=\"stylesheet\" integrity=\"sha384-KyZXEAg3QhqLMpG8r+8fhAXLRk2vvoC2f3B09zVXn8CA5QIVfZOJ3BCsw2P0p/We\" crossorigin=\"anonymous\">\n\n<link href=\"https://fonts.googleapis.com/css?family=Nunito:200,200i,300,300i,400,400i,600,600i,70"
+          },
+          {
+            "href": "https://greenmotors.club/?id=Q1dxTzFnbjhrQm5kMG5lL01tQzcvdEhwZ0JtZVdjNUEvbXdPRHcyWGVHWDBIdGN4Mm9wS0tJZVJWSzY1eXNlOGdhRTc1MStJWDJTc1ZSSHZPbkNJL2c9PQ==",
+            "decoded": {
+              "type": "direct",
+              "url": "https://hubcloud.ist/drive/nhfpxzp4kkxkkfe"
+            },
+            "generator": "https://hubcloud.ist/drive/nhfpxzp4kkxkkfe",
+            "candidates": [
+              {
+                "url": "https://use.fontawesome.com/releases/v5.8.1/css/all.css",
+                "score": -1,
+                "isGenerator": false
+              },
+              {
+                "url": "https://cdn.jsdelivr.net/npm/bootstrap@5.1.0/dist/css/bootstrap.min.css",
+                "score": -1,
+                "isGenerator": false
+              },
+              {
+                "url": "https://fonts.googleapis.com/css?family=Nunito:200,200i,300,300i,400,400i,600,600i,700,700i,800,800i,900,900i",
+                "score": -1,
+                "isGenerator": false
+              },
+              {
+                "url": "https://unpkg.com/sweetalert/dist/sweetalert.min.js",
+                "score": -1,
+                "isGenerator": false
+              },
+              {
+                "url": "https://hubcloud.cx/favicon.png",
+                "score": -1,
+                "isGenerator": true
+              },
+              {
+                "url": "https://static.cloudflareinsights.com/beacon.min.js",
+                "score": -1,
+                "isGenerator": false
+              },
+              {
+                "url": "https://greenanalytics.autos/recaptcha/v4_enc.js",
+                "score": -1,
+                "isGenerator": false
+              },
+              {
+                "url": "https://www.googletagmanager.com/gtag/js?id=G-VPX61DM9S8",
+                "score": -1,
+                "isGenerator": false
+              },
+              {
+                "url": "https://hubcloud.fans/",
+                "score": -1,
+                "isGenerator": true
+              },
+              {
+                "url": "https://hubcloud.ist/drive/admin",
+                "score": -1,
+                "isGenerator": true
+              },
+              {
+                "url": "https://winexch.com/?btag=52330173",
+                "score": -1,
+                "isGenerator": false
+              },
+              {
+                "url": "https://hubcloud.club/drive/assets/header.gif",
+                "score": -1,
+                "isGenerator": true
+              },
+              {
+                "url": "http://www.w3.org/2000/svg",
+                "score": -1,
+                "isGenerator": false
+              },
+              {
+                "url": "http://www.w3.org/1999/xlink",
+                "score": -1,
+                "isGenerator": false
+              }
+            ],
+            "landingFinalUrl": "https://greenmotors.cc/?id=Q1dxTzFnbjhrQm5kMG5lL01tQzcvdEhwZ0JtZVdjNUEvbXdPRHcyWGVHWDBIdGN4Mm9wS0tJZVJWSzY1eXNlOGdhRTc1MStJWDJTc1ZSSHZPbkNJL2c9PQ==",
+            "generatorStatus": 200,
+            "generatorFinalUrl": "https://hubcloud.ist/drive/nhfpxzp4kkxkkfe",
+            "generatorHtmlHead": "<html>\n<head>\n<title>Fight Club (1999) 1080p BluRay REMUX AVC [Hindi DDP 2.0 + English DTS-HD MA 5.1] x264-LUMiX.mkv</title>\n<meta charset=\"utf-8\">\n<meta name=\"referrer\" content=\"no-referrer\"/>\n\n<link rel=\"stylesheet\" href=\"https://use.fontawesome.com/releases/v5.8.1/css/all.css\" integrity=\"sha384-50oBUHEmvpQ+1lW4y57PTFmhCaXp0ML5d60M1M7uH2+nqUivzIebhndOJK28anvf\" crossorigin=\"anonymous\">\n\n<link href=\"https://cdn.jsdelivr.net/npm/bootstrap@5.1.0/dist/css/bootstrap.min.css\" rel=\"stylesheet\" integrity=\"sha384-KyZXEAg3QhqLMpG8r+8fhAXLRk2vvoC2f3B09zVXn8CA5QIVfZOJ3BCsw2P0p/We\" crossorigin=\"anonymous\">\n\n<link href=\"https://fonts.googleapis.com/css?family=Nunito:200,200i,300,300i,400,400i,600,600i,70"
+          }
+        ],
+        "searchStatus": 200,
+        "detailUrl": "https://4khdhub.one/fight-club-movie-540/",
+        "detailStatus": 200
       }
     },
     "tv:94605": {
@@ -970,7 +2153,7 @@
       "servers": {
         "ursa": {
           "workerEndToEnd": {
-            "latencyMs": 1900,
+            "latencyMs": 4738,
             "status": 200,
             "ok": true,
             "error": null,
@@ -983,16 +2166,31 @@
               "provider": null,
               "tier": "4khdhub",
               "format": "mp4",
-              "streamUrl": "https://d33f51dyacx7bd.cloudfront.net/",
+              "streamUrl": "https://pixeldrain.dev/api/file/nrDZ4gP4",
               "streamUrlIsRelative": false,
-              "rawUrl": "https://d33f51dyacx7bd.cloudfront.net/",
+              "rawUrl": "https://pixeldrain.dev/api/file/nrDZ4gP4",
               "rawUrlKind": "other",
               "qualityDegraded": false,
               "qualities": [
                 {
                   "label": "2160p (4K)",
                   "height": 2160,
-                  "url": "https://d33f51dyacx7bd.cloudfront.net/"
+                  "url": "https://pixeldrain.dev/api/file/nrDZ4gP4"
+                },
+                {
+                  "label": "2160p (4K DV HDR)",
+                  "height": 2160,
+                  "url": "https://pixeldrain.dev/api/file/4G95xNt3"
+                },
+                {
+                  "label": "1080p",
+                  "height": 1080,
+                  "url": "https://pixeldrain.dev/api/file/9X6mdXG9"
+                },
+                {
+                  "label": "1080p (Alt)",
+                  "height": 1080,
+                  "url": "https://pixeldrain.dev/api/file/34qR27vw"
                 }
               ],
               "audioTracks": [
@@ -1003,7 +2201,7 @@
                   "default": true
                 }
               ],
-              "backupUrlCount": 3
+              "backupUrlCount": 6
             },
             "serverAttempts": [],
             "playerServerList": [
@@ -1044,6 +2242,8 @@
               }
             ],
             "playback": {
+              "resolvedTarget": "https://pixeldrain.dev/api/file/nrDZ4gP4?download",
+              "proxyTarget": "https://pixeldrain.dev/api/file/nrDZ4gP4?download",
               "proxy": {
                 "ok": false,
                 "status": 404,
@@ -1051,23 +2251,27 @@
                 "contentLengthHeader": null,
                 "firstBytes": 32,
                 "magic": "7b226f6b223a66616c73652c22657272",
+                "headText": "{\"ok\":false,\"err",
                 "looksLikeHtml": false,
-                "latencyMs": 0
+                "looksLikeScript": false,
+                "latencyMs": 1
               },
               "direct": {
                 "ok": true,
                 "status": 206,
-                "contentType": null,
+                "contentType": "video/matroska",
                 "contentLengthHeader": "2048",
                 "firstBytes": 2048,
-                "magic": "2866756e6374696f6e28297b76617220",
+                "magic": "1a45dfa3a34286810142f7810142f281",
+                "headText": ".E..B...B...B.",
                 "looksLikeHtml": false,
-                "latencyMs": 24
+                "looksLikeScript": false,
+                "latencyMs": 739
               }
             }
           },
           "nodeDirect": {
-            "latencyMs": 2827,
+            "latencyMs": 4459,
             "ok": true,
             "reason": null,
             "selectedTier": "4khdhub",
@@ -1087,16 +2291,31 @@
               "provider": null,
               "tier": "4khdhub",
               "format": "mp4",
-              "streamUrl": "https://d33f51dyacx7bd.cloudfront.net/",
+              "streamUrl": "https://pixeldrain.dev/api/file/nrDZ4gP4",
               "streamUrlIsRelative": false,
-              "rawUrl": "https://d33f51dyacx7bd.cloudfront.net/",
+              "rawUrl": "https://pixeldrain.dev/api/file/nrDZ4gP4",
               "rawUrlKind": "other",
               "qualityDegraded": false,
               "qualities": [
                 {
                   "label": "2160p (4K)",
                   "height": 2160,
-                  "url": "https://d33f51dyacx7bd.cloudfront.net/"
+                  "url": "https://pixeldrain.dev/api/file/nrDZ4gP4"
+                },
+                {
+                  "label": "2160p (4K DV HDR)",
+                  "height": 2160,
+                  "url": "https://pixeldrain.dev/api/file/4G95xNt3"
+                },
+                {
+                  "label": "1080p",
+                  "height": 1080,
+                  "url": "https://pixeldrain.dev/api/file/9X6mdXG9"
+                },
+                {
+                  "label": "1080p (Alt)",
+                  "height": 1080,
+                  "url": "https://pixeldrain.dev/api/file/34qR27vw"
                 }
               ],
               "audioTracks": [
@@ -1107,11 +2326,11 @@
                   "default": true
                 }
               ],
-              "backupUrlCount": 3
+              "backupUrlCount": 6
             }
           },
           "nodeWaterfall": {
-            "latencyMs": 1423,
+            "latencyMs": 1463,
             "ok": true,
             "reason": null,
             "requestedServer": "ursa",
@@ -1121,16 +2340,31 @@
               "provider": null,
               "tier": "4khdhub",
               "format": "mp4",
-              "streamUrl": "https://d33f51dyacx7bd.cloudfront.net/",
+              "streamUrl": "https://pixeldrain.dev/api/file/nrDZ4gP4",
               "streamUrlIsRelative": false,
-              "rawUrl": "https://d33f51dyacx7bd.cloudfront.net/",
+              "rawUrl": "https://pixeldrain.dev/api/file/nrDZ4gP4",
               "rawUrlKind": "other",
               "qualityDegraded": false,
               "qualities": [
                 {
                   "label": "2160p (4K)",
                   "height": 2160,
-                  "url": "https://d33f51dyacx7bd.cloudfront.net/"
+                  "url": "https://pixeldrain.dev/api/file/nrDZ4gP4"
+                },
+                {
+                  "label": "2160p (4K DV HDR)",
+                  "height": 2160,
+                  "url": "https://pixeldrain.dev/api/file/4G95xNt3"
+                },
+                {
+                  "label": "1080p",
+                  "height": 1080,
+                  "url": "https://pixeldrain.dev/api/file/9X6mdXG9"
+                },
+                {
+                  "label": "1080p (Alt)",
+                  "height": 1080,
+                  "url": "https://pixeldrain.dev/api/file/34qR27vw"
                 }
               ],
               "audioTracks": [
@@ -1141,30 +2375,67 @@
                   "default": true
                 }
               ],
-              "backupUrlCount": 3
+              "backupUrlCount": 6
             },
             "serverAttempts": []
           },
           "tiers": {
-            "latencyMs": 1422,
+            "latencyMs": 10311,
             "4khdhub": {
               "ok": true,
               "reason": null,
-              "rawUrl": "https://d33f51dyacx7bd.cloudfront.net/",
+              "rawUrl": "https://pixeldrain.dev/api/file/nrDZ4gP4",
+              "rawUrlFull": "https://pixeldrain.dev/api/file/nrDZ4gP4?download",
+              "score": 75,
+              "qualifiesViaScoreOnly": true,
+              "playback": {
+                "ok": true,
+                "status": 206,
+                "contentType": "video/matroska",
+                "contentLengthHeader": "2048",
+                "firstBytes": 2048,
+                "magic": "1a45dfa3a34286810142f7810142f281",
+                "headText": ".E..B...B...B.",
+                "looksLikeHtml": false,
+                "looksLikeScript": false,
+                "latencyMs": 718
+              },
               "qualities": [
-                "2160p (4K)"
+                "2160p (4K)",
+                "2160p (4K DV HDR)",
+                "1080p",
+                "1080p (Alt)"
               ]
             },
             "moviesdrive4k": {
               "ok": false,
               "reason": "moviesdrive4k_unroll_failed",
               "rawUrl": null,
+              "rawUrlFull": null,
+              "score": null,
+              "qualifiesViaScoreOnly": false,
+              "playback": null,
               "qualities": []
             },
             "hicine4k": {
               "ok": true,
               "reason": null,
-              "rawUrl": "https://video-downloads.googleusercontent.com/ADGPM2kBaL3uK6ORR5F3Qd_vs_iCfxiTxosYwGTZrOKisSQTWHiujw7H7OkjPcJk-QVi4L9Fxk8DeIEfpE3k42pG7xc1MjckhRR85VsVaMavd_bOqhfiBHNLqgK0SowfTgB_caBLb8heKRx9i00bg_ZKJkV2UIcoi85HXshn8dX0JQ_IxPGIn2reZ2hAy8fKQYqS1_3QC7DuRndBTMD4f5B-od8x6Yoh1qCZxbPTdoAePVJTWdRgtW9Bou-knDxbkaVo3bAjz_kqE0qDz89Wz08CNihLLjGzOkUJLXGVAojuRNzG9hyySWNbnz0L4Z2ED15eFJBuSlQC2nED32Xsg3MPVI9dm1xcz2Z92wT9yHyxNtxT4SxIZ7mzMCJ85znBTfFW3Rw4JzlSEr5n4IYEodYbCrbkkTc8JkNbOf1wxnOu_7T1DNmWv4ng82m6oPVYZNsl8XQnpu9NV3pGxykzFBKsU1IBs303NHluYJO2qi3RfQ564IQWIG8CoiohJXYbXCebNotwPzs8UGxOnt5j6vdT-VJJZkraV_GoNfMRw5eBYkfhTDSboe_RMvdC0vbR2bMtmLmovr-9KIKKGlOYP7T6-LXiwcNwK1cS8Lgin5YTE5TQFZ8H9oMI21nXBitIB-4JUYs6bUt8MgU6Ena_l-hlZbvQAWFZt970NMtc_fhhzfQ7K0GRfKfP85up_Ov-Mep45DPq7Xqn0sZnkIWdmCQg_a8qSs7F9TAAPzwLVq8o-QdutN6kmYMpA8lGWrWXGaoFAWtpoHUgwOi8Pl_rT_ZysjBsPxwenJgGyQegH4ef1cHdxI71ffb73d9jjglIW1uhv8GeKH2T9__uFK1zM5A0_9xKXAbgqcGY7dY3k1dyGKKa_zEdhvS_iP6RtCP63_vZxFWB5PPJMP4yauIWsp81kq7O94bSQFc47Yz5-7ypwOviRkjNGSzSIVhLIlAaYBmtsQcnWGkhTZkUSZzGsrBr0apkOFNZpFhtLEGUC9gvD4bU5Gy0qD13we1jry7HtptgXS_BUmFvI_FJ3-tSJtMCQEqO7yeoNFpxVJo1J4LGAQLHvTa4ezfYypc_UknsersDsIRHaUs3_-3heRzqHvaNaeE-tKdCiR3MuMAtXEK9ibv0QAkHC_qPv4eyfHzf1WsGvw4dN0mCnS6H2gS_shZAIeA6Io0pxA",
+              "rawUrl": "https://video-downloads.googleusercontent.com/ADGPM2muLCiJWKsOBUM7Pq4LLy4bQP9ItySVh6KsSd9qleyLYhsHgmRW0ZFBfPG_JT8JNbR30uFCapFQPQJEsdqZwyHRa6MinEBpzNqfwfGAID0NQAy0lbaIHmVmqNsolSmrOWlyAxibJBvgbgYbkFewBlpzas55CVqEtLpD2qXoSIn7UFnXE6TCHnpCpM7DY_uSY0qKJ5UYOFR4HqMkencG-kvPsws79piOKGxzjJhNwSTKJePgYNtegwmIdl-DoBwwlGWlqgTPUJK0X6CJtGVA-T1Qm2XRsk_q7f5bb1sXB7EFb-CMPcWHoHvP007ix1UJY9srFoj-pRa1x32q2NRxM11Yp8mW5UehzcAX6cs9L1-Hg5en8W4oF3QRsX50AyNj6EhsMbJAh7kU0SK9sSK-ktxQAMojMjjq25deiOIifXbUlwENfFa5KqjogQmlT2Ip8stM5QSM8sCdiqfq2t56XNHbXEdxl_EyXlWDyNj3J9lvVzbGd7a3NFEdazaUACjN9pNtA047ssYNahxc4NMQhPMyB0xLplcqlQiZzC8swMnwIqF3hE_Siz-5OkQowt8hz2mknxpgwlJwN3la9slqMjhOx6ghqMfOMkRrOH1Tn1k5XN7fyP39i-haXcaJrs1aFfDLcNpgx0lp_qD9r-GrQUK-slU1SwTcTGF2NotpHpsUVDq5Yl7IRz7IVl6KuOS1QQ_G38mB0N8t8Bs2jYeyXl_95FZBso0wXtA_H3iqx2iN5-NtqwvqnU1TZ5h5u7BVU_85yy-DB8P_lmBb5Sw0V0tdSopYo6O8RG22F8DIgSgy1oMZDuAVR6LTYYpHybVr5TtQJOFfTkBMj4V3MzY0Xcjj37vLB7Pt26af5EJFNi8-8S-fsxTk3827hiUcoF-Wtp7kFF_KstbruLbbFu21en2NNmAKnmadv1-vi7lfaiIHJ0V2WM-7JEm78oLrEEbKg3MCFj8Otv7P5jeYc_mCEMBvw19aWLXPL9WNXjCFEHW-3chUX-yqGhnjn3TOEnJ5vfEG4-d8tp9nmXQWk9gvv9AN6IIP-HtgBXX-ZEtLyU4TjRUyigKjVX2tuJN7Br7qknhwkN4GIwFcIYxr6b9edfr0FZJzypMK5sBbQrAit6PPUU-c7wcQaz5PJxobmHWyPMOTX0MdAHWPWdd9w13Qn0c4dQS_fQ",
+              "rawUrlFull": "https://video-downloads.googleusercontent.com/ADGPM2muLCiJWKsOBUM7Pq4LLy4bQP9ItySVh6KsSd9qleyLYhsHgmRW0ZFBfPG_JT8JNbR30uFCapFQPQJEsdqZwyHRa6MinEBpzNqfwfGAID0NQAy0lbaIHmVmqNsolSmrOWlyAxibJBvgbgYbkFewBlpzas55CVqEtLpD2qXoSIn7UFnXE6TCHnpCpM7DY_uSY0qKJ5UYOFR4HqMkencG-kvPsws79piOKGxzjJhNwSTKJePgYNtegwmIdl",
+              "score": 100,
+              "qualifiesViaScoreOnly": true,
+              "playback": {
+                "ok": true,
+                "status": 200,
+                "contentType": "video/mkv",
+                "contentLengthHeader": "315189056",
+                "firstBytes": 315189056,
+                "magic": "1a45dfa3a34286810142f7810142f281",
+                "headText": ".E..B...B...B.",
+                "looksLikeHtml": false,
+                "looksLikeScript": false,
+                "latencyMs": 9478
+              },
               "qualities": [
                 "720p",
                 "480p"
@@ -1174,13 +2445,17 @@
               "ok": false,
               "reason": "dahmer4k_directory_not_found",
               "rawUrl": null,
+              "rawUrlFull": null,
+              "score": null,
+              "qualifiesViaScoreOnly": false,
+              "playback": null,
               "qualities": []
             }
           }
         },
         "hamster": {
           "workerEndToEnd": {
-            "latencyMs": 1121,
+            "latencyMs": 2083,
             "status": 200,
             "ok": true,
             "error": null,
@@ -1254,6 +2529,8 @@
               }
             ],
             "playback": {
+              "resolvedTarget": "https://img1.klnwm.com/hls_mps/244490619/720/index_364.m3u8?auth_key=2HjY58UokZ%2FEFUmDAxttEEwW5kW1RGzzJgi%2FXfORzvk%3D&expire=1791119113197",
+              "proxyTarget": "/api/proxy?url=https%3A%2F%2Fimg1.klnwm.com%2Fhls_mps%2F244490619%2F720%2Findex_364.m3u8%3Fauth_key%3D2HjY58UokZ%252FEFUmDAxttEEwW5kW1RGzzJgi%252FXfORzvk%253D%26expire%3D1791119113197&mode=full&referer=https%3A%2F%2Fapi.hlowb.com%2F",
               "proxy": {
                 "ok": true,
                 "status": 200,
@@ -1261,8 +2538,10 @@
                 "contentLengthHeader": null,
                 "firstBytes": 4736,
                 "magic": "234558544d33550a234558542d582d56",
+                "headText": "#EXTM3U.#EXT-X-V",
                 "looksLikeHtml": false,
-                "latencyMs": 317
+                "looksLikeScript": false,
+                "latencyMs": 236
               },
               "direct": {
                 "ok": true,
@@ -1271,13 +2550,15 @@
                 "contentLengthHeader": "2048",
                 "firstBytes": 2048,
                 "magic": "234558544d33550a234558542d582d56",
+                "headText": "#EXTM3U.#EXT-X-V",
                 "looksLikeHtml": false,
-                "latencyMs": 227
+                "looksLikeScript": false,
+                "latencyMs": 204
               }
             }
           },
           "nodeDirect": {
-            "latencyMs": 0,
+            "latencyMs": 9997,
             "ok": false,
             "reason": "hamster_all_sources_exhausted",
             "selectedTier": null,
@@ -1307,7 +2588,7 @@
             }
           },
           "nodeWaterfall": {
-            "latencyMs": 1040,
+            "latencyMs": 11494,
             "ok": true,
             "reason": null,
             "requestedServer": "hamster",
@@ -1342,40 +2623,562 @@
             "serverAttempts": [
               {
                 "server": "hamster",
-                "latencyMs": 0,
+                "latencyMs": 10220,
                 "reason": "hamster_all_sources_exhausted",
                 "diagMessage": "All Hamster Wheel providers (Videasy, Peachify, VidSrc) failed to resolve a stream."
               }
             ]
           },
           "providers": {
-            "latencyMs": 0,
+            "latencyMs": 9501,
             "videasy": {
               "ok": false,
-              "reason": "circuit_open",
+              "reason": "videasy_no_sources",
               "provider": null,
               "rawUrl": null,
               "audioTracks": []
             },
             "peachify": {
               "ok": false,
-              "reason": "circuit_open",
+              "reason": "peachify_no_sources",
               "provider": null,
               "rawUrl": null,
               "audioTracks": []
             },
             "vidsrc": {
               "ok": false,
-              "reason": "circuit_open",
+              "reason": "vidsrc_no_second_url",
               "provider": null,
               "rawUrl": null,
               "audioTracks": []
             }
           }
         }
+      },
+      "fourKChain": {
+        "latencyMs": 554,
+        "host": "https://4khdhub.one",
+        "searchUrl": null,
+        "cards": [
+          {
+            "title": "Arcane",
+            "year": 2021,
+            "href": "https://4khdhub.one/arcane-series-4294/",
+            "isSeries": true
+          }
+        ],
+        "buttons": [
+          {
+            "href": "https://greenmotors.club/?id=Q1dxTzFnbjhrQm5kMG5lL01tQzcvdEhwZ0JtZVdjNUEvbXdPRHcyWGVHVVpMODU4SE41Z0hEWkZXaE9odjJta1l3VWpIYUYrUktGVjMySzF5U3Zjanc9PQ==",
+            "decoded": {
+              "type": "direct",
+              "url": "https://hubcloud.ist/drive/izd9nqnzqqqsjuq"
+            },
+            "generator": "https://hubcloud.ist/drive/izd9nqnzqqqsjuq",
+            "candidates": [
+              {
+                "url": "https://use.fontawesome.com/releases/v5.8.1/css/all.css",
+                "score": -1,
+                "isGenerator": false
+              },
+              {
+                "url": "https://cdn.jsdelivr.net/npm/bootstrap@5.1.0/dist/css/bootstrap.min.css",
+                "score": -1,
+                "isGenerator": false
+              },
+              {
+                "url": "https://fonts.googleapis.com/css?family=Nunito:200,200i,300,300i,400,400i,600,600i,700,700i,800,800i,900,900i",
+                "score": -1,
+                "isGenerator": false
+              },
+              {
+                "url": "https://unpkg.com/sweetalert/dist/sweetalert.min.js",
+                "score": -1,
+                "isGenerator": false
+              },
+              {
+                "url": "https://hubcloud.cx/favicon.png",
+                "score": -1,
+                "isGenerator": true
+              },
+              {
+                "url": "https://static.cloudflareinsights.com/beacon.min.js",
+                "score": -1,
+                "isGenerator": false
+              },
+              {
+                "url": "https://greenanalytics.autos/recaptcha/v4_enc.js",
+                "score": -1,
+                "isGenerator": false
+              },
+              {
+                "url": "https://www.googletagmanager.com/gtag/js?id=G-VPX61DM9S8",
+                "score": -1,
+                "isGenerator": false
+              },
+              {
+                "url": "https://hubcloud.fans/",
+                "score": -1,
+                "isGenerator": true
+              },
+              {
+                "url": "https://hubcloud.ist/drive/admin",
+                "score": -1,
+                "isGenerator": true
+              },
+              {
+                "url": "https://winexch.com/?btag=52330173",
+                "score": -1,
+                "isGenerator": false
+              },
+              {
+                "url": "https://hubcloud.club/drive/assets/header.gif",
+                "score": -1,
+                "isGenerator": true
+              },
+              {
+                "url": "http://www.w3.org/2000/svg",
+                "score": -1,
+                "isGenerator": false
+              },
+              {
+                "url": "http://www.w3.org/1999/xlink",
+                "score": -1,
+                "isGenerator": false
+              }
+            ],
+            "landingFinalUrl": "https://greenmotors.cc/?id=Q1dxTzFnbjhrQm5kMG5lL01tQzcvdEhwZ0JtZVdjNUEvbXdPRHcyWGVHVVpMODU4SE41Z0hEWkZXaE9odjJta1l3VWpIYUYrUktGVjMySzF5U3Zjanc9PQ==",
+            "generatorStatus": 200,
+            "generatorFinalUrl": "https://hubcloud.ist/drive/izd9nqnzqqqsjuq",
+            "generatorHtmlHead": "<html>\n<head>\n<title>Arcane.League.of.Legends.S02E01.2160p.BluRay.DoVi.x265.10bit.Atmos.TrueHD7.1-WiKi.mkv</title>\n<meta charset=\"utf-8\">\n<meta name=\"referrer\" content=\"no-referrer\"/>\n\n<link rel=\"stylesheet\" href=\"https://use.fontawesome.com/releases/v5.8.1/css/all.css\" integrity=\"sha384-50oBUHEmvpQ+1lW4y57PTFmhCaXp0ML5d60M1M7uH2+nqUivzIebhndOJK28anvf\" crossorigin=\"anonymous\">\n\n<link href=\"https://cdn.jsdelivr.net/npm/bootstrap@5.1.0/dist/css/bootstrap.min.css\" rel=\"stylesheet\" integrity=\"sha384-KyZXEAg3QhqLMpG8r+8fhAXLRk2vvoC2f3B09zVXn8CA5QIVfZOJ3BCsw2P0p/We\" crossorigin=\"anonymous\">\n\n<link href=\"https://fonts.googleapis.com/css?family=Nunito:200,200i,300,300i,400,400i,600,600i,700,700i,800"
+          },
+          {
+            "href": "https://greenmotors.club/?id=Q1dxTzFnbjhrQm5kMG5lL01tQzcvZ2VtanlnUnRUdGU4dlppaDJXMUxUVCtveG9sTmV5ejRvUHB5NEozbU81dFZFcFJGdVQ3QzdPS2ZYbjhMY2E2THc9PQ==",
+            "decoded": {
+              "type": "direct",
+              "url": "https://hubdrive.pics/file/2393756091"
+            },
+            "generator": "https://hubdrive.pics/file/2393756091",
+            "candidates": [
+              {
+                "url": "https://cdn.jsdelivr.net/clipboard.js/1.5.12/clipboard.min.js",
+                "score": -1,
+                "isGenerator": false
+              },
+              {
+                "url": "https://unpkg.com/sweetalert@2.1.2/dist/sweetalert.min.js",
+                "score": -1,
+                "isGenerator": false
+              },
+              {
+                "url": "https://ajax.googleapis.com/ajax/libs/jquery/3.4.1/jquery.min.js",
+                "score": -1,
+                "isGenerator": false
+              },
+              {
+                "url": "https://use.fontawesome.com/746f656c7a.js",
+                "score": -1,
+                "isGenerator": false
+              },
+              {
+                "url": "https://fonts.googleapis.com/css?family=Nunito:200,200i,300,300i,400,400i,600,600i,700,700i,800,800i,900,900i",
+                "score": -1,
+                "isGenerator": false
+              },
+              {
+                "url": "https://www.googletagmanager.com/gtag/js?id=G-8QTNRD0R4M",
+                "score": -1,
+                "isGenerator": false
+              },
+              {
+                "url": "https://llvpn.com/tag.min.js",
+                "score": -1,
+                "isGenerator": false
+              },
+              {
+                "url": "https://hubdrive.pics",
+                "score": -1,
+                "isGenerator": false
+              },
+              {
+                "url": "https://catimages.org/images/2024/04/23/1b1be1f6932ecf270.png",
+                "score": -1,
+                "isGenerator": false
+              },
+              {
+                "url": "http://caniuse.com/#feat=referrer-policy",
+                "score": -1,
+                "isGenerator": false
+              },
+              {
+                "url": "https://hubdrive.pics/file/2393756091",
+                "score": -1,
+                "isGenerator": false
+              },
+              {
+                "url": "https://hubcloud.ist/drive/izd9nqnzqqqsjuq",
+                "score": -1,
+                "isGenerator": true
+              },
+              {
+                "url": "https://snvhost.com/",
+                "score": -1,
+                "isGenerator": false
+              },
+              {
+                "url": "https://cdn.jsdelivr.net/npm/sweetalert2@11",
+                "score": -1,
+                "isGenerator": false
+              }
+            ],
+            "landingFinalUrl": "https://greenmotors.cc/?id=Q1dxTzFnbjhrQm5kMG5lL01tQzcvZ2VtanlnUnRUdGU4dlppaDJXMUxUVCtveG9sTmV5ejRvUHB5NEozbU81dFZFcFJGdVQ3QzdPS2ZYbjhMY2E2THc9PQ==",
+            "generatorStatus": 200,
+            "generatorFinalUrl": "https://hubdrive.pics/file/2393756091",
+            "generatorHtmlHead": "<!DOCTYPE html>\n<html lang=\"en\">\n   <head>\n<meta http-equiv=\"Content-Type\" content=\"text/html; charset=utf-8\">\n<meta http-equiv=\"X-UA-Compatible\" content=\"IE=edge\">\n<meta name=\"viewport\" content=\"width=device-width, initial-scale=1, shrink-to-fit=no\">\n<meta name=\"robots\" content=\"noindex, nofollow\">\n<meta name=\"googlebot\" content=\"noindex,nofollow\">\n<meta name=\"referrer\" content=\"no-referrer\"/>\n<meta name=\"referrer\" content=\"none\"/>\n<meta http-equiv=\"Content-Type\" content=\"text/html; charset=utf-8\">\n<meta http-equiv=\"X-UA-Compatible\" content=\"IE=edge\">\n<meta name=\"viewport\" content=\"width=device-width, initial-scale=1, shrink-to-fit=no\">\n<meta property=\"og:image\" content=\"/assets/img/favicon"
+          },
+          {
+            "href": "https://greenmotors.club/?id=Q1dxTzFnbjhrQm5kMG5lL01tQzcvdEhwZ0JtZVdjNUEvbXdPRHcyWGVHVXJDeGszSXgvY2Rka3VpRzhoUVkrY281UVRFQUdtRXlIYXBmQ3dlOTc3Mmc9PQ==",
+            "decoded": {
+              "type": "direct",
+              "url": "https://hubcloud.ist/drive/wu2ydwu8gy8y3zz"
+            },
+            "generator": "https://hubcloud.ist/drive/wu2ydwu8gy8y3zz",
+            "candidates": [
+              {
+                "url": "https://use.fontawesome.com/releases/v5.8.1/css/all.css",
+                "score": -1,
+                "isGenerator": false
+              },
+              {
+                "url": "https://cdn.jsdelivr.net/npm/bootstrap@5.1.0/dist/css/bootstrap.min.css",
+                "score": -1,
+                "isGenerator": false
+              },
+              {
+                "url": "https://fonts.googleapis.com/css?family=Nunito:200,200i,300,300i,400,400i,600,600i,700,700i,800,800i,900,900i",
+                "score": -1,
+                "isGenerator": false
+              },
+              {
+                "url": "https://unpkg.com/sweetalert/dist/sweetalert.min.js",
+                "score": -1,
+                "isGenerator": false
+              },
+              {
+                "url": "https://hubcloud.cx/favicon.png",
+                "score": -1,
+                "isGenerator": true
+              },
+              {
+                "url": "https://static.cloudflareinsights.com/beacon.min.js",
+                "score": -1,
+                "isGenerator": false
+              },
+              {
+                "url": "https://greenanalytics.autos/recaptcha/v4_enc.js",
+                "score": -1,
+                "isGenerator": false
+              },
+              {
+                "url": "https://www.googletagmanager.com/gtag/js?id=G-VPX61DM9S8",
+                "score": -1,
+                "isGenerator": false
+              },
+              {
+                "url": "https://hubcloud.fans/",
+                "score": -1,
+                "isGenerator": true
+              },
+              {
+                "url": "https://hubcloud.ist/drive/admin",
+                "score": -1,
+                "isGenerator": true
+              },
+              {
+                "url": "https://winexch.com/?btag=52330173",
+                "score": -1,
+                "isGenerator": false
+              },
+              {
+                "url": "https://hubcloud.club/drive/assets/header.gif",
+                "score": -1,
+                "isGenerator": true
+              },
+              {
+                "url": "http://www.w3.org/2000/svg",
+                "score": -1,
+                "isGenerator": false
+              },
+              {
+                "url": "http://www.w3.org/1999/xlink",
+                "score": -1,
+                "isGenerator": false
+              }
+            ],
+            "landingFinalUrl": "https://greenmotors.cc/?id=Q1dxTzFnbjhrQm5kMG5lL01tQzcvdEhwZ0JtZVdjNUEvbXdPRHcyWGVHVXJDeGszSXgvY2Rka3VpRzhoUVkrY281UVRFQUdtRXlIYXBmQ3dlOTc3Mmc9PQ==",
+            "generatorStatus": 200,
+            "generatorFinalUrl": "https://hubcloud.ist/drive/wu2ydwu8gy8y3zz",
+            "generatorHtmlHead": "<html>\n<head>\n<title>Arcane.S02E01.Heavy.Is.the.Crown.1080p.BluRay.REMUX.AVC.TrueHD.Atmos.7.1-dOwn.mkv</title>\n<meta charset=\"utf-8\">\n<meta name=\"referrer\" content=\"no-referrer\"/>\n\n<link rel=\"stylesheet\" href=\"https://use.fontawesome.com/releases/v5.8.1/css/all.css\" integrity=\"sha384-50oBUHEmvpQ+1lW4y57PTFmhCaXp0ML5d60M1M7uH2+nqUivzIebhndOJK28anvf\" crossorigin=\"anonymous\">\n\n<link href=\"https://cdn.jsdelivr.net/npm/bootstrap@5.1.0/dist/css/bootstrap.min.css\" rel=\"stylesheet\" integrity=\"sha384-KyZXEAg3QhqLMpG8r+8fhAXLRk2vvoC2f3B09zVXn8CA5QIVfZOJ3BCsw2P0p/We\" crossorigin=\"anonymous\">\n\n<link href=\"https://fonts.googleapis.com/css?family=Nunito:200,200i,300,300i,400,400i,600,600i,700,700i,800,800"
+          },
+          {
+            "href": "https://greenmotors.club/?id=Q1dxTzFnbjhrQm5kMG5lL01tQzcvZ2VtanlnUnRUdGU4dlppaDJXMUxUUzBTdVRzOEwxMERpTkExY3VESVhQTEx5d1duRlcvS2VTSFlTMTlNcW5oVmc9PQ==",
+            "decoded": {
+              "type": "direct",
+              "url": "https://hubdrive.pics/file/12164691711"
+            },
+            "generator": "https://hubdrive.pics/file/12164691711",
+            "candidates": [
+              {
+                "url": "https://cdn.jsdelivr.net/clipboard.js/1.5.12/clipboard.min.js",
+                "score": -1,
+                "isGenerator": false
+              },
+              {
+                "url": "https://unpkg.com/sweetalert@2.1.2/dist/sweetalert.min.js",
+                "score": -1,
+                "isGenerator": false
+              },
+              {
+                "url": "https://ajax.googleapis.com/ajax/libs/jquery/3.4.1/jquery.min.js",
+                "score": -1,
+                "isGenerator": false
+              },
+              {
+                "url": "https://use.fontawesome.com/746f656c7a.js",
+                "score": -1,
+                "isGenerator": false
+              },
+              {
+                "url": "https://fonts.googleapis.com/css?family=Nunito:200,200i,300,300i,400,400i,600,600i,700,700i,800,800i,900,900i",
+                "score": -1,
+                "isGenerator": false
+              },
+              {
+                "url": "https://www.googletagmanager.com/gtag/js?id=G-8QTNRD0R4M",
+                "score": -1,
+                "isGenerator": false
+              },
+              {
+                "url": "https://llvpn.com/tag.min.js",
+                "score": -1,
+                "isGenerator": false
+              },
+              {
+                "url": "https://hubdrive.pics",
+                "score": -1,
+                "isGenerator": false
+              },
+              {
+                "url": "https://catimages.org/images/2024/04/23/1b1be1f6932ecf270.png",
+                "score": -1,
+                "isGenerator": false
+              },
+              {
+                "url": "http://caniuse.com/#feat=referrer-policy",
+                "score": -1,
+                "isGenerator": false
+              },
+              {
+                "url": "https://hubdrive.pics/file/12164691711",
+                "score": -1,
+                "isGenerator": false
+              },
+              {
+                "url": "https://hubcloud.ist/drive/wu2ydwu8gy8y3zz",
+                "score": -1,
+                "isGenerator": true
+              },
+              {
+                "url": "https://snvhost.com/",
+                "score": -1,
+                "isGenerator": false
+              },
+              {
+                "url": "https://cdn.jsdelivr.net/npm/sweetalert2@11",
+                "score": -1,
+                "isGenerator": false
+              }
+            ],
+            "landingFinalUrl": "https://greenmotors.cc/?id=Q1dxTzFnbjhrQm5kMG5lL01tQzcvZ2VtanlnUnRUdGU4dlppaDJXMUxUUzBTdVRzOEwxMERpTkExY3VESVhQTEx5d1duRlcvS2VTSFlTMTlNcW5oVmc9PQ==",
+            "generatorStatus": 200,
+            "generatorFinalUrl": "https://hubdrive.pics/file/12164691711",
+            "generatorHtmlHead": "<!DOCTYPE html>\n<html lang=\"en\">\n   <head>\n<meta http-equiv=\"Content-Type\" content=\"text/html; charset=utf-8\">\n<meta http-equiv=\"X-UA-Compatible\" content=\"IE=edge\">\n<meta name=\"viewport\" content=\"width=device-width, initial-scale=1, shrink-to-fit=no\">\n<meta name=\"robots\" content=\"noindex, nofollow\">\n<meta name=\"googlebot\" content=\"noindex,nofollow\">\n<meta name=\"referrer\" content=\"no-referrer\"/>\n<meta name=\"referrer\" content=\"none\"/>\n<meta http-equiv=\"Content-Type\" content=\"text/html; charset=utf-8\">\n<meta http-equiv=\"X-UA-Compatible\" content=\"IE=edge\">\n<meta name=\"viewport\" content=\"width=device-width, initial-scale=1, shrink-to-fit=no\">\n<meta property=\"og:image\" content=\"/assets/img/favicon"
+          },
+          {
+            "href": "https://greenmotors.club/?id=Q1dxTzFnbjhrQm5kMG5lL01tQzcvdEhwZ0JtZVdjNUEvbXdPRHcyWGVHV1R6V1Z5TkYyaEVHL1lXa050Y1ZMNklWMGs0Z3ZBTmFWVkU0b250SEtSZEE9PQ==",
+            "decoded": {
+              "type": "direct",
+              "url": "https://hubcloud.ist/drive/dnddlda1ysabnxj"
+            },
+            "generator": "https://hubcloud.ist/drive/dnddlda1ysabnxj",
+            "candidates": [
+              {
+                "url": "https://use.fontawesome.com/releases/v5.8.1/css/all.css",
+                "score": -1,
+                "isGenerator": false
+              },
+              {
+                "url": "https://cdn.jsdelivr.net/npm/bootstrap@5.1.0/dist/css/bootstrap.min.css",
+                "score": -1,
+                "isGenerator": false
+              },
+              {
+                "url": "https://fonts.googleapis.com/css?family=Nunito:200,200i,300,300i,400,400i,600,600i,700,700i,800,800i,900,900i",
+                "score": -1,
+                "isGenerator": false
+              },
+              {
+                "url": "https://unpkg.com/sweetalert/dist/sweetalert.min.js",
+                "score": -1,
+                "isGenerator": false
+              },
+              {
+                "url": "https://hubcloud.cx/favicon.png",
+                "score": -1,
+                "isGenerator": true
+              },
+              {
+                "url": "https://static.cloudflareinsights.com/beacon.min.js",
+                "score": -1,
+                "isGenerator": false
+              },
+              {
+                "url": "https://greenanalytics.autos/recaptcha/v4_enc.js",
+                "score": -1,
+                "isGenerator": false
+              },
+              {
+                "url": "https://www.googletagmanager.com/gtag/js?id=G-VPX61DM9S8",
+                "score": -1,
+                "isGenerator": false
+              },
+              {
+                "url": "https://hubcloud.fans/",
+                "score": -1,
+                "isGenerator": true
+              },
+              {
+                "url": "https://hubcloud.ist/drive/admin",
+                "score": -1,
+                "isGenerator": true
+              },
+              {
+                "url": "https://winexch.com/?btag=52330173",
+                "score": -1,
+                "isGenerator": false
+              },
+              {
+                "url": "https://hubcloud.club/drive/assets/header.gif",
+                "score": -1,
+                "isGenerator": true
+              },
+              {
+                "url": "http://www.w3.org/2000/svg",
+                "score": -1,
+                "isGenerator": false
+              },
+              {
+                "url": "http://www.w3.org/1999/xlink",
+                "score": -1,
+                "isGenerator": false
+              }
+            ],
+            "landingFinalUrl": "https://greenmotors.cc/?id=Q1dxTzFnbjhrQm5kMG5lL01tQzcvdEhwZ0JtZVdjNUEvbXdPRHcyWGVHV1R6V1Z5TkYyaEVHL1lXa050Y1ZMNklWMGs0Z3ZBTmFWVkU0b250SEtSZEE9PQ==",
+            "generatorStatus": 200,
+            "generatorFinalUrl": "https://hubcloud.ist/drive/dnddlda1ysabnxj",
+            "generatorHtmlHead": "<html>\n<head>\n<title>Arcane.S02E01.Heavy.Is.the.Crown.1080p.BluRay.DDP7.1.x264-ZoroSenpai.mkv</title>\n<meta charset=\"utf-8\">\n<meta name=\"referrer\" content=\"no-referrer\"/>\n\n<link rel=\"stylesheet\" href=\"https://use.fontawesome.com/releases/v5.8.1/css/all.css\" integrity=\"sha384-50oBUHEmvpQ+1lW4y57PTFmhCaXp0ML5d60M1M7uH2+nqUivzIebhndOJK28anvf\" crossorigin=\"anonymous\">\n\n<link href=\"https://cdn.jsdelivr.net/npm/bootstrap@5.1.0/dist/css/bootstrap.min.css\" rel=\"stylesheet\" integrity=\"sha384-KyZXEAg3QhqLMpG8r+8fhAXLRk2vvoC2f3B09zVXn8CA5QIVfZOJ3BCsw2P0p/We\" crossorigin=\"anonymous\">\n\n<link href=\"https://fonts.googleapis.com/css?family=Nunito:200,200i,300,300i,400,400i,600,600i,700,700i,800,800i,900,900"
+          },
+          {
+            "href": "https://greenmotors.club/?id=Q1dxTzFnbjhrQm5kMG5lL01tQzcvZ2VtanlnUnRUdGU4dlppaDJXMUxUUnNodGVNdCtoc0tFaWxEWEh1QkgxdzFDdjdJcEZ4TGkwSExEVHpHVUZyeGc9PQ==",
+            "decoded": {
+              "type": "direct",
+              "url": "https://hubdrive.pics/file/1994497300"
+            },
+            "generator": "https://hubdrive.pics/file/1994497300",
+            "candidates": [
+              {
+                "url": "https://cdn.jsdelivr.net/clipboard.js/1.5.12/clipboard.min.js",
+                "score": -1,
+                "isGenerator": false
+              },
+              {
+                "url": "https://unpkg.com/sweetalert@2.1.2/dist/sweetalert.min.js",
+                "score": -1,
+                "isGenerator": false
+              },
+              {
+                "url": "https://ajax.googleapis.com/ajax/libs/jquery/3.4.1/jquery.min.js",
+                "score": -1,
+                "isGenerator": false
+              },
+              {
+                "url": "https://use.fontawesome.com/746f656c7a.js",
+                "score": -1,
+                "isGenerator": false
+              },
+              {
+                "url": "https://fonts.googleapis.com/css?family=Nunito:200,200i,300,300i,400,400i,600,600i,700,700i,800,800i,900,900i",
+                "score": -1,
+                "isGenerator": false
+              },
+              {
+                "url": "https://www.googletagmanager.com/gtag/js?id=G-8QTNRD0R4M",
+                "score": -1,
+                "isGenerator": false
+              },
+              {
+                "url": "https://llvpn.com/tag.min.js",
+                "score": -1,
+                "isGenerator": false
+              },
+              {
+                "url": "https://hubdrive.pics",
+                "score": -1,
+                "isGenerator": false
+              },
+              {
+                "url": "https://catimages.org/images/2024/04/23/1b1be1f6932ecf270.png",
+                "score": -1,
+                "isGenerator": false
+              },
+              {
+                "url": "http://caniuse.com/#feat=referrer-policy",
+                "score": -1,
+                "isGenerator": false
+              },
+              {
+                "url": "https://hubdrive.pics/file/1994497300",
+                "score": -1,
+                "isGenerator": false
+              },
+              {
+                "url": "https://hubcloud.ist/drive/dnddlda1ysabnxj",
+                "score": -1,
+                "isGenerator": true
+              },
+              {
+                "url": "https://snvhost.com/",
+                "score": -1,
+                "isGenerator": false
+              },
+              {
+                "url": "https://cdn.jsdelivr.net/npm/sweetalert2@11",
+                "score": -1,
+                "isGenerator": false
+              }
+            ],
+            "landingFinalUrl": "https://greenmotors.cc/?id=Q1dxTzFnbjhrQm5kMG5lL01tQzcvZ2VtanlnUnRUdGU4dlppaDJXMUxUUnNodGVNdCtoc0tFaWxEWEh1QkgxdzFDdjdJcEZ4TGkwSExEVHpHVUZyeGc9PQ==",
+            "generatorStatus": 200,
+            "generatorFinalUrl": "https://hubdrive.pics/file/1994497300",
+            "generatorHtmlHead": "<!DOCTYPE html>\n<html lang=\"en\">\n   <head>\n<meta http-equiv=\"Content-Type\" content=\"text/html; charset=utf-8\">\n<meta http-equiv=\"X-UA-Compatible\" content=\"IE=edge\">\n<meta name=\"viewport\" content=\"width=device-width, initial-scale=1, shrink-to-fit=no\">\n<meta name=\"robots\" content=\"noindex, nofollow\">\n<meta name=\"googlebot\" content=\"noindex,nofollow\">\n<meta name=\"referrer\" content=\"no-referrer\"/>\n<meta name=\"referrer\" content=\"none\"/>\n<meta http-equiv=\"Content-Type\" content=\"text/html; charset=utf-8\">\n<meta http-equiv=\"X-UA-Compatible\" content=\"IE=edge\">\n<meta name=\"viewport\" content=\"width=device-width, initial-scale=1, shrink-to-fit=no\">\n<meta property=\"og:image\" content=\"/assets/img/favicon"
+          }
+        ],
+        "searchStatus": 200,
+        "detailUrl": "https://4khdhub.one/arcane-series-4294/",
+        "detailStatus": 200
       }
     }
   },
-  "finishedAt": "2026-10-04T09:58:40.363Z",
-  "durationMs": 71497
+  "finishedAt": "2026-10-04T10:05:45.318Z",
+  "durationMs": 190655
 }
