@@ -2848,11 +2848,13 @@ async function resolveHicineServer(metadata) {
 }
 
 // ============================================================================
-// SERVER 2 (URSA / 4K): MULTI-TIER 2160p 4K UHD & MULTI-AUDIO CASCADE
-// Priority 1: 4KHDHub      (2160p BluRay REMUX / WEB-DL Dual/Multi-Audio + HubCloud)
-// Priority 2: MoviesDrive  (Typesense IMDb API + 2160p Dual-Audio MDrive/HubCloud)
-// Priority 3: HiCine 4K    (2160p SDR/HDR Dual-Audio vcloud worker streams)
-// Priority 4: Dahmer 4K    (2160p Original/Multi-Audio direct open-directory MKV)
+// SERVER 3 (URSA / 4K): 2160p 4K UHD & MULTI-AUDIO via 4KHDHub
+// Single source: 4KHDHub (2160p BluRay REMUX / WEB-DL Dual/Multi-Audio),
+// reached through its redirector chain + HubCloud unroll to direct files.
+// Keep the player path to the one source verified by the current live probes;
+// if it misses, let the regular server waterfall handle the fallback.
+// (The MoviesDrive 4K / HiCine 4K / Dahmer 4K resolvers remain exported for
+// the Node opt-in Hindi dub deep probe only.)
 // ============================================================================
 
 let dynamic4kDomainCache = {
@@ -4279,18 +4281,12 @@ async function resolveDahmer4k(metadata, preferredAudio = '') {
 }
 
 /**
- * 2b. Ursa / 4K UHD Server Multi-Tier Orchestrator
- * Cascades through:
- *   Tier 1: 4KHDHub      (2160p UHD BluRay REMUX / WEB-DL Dual/Multi-Audio)
- *   Tier 2: MoviesDrive  (Typesense IMDb API + 2160p Dual-Audio HubCloud)
- *   Tier 3: HiCine 4K    (2160p SDR/HDR Dual-Audio vcloud worker)
- *   Tier 4: Dahmer 4K    (2160p Original/Multi-Audio direct open-directory MKV)
- * Plus local mock VidSrc fallback when vidsrcDataUrl points to 127.0.0.1/localhost.
+ * Server 3 (Ursa) 4K resolver
+ * Uses the verified 4KHDHub source, unrolls it to direct media files, and
+ * falls through to the next server only when no verified stream is available.
+ * The other 4K scrapers remain independent providers for the optional dub
+ * inventory; they are not part of this player-server request path.
  */
-// Four tiers run concurrently, but each can spend several seconds on a
-// redirector hop plus range probes. Keep enough wall-clock budget for the
-// slowest live tier without serialising the cascade.
-const URSA_RESOLVE_TIMEOUT_MS = 22000;
 
 function isVerifiedUrsa2160Result(result) {
   const rawUrl = String(result?.rawUrl || '');
@@ -4309,7 +4305,7 @@ function isVerifiedUrsa2160Result(result) {
   );
 }
 
-/** Ursa resolves all four independent 4K tiers concurrently, then keeps priority order. */
+/** Resolve Server 3 through 4KHDHub; let the outer server waterfall handle misses. */
 async function resolveUrsaServer(metadata, requestedServerId = 'ursa', preferredAudio = '') {
   const providerKey = 'ursa:4k';
   const diag = {
@@ -4323,17 +4319,13 @@ async function resolveUrsaServer(metadata, requestedServerId = 'ursa', preferred
     diag.message = detail || step;
   };
 
-  // Every Ursa tier is a search-by-title scrape: without the TMDB title there
-  // is nothing to search, and all four tiers used to bail individually with
-  // `*_missing_title` while the cascade still reported "all four sub-providers
-  // failed" — making it look like the tiers ran and found nothing. Fail fast
-  // with an honest reason so the API response, telemetry and owner debug
-  // endpoint say what actually happened: the metadata lookup never produced a
-  // title, so zero probing took place.
+  // 4KHDHub is a search-by-title scrape: without the TMDB title there is
+  // nothing to search. Fail fast with an honest reason so the API response,
+  // telemetry and owner debug endpoint say no source probe took place.
   if (!metadata || !metadata.title) {
     stamp(
       'metadata_missing',
-      'Ursa needs the TMDB title to search its 4K tiers, but metadata resolution returned no title (unresolved TMDB lookup). No tier was probed.'
+      'Ursa needs the TMDB title to search 4KHDHub, but metadata resolution returned no title (unresolved TMDB lookup). Nothing was probed.'
     );
     return { ok: false, reason: 'ursa_metadata_missing', diag };
   }
@@ -4343,78 +4335,35 @@ async function resolveUrsaServer(metadata, requestedServerId = 'ursa', preferred
     return { ok: false, reason: 'circuit_open', diag };
   }
 
-  const tiers = [
-    {
-      id: '4khdhub',
-      attempt: 'Attempting Tier 1: 4KHDHub (2160p UHD Multi-Audio)...',
-      run: () => resolve4khdhub(metadata, preferredAudio)
-    },
-    {
-      id: 'moviesdrive4k',
-      attempt: 'Attempting Tier 2: MoviesDrive 4K (Typesense IMDb + 2160p HubCloud)...',
-      run: () => resolveMoviesdrive4k(metadata, preferredAudio)
-    },
-    {
-      id: 'hicine4k',
-      attempt: 'Attempting Tier 3: HiCine 4K UHD (2160p vcloud worker)...',
-      run: () => resolveHicine4k(metadata, preferredAudio)
-    },
-    {
-      id: 'dahmer4k',
-      attempt: 'Attempting Tier 4: DahmerMovies 4K (2160p direct directory)...',
-      run: () => resolveDahmer4k(metadata, preferredAudio)
-    }
-  ];
-  for (const tier of tiers) stamp(`${tier.id}_attempt`, tier.attempt);
-
-  let timeoutId;
-  const results = await Promise.race([
-    Promise.all(tiers.map(async (tier) => {
-      try {
-        const result = await tier.run();
-        return result && result.ok && isVerifiedUrsa2160Result(result)
-          ? result
-          : result && result.ok
-            ? { ...result, ok: false, reason: `${tier.id}_no_verified_2160p` }
-            : result;
-      } catch (error) {
-        return { ok: false, reason: `${tier.id}_error:${error.message}` };
-      }
-    })),
-    new Promise((resolve) => {
-      timeoutId = setTimeout(() => resolve(null), URSA_RESOLVE_TIMEOUT_MS);
-    })
-  ]).finally(() => clearTimeout(timeoutId));
-
-  if (!results) {
-    stamp('ursa_timeout', `Ursa 4K resolution exceeded the ${URSA_RESOLVE_TIMEOUT_MS}ms request budget`);
-    return { ok: false, reason: 'ursa_upstream_timeout', diag };
+  // Keep Server 3 to one source. If 4KHDHub misses, return a clear failure
+  // and let the regular server waterfall choose the next server.
+  stamp('4khdhub_attempt', 'Attempting 4KHDHub (2160p UHD Multi-Audio)...');
+  let result;
+  try {
+    result = await resolve4khdhub(metadata, preferredAudio);
+  } catch (error) {
+    result = { ok: false, reason: `4khdhub_error:${error.message}` };
   }
 
-  let selected = null;
-  for (let index = 0; index < tiers.length; index += 1) {
-    const tier = tiers[index];
-    const result = results[index];
-    if (!selected && result?.ok && result.streamUrl) {
-      selected = result;
-      const qualityNote = result.qualityDegraded
-        ? `quality degraded to ${result.qualities?.[0]?.label || 'the best available quality'}`
-        : `verified 4K (${result.qualities?.[0]?.label || '2160p'})`;
-      stamp(`${tier.id}_success`, `Resolved ${qualityNote} via ${tier.id}`);
-    } else {
-      stamp(`${tier.id}_failed`, result?.reason || `${tier.id} returned no verified 2160p stream`);
-    }
+  if (result && result.ok && !isVerifiedUrsa2160Result(result)) {
+    result = { ...result, ok: false, reason: '4khdhub_no_verified_2160p' };
   }
 
-  if (selected) {
-    diag.selectedTier = selected.tier;
-    diag.qualityDegraded = selected.qualityDegraded === true;
-    diag.message = selected.qualityDegraded
-      ? `Resolved best available quality via ${selected.tier} (${selected.qualities?.[0]?.label || 'fallback'})`
-      : `Resolved verified 4K stream via ${selected.tier} (${selected.qualities?.[0]?.label || '2160p'})`;
+  if (result && result.ok && result.streamUrl) {
+    const qualityNote = result.qualityDegraded
+      ? `quality degraded to ${result.qualities?.[0]?.label || 'the best available quality'}`
+      : `verified 4K (${result.qualities?.[0]?.label || '2160p'})`;
+    stamp('4khdhub_success', `Resolved ${qualityNote} via 4khdhub`);
+    diag.selectedTier = '4khdhub';
+    diag.qualityDegraded = result.qualityDegraded === true;
+    diag.message = result.qualityDegraded
+      ? `Resolved best available quality via 4khdhub (${result.qualities?.[0]?.label || 'fallback'})`
+      : `Resolved verified 4K stream via 4khdhub (${result.qualities?.[0]?.label || '2160p'})`;
     circuitBreaker.recordSuccess(providerKey);
-    return { ...selected, diag };
+    return { ...result, diag };
   }
+
+  stamp('4khdhub_failed', (result && result.reason) || '4khdhub returned no verified 2160p stream');
 
   // Test/Mock Fallback: if vidsrcDataUrl explicitly points to localhost.
   if (config.upstreams.vidsrcDataUrl && /127\.0\.0\.1|localhost/i.test(config.upstreams.vidsrcDataUrl)) {
@@ -4428,7 +4377,7 @@ async function resolveUrsaServer(metadata, requestedServerId = 'ursa', preferred
 
   stamp(
     'ursa_4k_exhausted',
-    'All four Ursa 4K UHD sub-providers failed to resolve a verified 2160p stream.'
+    '4KHDHub could not resolve a verified 2160p stream for this title.'
   );
   return {
     ok: false,
@@ -4664,7 +4613,7 @@ async function resolveStreamForServer(metadata, requestedServerId = 'andromeda',
   );
   const validServer = serverCatalog.resolveServerId(config.servers, requestedServerId);
 
-  const cacheKey = `resolve:v3:${metadata.type}:${metadata.tmdbId}:s${metadata.season || 1}:e${metadata.episode || 1}:${validServer}`;
+  const cacheKey = `resolve:v4:${metadata.type}:${metadata.tmdbId}:s${metadata.season || 1}:e${metadata.episode || 1}:${validServer}`;
   const cached = await cache.get(cacheKey);
   // Stream payloads are cached for 15 minutes, but the displayed server list is
   // not: rebuilding it here means a rebrand is visible immediately instead of

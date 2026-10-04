@@ -3364,16 +3364,14 @@ async function resolveHicineUpstream(metadata, env = {}) {
 }
 
 // ============================================================================
-// SERVER 2 (URSA / 4K): MULTI-TIER 2160p 4K UHD & MULTI-AUDIO CASCADE (WORKER)
-// Priority 1: 4KHDHub      (2160p BluRay REMUX / WEB-DL Dual/Multi-Audio + HubCloud)
-// Priority 2: MoviesDrive  (Typesense IMDb API + 2160p Dual-Audio MDrive/HubCloud)
-// Priority 3: HiCine 4K    (2160p SDR/HDR Dual-Audio vcloud worker streams)
-// Priority 4: Dahmer 4K    (2160p Original/Multi-Audio direct open-directory MKV)
+// SERVER 3 (URSA / 4K): SINGLE-SOURCE 2160p UHD & MULTI-AUDIO VIA 4KHDHUB
+// Searches 4KHDHub, unrolls to direct media files, and returns a verified 4K
+// stream. If it cannot resolve one, the main server waterfall tries the next
+// server instead of walking several unproven 4K scrapers.
 // ============================================================================
 
 let worker4kDomainCache = {
   fourkhdhub: null,
-  moviesdrive: null,
   exp: 0
 };
 
@@ -3626,7 +3624,6 @@ async function discoverWorker4kDomains(env = {}) {
       const data = await res.json();
       worker4kDomainCache = {
         fourkhdhub: typeof data?.['4khdhub'] === 'string' ? data['4khdhub'].replace(/\/$/, '') : null,
-        moviesdrive: typeof data?.moviesdrive === 'string' ? data.moviesdrive.replace(/\/$/, '') : null,
         exp: Date.now() + 3600 * 1000
       };
     }
@@ -3642,20 +3639,6 @@ async function getWorker4khdhubHosts(env = {}) {
     base,
     discovered.fourkhdhub,
     ...(runtimeState.upstreams.fourkhdhubHosts || [])
-  ]
-    .filter(Boolean)
-    .map((h) => String(h).trim().replace(/\/$/, ''));
-  return Array.from(new Set(pool));
-}
-
-async function getWorkerMoviesdriveHosts(env = {}) {
-  const base = ((env && env.MOVIESDRIVE_BASE_URL) || runtimeState.upstreams.moviesdriveBase || '').trim().replace(/\/$/, '');
-  if (base && /127\.0\.0\.1|localhost/i.test(base)) return [base];
-  const discovered = await discoverWorker4kDomains(env);
-  const pool = [
-    base,
-    discovered.moviesdrive,
-    ...(runtimeState.upstreams.moviesdriveHosts || [])
   ]
     .filter(Boolean)
     .map((h) => String(h).trim().replace(/\/$/, ''));
@@ -4255,527 +4238,6 @@ async function resolve4khdhubWorker(metadata, preferredAudio = '', env = {}) {
   }
 }
 
-async function resolveMoviesdrive4kWorker(metadata, preferredAudio = '', env = {}) {
-  if (!metadata || !metadata.title) return { ok: false, reason: 'moviesdrive4k_missing_title' };
-  const deadline = Date.now() + 10500;
-
-  try {
-    const hosts = await getWorkerMoviesdriveHosts(env);
-    const imdbId = metadata.externalIds?.imdb_id || '';
-    const isTv = metadata.type === 'tv';
-    const wantedYear = Number(metadata.releaseYear) || 0;
-    const wantedTitle = String(metadata.title || '').toLowerCase().replace(/[^a-z0-9\s]/g, ' ').replace(/\s+/g, ' ').trim();
-
-    let postHtml = '';
-    let postBaseUrl = '';
-    let activeHost = '';
-
-    for (const host of hosts.slice(0, 3)) {
-      const queries = Array.from(new Set([imdbId, metadata.title].filter(Boolean)));
-      const documents = [];
-      let lastSearchUrl = `${host}/`;
-
-      for (const q of queries) {
-        const searchUrl = `${host}/search.php?q=${encodeURIComponent(q)}&page=1`;
-        lastSearchUrl = searchUrl;
-        const res = await fetchWithDeadline(
-          searchUrl,
-          USER_AGENT,
-          null,
-          deadline,
-          { headers: fourKBrowserHeaders(`${host}/`) }
-        );
-        if (!res || !res.ok) continue;
-        const text = await readCappedText(res);
-        if (!text || isAntiBotPage(text) || !text.trim().startsWith('{')) continue;
-        try {
-          const data = JSON.parse(text);
-          for (const hit of (Array.isArray(data?.hits) ? data.hits : [])) {
-            if (hit?.document) documents.push(hit.document);
-          }
-        } catch {}
-      }
-
-      const uniqueDocuments = Array.from(
-        new Map(documents.filter((doc) => doc?.permalink).map((doc) => [doc.permalink, doc])).values()
-      );
-      if (uniqueDocuments.length === 0) continue;
-
-      const scoreDoc = (doc) => {
-        let s = 0;
-        const text = [doc.post_title, doc.title, doc.quality, doc.resolution, doc.release]
-          .filter(Boolean).join(' ');
-        const normalizedText = text.toLowerCase();
-        const titleNorm = normalizedText.replace(/[^a-z0-9\s]/g, ' ').replace(/\s+/g, ' ').trim();
-        const qualityHeight = /2160p|\b4k\b|\buhd\b/i.test(text)
-          ? 2160
-          : /1440p|\b2k\b/i.test(text)
-            ? 1440
-            : /1080p|\bfhd\b/i.test(text)
-              ? 1080
-              : /720p|\bhd\b/i.test(text)
-                ? 720
-                : 0;
-        if (qualityHeight >= 2160) s += 1200;
-        else if (qualityHeight === 1440) s += 650;
-        else if (qualityHeight === 1080) s += 180;
-        else if (qualityHeight === 720) s += 70;
-        if (imdbId && String(doc.imdb_id || '').trim() === imdbId) s += 350;
-        if (titleNorm.includes(wantedTitle)) s += 140;
-        if (wantedYear && normalizedText.includes(String(wantedYear))) s += 80;
-        if (isTv) {
-          const sNum = Number(metadata.season || 1);
-          if (new RegExp(`season\s*0*${sNum}\b|\bs0*${sNum}\b`, 'i').test(text)) s += 90;
-        } else if (!/season\s*\d+/i.test(text)) {
-          s += 40;
-        }
-        return s;
-      };
-
-      const best = uniqueDocuments.sort((a, b) => scoreDoc(b) - scoreDoc(a))[0];
-      if (!best || !best.permalink || scoreDoc(best) < 80) continue;
-      const postUrl = new URL(best.permalink, host).href;
-      const postRes = await fetchWithDeadline(
-        postUrl,
-        USER_AGENT,
-        null,
-        deadline,
-        { headers: fourKBrowserHeaders(lastSearchUrl || `${host}/`) }
-      );
-      if (postRes && postRes.ok) {
-        postHtml = await readCappedText(postRes);
-        if (isAntiBotPage(postHtml)) {
-          postHtml = '';
-          continue;
-        }
-        activeHost = host;
-        postBaseUrl = postRes.url || postUrl;
-        if (postHtml) break;
-      }
-    }
-
-    if (!postHtml) return { ok: false, reason: 'moviesdrive4k_no_matching_post' };
-
-    const candidates = [];
-    const seasonNum = Number(metadata.season || 1);
-    const episodeNum = Number(metadata.episode || 1);
-
-    const sections = postHtml.split(/<h[1-6]\b[^>]*>/i);
-    for (const sec of sections.slice(1)) {
-      const headingClose = sec.match(/<\/h[1-6]>/i);
-      const headingEnd = headingClose ? headingClose.index : -1;
-      const headingText = (headingEnd !== -1 ? sec.slice(0, headingEnd) : sec.slice(0, 240))
-        .replace(/<[^>]+>/g, ' ')
-        .replace(/\s+/g, ' ')
-        .trim();
-      const bodyStart = headingEnd !== -1 ? headingEnd + headingClose[0].length : 0;
-      const bodyPart = sec.slice(bodyStart, bodyStart + 1800);
-      // Some themes put the download anchor inside the heading itself.
-      const linkPart = sec.slice(0, bodyStart + 1800);
-
-      if (/\.zip\b|\bpack\b/i.test(headingText) && isTv && !/single\s*episode/i.test(headingText)) {
-        continue;
-      }
-
-      const height = parseResolutionHeight(headingText);
-      const audioHints = parseHicineAudioHints(hicineAudioHintText(headingText));
-
-      const linkRe = /<a\b[^>]*href=["']([^"']+)["'][^>]*>([\s\S]*?)<\/a>/gi;
-      let lm;
-      while ((lm = linkRe.exec(linkPart))) {
-        const rawHref = lm[1].trim().replace(/&amp;/g, '&');
-        let href;
-        try { href = new URL(rawHref, postBaseUrl || `${activeHost}/`).href; } catch { continue; }
-        const linkLabel = lm[2].replace(/<[^>]+>/g, ' ').trim();
-        if (!/mdrive|hubcloud|hubcdn|vcloud|gdflix|search-recover|\/drive\//i.test(`${href} ${linkLabel}`)) continue;
-
-        candidates.push({
-          url: href,
-          linkType: /hubcloud|hubcdn/i.test(href) ? 'hubcloud' : 'archive',
-          height,
-          description: `${headingText} ${linkLabel}`.trim(),
-          audioHints
-        });
-      }
-    }
-
-    if (candidates.length === 0) return { ok: false, reason: 'moviesdrive4k_no_candidate_links' };
-
-    const sortedCandidates = [...candidates].sort(
-      (a, b) => score4kCandidate(b, preferredAudio) - score4kCandidate(a, preferredAudio)
-    );
-    const fourKCandidates = sortedCandidates.filter((candidate) => candidate.height >= 2160);
-    const lowerQualityCandidates = sortedCandidates.filter((candidate) => candidate.height < 2160);
-    const preferred1080 = lowerQualityCandidates.filter((candidate) => candidate.height >= 1080).slice(0, 2);
-    const selectedCandidates = Array.from(new Map(
-      [...fourKCandidates.slice(0, 3), ...preferred1080, ...lowerQualityCandidates.slice(0, 2)]
-        .map((candidate) => [candidate.url, candidate])
-    ).values()).slice(0, 7);
-
-    const settledItems = await Promise.all(selectedCandidates.map(async (cand) => {
-      let targetUrl = cand.url;
-      if (isTv && /mdrive\.|\/archive\/\d+/i.test(targetUrl)) {
-        const archRes = await fetchWithDeadline(
-          targetUrl,
-          USER_AGENT,
-          null,
-          deadline,
-          { headers: fourKBrowserHeaders(activeHost ? `${activeHost}/` : '') }
-        );
-        if (archRes && archRes.ok) {
-          const archHtml = await readCappedText(archRes);
-          if (isAntiBotPage(archHtml)) return null;
-          const epRegex = new RegExp(
-            `(?:Ep(?:isode)?\s*0*${episodeNum}\b|S0*${seasonNum}E0*${episodeNum}\b)[\s\S]{0,600}?href=["'](https?:\/\/[^"']*(?:hubcloud|hubcdn|vcloud)[^"']*)["']`,
-            'i'
-          );
-          const epMatch = archHtml.match(epRegex);
-          if (epMatch && epMatch[1]) targetUrl = epMatch[1];
-        }
-      }
-      const directUrl = await unrollWorker4kCandidateUrl(
-        targetUrl,
-        deadline,
-        null,
-        activeHost ? `${activeHost}/` : ''
-      );
-      if (!directUrl) return null;
-      return {
-        rawUrl: directUrl,
-        streamUrl: directUrl,
-        height: cand.height,
-        description: cand.description,
-        audioHints: cand.audioHints,
-        format: /\.m3u8(\?|$)/i.test(directUrl) ? 'hls' : 'mp4'
-      };
-    }));
-    const seenUrls = new Set();
-    const resolvedItems = settledItems.filter((item) => {
-      if (!item || seenUrls.has(item.rawUrl)) return false;
-      seenUrls.add(item.rawUrl);
-      return true;
-    });
-
-    if (resolvedItems.length === 0) return { ok: false, reason: 'moviesdrive4k_unroll_failed' };
-
-    const payload = buildWorker4kStreamPayload({
-      serverId: 'ursa',
-      tier: 'moviesdrive4k',
-      resolvedItems,
-      referer: activeHost ? `${activeHost}/` : '',
-      preferredAudio
-    });
-    return payload ? { ok: true, ...payload } : { ok: false, reason: 'moviesdrive4k_payload_empty' };
-  } catch (err) {
-    return { ok: false, reason: `moviesdrive4k_error:${err.message}` };
-  }
-}
-
-async function resolveHicine4kWorker(metadata, preferredAudio = '', env = {}) {
-  const apiBase = ((env && env.HICINE_API_BASE) || runtimeState.upstreams.hicineApiBase || 'https://api.hicine.sbs').trim().replace(/\/$/, '');
-  if (!metadata || !metadata.title || !apiBase) {
-    return { ok: false, reason: 'hicine4k_missing_config' };
-  }
-  const unrollDeadline = Date.now() + 9500;
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), Math.max(0, unrollDeadline - Date.now()));
-
-  try {
-    const res = await fetchWithDeadline(
-      `${apiBase}/api/search/${encodeURIComponent(metadata.title)}`,
-      USER_AGENT,
-      controller.signal,
-      unrollDeadline,
-      { headers: { Accept: 'application/json' } }
-    );
-    if (!res.ok) return { ok: false, reason: `hicine4k_http_${res.status}` };
-
-    const items = await res.json();
-    if (!Array.isArray(items) || items.length === 0) {
-      return { ok: false, reason: 'hicine4k_no_search_results' };
-    }
-
-    const isTv = metadata.type === 'tv';
-    const wantedYear = Number(metadata.releaseYear) || 0;
-    const wantedTitle = String(metadata.title || '').toLowerCase().trim();
-
-    const scoreItem = (item) => {
-      let s = 0;
-      const itemTitle = String(item.title || item.name || '').toLowerCase().trim();
-      if (itemTitle === wantedTitle) s += 100;
-      else if (itemTitle.startsWith(wantedTitle) || itemTitle.includes(wantedTitle)) s += 40;
-      const itemYear = Number(item.releaseYear || item.year) || 0;
-      if (wantedYear && itemYear) {
-        const delta = Math.abs(itemYear - wantedYear);
-        if (delta === 0) s += 100;
-        else if (delta <= 1) s += 70;
-        else s -= 25;
-      }
-      if (isTv && (item.contentType === 'series' || item.season_1)) s += 30;
-      else if (!isTv && (item.contentType === 'movies' || item.links)) s += 30;
-      return s;
-    };
-
-    const chosen = [...items].sort((a, b) => scoreItem(b) - scoreItem(a))[0];
-    if (!chosen) return { ok: false, reason: 'hicine4k_no_match' };
-
-    const rawText = isTv
-      ? chosen[`season_${metadata.season || 1}`] || chosen.season_1 || ''
-      : chosen.links || '';
-
-    let targetBlock = rawText;
-    if (isTv) {
-      const epNum = Number(metadata.episode || 1);
-      const epRegex = new RegExp(`^\\s*Episode\\s+0*${epNum}(?:\\b|\\s|:)`, 'i');
-      const anyEpRegex = /^\s*Episode\s+\d+/i;
-      const matched = [];
-      let inEp = false;
-      for (const line of String(rawText).split(/\r?\n/)) {
-        if (epRegex.test(line)) {
-          inEp = true;
-          matched.push(line);
-        } else if (inEp && anyEpRegex.test(line)) {
-          break;
-        } else if (inEp) {
-          matched.push(line);
-        }
-      }
-      if (matched.length > 0) targetBlock = matched.join('\n');
-    }
-
-    const parsedEntries = [];
-    for (const line of String(targetBlock).split(/\r?\n/)) {
-      if (!line.trim()) continue;
-      const lineQuality = (line.match(/(2160p|4k|1080p|720p|480p)/i) || [])[1];
-      const segments = line.split(/\s+:\s+/);
-      let inheritedQuality = lineQuality ? lineQuality.toLowerCase() : '720p';
-      let firstSegment = true;
-
-      for (const segment of segments) {
-        const segQualityTokens = [...segment.matchAll(/(2160p|4k|1080p|720p|480p)/gi)];
-        if (segQualityTokens.length > 0 && !firstSegment) {
-          inheritedQuality = segQualityTokens[0][1].toLowerCase();
-        }
-        firstSegment = false;
-        const labelFor = (urlIndex) => {
-          const before = segQualityTokens.filter((m) => m.index < urlIndex).pop();
-          if (before) return before[1].toLowerCase();
-          if (segQualityTokens.length > 0) return segQualityTokens[0][1].toLowerCase();
-          return inheritedQuality;
-        };
-        const toHeight = (label) =>
-          label === '2160p' || label === '4k' ? 2160 : parseInt(label, 10) || 720;
-
-        const description = `${line} ${segment}`;
-        const audioHints = parseHicineAudioHints(hicineAudioHintText(description));
-
-        for (const match of segment.matchAll(/(https?:\/\/[^\s,"']+\/?vcloud=[^\s,"']+)/gi)) {
-          const label = labelFor(match.index);
-          parsedEntries.push({
-            type: 'vcloud_worker',
-            quality: label,
-            height: toHeight(label),
-            url: match[1],
-            description,
-            audioHints
-          });
-        }
-        for (const match of segment.matchAll(/(https?:\/\/pixeldrain\.(?:dev|com)\/(?:u|api\/file)\/[A-Za-z0-9_-]+(?:\?[^\s,"']*)?)/gi)) {
-          const label = labelFor(match.index);
-          parsedEntries.push({
-            type: 'pixeldrain',
-            quality: label,
-            height: toHeight(label),
-            url: normalizePlayableUrl(match[1]),
-            description,
-            audioHints
-          });
-        }
-      }
-    }
-
-    const entries4k = parsedEntries.filter(
-      (e) => e.height >= 2160 || /2160p|\b4k\b|\buhd\b/i.test(`${e.quality} ${e.description}`)
-    );
-    if (parsedEntries.length === 0) return { ok: false, reason: 'hicine4k_no_quality_entries' };
-
-    const sorted4k = entries4k.sort(
-      (a, b) => score4kCandidate(b, preferredAudio) - score4kCandidate(a, preferredAudio)
-    );
-    const lowerQuality = parsedEntries
-      .filter((entry) => entry.height < 2160)
-      .sort((a, b) => score4kCandidate(b, preferredAudio) - score4kCandidate(a, preferredAudio));
-    const orderedEntries = entries4k.length
-      ? [...sorted4k.slice(0, 4), ...lowerQuality.slice(0, 2)]
-      : lowerQuality.slice(0, 6);
-
-    const settledItems = await Promise.all(orderedEntries.map(async (entry) => {
-      let resolved;
-      if (entry.type === 'pixeldrain') {
-        resolved = {
-          url: normalizePlayableUrl(entry.url),
-          tokenType: 'pixel',
-          format: 'mp4',
-          isHotlinkBlocked: false
-        };
-        resolved.isHotlinkBlocked = !(await probePlayableMediaUrl(resolved.url, {
-          signal: controller.signal,
-          deadline: unrollDeadline
-        }));
-      } else {
-        resolved = await resolveWorkerVcloudLink(entry.url, unrollDeadline, controller.signal);
-      }
-      if (!resolved?.url || resolved.isHotlinkBlocked) return null;
-      return {
-        rawUrl: resolved.url,
-        streamUrl: resolved.url,
-        height: entry.height >= 2160 ? 2160 : entry.height,
-        description: `${entry.description || ''} ${resolved.title || ''}`.trim(),
-        audioHints: entry.audioHints,
-        tokenType: resolved.tokenType,
-        format: resolved.format || 'mp4'
-      };
-    }));
-    const seenDirect = new Set();
-    const resolvedItems = settledItems.filter((item) => {
-      if (!item || seenDirect.has(item.rawUrl)) return false;
-      seenDirect.add(item.rawUrl);
-      return true;
-    });
-
-    if (resolvedItems.length === 0) {
-      return { ok: false, reason: 'hicine4k_unroll_failed' };
-    }
-
-    const payload = buildWorker4kStreamPayload({
-      serverId: 'ursa',
-      tier: 'hicine4k',
-      resolvedItems,
-      preferredAudio
-    });
-    return payload ? { ok: true, ...payload } : { ok: false, reason: 'hicine4k_payload_empty' };
-  } catch (err) {
-    return { ok: false, reason: `hicine4k_error:${err.message}` };
-  } finally {
-    clearTimeout(timer);
-  }
-}
-
-async function resolveDahmer4kWorker(metadata, preferredAudio = '', env = {}) {
-  const dahmerBase = ((env && env.DAHMER_BASE_URL) || runtimeState.upstreams.dahmerBase || '').trim().replace(/\/$/, '');
-  if (!dahmerBase || !metadata || !metadata.title) {
-    return { ok: false, reason: 'dahmer4k_missing_config' };
-  }
-  const deadline = Date.now() + 9000;
-
-  try {
-    const cleanTitle = String(metadata.title || '').replace(/:/g, '').replace(/\s+/g, ' ').trim();
-    const isTv = metadata.type === 'tv';
-    const seasonNum = Number(metadata.season || 1);
-    const episodeNum = Number(metadata.episode || 1);
-    const paths = isTv
-      ? [
-          `/tvs/${encodeURIComponent(cleanTitle)}/Season%20${String(seasonNum).padStart(2, '0')}/`,
-          `/tvs/${encodeURIComponent(cleanTitle)}/Season%20${seasonNum}/`
-        ]
-      : [
-          ...(metadata.releaseYear
-            ? [`/movies/${encodeURIComponent(`${cleanTitle} (${metadata.releaseYear})`)}/`]
-            : []),
-          `/movies/${encodeURIComponent(cleanTitle)}/`
-        ];
-
-    let dirHtml = '';
-    let dirUrl = '';
-    for (const p of paths) {
-      const target = `${dahmerBase}${p}`;
-      const res = await fetchWithDeadline(
-        target,
-        USER_AGENT,
-        null,
-        deadline,
-        { headers: fourKBrowserHeaders(`${dahmerBase}/`) }
-      );
-      if (res && res.ok) {
-        const text = await readCappedText(res);
-        if (isAntiBotPage(text)) continue;
-        if (text && /<a\s+href=/i.test(text)) {
-          dirHtml = text;
-          dirUrl = target;
-          break;
-        }
-      }
-    }
-
-    if (!dirHtml) return { ok: false, reason: 'dahmer4k_directory_not_found' };
-
-    const epPattern = new RegExp(`S0*${seasonNum}E0*${episodeNum}\\b|\\bE0*${episodeNum}\\b`, 'i');
-    const linkRe = /<a\b[^>]*href=["']([^"']+)["'][^>]*>([\s\S]*?)<\/a>/gi;
-    const files = [];
-    let m;
-    while ((m = linkRe.exec(dirHtml))) {
-      const rawHref = m[1].trim();
-      const filename = m[2].replace(/<[^>]+>/g, '').trim();
-      if (!/\.(mkv|mp4|webm|m4v)([?#]|$)/i.test(`${rawHref} ${filename}`)) continue;
-      if (isTv && !epPattern.test(`${rawHref} ${filename}`)) continue;
-
-      let resolvedHref = '';
-      try {
-        resolvedHref = new URL(rawHref, dirUrl).href;
-        if (resolvedHref.includes('/bulk?u=')) {
-          const encodedPart = resolvedHref.split('/bulk?u=')[1].split('&')[0];
-          resolvedHref = decodeURIComponent(encodedPart);
-        }
-      } catch {
-        continue;
-      }
-
-      const height = parseResolutionHeight(`${filename} ${rawHref}`);
-      const audioHints = parseHicineAudioHints(hicineAudioHintText(filename));
-      files.push({
-        rawUrl: resolvedHref,
-        streamUrl: resolvedHref,
-        height,
-        description: filename,
-        audioHints,
-        format: 'mp4'
-      });
-    }
-
-    const sorted4k = files.filter((file) => file.height >= 2160)
-      .sort((a, b) => score4kCandidate(b, preferredAudio) - score4kCandidate(a, preferredAudio));
-    const lowerQuality = files.filter((file) => file.height < 2160)
-      .sort((a, b) => score4kCandidate(b, preferredAudio) - score4kCandidate(a, preferredAudio));
-    const filesToProbe = [
-      ...sorted4k.slice(0, 4),
-      ...lowerQuality.filter((file) => file.height >= 720).slice(0, 3)
-    ];
-    const checkedFiles = await Promise.all(filesToProbe.map(async (file) =>
-      await probePlayableMediaUrl(file.rawUrl, {
-        deadline,
-        timeoutMs: 1800,
-        headers: { Referer: `${dahmerBase}/` }
-      }) ? file : null
-    ));
-    const playableFiles = checkedFiles.filter(Boolean);
-    if (playableFiles.length === 0) {
-      return { ok: false, reason: 'dahmer4k_no_playable_files' };
-    }
-
-    const payload = buildWorker4kStreamPayload({
-      serverId: 'ursa',
-      tier: 'dahmer4k',
-      resolvedItems: playableFiles,
-      referer: `${dahmerBase}/`,
-      headers: { Referer: `${dahmerBase}/` },
-      preferredAudio
-    });
-    return payload ? { ok: true, ...payload } : { ok: false, reason: 'dahmer4k_payload_empty' };
-  } catch (err) {
-    return { ok: false, reason: `dahmer4k_error:${err.message}` };
-  }
-}
-
 function isVerifiedUrsa2160WorkerResult(result) {
   const rawUrl = String(result?.rawUrl || '');
   return !!(
@@ -4805,78 +4267,46 @@ async function resolveUrsaUpstream(metadata, requestedServerId = 'ursa', preferr
     diag.message = detail || step;
   };
 
-  // Every Ursa tier is a search-by-title scrape: without the TMDB title there
-  // is nothing to search. Fail fast with an honest reason instead of running
-  // four tiers that instantly bail with `*_missing_title` and then reporting
-  // "all four sub-providers failed" (which reads as if they were probed).
+  // 4KHDHub is a search-by-title scrape: without the TMDB title there is
+  // nothing to search. Fail fast with an honest reason instead of reporting a
+  // fake exhaustion (which reads as if the source had been probed).
   if (!metadata || !metadata.title) {
     stamp(
       'metadata_missing',
-      'Ursa needs the TMDB title to search its 4K tiers, but metadata resolution returned no title (unresolved TMDB lookup). No tier was probed.'
+      'Ursa needs the TMDB title to search 4KHDHub, but metadata resolution returned no title (unresolved TMDB lookup). Nothing was probed.'
     );
     return { ok: false, reason: 'ursa_metadata_missing', diag };
   }
 
-  const tiers = [
-    {
-      id: '4khdhub',
-      attempt: 'Attempting Tier 1: 4KHDHub (2160p UHD Multi-Audio)...',
-      run: () => resolve4khdhubWorker(metadata, preferredAudio, env)
-    },
-    {
-      id: 'moviesdrive4k',
-      attempt: 'Attempting Tier 2: MoviesDrive 4K (Typesense IMDb + 2160p HubCloud)...',
-      run: () => resolveMoviesdrive4kWorker(metadata, preferredAudio, env)
-    },
-    {
-      id: 'hicine4k',
-      attempt: 'Attempting Tier 3: HiCine 4K UHD (2160p vcloud worker)...',
-      run: () => resolveHicine4kWorker(metadata, preferredAudio, env)
-    },
-    {
-      id: 'dahmer4k',
-      attempt: 'Attempting Tier 4: DahmerMovies 4K (2160p direct directory)...',
-      run: () => resolveDahmer4kWorker(metadata, preferredAudio, env)
-    }
-  ];
-  for (const tier of tiers) stamp(`${tier.id}_attempt`, tier.attempt);
-
-  const results = await Promise.all(tiers.map(async (tier) => {
-    try {
-      const result = await tier.run();
-      return result && result.ok && isVerifiedUrsa2160WorkerResult(result)
-        ? result
-        : result && result.ok
-          ? { ...result, ok: false, reason: `${tier.id}_no_verified_2160p` }
-          : result;
-    } catch (error) {
-      return { ok: false, reason: `${tier.id}_error:${error.message}` };
-    }
-  }));
-
-  let selected = null;
-  for (let index = 0; index < tiers.length; index += 1) {
-    const tier = tiers[index];
-    const result = results[index];
-    if (!selected && result?.ok && result.streamUrl) {
-      selected = result;
-      const qualityNote = result.qualityDegraded
-        ? `quality degraded to ${result.qualities?.[0]?.label || 'the best available quality'}`
-        : `verified 4K (${result.qualities?.[0]?.label || '2160p'})`;
-      stamp(`${tier.id}_success`, `Resolved ${qualityNote} via ${tier.id}`);
-    } else {
-      stamp(`${tier.id}_failed`, result?.reason || `${tier.id} returned no verified 2160p stream`);
-    }
+  // Keep Server 3 to one source. If 4KHDHub misses, return a clear failure
+  // and let the regular server waterfall choose the next server.
+  stamp('4khdhub_attempt', 'Attempting 4KHDHub (2160p UHD Multi-Audio)...');
+  let result;
+  try {
+    result = await resolve4khdhubWorker(metadata, preferredAudio, env);
+  } catch (error) {
+    result = { ok: false, reason: `4khdhub_error:${error.message}` };
   }
-  if (selected) {
-    diag.selectedTier = selected.tier;
-    diag.qualityDegraded = selected.qualityDegraded === true;
-    diag.message = selected.qualityDegraded
-      ? `Resolved best available quality via ${selected.tier} (${selected.qualities?.[0]?.label || 'fallback'})`
-      : `Resolved verified 4K stream via ${selected.tier} (${selected.qualities?.[0]?.label || '2160p'})`;
+
+  if (result && result.ok && !isVerifiedUrsa2160WorkerResult(result)) {
+    result = { ...result, ok: false, reason: '4khdhub_no_verified_2160p' };
+  }
+
+  if (result && result.ok && result.streamUrl) {
+    const qualityNote = result.qualityDegraded
+      ? `quality degraded to ${result.qualities?.[0]?.label || 'the best available quality'}`
+      : `verified 4K (${result.qualities?.[0]?.label || '2160p'})`;
+    stamp('4khdhub_success', `Resolved ${qualityNote} via 4khdhub`);
+    diag.selectedTier = '4khdhub';
+    diag.qualityDegraded = result.qualityDegraded === true;
+    diag.message = result.qualityDegraded
+      ? `Resolved best available quality via 4khdhub (${result.qualities?.[0]?.label || 'fallback'})`
+      : `Resolved verified 4K stream via 4khdhub (${result.qualities?.[0]?.label || '2160p'})`;
     recordWorkerServerAttempt('ursa', true, 120);
-    return { ...selected, diag };
+    return { ...result, diag };
   }
+
+  stamp('4khdhub_failed', (result && result.reason) || '4khdhub returned no verified 2160p stream');
 
   const vsDataUrl = (env && env.VIDSRC_DATA_URL) || runtimeState.upstreams.vidsrcDataUrl || '';
   if (vsDataUrl && /127\.0\.0\.1|localhost/i.test(vsDataUrl)) {
@@ -4888,7 +4318,10 @@ async function resolveUrsaUpstream(metadata, requestedServerId = 'ursa', preferr
     }
   }
 
-  stamp('ursa_4k_exhausted', 'All four Ursa 4K UHD sub-providers failed to resolve a verified 2160p stream.');
+  stamp(
+    'ursa_4k_exhausted',
+    '4KHDHub could not resolve a verified 2160p stream for this title.'
+  );
   return {
     ok: false,
     reason: 'ursa_all_4k_sources_exhausted',
@@ -5148,10 +4581,10 @@ async function buildWorkerDubCatalog(metadata, env, options = {}) {
   };
 }
 
-/** Hard per-upstream budget: the waterfall must stay fast and deterministic. */
+/** Per-upstream budgets keep the waterfall deterministic. */
 const WATERFALL_UPSTREAM_TIMEOUT_MS = 9000;
-// Four tiers run concurrently, but redirector hops and range probes need more
-// than the old 14s ceiling on a cold Worker isolate.
+// The 4KHDHub search includes a redirector chain and needs more room than a
+// simple JSON lookup. The resolver itself enforces a ~10.5s upstream deadline.
 const URSA_WATERFALL_TIMEOUT_MS = 22000;
 
 async function withTimeout(promise, ms, fallback = null) {
@@ -5170,7 +4603,7 @@ async function withTimeout(promise, ms, fallback = null) {
 
 async function resolveStreamWaterfall(metadata, requestedServer, preferredAudio, env) {
   const validServer = serverCatalog.resolveServerId(SERVERS, requestedServer);
-  const cacheKey = `cf:resolve:v3:${metadata.type}:${metadata.tmdbId}:s${metadata.season}:e${metadata.episode}:${validServer}`;
+  const cacheKey = `cf:resolve:v4:${metadata.type}:${metadata.tmdbId}:s${metadata.season}:e${metadata.episode}:${validServer}`;
   const cached = await edgeCacheGet(cacheKey);
   if (cached) {
     // Rebuild the displayed server list from the live catalog: the stream payload
@@ -5203,13 +4636,14 @@ async function resolveStreamWaterfall(metadata, requestedServer, preferredAudio,
         WATERFALL_UPSTREAM_TIMEOUT_MS
       );
     } else if (srvId === 'ursa') {
-      const timeoutMs = validServer === 'ursa' ? URSA_WATERFALL_TIMEOUT_MS : WATERFALL_UPSTREAM_TIMEOUT_MS;
       // Pass the server actually being attempted (srvId), not the caller's
       // original request: when the waterfall reaches Ursa as an implicit
       // fallback the diag `alias` must describe this attempt, not the first one.
+      // 4KHDHub's internal deadline is ~10.5s, so always grant the full Ursa
+      // budget — a shorter fallback cutoff would clip legitimate resolves.
       resolved = await withTimeout(
         resolveUrsaUpstream(metadata, srvId, preferredAudio, env),
-        timeoutMs
+        URSA_WATERFALL_TIMEOUT_MS
       );
     } else if (srvId === 'centaurus') {
       resolved = await withTimeout(
@@ -5589,8 +5023,7 @@ export default {
       }
     }
 
-    // Owner/developer diagnostic for Server 2 (Ursa 4K UHD Multi-Audio cascade:
-    // 4KHDHub -> MoviesDrive 4K -> HiCine 4K -> DahmerMovies 4K).
+    // Owner/developer diagnostic for Server 3 (Ursa 4K UHD Multi-Audio via 4KHDHub).
     const ursaDebugMatch = pathname.match(/^\/api\/debug\/(ursa|4k)\/(movie|tv)\/([^/]+)$/i);
     if (ursaDebugMatch && request.method === 'GET') {
       const [, dbgAlias, dbgType, dbgTmdb] = ursaDebugMatch;
@@ -5611,11 +5044,7 @@ export default {
             externalIds: meta.externalIds
           },
           upstream: {
-            fourkhdhubBase: (env && env.FOURKHDHUB_BASE_URL) || runtimeState.upstreams.fourkhdhubBase,
-            moviesdriveBase: (env && env.MOVIESDRIVE_BASE_URL) || runtimeState.upstreams.moviesdriveBase,
-            hicineApiBase: (env && env.HICINE_API_BASE) || runtimeState.upstreams.hicineApiBase,
-            dahmerBase: (env && env.DAHMER_BASE_URL) || runtimeState.upstreams.dahmerBase,
-            vidsrcDataUrl: (env && env.VIDSRC_DATA_URL) || runtimeState.upstreams.vidsrcDataUrl
+            fourkhdhubBase: (env && env.FOURKHDHUB_BASE_URL) || runtimeState.upstreams.fourkhdhubBase
           },
           result: direct
         });
@@ -5803,10 +5232,10 @@ export default {
             upstream_timeout: 'Timed out talking to the upstream provider.',
             upstream_exception: 'Unhandled error contacting the upstream provider.',
             ursa_metadata_missing:
-              'TMDB metadata (title/year) could not be resolved, so this server had nothing to search for — no 4K tier was probed.',
+              'TMDB metadata could not be resolved, so 4KHDHub had no title to search — no source was probed.',
             ursa_all_4k_sources_exhausted:
-              'None of the four 4K tiers (4KHDHub, MoviesDrive 4K, HiCine 4K, DahmerMovies 4K) yielded a verified playable stream for this title.',
-            ursa_upstream_timeout: 'The 4K cascade exceeded its resolve budget before any tier produced a verified stream.'
+              '4KHDHub did not return a verified playable stream for this title; the player can continue to the next server.',
+            ursa_upstream_timeout: 'The 4KHDHub lookup exceeded its resolve budget before producing a verified stream.'
           };
           const humanReason = firstFailed
             ? reasonMap[firstFailed.reason] || firstFailed.reason

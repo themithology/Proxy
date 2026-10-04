@@ -186,35 +186,25 @@ To replace the deprecated VidStuck upstream, Server Andromeda uses a resilient c
 3. **Clean Waterfall Failover: Server 3 (Ursa / 4K UHD)**
    - If both internal Andromeda tiers return no playable streams for a given title, Andromeda cleanly cascades to the next server in the shared priority waterfall.
 
-### Server 3 — Ursa (`?server=ursa` / `?server=4k`) 4-Tier 4K UHD Multi-Audio Architecture
+### Server 3 — Ursa (`?server=ursa` / `?server=4k`) 4K UHD
 
-Server 3 (`ursa`, also accessible via `?server=4k`) delivers true **2160p (4K UHD)** streams with **Multi-Audio / Dual-Audio** prioritized (and Original Audio supported) across a 4-tier cascade:
+Server 3 is deliberately simple: **one source, 4KHDHub**. It searches the
+requested title/episode, follows the redirector chain, and returns a direct
+media URL only after checking it is a playable file. Recent CI probes verified
+2160p files and byte-range playback for the test titles. The resolver also
+keeps lower-resolution links as playback fallbacks when 4K is unavailable or
+cannot be decoded by the browser.
 
-1. **Priority 1: 4KHDHub (`4khdhub.one` + Dynamic Domain Discovery)**
-   - **Coverage:** Dedicated 2160p UHD BluRay REMUX, DV/HDR10, and 4K WEB-DL releases with Dual/Multi-Audio (`[Hindi DDP 5.1 + English TrueHD Atmos 7.1]`, Tamil/Telugu/Multi-Audio) plus 1080p backup qualities.
-   - **Protocol:** Dynamic domain discovery (`urls.json` + mirror pool), `.download-item` / `.episode-download-item` extraction, 3-chain Base64 + ROT13 redirector decoding (`b64 -> b64 -> rot13 -> b64 -> JSON.o -> b64`), HubDrive hop, and HubCloud unrolling to direct R2 / FSL / workers.dev CDN URLs.
+If 4KHDHub has no verified file, Ursa reports failure and the normal server
+waterfall can move on; it no longer waits on extra 4K scrapers. It does not
+transcode video in the Worker, so MKV/HEVC support still depends on the
+browser/device.
 
-2. **Priority 2: MoviesDrive 4K (`new5.moviesdrive.christmas` + Typesense IMDb API)**
-   - **Coverage:** Fast Typesense JSON search (`/search.php?q=<imdbId>&page=1`) indexing 2160p 4K SDR/HDR Dual-Audio (`[Hindi + English]`) and Multi-Audio releases.
-   - **Protocol:** Exact `imdb_id` / title matching, `<h5>` quality block parsing, `mdrive.lol/archive/...` unpacking, and HubCloud generator unrolling to direct 2160p CDN streams.
-
-3. **Priority 3: HiCine 4K UHD (`api.hicine.sbs`)**
-   - **Coverage:** Extracts `[2160P]` / `4K` SDR & DV HDR Dual-Audio streams from HiCine's catalog (which Server 2 Centaurus skips in favor of mobile-first 720p x264) while retaining 1080p/720p backup rungs in `qualities`.
-   - **Protocol:** Parallel `vcloud` worker token resolution (`ten`, `fsl2`, `fsl`, `r2`) and HubCloud unrolling.
-
-4. **Priority 4: DahmerMovies 4K (`a.111477.xyz`)**
-   - **Coverage:** Direct open-directory 2160p HDR/SDR `.mkv`/`.mp4` streams (`/movies/<Title> (<Year>)/` and `/tvs/<Title>/Season <NN>/`) with Original and Multi-Audio tracks.
-
-**Honest failure (`ursa_metadata_missing`).** Every Ursa tier is a
-search-by-title scrape, so the cascade needs a title from TMDB metadata before
-it can probe anything. If metadata resolution produced no title, Ursa now fails
-fast with `reason: ursa_metadata_missing` and a `metadata_missing` diag step
-instead of running four tiers that instantly bail and then reporting a
-misleading `ursa_all_4k_sources_exhausted` ("all four sub-providers failed"),
-which read as if the tiers had been probed. Both `/api/resolve` backends map the
-reason to a human explanation, and the Worker retries the TMDB lookup once and
-falls back to the VidStuck TMDB proxy so a rate-limited TMDB call on shared
-edge IPs no longer strips the title from every search-by-title server.
+**Honest metadata failure (`ursa_metadata_missing`).** 4KHDHub searches by
+title. If TMDB metadata has no title, Ursa returns
+`reason: ursa_metadata_missing` with a `metadata_missing` diagnostic step
+instead of claiming the provider was probed. The Worker retries TMDB once and
+uses the VidStuck TMDB proxy as a fallback.
 
 ### Server 4 — Hamster Wheel (`?server=hamster`) Multi-Language OMSS Cascade
 

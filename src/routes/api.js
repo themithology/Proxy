@@ -294,10 +294,10 @@ router.get('/resolve/:type/:tmdbId', async (req, res) => {
         upstream_timeout: 'Timed out talking to the upstream provider.',
         upstream_exception: 'Unhandled error contacting the upstream provider.',
         ursa_metadata_missing:
-          'TMDB metadata (title/year) could not be resolved, so this server had nothing to search for — no 4K tier was probed.',
+          'TMDB metadata could not be resolved, so 4KHDHub had no title to search — no source was probed.',
         ursa_all_4k_sources_exhausted:
-          'None of the four 4K tiers (4KHDHub, MoviesDrive 4K, HiCine 4K, DahmerMovies 4K) yielded a verified playable stream for this title.',
-        ursa_upstream_timeout: 'The 4K cascade exceeded its resolve budget before any tier produced a verified stream.'
+          '4KHDHub did not return a verified playable stream for this title; the player can continue to the next server.',
+        ursa_upstream_timeout: 'The 4KHDHub lookup exceeded its resolve budget before producing a verified stream.'
       };
       const humanReason = firstFailed
         ? reasonMap[firstFailed.reason] || firstFailed.reason
@@ -537,8 +537,7 @@ router.get('/debug/andromeda/:type/:tmdbId', requireAdminAuth, async (req, res) 
 
 /**
  * GET /api/debug/ursa/:type/:tmdbId (and /api/debug/4k/:type/:tmdbId)
- * Owner-only diagnostic for Server 2 (Ursa 4K UHD Multi-Audio cascade:
- * 4KHDHub -> MoviesDrive 4K -> HiCine 4K -> DahmerMovies 4K).
+ * Owner-only diagnostic for Server 3 (Ursa 4K UHD Multi-Audio via 4KHDHub).
  */
 router.get(['/debug/ursa/:type/:tmdbId', '/debug/4k/:type/:tmdbId'], requireAdminAuth, async (req, res) => {
   const { type, tmdbId } = req.params;
@@ -557,9 +556,6 @@ router.get(['/debug/ursa/:type/:tmdbId', '/debug/4k/:type/:tmdbId'], requireAdmi
       },
       upstream: {
         fourkhdhubBase: config.upstreams.fourkhdhubBase,
-        moviesdriveBase: config.upstreams.moviesdriveBase,
-        hicineApiBase: config.upstreams.hicineApiBase,
-        dahmerBase: config.upstreams.dahmerBase,
         vidsrcDataUrl: config.upstreams.vidsrcDataUrl
       },
       result
