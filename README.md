@@ -99,13 +99,25 @@ Supported media types are `movie`, `tv`, and `series` where applicable. TV reque
 
 ## Source resolution and audio behavior
 
-The resolver supports five server configurations:
-- **Server 1 (Andromeda)**: Multi-Tier Multi-Audio Cascade (CastleTV → NetMirror) with automatic failover to Server 2 (Ursa).
-- **Server 2 (Ursa / `4k`)**: 4-Tier 2160p 4K UHD & Multi-Audio Cascade (4KHDHub → MoviesDrive 4K → HiCine 4K UHD → DahmerMovies 4K).
-- **Server 3 (Centaurus)**: HiCine Direct MP4.
-- **Server 4 (Atlas)**: ZXC Backup Adaptive HLS.
-- **Server 5 (Strings)**: Anime Sub/Dub (HiAnime / ZokoAnime).
-- **Server 6 (Hindi, opt-in)**: TMDB-id keyed Hindi dubs across every tier — requested explicitly with `?server=hindi`.
+The resolver supports the following server configurations. Names, badges and
+priorities live in `src/services/serverCatalog.js`, which both backends (the
+Node API and the Cloudflare Worker that serves `/embed`) import — so the player's
+server modal can never drift from what the waterfall actually tries:
+
+| Priority | Server id   | Player name           | Badge                                  | Cascade |
+|----------|-------------|-----------------------|----------------------------------------|---------|
+| 1        | `andromeda` | Fiber Optic Speedrun  | Multi-Audio • Primary                  | CastleTV → NetMirror |
+| 2        | `centaurus` | Gigachad Node         | Adaptive • Multi-Quality               | HiCine Direct MP4 |
+| 3        | `ursa` (`4k`)| FBI Surveillance Van | 4K UHD • Multi-Audio                   | 4KHDHub → MoviesDrive 4K → HiCine 4K UHD → DahmerMovies 4K |
+| 4        | `hamster`   | Hamster Wheel         | Multi-Language • OMSS Cascade          | Videasy → Peachify → VidSrc |
+| 5        | `atlas`     | Atlas                 | Adaptive • Backup                      | ZXC Backup Adaptive HLS |
+| opt-in   | `hindi`     | *(not listed)*        | Hindi Dubs • TMDB-ID Verified          | TMDB-id keyed Hindi dubs (`?server=hindi`) |
+
+Every `/api/resolve` payload carries the `servers` array in this exact order with
+the answering server flagged `active`, and it is rebuilt from the live catalog on
+every response — including cache hits — so a rebrand or re-prioritisation shows
+up in the player immediately. Owner priority changes made through
+`POST /api/admin/upstreams` feed the same array and the waterfall.
 
 ### Hindi dubs and TMDB-id identity (Server 6 / `?server=hindi`)
 
@@ -155,7 +167,7 @@ Operational notes:
 
 - `HINDI_PROVIDERS=castletv,netmirror` limits which providers the Hindi server and `/api/dubs` may use.
 
-### Server Andromeda Multi-Tier Architecture
+### Server 1 — Andromeda (Fiber Optic Speedrun) Multi-Tier Architecture
 
 To replace the deprecated VidStuck upstream, Server Andromeda uses a resilient cascade backed by automatic dynamic discovery:
 
@@ -171,12 +183,12 @@ To replace the deprecated VidStuck upstream, Server Andromeda uses a resilient c
    - **Last live probe (2026-10-04, `diagnostics/netmirror-probe.json`):** `net27.cc` live (a TV title returned 4 streams + 13 subtitle languages; a movie not in their catalog returns `ok:true` + "couldn't find this title", treated as a miss), `net52.cc`/`net77.cc`/`netmiror.com` 404, and every CDN fetch from the CI runner was `429` regardless of Referer/Range/sign, so playback could not be confirmed from cloud IPs.
    - **Not yet wired:** NetMirror's `captions[]` (13 languages on the probed episode, sourced from Moviebox's library) are still ignored by `/api/subtitles`, which currently uses OpenSubtitles/Wyzie only.
 
-3. **Clean Waterfall Failover: Server 2 (Ursa / 4K UHD)**
-   - If both internal Andromeda tiers return no playable streams for a given title, Andromeda cleanly cascades to Server 2 (Ursa) in the waterfall failover chain.
+3. **Clean Waterfall Failover: Server 3 (Ursa / 4K UHD)**
+   - If both internal Andromeda tiers return no playable streams for a given title, Andromeda cleanly cascades to the next server in the shared priority waterfall.
 
-### Server Ursa (`?server=ursa` / `?server=4k`) 4-Tier 4K UHD Multi-Audio Architecture
+### Server 3 — Ursa (`?server=ursa` / `?server=4k`) 4-Tier 4K UHD Multi-Audio Architecture
 
-Server 2 (`ursa`, also accessible via `?server=4k`) delivers true **2160p (4K UHD)** streams with **Multi-Audio / Dual-Audio** prioritized (and Original Audio supported) across a 4-tier cascade:
+Server 3 (`ursa`, also accessible via `?server=4k`) delivers true **2160p (4K UHD)** streams with **Multi-Audio / Dual-Audio** prioritized (and Original Audio supported) across a 4-tier cascade:
 
 1. **Priority 1: 4KHDHub (`4khdhub.one` + Dynamic Domain Discovery)**
    - **Coverage:** Dedicated 2160p UHD BluRay REMUX, DV/HDR10, and 4K WEB-DL releases with Dual/Multi-Audio (`[Hindi DDP 5.1 + English TrueHD Atmos 7.1]`, Tamil/Telugu/Multi-Audio) plus 1080p backup qualities.
@@ -187,11 +199,35 @@ Server 2 (`ursa`, also accessible via `?server=4k`) delivers true **2160p (4K UH
    - **Protocol:** Exact `imdb_id` / title matching, `<h5>` quality block parsing, `mdrive.lol/archive/...` unpacking, and HubCloud generator unrolling to direct 2160p CDN streams.
 
 3. **Priority 3: HiCine 4K UHD (`api.hicine.sbs`)**
-   - **Coverage:** Extracts `[2160P]` / `4K` SDR & DV HDR Dual-Audio streams from HiCine's catalog (which Server 3 Centaurus skips in favor of mobile-first 720p x264) while retaining 1080p/720p backup rungs in `qualities`.
+   - **Coverage:** Extracts `[2160P]` / `4K` SDR & DV HDR Dual-Audio streams from HiCine's catalog (which Server 2 Centaurus skips in favor of mobile-first 720p x264) while retaining 1080p/720p backup rungs in `qualities`.
    - **Protocol:** Parallel `vcloud` worker token resolution (`ten`, `fsl2`, `fsl`, `r2`) and HubCloud unrolling.
 
 4. **Priority 4: DahmerMovies 4K (`a.111477.xyz`)**
    - **Coverage:** Direct open-directory 2160p HDR/SDR `.mkv`/`.mp4` streams (`/movies/<Title> (<Year>)/` and `/tvs/<Title>/Season <NN>/`) with Original and Multi-Audio tracks.
+
+### Server 4 — Hamster Wheel (`?server=hamster`) Multi-Language OMSS Cascade
+
+Hamster Wheel is the multi-language fallback tier and is implemented once in
+`src/services/hamsterCore.js`, shared verbatim by the Node backend
+(`src/services/hamsterWheel.js` wires the Node proxy/breaker) and the Worker
+(`resolveHamsterWheelUpstream` wires the edge proxy/breaker). Priority order:
+
+1. **Videasy (primary)** — `api.videasy.net` / `api2.videasy.net`, parallel fan-out
+   across `mb-flix`, `1movies`, `cdn`, `superflix`, `lamovie`, `cuevana` and
+   `hdmovie` (Hindi). Encrypted answers are round-tripped through
+   `enc-dec.app/api/decrypt`; each answering server becomes an audio track with a
+   language label (English, Hindi, etc.).
+2. **Peachify (fallback 1)** — `uwu.eat-peach.sbs` / `usa.eat-peach.sbs`, dub/sub
+   labels, AES-256-CBC envelope decryption (hex key + 16-byte IV prefix in the
+   payload).
+3. **VidSrc via vsembed.ru (fallback 2)** — three-hop scrape that substitutes the
+   `{v1}`–`{v4}` CDN domain placeholders (neonhorizonworkshops, wanderlynest,
+   orchidpixelgardens, cloudnestra).
+
+Circuit breakers are per provider (`videasy:hamster`, `peachify:hamster`,
+`vidsrc:hamster`); the Node backend reuses the shared breaker so provider health
+stays visible in `/api/admin/overview`, and the Worker uses the shared module's
+in-isolate breaker. All playback URLs are routed through `/api/proxy`.
 
 ### Audio Behavior & Remuxing
 

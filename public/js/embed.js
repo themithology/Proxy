@@ -165,7 +165,7 @@
     tmdbId: '94605',
     season: 1,
     episode: 1,
-    server: 'atlas',
+    server: 'andromeda',
     branding: 'LOL Embed',
     media: null,
     stream: null,
@@ -380,11 +380,22 @@
 
       state.segments = (data && data.segments) || [];
       state.subtitles = (data && data.subtitles) || [];
-      state.servers = ((data && data.servers) || []).map((s) => ({
-        ...s,
-        flag: '☁',
-        description: s.badge || 'Production Stream Server'
-      }));
+      state.servers = ((data && data.servers) || [])
+        .filter((s) => s && s.id && s.enabled !== false && (s.listed !== false || s.active))
+        // The API already sorts by priority; sorting again keeps the UI correct
+        // even if a cached/stale payload predates the current catalog order.
+        .sort((a, b) => (Number(a.priority) || 999) - (Number(b.priority) || 999))
+        .map((s) => ({
+          ...s,
+          flag: '☁',
+          description: s.badge || 'Production Stream Server'
+        }));
+
+      // A rebrand can remove or rename the server we are currently on. Never let
+      // the player keep requesting an id that no longer exists in the catalog.
+      if (state.servers.length > 0 && !state.servers.some((s) => s.id === state.server)) {
+        state.server = state.servers[0].id;
+      }
 
       renderSegmentedTimeline();
       renderSubtitlesPopover();
@@ -1039,7 +1050,7 @@
     serversListContainer.innerHTML = '';
     state.servers.forEach(srv => {
       const btn = document.createElement('button');
-      btn.className = 'server-row-card' + (srv.id === state.server ? ' active' : '');
+      btn.className = 'server-row-card' + (srv.active || srv.id === state.server ? ' active' : '');
       btn.innerHTML = `
         <div>
           <div class="server-name-line">

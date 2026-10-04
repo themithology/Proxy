@@ -19,29 +19,22 @@ import zlib from 'node:zlib';
 import { Buffer } from 'node:buffer';
 // Shared TMDB-anchored identity matching (single source of truth with the Node backend).
 import identity from '../src/services/identity.js';
+// Shared server catalog + Hamster Wheel cascade (single source of truth with the
+// Node backend). The player renders the `servers` array returned by /api/resolve,
+// so rebranding or re-prioritising a server must never require a second edit here.
+import serverCatalog from '../src/services/serverCatalog.js';
+import hamsterCore from '../src/services/hamsterCore.js';
 
 const USER_AGENT =
   'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36';
 
-const SERVERS = [
-  { id: 'andromeda', name: 'Andromeda', badge: 'Primary • Multi-Audio HLS', priority: 1, enabled: true, supportsMultiAudio: true },
-  { id: 'ursa', name: 'Ursa', badge: '4K UHD • Multi-Audio', priority: 2, enabled: true, supportsMultiAudio: true },
-  { id: 'centaurus', name: 'Centaurus', badge: 'HiCine • Direct 1080p/720p MP4', priority: 3, enabled: true, supportsMultiAudio: true },
-  { id: 'atlas', name: 'Atlas', badge: 'ZXC Backup • Adaptive HLS', priority: 4, enabled: true, supportsMultiAudio: true },
-  { id: 'strings', name: 'Strings', badge: 'Anime Sub/Dub • Zoko HLS', priority: 5, enabled: true, supportsMultiAudio: true },
-  {
-    // TMDB-id keyed Hindi-dub server: every candidate is identity-checked
-    // against the TMDB title, so name collisions can never win.
-    // `fallback: false` keeps it out of the implicit waterfall.
-    id: 'hindi',
-    name: 'Hindi',
-    badge: 'Hindi Dubs • TMDB-ID Verified',
-    priority: 6,
-    enabled: true,
-    fallback: false,
-    supportsMultiAudio: true
-  }
-];
+/**
+ * Player-visible servers plus opt-in (hidden) cascades, in priority order.
+ * `listed: false` entries (the TMDB-id verified Hindi cascade) stay resolvable
+ * via ?server=hindi but never appear in the player's server array.
+ */
+const SERVERS = serverCatalog.workerServerList();
+
 
 // Runtime-editable Upstream Config & Telemetry State in Cloudflare Worker
 const runtimeState = {
@@ -405,6 +398,20 @@ function buildWorkerProxyUrl(targetUrl, referer = '', mode = 'manifest', cookie 
   if (referer) params.set('referer', referer);
   if (cookie) params.set('cookie', cookie);
   return `/api/proxy?${params.toString()}`;
+}
+
+/**
+ * Hamster Wheel (multi-language OMSS cascade) runs the exact same module as the
+ * Node backend — only the proxy builder and breaker are Worker-native.
+ */
+hamsterCore.configureHamsterCore({
+  buildProxyStreamUrl: (url, referer) => buildWorkerProxyUrl(url, referer, 'full'),
+  breaker: hamsterCore.createMemoryBreaker(),
+  userAgent: USER_AGENT
+});
+
+async function resolveHamsterWheelUpstream(metadata, requestedServerId = 'hamster', preferredAudio = '') {
+  return hamsterCore.resolveHamsterWheelServer(metadata, requestedServerId, preferredAudio);
 }
 
 /**
@@ -4727,12 +4734,6 @@ async function resolveUrsaUpstream(metadata, requestedServerId = 'ursa', preferr
   };
 }
 
-/**
- * Server priority for the automatic waterfall on Cloudflare Workers.
- * Andromeda (Server 1: CastleTV -> NetMirror), then Ursa (Server 2: 4K UHD),
- * Centaurus, Atlas, Strings last.
- */
-const WATERFALL_PRIORITY = ['andromeda', 'ursa', 'centaurus', 'atlas', 'strings'];
 /* ------------------------------------------------------------------ *
  * TMDB-id keyed Hindi dub layer
  *
@@ -5006,27 +5007,21 @@ async function withTimeout(promise, ms, fallback = null) {
 }
 
 async function resolveStreamWaterfall(metadata, requestedServer, preferredAudio, env) {
-  const normalizedServer = ['4k', 'uhd', '2160p'].includes(String(requestedServer || '').toLowerCase())
-    ? 'ursa'
-    : String(requestedServer || 'andromeda').toLowerCase();
-  const validServer = SERVERS.find((s) => s.id === normalizedServer)?.id || 'andromeda';
+  const validServer = serverCatalog.resolveServerId(SERVERS, requestedServer);
   const cacheKey = `cf:resolve:v3:${metadata.type}:${metadata.tmdbId}:s${metadata.season}:e${metadata.episode}:${validServer}`;
   const cached = await edgeCacheGet(cacheKey);
-  if (cached) return applyPreferredAudio(cached, preferredAudio);
+  if (cached) {
+    // Rebuild the displayed server list from the live catalog: the stream payload
+    // is cached for 15 minutes, but a rebrand/re-prioritisation must show up in
+    // the player immediately instead of being replayed from cache.
+    const payload = applyPreferredAudio(cached, preferredAudio);
+    return { ...payload, servers: serverCatalog.buildServerPayload(SERVERS, payload.server) };
+  }
 
-  const enabledIds = SERVERS.filter((s) => s.enabled).map((s) => s.id);
-  // Default (and fallback) order: andromeda -> ursa -> centaurus -> atlas -> strings.
-  // An explicitly requested server is still attempted first and remains authoritative.
-  const isImplicitFallback = (id) => {
-    const server = SERVERS.find((s) => s.id === id);
-    return !server || server.fallback !== false;
-  };
-  const prioritized = [
-    ...WATERFALL_PRIORITY.filter((id) => enabledIds.includes(id)),
-    // Opt-in servers (e.g. the TMDB-id keyed "hindi" server) are only used when
-    // explicitly requested, keeping the default waterfall unchanged.
-    ...enabledIds.filter((id) => !WATERFALL_PRIORITY.includes(id) && isImplicitFallback(id))
-  ];
+  // Waterfall order comes from the shared catalog's live priority order; opt-in
+  // servers (hindi) are excluded so they are only used when explicitly requested.
+  // An explicitly requested server is always attempted first.
+  const prioritized = serverCatalog.waterfallEnabledServers(SERVERS).map((s) => s.id);
   const order = [validServer, ...prioritized.filter((id) => id !== validServer)];
 
   // Per-server diagnostic aggregation for API responses and the owner debug endpoint.
@@ -5056,8 +5051,11 @@ async function resolveStreamWaterfall(metadata, requestedServer, preferredAudio,
         resolveHicineUpstream(metadata, env),
         WATERFALL_UPSTREAM_TIMEOUT_MS
       );
-    } else if (srvId === 'strings') {
-      resolved = null;
+    } else if (srvId === 'hamster') {
+      resolved = await withTimeout(
+        resolveHamsterWheelUpstream(metadata, srvId, preferredAudio),
+        WATERFALL_UPSTREAM_TIMEOUT_MS
+      );
     } else if (srvId === 'hindi') {
       resolved = await withTimeout(
         resolveHindiUpstream(metadata, preferredAudio || 'hi', env),
@@ -5073,7 +5071,7 @@ async function resolveStreamWaterfall(metadata, requestedServer, preferredAudio,
         serverAttempts,
         activeAudioTrack:
           resolved.audioTracks?.find((t) => t.default) || resolved.audioTracks?.[0] || null,
-        servers: SERVERS.map((s) => ({ ...s, active: s.id === resolved.server }))
+        servers: serverCatalog.buildServerPayload(SERVERS, resolved.server)
       };
       const finalPayload = applyPreferredAudio(payload, preferredAudio);
       await edgeCacheSet(cacheKey, finalPayload, 900);
@@ -5090,9 +5088,11 @@ async function resolveStreamWaterfall(metadata, requestedServer, preferredAudio,
   return {
     server: null,
     streamUrl: null,
+    // The normalized id, so an error body never echoes a removed/legacy server.
+    requestedServer: validServer,
     reason: 'all_servers_failed',
     serverAttempts,
-    servers: SERVERS.map((s) => ({ ...s, active: false }))
+    servers: serverCatalog.buildServerPayload(SERVERS, null)
   };
 }
 
@@ -5357,7 +5357,7 @@ export default {
           { serverId: 'ursa', url: `${runtimeState.upstreams.vidsrcDataUrl}?type=tv&tmdb=94605&season=1&episode=1&stream_urls`, headers: { Referer: 'https://vidsrc.sh/' } },
           { serverId: 'centaurus', url: `${runtimeState.upstreams.hicineApiBase}/api/search/arcane` },
           { serverId: 'atlas', url: `${runtimeState.upstreams.zxcBase}/movie` },
-          { serverId: 'strings', url: `${runtimeState.upstreams.hianimeBase}/search?keyword=arcane` }
+          { serverId: 'hamster', url: 'https://api.videasy.net/mb-flix/sources-with-title?tmdb=94605', headers: { Referer: 'https://player.videasy.net/' } }
         ];
         const probeResults = [];
         for (const t of targets) {
@@ -5566,7 +5566,7 @@ export default {
 
       if (action === 'info') {
         const segments = await resolveSkipSegments(metadata);
-        return jsonResponse({ ok: true, metadata, segments, servers: SERVERS });
+        return jsonResponse({ ok: true, metadata, segments, servers: serverCatalog.listableServers(SERVERS) });
       }
 
       if (action === 'segments') {
@@ -5613,7 +5613,7 @@ export default {
                   }
                 ],
                 qualities: [{ label: 'Auto', height: 0, url: buildWorkerProxyUrl(customOv.streamUrl, '') }],
-                servers: SERVERS.map((s) => ({ ...s, active: false }))
+                servers: serverCatalog.buildServerPayload(SERVERS, null)
               })
             : resolveStreamWaterfall(metadata, server, audio, env),
           resolveSubtitles(metadata),
@@ -5648,13 +5648,13 @@ export default {
               error: 'Unable to resolve stream from upstream providers for this title.',
               explanation: humanReason,
               serverExplanation: humanDiag,
-              requestedServer: server,
+              requestedServer: (streamData && streamData.requestedServer) || server,
               failedReason: firstFailed ? firstFailed.reason : null,
               serverAttempts: attempts,
               metadata,
               subtitles,
               segments,
-              servers: (streamData && streamData.servers) || SERVERS
+              servers: (streamData && streamData.servers) || serverCatalog.buildServerPayload(SERVERS, null)
             },
             502
           );
@@ -5718,9 +5718,17 @@ export default {
       if (!assetRes.ok) {
         return jsonResponse({ ok: false, error: 'Player asset is unavailable' }, assetRes.status);
       }
-      const headers = new Headers(assetRes.headers);
-      headers.set('Cache-Control', 'public, max-age=86400, stale-while-revalidate=604800');
+      // The player bundle (embed.js / embed.css) must revalidate so a server
+      // rebrand or player fix reaches viewers on their next load instead of
+      // being pinned for a day behind max-age. Vendor libraries keep the long TTL.
+      const isPlayerBundle = pathname === '/js/embed.js' || pathname === '/css/embed.css';
+      const headers = new Headers();
+      headers.set('Cache-Control', isPlayerBundle ? 'no-cache' : 'public, max-age=86400, stale-while-revalidate=604800');
       headers.set('Access-Control-Allow-Origin', '*');
+      for (const headerName of ['Content-Type', 'ETag', 'Last-Modified']) {
+        const value = assetRes.headers.get(headerName);
+        if (value) headers.set(headerName, value);
+      }
       return new Response(assetRes.body, { status: assetRes.status, headers });
     }
 

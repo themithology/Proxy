@@ -4,6 +4,7 @@ const { resolveTmdbMetadata } = require('../services/tmdb');
 const { resolveSkipSegments } = require('../services/segments');
 const { resolveSubtitles, fetchAndConvertSubtitleToVtt } = require('../services/subtitles');
 const { resolveStreamForServer, resolveAndromedaServer, resolveUrsaServer } = require('../services/resolver');
+const serverCatalog = require('../services/serverCatalog');
 const { buildDubCatalog } = require('../services/dubCatalog');
 const { handleStreamProxy } = require('../services/proxy');
 const { serveMasterPlaylist, serveGeneratedFile } = require('../services/multitrack');
@@ -162,7 +163,8 @@ router.get('/info/:type/:tmdbId', async (req, res) => {
       ok: true,
       metadata,
       segments: segmentsData.segments,
-      servers: config.servers
+      // Player-facing list: opt-in cascades stay resolvable but are not rendered.
+      servers: serverCatalog.listableServers(config.servers)
     });
   } catch (err) {
     return res.status(500).json({ ok: false, error: err.message });
@@ -301,7 +303,7 @@ router.get('/resolve/:type/:tmdbId', async (req, res) => {
         error: 'Unable to resolve stream from upstream providers for this title.',
         explanation: humanReason,
         serverExplanation: humanDiag,
-        requestedServer: server,
+        requestedServer: (streamData && streamData.requestedServer) || server,
         failedReason: firstFailed ? firstFailed.reason : null,
         serverAttempts: attempts,
         metadata,

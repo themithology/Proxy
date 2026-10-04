@@ -7,6 +7,8 @@ try {
   // dotenv is optional when environment variables are provided by the host/container
 }
 
+const serverCatalog = require('./services/serverCatalog');
+
 const parseBoolean = (value, fallback = true) => {
   if (value == null || value === '') return fallback;
   return !/^(0|false|no|off)$/i.test(String(value).trim());
@@ -136,44 +138,11 @@ const config = {
     cinemetaUrl: 'https://v3-cinemeta.strem.io'
   },
 
-  // Server definitions matching VidStuck's cloud server switcher
-  servers: [
-    {
-      id: 'andromeda',
-      name: 'Fiber Optic Speedrun',
-      badge: 'Multi-Audio • Primary',
-      priority: 1,
-      supportsMultiAudio: true
-    },
-    {
-      id: 'ursa',
-      name: 'FBI Surveillance Van',
-      badge: '4K UHD • Multi-Audio',
-      priority: 3,
-      supportsMultiAudio: true
-    },
-    {
-      id: 'centaurus',
-      name: 'Gigachad Node',
-      badge: 'Adaptive • Multi-Quality',
-      priority: 2,
-      supportsMultiAudio: true
-    },
-    {
-      id: 'atlas',
-      name: 'Atlas',
-      badge: 'Adaptive • Backup',
-      priority: 5,
-      supportsMultiAudio: true
-    },
-    {
-      id: 'hamster',
-      name: 'Hamster Wheel',
-      badge: 'Multi-Language • OMSS Cascade',
-      priority: 4,
-      supportsMultiAudio: true
-    }
-  ]
+  // Server definitions (names, badges, priorities) live in the shared catalog so
+  // the Worker that serves the player and this backend can never drift apart.
+  // `servers` is kept in priority order, which is also the implicit waterfall
+  // order; opt-in servers (listed:false) stay resolvable but are never rendered.
+  servers: serverCatalog.nodeServerList()
 };
 
 module.exports = config;
