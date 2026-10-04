@@ -1009,7 +1009,28 @@ async function resolveCastletvUpstream(metadata, preferredAudio = '', env = null
     const referer = `${castletvBase}/`;
     const APK_SIGN_KEY = 'ED0955EB04E67A1D9F3305B95454FED485261475';
 
+    // CastleTV answers one quality per `resolution` rung; the first rung that
+    // produced a URL used to end the loop, which collapsed the player's quality
+    // menu to "Auto" whenever the response carried no `data.videos` array.
+    // Merge the rungs into a real ladder (breaks as soon as two heights exist).
+    const CASTLE_HEIGHTS_BY_RESOLUTION = { 1: 480, 2: 720, 3: 1080, 4: 2160 };
+    const castleVideoHeight = (value) => {
+      const num = Number(value);
+      if (!Number.isFinite(num) || num <= 0) return 0;
+      return num <= 4 ? CASTLE_HEIGHTS_BY_RESOLUTION[num] || 0 : num;
+    };
+    const containerFormatForUrl = (url) => {
+      const path = String(url || '').split('#')[0].split('?')[0].toLowerCase();
+      if (path.endsWith('.m3u8')) return 'hls';
+      if (path.endsWith('.mp4')) return 'mp4';
+      if (path.endsWith('.mkv')) return 'mkv';
+      if (path.endsWith('.mpd')) return 'dash';
+      return 'hls';
+    };
+
     const fetchTrackStream = async (track) => {
+      const ladder = new Map();
+      let base = null;
       for (const resolution of [3, 2, 1]) {
         try {
           const body = {
@@ -1038,25 +1059,41 @@ async function resolveCastletvUpstream(metadata, preferredAudio = '', env = null
           );
           if (!vRes.ok) continue;
           const vJson = JSON.parse(decryptCastleAes(await vRes.text(), key));
-          const videoUrl = vJson?.data?.videoUrl || vJson?.data?.videos?.[0]?.url;
-          if (!videoUrl) continue;
-          const videos = (vJson?.data?.videos || [])
+          const rows = (vJson?.data?.videos || [])
             .filter((v) => v && v.url)
             .map((v) => ({
               url: v.url,
-              height: v.resolution === 4 ? 2160 : v.resolution === 3 ? 1080 : v.resolution === 2 ? 720 : 480
-            }));
-          return {
-            languageId: track.languageId,
-            languageName: track.languageName || track.abbreviate || 'Original',
-            videoUrl,
-            videos
-          };
+              // `resolution` may be a rung number (1-4) or an explicit pixel
+              // height depending on the upstream build; accept both.
+              height: castleVideoHeight(v.resolution != null ? v.resolution : v.height)
+            }))
+            .filter((v) => v.height > 0);
+          const videoUrl = vJson?.data?.videoUrl || rows[0]?.url || '';
+          if (!videoUrl && rows.length === 0) continue;
+
+          if (!base) {
+            base = {
+              languageId: track.languageId,
+              languageName: track.languageName || track.abbreviate || 'Original',
+              videoUrl: videoUrl || rows[0].url
+            };
+          }
+          rows.forEach((row) => {
+            if (!ladder.has(row.height)) ladder.set(row.height, row.url);
+          });
+          const requestedHeight = CASTLE_HEIGHTS_BY_RESOLUTION[resolution] || 0;
+          if (videoUrl && requestedHeight && !ladder.has(requestedHeight)) {
+            ladder.set(requestedHeight, videoUrl);
+          }
+          if (ladder.size >= 2) break;
         } catch {
           // next resolution rung
         }
       }
-      return null;
+      if (!base) return null;
+      base.videos = Array.from(ladder, ([height, url]) => ({ height, url }))
+        .sort((a, b) => b.height - a.height);
+      return base;
     };
 
     const streamByTrack = new Array(tracks.length).fill(null);
@@ -1099,7 +1136,12 @@ async function resolveCastletvUpstream(metadata, preferredAudio = '', env = null
     });
 
     const activeTrack = defaultTrack;
-    const qualitySource = resolvedTracks.find((t) => buildWorkerProxyUrl(t.videoUrl, referer, 'full') === activeTrack.streamUrl) ||
+    // Prefer the active track's ladder, then any track that actually carries
+    // one. Falling straight to `resolvedTracks[0]` produced an "Auto"-only menu
+    // whenever the first resolved language had no `videos` array.
+    const qualitySource =
+      resolvedTracks.find((t) => buildWorkerProxyUrl(t.videoUrl, referer, 'full') === activeTrack.streamUrl) ||
+      resolvedTracks.find((t) => Array.isArray(t.videos) && t.videos.length > 0) ||
       resolvedTracks[0];
     const seenHeights = new Set();
     const qualities = [
@@ -1118,7 +1160,9 @@ async function resolveCastletvUpstream(metadata, preferredAudio = '', env = null
     return {
       server: 'andromeda',
       sourceName: 'CastleTV',
-      format: 'hls',
+      // Honest container: MKV/MP4 entries must reach the progressive <video>
+      // path (the Worker cannot remux, and hls.js cannot parse those files).
+      format: containerFormatForUrl(activeTrack.rawUrl),
       rawUrl: activeTrack.rawUrl,
       streamUrl: activeTrack.streamUrl,
       referer,
@@ -2834,6 +2878,232 @@ async function resolveHicineUpstream(metadata, env = {}) {
 // ============================================================================
 /** Per-upstream budget keeps the waterfall deterministic. */
 const WATERFALL_UPSTREAM_TIMEOUT_MS = 9000;
+/** Anime Dub Hindi is a backend HTTP call that itself runs a multi-hop flow. */
+const ANIMEDUBHINDI_UPSTREAM_TIMEOUT_MS = 11000;
+// The third centaurus source only runs after the other two failed in this
+// fallback path, so its budget is smaller to protect the route's latency.
+const ANIMEDRIVE_UPSTREAM_TIMEOUT_MS = 10000;
+
+/**
+ * Hamster Wheel (server #3) runs on the Node backend: it needs HMAC request
+ * signing, HTML release-page extraction, hubcloud unrolling and media probes
+ * that the Worker cannot do inside its CPU budget (and the Worker's egress IPs
+ * get blocked by some of those hosts). When `HAMSTER_BACKEND_URL` is set the
+ * Worker delegates the resolve to that backend and re-uses its signed proxy
+ * stream URL; without it the server stays listed but is skipped by the
+ * waterfall with an explicit diagnostic.
+ */
+async function resolveHamsterUpstream(metadata, env = {}) {
+  const base = String((env && env.HAMSTER_BACKEND_URL) || '').replace(/\/$/, '');
+  if (!base) return { reason: 'hamster_backend_not_configured' };
+
+  const query = new URLSearchParams({
+    server: 'hamster',
+    season: String(metadata.season || 1),
+    episode: String(metadata.episode || 1)
+  });
+  try {
+    const response = await fetch(`${base}/api/resolve/${metadata.type}/${metadata.tmdbId}?${query}`, {
+      headers: { Accept: 'application/json', 'User-Agent': USER_AGENT }
+    });
+    if (!response.ok) return { reason: `hamster_backend_http_${response.status}` };
+    const payload = await response.json();
+    const stream = payload && payload.stream;
+    if (!stream || !stream.streamUrl) {
+      return { reason: (payload && payload.failedReason) || 'hamster_no_stream' };
+    }
+    return {
+      server: 'hamster',
+      sourceName: stream.sourceName || 'Hamster Wheel',
+      format: stream.format || 'hls',
+      rawUrl: stream.rawUrl,
+      // Already an absolute, HMAC-signed /api/proxy URL on the Node origin.
+      streamUrl: stream.streamUrl,
+      referer: stream.referer || '',
+      headers: stream.headers || {},
+      backupUrls: stream.backupUrls || [],
+      audioTracks: stream.audioTracks || [],
+      qualities: stream.qualities || []
+    };
+  } catch {
+    return { reason: 'hamster_backend_unreachable' };
+  }
+}
+
+/**
+ * Anime Dub Hindi (Centaurus source #2) runs on the Node backend for the same
+ * reasons as Hamster Wheel: WordPress/adhlinks HTML extraction, HubCloud and
+ * GDFlix unrolling, and media probes that the Worker cannot do inside its CPU
+ * budget. The Worker's own centaurus source is HiCine; when that finds nothing
+ * on an anime title it asks the backend for this one source directly
+ * (`?source=animedubhindi`, so the backend does not re-run HiCine).
+ *
+ * `ANIMEDUBHINDI_BACKEND_URL` behaves exactly like `HAMSTER_BACKEND_URL`
+ * (defaults to it when unset, so one Node deployment configures both).
+ */
+const CENTAURUS_BACKEND_TIMEOUT_MS = 12000;
+
+/**
+ * Base URL of a Node backend that owns the Centaurus server. The Node tier can
+ * remux multi-audio MKVs into switchable HLS renditions (ffmpeg), which the
+ * Worker cannot — so when a backend is configured the whole server (HiCine
+ * then Anime Dub Hindi) is delegated instead of resolving HiCine locally.
+ */
+function centaurusBackendBase(env = {}) {
+  return String(
+    (env && env.HICINE_BACKEND_URL) ||
+    (env && env.ANIMEDUBHINDI_BACKEND_URL) ||
+    (env && env.HAMSTER_BACKEND_URL) ||
+    ''
+  ).replace(/\/+$/, '');
+}
+
+async function resolveCentaurusBackendUpstream(metadata, env = {}) {
+  const base = centaurusBackendBase(env);
+  if (!base) return { reason: 'centaurus_backend_not_configured' };
+
+  const query = new URLSearchParams({ server: 'centaurus' });
+  if (metadata.type === 'tv') {
+    query.set('season', String(metadata.season || 1));
+    query.set('episode', String(metadata.episode || 1));
+  }
+  try {
+    const response = await fetch(
+      `${base}/api/resolve/${metadata.type}/${encodeURIComponent(metadata.tmdbId)}?${query}`,
+      { headers: { Accept: 'application/json', 'User-Agent': USER_AGENT } }
+    );
+    if (!response.ok) return { reason: `centaurus_backend_http_${response.status}` };
+    const payload = await response.json();
+    const stream = payload && payload.stream;
+    if (!stream || !stream.streamUrl) {
+      return { reason: (payload && payload.failedReason) || 'centaurus_no_source' };
+    }
+    return {
+      server: 'centaurus',
+      sourceName: stream.sourceName || 'Centaurus',
+      format: stream.format || 'mp4',
+      rawUrl: stream.rawUrl,
+      // Already an absolute, HMAC-signed /api/proxy URL on the Node origin.
+      streamUrl: stream.streamUrl,
+      referer: stream.referer || '',
+      headers: stream.headers || {},
+      backupUrls: stream.backupUrls || [],
+      audioTracks: stream.audioTracks || [],
+      qualities: stream.qualities || [],
+      activeAudioTrack: stream.activeAudioTrack || undefined,
+      centaurusSources: stream.centaurusSources || undefined
+    };
+  } catch {
+    return { reason: 'centaurus_backend_unreachable' };
+  }
+}
+
+/**
+ * Backend that owns the anime blog sources (Anime Dub Hindi / AnimeDrive). One
+ * Node deployment hosts both, so all three variables are interchangeable and
+ * the first non-empty one wins.
+ */
+function animeBlogBackendBase(env = {}) {
+  return String(
+    (env && env.ANIMEDRIVE_BACKEND_URL) ||
+    (env && env.ANIMEDUBHINDI_BACKEND_URL) ||
+    (env && env.HAMSTER_BACKEND_URL) ||
+    ''
+  ).replace(/\/+$/, '');
+}
+
+async function resolveAnimeDubHindiUpstream(metadata, env = {}) {
+  const base = animeBlogBackendBase(env);
+  if (!base) return { reason: 'animedubhindi_backend_not_configured' };
+
+  const query = new URLSearchParams({
+    server: 'centaurus',
+    source: 'animedubhindi',
+    season: String(metadata.season || 1),
+    episode: String(metadata.episode || 1)
+  });
+  try {
+    const response = await fetch(`${base}/api/resolve/${metadata.type}/${metadata.tmdbId}?${query}`, {
+      headers: { Accept: 'application/json', 'User-Agent': USER_AGENT }
+    });
+    if (!response.ok) return { reason: `animedubhindi_backend_http_${response.status}` };
+    const payload = await response.json();
+    const stream = payload && payload.stream;
+    if (!stream || !stream.streamUrl) {
+      return { reason: (payload && payload.failedReason) || 'animedubhindi_no_stream' };
+    }
+    return {
+      server: 'centaurus',
+      sourceName: stream.sourceName || 'Anime Dub Hindi',
+      format: stream.format || 'mkv',
+      rawUrl: stream.rawUrl,
+      // Already an absolute, HMAC-signed /api/proxy URL on the Node origin.
+      streamUrl: stream.streamUrl,
+      referer: stream.referer || '',
+      headers: stream.headers || {},
+      backupUrls: stream.backupUrls || [],
+      audioTracks: stream.audioTracks || [],
+      qualities: stream.qualities || []
+    };
+  } catch {
+    return { reason: 'animedubhindi_backend_unreachable' };
+  }
+}
+
+/**
+ * AnimeDrive (Centaurus source #3) is another Node-backend-owned blog source:
+ * its releases hide behind `link.animedrive.cc/dl/<base64url(reverse(url))>`
+ * wrappers that unroll to HubCloud/GDFlix, and both hosts need the unroll +
+ * media-probe stack the Node tier already has. Behaves exactly like the Anime
+ * Dub Hindi delegate: one direct source request, backend URL from
+ * `animeBlogBackendBase()` (a backend that hosts one blog source hosts the
+ * other).
+ */
+async function resolveAnimeDriveUpstream(metadata, env = {}) {
+  const base = animeBlogBackendBase(env);
+  if (!base) return { reason: 'animedrive_backend_not_configured' };
+
+  const query = new URLSearchParams({
+    server: 'centaurus',
+    source: 'animedrive',
+    season: String(metadata.season || 1),
+    episode: String(metadata.episode || 1)
+  });
+  try {
+    const response = await fetch(`${base}/api/resolve/${metadata.type}/${metadata.tmdbId}?${query}`, {
+      headers: { Accept: 'application/json', 'User-Agent': USER_AGENT }
+    });
+    if (!response.ok) return { reason: `animedrive_backend_http_${response.status}` };
+    const payload = await response.json();
+    const stream = payload && payload.stream;
+    if (!stream || !stream.streamUrl) {
+      return { reason: (payload && payload.failedReason) || 'animedrive_no_stream' };
+    }
+    return {
+      server: 'centaurus',
+      sourceName: stream.sourceName || 'AnimeDrive',
+      format: stream.format || 'mkv',
+      rawUrl: stream.rawUrl,
+      // Already an absolute, HMAC-signed /api/proxy URL on the Node origin.
+      streamUrl: stream.streamUrl,
+      referer: stream.referer || '',
+      headers: stream.headers || {},
+      backupUrls: stream.backupUrls || [],
+      audioTracks: stream.audioTracks || [],
+      qualities: stream.qualities || []
+    };
+  } catch {
+    return { reason: 'animedrive_backend_unreachable' };
+  }
+}
+
+/** Titles whose genres say animation/anime are the only ones the second source can serve. */
+function isAnimationMetadata(metadata = {}) {
+  const genres = Array.isArray(metadata.genres) ? metadata.genres : [];
+  if (genres.some((genre) => /animation|anime/i.test(String(genre)))) return true;
+  // No genre data at all (fallback metadata builders) — let the backend decide.
+  return genres.length === 0;
+}
 
 async function withTimeout(promise, ms, fallback = null) {
   let timer;
@@ -2878,10 +3148,45 @@ async function resolveStreamWaterfall(metadata, requestedServer, preferredAudio,
         WATERFALL_UPSTREAM_TIMEOUT_MS
       );
     } else if (srvId === 'centaurus') {
-      resolved = await withTimeout(
-        resolveHicineUpstream(metadata, env),
-        WATERFALL_UPSTREAM_TIMEOUT_MS
-      );
+      // Two-source server: HiCine first, then Anime Dub Hindi (anime only).
+      // A configured Node backend owns the server end-to-end so its ffmpeg
+      // remux can expose HiCine's embedded MKV audio tracks; if the backend is
+      // absent or dead the in-Worker path still runs.
+      const delegated = centaurusBackendBase(env)
+        ? await withTimeout(resolveCentaurusBackendUpstream(metadata, env), CENTAURUS_BACKEND_TIMEOUT_MS)
+        : null;
+      if (delegated && delegated.streamUrl) {
+        resolved = delegated;
+      } else {
+        const hicine = await withTimeout(
+          resolveHicineUpstream(metadata, env),
+          WATERFALL_UPSTREAM_TIMEOUT_MS
+        );
+        if (hicine && hicine.streamUrl) {
+          resolved = hicine;
+        } else {
+          const anime = isAnimationMetadata(metadata)
+            ? await withTimeout(resolveAnimeDubHindiUpstream(metadata, env), ANIMEDUBHINDI_UPSTREAM_TIMEOUT_MS)
+            : { reason: 'not_anime' };
+          // Third source: AnimeDrive (anime-only as well; same blog family).
+          const animeDrive = anime && anime.streamUrl
+            ? null
+            : isAnimationMetadata(metadata)
+              ? await withTimeout(resolveAnimeDriveUpstream(metadata, env), ANIMEDRIVE_UPSTREAM_TIMEOUT_MS)
+              : { reason: 'not_anime' };
+          resolved = anime && anime.streamUrl
+            ? anime
+            : animeDrive && animeDrive.streamUrl
+              ? animeDrive
+              : {
+                  reason: `centaurus_no_source: hicine=${(hicine && hicine.reason) || 'no_stream'}; animedubhindi=${
+                    (anime && anime.reason) || 'no_stream'
+                  }; animedrive=${(animeDrive && animeDrive.reason) || 'no_stream'}`
+                };
+        }
+      }
+    } else if (srvId === 'hamster') {
+      resolved = await withTimeout(resolveHamsterUpstream(metadata, env), WATERFALL_UPSTREAM_TIMEOUT_MS);
     }
     const latencyMs = Date.now() - t0;
 
@@ -3176,6 +3481,17 @@ export default {
         const targets = [
           { serverId: 'andromeda', url: `${runtimeState.upstreams.vidstuckBase}/backend/tmdb/details/tv/94605?language=en-US` },
           { serverId: 'centaurus', url: `${runtimeState.upstreams.hicineApiBase}/api/search/arcane` },
+          // Anime Dub Hindi / AnimeDrive (centaurus sources #2/#3) live on the
+          // Node backend, so probe that backend — only when one is configured.
+          ...(() => {
+            const backend = animeBlogBackendBase(env);
+            return backend
+              ? [
+                  { serverId: 'centaurus:animedubhindi', url: `${backend}/api/health` },
+                  { serverId: 'centaurus:animedrive', url: `${backend}/api/health` }
+                ]
+              : [];
+          })()
         ];
         const probeResults = [];
         for (const t of targets) {

@@ -112,6 +112,74 @@ const config = {
     cinemetaUrl: 'https://v3-cinemeta.strem.io'
   },
 
+  // Hamster Wheel (server #3) — Hindi-first fan-out across MovieBox (HMAC mobile
+  // API), HindMoviez and 4KHDHub. Indian release sites rotate domains every few
+  // weeks, so site bases are resolved through a public domains.json instead of
+  // being hardcoded; env values below are the fallbacks used when it is
+  // unreachable. See docs/hamster-wheel-upstream-research.md.
+  hamster: {
+    enabled: parseBoolean(process.env.HAMSTER_ENABLED, true),
+    timeoutMs: parsePositiveInteger(process.env.HAMSTER_TIMEOUT_MS, 12000),
+    providerTimeoutMs: parsePositiveInteger(process.env.HAMSTER_PROVIDER_TIMEOUT_MS, 9000),
+    probeTimeoutMs: parsePositiveInteger(process.env.HAMSTER_PROBE_TIMEOUT_MS, 3500),
+    unrollBudgetMs: parsePositiveInteger(process.env.HAMSTER_UNROLL_BUDGET_MS, 7000),
+    maxCandidates: parsePositiveInteger(process.env.HAMSTER_MAX_CANDIDATES, 10),
+    maxProbeCandidates: parsePositiveInteger(process.env.HAMSTER_MAX_PROBE_CANDIDATES, 5),
+    domainsUrl:
+      process.env.HAMSTER_DOMAINS_URL ||
+      'https://raw.githubusercontent.com/phisher98/TVVVV/main/domains.json',
+    domainsTtlMs: parsePositiveInteger(process.env.HAMSTER_DOMAINS_TTL_MS, 30 * 60 * 1000),
+    hindmoviezBase: process.env.HINDMOVIEZ_BASE_URL || 'https://hindmovie.dev',
+    fourKhdhubBase: process.env.FOURKHDHUB_BASE_URL || 'https://4khdhub.one',
+    movieboxHosts: (
+      process.env.MOVIEBOX_HOSTS ||
+      'https://api6.aoneroom.com,https://api5.aoneroom.com,https://api4.aoneroom.com,https://api4sg.aoneroom.com,https://api3.aoneroom.com,https://api6sg.aoneroom.com,https://api.inmoviebox.com'
+    )
+      .split(',')
+      .map((host) => host.trim().replace(/\/$/, ''))
+      .filter(Boolean),
+    // Fixed public client key used by the MovieBox mobile app; override only if
+    // the upstream rotates it (see docs/hamster-wheel-upstream-research.md).
+    movieboxSecretHex: process.env.MOVIEBOX_SECRET_HEX || '',
+    movieboxRegion: process.env.MOVIEBOX_REGION || 'IN'
+  },
+
+  // Server 2 ("Centaurus") source #2 — Anime Dub Hindi. A WordPress release
+  // blog: search → post → new.adhlinks.com episode page → HubCloud/GDFlix.
+  // Post and episode slugs are followed, never constructed (`blubox-s1`), so
+  // only the blog base is configurable. See docs §9.
+  animedubhindi: {
+    enabled: parseBoolean(process.env.ANIMEDUBHINDI_ENABLED, true),
+    baseUrl: process.env.ANIMEDUBHINDI_BASE_URL || 'https://www.animedubhindi.link',
+    // The Worker delegates this source with its own upstream timeout, so the
+    // whole flow (search → post → episode page → unroll → probe) must fit in
+    // less than that; 8s leaves headroom for the response transfer.
+    timeoutMs: parsePositiveInteger(process.env.ANIMEDUBHINDI_TIMEOUT_MS, 8000),
+    unrollBudgetMs: parsePositiveInteger(process.env.ANIMEDUBHINDI_UNROLL_BUDGET_MS, 6000),
+    probeTimeoutMs: parsePositiveInteger(process.env.ANIMEDUBHINDI_PROBE_TIMEOUT_MS, 3500),
+    maxProbeCandidates: parsePositiveInteger(process.env.ANIMEDUBHINDI_MAX_PROBE_CANDIDATES, 5),
+    pageBodyCap: parsePositiveInteger(process.env.ANIMEDUBHINDI_PAGE_BODY_CAP, 1400 * 1024)
+  },
+
+  // Server 2 (Centaurus) source #3: AnimeDrive — a Hindi-dub anime release
+  // blog. Flow: search (`/?s=`) → post → link.animedrive.cc landing page →
+  // `EP NN` blocks → per-quality HubCloud/GDFlix rows. Row links are wrapped as
+  // `link.animedrive.cc/dl/<base64url(reverse(targetUrl))>` and are decoded in
+  // src/services/animedrive.js, then unrolled by the shared HubCloud/GDFlix
+  // helpers. Only the blog base is configurable; every path is followed. §10.
+  animedrive: {
+    enabled: parseBoolean(process.env.ANIMEDRIVE_ENABLED, true),
+    baseUrl: process.env.ANIMEDRIVE_BASE_URL || 'https://animedrive.cc',
+    linksBaseUrl: process.env.ANIMEDRIVE_LINKS_BASE_URL || 'https://link.animedrive.cc',
+    // Same budget shape as Anime Dub Hindi: the whole flow must fit inside the
+    // Worker's upstream timeout with headroom for the response transfer.
+    timeoutMs: parsePositiveInteger(process.env.ANIMEDRIVE_TIMEOUT_MS, 8000),
+    unrollBudgetMs: parsePositiveInteger(process.env.ANIMEDRIVE_UNROLL_BUDGET_MS, 6000),
+    probeTimeoutMs: parsePositiveInteger(process.env.ANIMEDRIVE_PROBE_TIMEOUT_MS, 3500),
+    maxProbeCandidates: parsePositiveInteger(process.env.ANIMEDRIVE_MAX_PROBE_CANDIDATES, 6),
+    pageBodyCap: parsePositiveInteger(process.env.ANIMEDRIVE_PAGE_BODY_CAP, 1600 * 1024)
+  },
+
   // Server definitions (names, badges, priorities) live in the shared catalog so
   // the Worker that serves the player and this backend can never drift apart.
   // `servers` is kept in priority order, which is also the implicit waterfall

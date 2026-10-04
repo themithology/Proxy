@@ -1,3 +1,10 @@
+// Hamster Wheel fans out to real, rotating Hindi release hosts. This suite is
+// hermetic (every upstream is mocked), so the fan-out is disabled here: the
+// waterfall still exercises the hamster branch and records a deterministic
+// `hamster_no_candidates` (diag: disabled) attempt instead of calling the
+// internet. Parsers/ranking are covered by test/hamster.test.js.
+process.env.HAMSTER_ENABLED = 'false';
+
 const http = require('http');
 const fs = require('fs');
 const path = require('path');
@@ -32,6 +39,7 @@ const {
   buildCastleKey,
   decryptCastleAes,
   mapLanguageNameToCode,
+  containerFormatForUrl,
 } = require('../src/services/resolver');
 const {
   parseProbeJson,
@@ -43,6 +51,7 @@ const {
   buildMasterPlaylist,
   rewriteGeneratedPlaylist,
   createMultiTrackPayload,
+  createSignedMasterUrl,
   prepareMultiTrackStream,
   verifySignedMaster,
   verifySignedAsset
@@ -808,6 +817,25 @@ async function runTests() {
   assert.strictEqual(isAllowedSourceUrl('https://r2.dev.attacker.example/RRR.mkv'), false);
   assert.strictEqual(isAllowedSourceUrl('https://pub-abc.r2.dev/movies/master.m3u8'), false);
 
+  assert.strictEqual(
+    await prepareMultiTrackStream(
+      'https://castle-cdn.example/movies/RRR.mkv',
+      dualAudioHints.languages,
+      { enabled: true, trustSource: true, probe: async () => probeFixture }
+    ).then((payload) => (payload ? payload.audioTracks.length : null)),
+    2,
+    'Provider-resolved sources must be remuxable even when their CDN host is not allowlisted'
+  );
+  assert.strictEqual(
+    await prepareMultiTrackStream(
+      'https://castle-cdn.example/movies/RRR.mkv',
+      dualAudioHints.languages,
+      { enabled: true, probe: async () => probeFixture }
+    ),
+    null,
+    'Without trustSource the host allowlist must still reject unknown CDNs'
+  );
+
   const multiTrackPayload = createMultiTrackPayload(
     'https://pub-abc.r2.dev/movies/RRR.mkv?token=rotating',
     probeFixture,
@@ -1209,7 +1237,20 @@ async function runTests() {
     `${mockUpstream.url}/cdn/hls/fight%20club.mkv`,
     'streamUrl must point at the direct file'
   );
-  assert.strictEqual(hicineE2e.format, 'mp4', 'unrecognized single-track fallback must stay progressive mp4');
+  // The container label is load-bearing: an mp4/hls label on an MKV file was
+  // exactly what hid the audio-switch path from the player and the remux tier.
+  assert.strictEqual(
+    hicineE2e.format,
+    'mkv',
+    'a direct .mkv file must report MKV, never mp4 or hls'
+  );
+  assert.strictEqual(
+    containerFormatForUrl('https://cdn.example/9f8a7b6c5d'),
+    'mp4',
+    'extension-less CDN files stay progressive mp4'
+  );
+  assert.strictEqual(containerFormatForUrl('https://cdn.example/master.m3u8?token=1'), 'hls');
+  assert.strictEqual(containerFormatForUrl('https://cdn.example/manifest.mpd'), 'dash');
   assert.strictEqual(hicineE2e.audioTracks.length, 1, 'Progressive MKV must not invent switchable audio rows');
   assert.ok(
     !/English|Dual Audio/.test(hicineE2e.audioTracks[0].label),
@@ -1277,6 +1318,28 @@ async function runTests() {
       '/api/multitrack/master.m3u8?url=https%3A%2F%2Fpub-abc.r2.dev%2Fmovies%2FRRR.mkv'
     );
     assert.strictEqual(unsignedMultiTrack.status, 403, 'Multi-track master endpoint must reject unsigned URLs');
+    // A signed master for an unknown CDN host must still be rejected unless the
+    // signature itself carries the resolver's trust decision.
+    const strictMasterQuery = createSignedMasterUrl('https://castle-cdn.example/movies/RRR.mkv', ['hi'])
+      .split('?')[1];
+    const strictMaster = await httpRequest(baseUrl, `/api/multitrack/master.m3u8?${strictMasterQuery}`);
+    assert.strictEqual(
+      strictMaster.status,
+      403,
+      'Unknown source hosts must stay rejected without the signed trust flag'
+    );
+    const trustedMasterQuery = createSignedMasterUrl(
+      'https://castle-cdn.example/movies/RRR.mkv',
+      ['hi'],
+      { allowUnknownHost: true }
+    ).split('?')[1];
+    const trustedMaster = await httpRequest(baseUrl, `/api/multitrack/master.m3u8?${trustedMasterQuery}`);
+    assert.notStrictEqual(
+      trustedMaster.status,
+      403,
+      'Provider-trusted signed masters must clear the host gate (503 when ffmpeg is missing)'
+    );
+
     const unsignedMultiTrackAsset = await httpRequest(
       baseUrl,
       `/api/multitrack/file/${'a'.repeat(64)}/track_0.m3u8`
@@ -1702,6 +1765,23 @@ async function runTests() {
       const hiCastleTrack = castleRes.audioTracks.find((t) => t.lang === 'hi');
       assert.ok(hiCastleTrack, 'Hindi track must be present in CastleTV tracks');
       assert.strictEqual(hiCastleTrack.default, true, 'Preferred audio "hi" must be marked default');
+      // Regression (reported bug): the mock returns only `videoUrl`, never a
+      // `data.videos` array, which used to collapse the player's quality menu to
+      // a lone "Auto". Every resolution rung must be merged into a real ladder.
+      assert.ok(
+        castleRes.qualities.length >= 3,
+        'CastleTV must expose Auto plus the merged 1080p/720p rungs'
+      );
+      const castleHeights = castleRes.qualities.map((q) => q.height);
+      assert.ok(
+        castleHeights.includes(1080) && castleHeights.includes(720),
+        'the merged CastleTV ladder must include 1080p and 720p'
+      );
+      assert.strictEqual(
+        new Set(castleRes.audioTracks.map((t) => t.streamUrl)).size,
+        castleRes.audioTracks.length,
+        'every CastleTV language must keep its own proxied stream URL for re-attach switching'
+      );
 
       // Identity engine unit checks (title canonicalization + year/type gates)
       const fcMeta = { title: 'Fight Club', originalTitle: 'Fight Club', releaseYear: 1999, type: 'movie' };
@@ -1898,8 +1978,8 @@ async function runTests() {
         .map((s) => s.id);
       assert.deepStrictEqual(
         failoverOrder,
-        ['andromeda', 'centaurus'],
-        'waterfall order must follow the live catalog (andromeda -> centaurus)'
+        ['andromeda', 'centaurus', 'hamster'],
+        'waterfall order must follow the live catalog (andromeda -> centaurus -> hamster)'
       );
 
       // 11f. Cloudflare Worker: Multi-Tier Andromeda Resolution, Debug Telemetry & Waterfall Failover
@@ -1967,7 +2047,8 @@ async function runTests() {
       const catalog = require('../src/services/serverCatalog');
       const expected = [
         ['andromeda', 'Fiber Optic Speedrun', 'Multi-Audio • Primary', 1],
-        ['centaurus', 'Gigachad Node', 'Adaptive • Multi-Quality', 2]
+        ['centaurus', 'Gigachad Node', 'Adaptive • Multi-Quality', 2],
+        ['hamster', 'Hamster Wheel', 'Hindi First • Multi-Audio • Max Coverage', 3]
       ];
 
       // 13a. The Node backend serves the catalog order verbatim.
@@ -2015,7 +2096,7 @@ async function runTests() {
       // 13d. The player must default to priority 1 and order rows defensively.
       const embedJs = fs.readFileSync(path.join(__dirname, '..', 'public', 'js', 'embed.js'), 'utf8');
       assert.match(embedJs, /server: 'andromeda'/, 'player default server must be the priority-1 server');
-      assert.ok(!/server: '(atlas|ursa|hamster)'/.test(embedJs), 'player must not default to a removed server');
+      assert.ok(!/server: '(atlas|ursa)'/.test(embedJs), 'player must not default to a removed server');
       assert.ok(
         /\.sort\(\(a, b\) => \(Number\(a\.priority\) \|\| 999\)/.test(embedJs),
         'player must re-sort the API server array by priority before rendering'

@@ -51,7 +51,8 @@ The page is served with `Content-Security-Policy: frame-ancestors *` so any site
 | `type`     | `tv` (default) or `movie`                                               |
 | `tmdb`     | TMDB ID (also accepted as `id`)                                          |
 | `s` / `e`  | Season / episode for TV (also `season` / `episode`)                      |
-| `server`   | Preferred upstream server: `andromeda` or `centaurus` (a stale/removed id falls back to the top-priority server) |
+| `server`   | Preferred upstream server: `andromeda`, `centaurus` or `hamster` (a stale/removed id falls back to the top-priority server) |
+| `source`   | Optional pin to one source of a multi-source server: `centaurus&source=hicine`, `centaurus&source=animedubhindi` or `centaurus&source=animedrive` (pinned requests do not fall through to other servers) |
 | `api`      | Absolute API base URL override (see below)                               |
 | `lang`     | Preferred audio language (e.g. `hi`, `en`, `ta`)                         |
 | `sub`      | Preferred subtitle language (e.g. `en`)                                  |
@@ -106,7 +107,8 @@ server modal can never drift from what the waterfall actually tries:
 | Priority | Server id   | Player name           | Badge                                  | Cascade |
 |----------|-------------|-----------------------|----------------------------------------|---------|
 | 1        | `andromeda` | Fiber Optic Speedrun  | Multi-Audio • Primary                  | CastleTV → NetMirror |
-| 2        | `centaurus` | Gigachad Node         | Adaptive • Multi-Quality               | HiCine Direct MP4 |
+| 2        | `centaurus` | Gigachad Node         | Adaptive • Multi-Quality               | HiCine → Anime Dub Hindi → AnimeDrive (3 sources) |
+| 3        | `hamster`   | Hamster Wheel         | Hindi First • Multi-Audio • Max Coverage | MovieBox → HindMoviez → 4KHDHub (fan-out) |
 
 Every `/api/resolve` payload carries the `servers` array in this exact order with
 the answering server flagged `active`, and it is rebuilt from the live catalog on
@@ -133,17 +135,148 @@ Server Andromeda uses a resilient two-tier cascade backed by automatic dynamic d
 3. **Clean Waterfall Failover: Server 2 (Centaurus, HiCine)**
    - If both internal Andromeda tiers return no playable streams for a given title, Andromeda cleanly cascades to the next server in the shared priority waterfall.
 
+### Server 2 — Centaurus (three sources)
+
+Centaurus is a three-source server. Source 1 is HiCine; sources 2 and 3 are the
+two Hindi-dub anime blogs **Anime Dub Hindi** (`animedubhindi.link`) and
+**AnimeDrive** (`animedrive.cc`), which cover the official Netflix Hindi/Tamil/
+Telugu dubs and the wider Hindi-Eng-Jap "multi audio" catalog that general
+aggregators miss. Each later source only runs when
+the earlier ones produced nothing, so behaviour for every title HiCine already
+serves is unchanged.
+
+| Source | Upstream | Flow | Output |
+|--------|----------|------|--------|
+| `hicine` | `api.hicine.sbs` | Search API → quality tokens → vCloud/Pixeldrain | Direct MP4/HLS |
+| `animedubhindi` | `animedubhindi.link` → `new.adhlinks.com` | WordPress search → post → episode page → HubCloud / GDFlix | Direct MP4/MKV (multi-audio Hindi) |
+| `animedrive` | `animedrive.cc` → `link.animedrive.cc` | WordPress search → post → "Download / Watch" landing page → `EP NN` rows → HubCloud / GDFlix | Direct MP4/MKV (multi-audio Hindi) |
+
+Why this source works where the big anime catalogs do not: the Streamtape-based
+anime sites only serve IP-locked iframes, while Anime Dub Hindi publishes to
+`hubcloud.ist` and `gdflix.dev` — hosts this repo can already unroll. GDFlix was
+new, so `unrollGdflixUrl()` follows `/file/<id>` → "Instant DL [10GBPS]" → the
+302 `Location: …?url=<file>` and probes the result, exactly like the HubCloud
+unroll (both are cached ~10 minutes).
+
+Anime-specific care taken in the parser (`src/services/animedubhindi.js`):
+
+- **Slugs are never constructed** (`Blue Box Season 1` lives at `blubox-s1`), so
+  every page is discovered by following links; the search result must match both
+  title and season.
+- **The row format has already changed once** (`[480P x264]💾 106.72 MB` →
+  `480P x264 [Size: 107mb]`), so rows are found by visible text via a
+  document-order text walker instead of CSS selectors.
+- **x264 rows outrank x265 10-bit rows** regardless of resolution: anime mirrors
+  here are largely HEVC 10-bit MKV, which many browsers cannot decode, and a
+  black screen is not a higher-quality stream.
+- **A TV request with no matching `Episode: NN` block returns nothing** rather
+  than guessing an episode — the waterfall falls through to Hamster Wheel.
+- Audio hints (Hindi default, plus Tamil/Telugu/English/Japanese) are passed to
+  the Node remuxer; MKV releases become switchable HLS tracks when FFmpeg is
+  available, and stay progressive elsewhere.
+
+AnimeDrive-specific care taken in the parser (`src/services/animedrive.js`):
+
+- **Release links are wrapped, not direct**: every row is
+  `link.animedrive.cc/dl/<base64url(reverse(target))>`, so the module decodes the
+  payload first and only then classifies the host (`hubcloud.ist` / `gdflix.dev`
+  today). A domain rotation behind the wrapper therefore still lands on the
+  right unroller.
+- **The host is decided by the decoded URL, not the section heading**
+  (☁️ HubCloud / 🟣 GDFlix), so a re-ordered page cannot mislabel a mirror.
+- **Episode blocks are tracked by the "EP NN" markers** and rows are attached to
+  the episode that precedes them; a ZIP/"Season Pack" block never satisfies an
+  episode request, and a missing episode returns nothing rather than a wrong
+  one.
+- **Send.cm / FuckingFast / 1Fichier / StreamTape / StreamWish rows are counted
+  for diagnostics and skipped** — only HubCloud and GDFlix are unrollable here.
+- Same ranking and audio-hint rules as Anime Dub Hindi (x264 outranks x265
+  10-bit; Hindi default, English/Japanese hinted for the remuxer).
+
+Configure with `ANIMEDUBHINDI_*` in `.env.example`; `ANIMEDUBHINDI_ENABLED=false`
+disables the source. Debug a title with the admin diagnostics endpoint:
+
+```bash
+curl "$API/api/admin/centaurus/diagnose/tv/249477?season=2&episode=1&key=$ADMIN_SECRET"
+# → per-source {ok, ms, reason, diag, rawUrl, qualities, audioTracks}
+```
+
+**Worker deployments:** sources 2 and 3 work best on the Node backend (HTML
+extraction, unrolling, probes, and — most importantly — the ffmpeg remux that
+turns HiCine's multi-audio MKVs into switchable HLS audio renditions). Set
+`HICINE_BACKEND_URL` in `wrangler.toml` to the Node deployment's absolute URL
+(falls back to `ANIMEDUBHINDI_BACKEND_URL`, then `HAMSTER_BACKEND_URL`) and the
+Worker delegates the whole Centaurus server — HiCine first, then Anime Dub
+Hindi, then AnimeDrive — to it; if the backend is absent or unreachable the
+in-Worker path still runs. The anime-only sources additionally use
+`?source=animedubhindi` / `?source=animedrive` when the in-Worker HiCine attempt
+finds nothing on an animation title, and report explicit
+`animedubhindi_backend_not_configured` / `animedrive_backend_not_configured`
+diagnostics without a backend. `ANIMEDRIVE_ENABLED=false` (or
+`ANIMEDUBHINDI_ENABLED=false`) disables a blog source without touching the
+others; `ANIMEDRIVE_*` knobs live next to `ANIMEDUBHINDI_*` in `.env.example`.
+Without ffmpeg on the Node host (`multitrack.enabled=false` in `/api/health`)
+HiCine MKVs still play, but their embedded audio tracks cannot be switched.
+
+### Server 3 — Hamster Wheel (Hindi-first fan-out)
+
+Server Hamster Wheel exists for Hindi and Indian-release coverage that the
+CastleTV/NetMirror/HiCine tiers do not carry: Bollywood, Hindi-dubbed South
+Indian, and Indian web-series releases. Unlike the other two servers it is a
+*fan-out*, not a cascade — every provider is queried in parallel and only what
+actually plays back is used:
+
+| Provider | Upstream | Protocol | Output |
+|----------|----------|----------|--------|
+| `moviebox` | `api*.aoneroom.com` (mobile BFF) | HMAC-signed JSON (visitor token, host rotation) | Direct MP4 mirrors + DASH manifests, multi-audio (Hindi dubs included) |
+| `hindmoviez` | `hindmovie.dev` (rotating) | HTML search → release links → gdshine `via-worker` resolver | Direct HLS/MP4 links |
+| `4khdhub` | `4khdhub.one` (rotating) | HTML search → release page → HubCloud / HubDrive / GreenMotors / PixelDrain | Direct HLS/MP4/MKV links |
+
+How a stream is chosen (`src/services/hamster.js` + `resolveHamsterServer()` in
+`src/services/resolver.js`):
+
+1. All three providers run in parallel under a shared 12 s budget; each provider
+   has its own circuit breaker (`hamster:moviebox`, `hamster:hindmoviez`,
+   `hamster:4khdhub`), so a site that starts failing stops being called.
+2. Candidates are ranked **Hindi first**, then resolution, then format
+   preference (direct MP4/HLS before MKV, DASH last).
+3. Release-host links (HubCloud and friends) are unrolled through the same
+   HubCloud machinery Centaurus uses, then every candidate is **probe-checked
+   with a ranged GET** before it is offered to the player. A link that does not
+   answer with media is never handed to the browser.
+4. Playable candidates are grouped by audio into real player tracks (`Hindi`,
+   `Multi-Audio (Hindi default)`, `English`) and the best one is the primary
+   stream. MKV releases are remuxed to HLS on Node when FFmpeg is available;
+   on the Worker the progressive file is used instead.
+
+**Domains rotate.** Indian release sites move domains every few weeks, so site
+bases are read from a public `domains.json` (`HAMSTER_DOMAINS_URL`), cached for
+30 minutes, with `HINDMOVIEZ_BASE_URL` / `FOURKHDHUB_BASE_URL` as fallbacks.
+MovieBox hosts rotate through `api3/4/4sg/5/6/6sg.aoneroom.com` and
+`api.inmoviebox.com` on 403/406/429/5xx.
+
+**Worker deployments:** Hamster Wheel needs the Node backend (HMAC signing, HTML
+extraction, HubCloud unrolling, media probes — and datacenter egress that those
+hosts accept). Set `HAMSTER_BACKEND_URL` in `wrangler.toml` to the Node
+deployment's absolute URL and the Worker's waterfall delegates to it; without
+that variable the server stays listed in the player but is skipped with an
+explicit `hamster_backend_not_configured` diagnostic. Configure the rest with
+the `HAMSTER_*`, `MOVIEBOX_*` and `HINDMOVIEZ_*`/`FOURKHDHUB_*` variables in
+`.env.example`; `HAMSTER_ENABLED=false` disables the fan-out entirely.
+
 ### Audio Behavior & Remuxing
 
 Audio behavior is intentionally truthful:
 
-- Upstream HLS audio renditions are exposed when they are actually switchable.
+- Upstream HLS audio renditions are exposed when they are actually switchable, and the player also adopts renditions it discovers in the parsed manifest — a single payload row hiding a multi-track HLS master still becomes a switchable menu.
+- Switching is index-first (`audioIndex` from the remux payload) and only claims success when a rendition actually changed; if the stream is a single progressive file the player says so instead of showing a fake "Audio switched" toast.
+- Quality rows are matched to HLS levels by resolution height (not array position), and CastleTV ladders are merged across every resolution rung, so the quality menu lists real 1080p/720p/480p entries instead of a lone "Auto". A remuxed file lists exactly one row at the file's native resolution.
 - HiCine has filename-only language hints, not structured language URLs; progressive sources remain one honest default row rather than duplicate entries for the same file.
 - Node deployments can use FFmpeg/FFprobe to remux embedded MKV/MP4 audio tracks into HLS. The video stream is copied; supported audio is copied and other audio is converted to AAC.
 - Cloudflare Workers do not run FFmpeg. They retain upstream HLS rendition switching and use progressive fallback for embedded MKV tracks; the browser cannot select embedded tracks from progressive MKV.
 - If remuxing is unavailable, unsafe for the source host, or fails, the resolver keeps the source's default audio and progressive fallback rather than claiming unsupported switching.
 
-The generated Node multitrack package is cached locally (default two hours), starts serving once initial segments are ready, and is protected by HMAC-signed playlist and asset URLs. The built-in HTTPS source allowlist includes `r2.dev`, `cloudflarestorage.com`, `cloudfront.net`, `googleusercontent.com`, `workers.dev`, and Pixeldrain. Add trusted suffixes with `MULTITRACK_ALLOWED_HOSTS`; do not allow untrusted hosts. Tune job count and cache limits with the `MULTITRACK_*` settings in `.env.example`.
+The generated Node multitrack package is cached locally (default two hours), starts serving once initial segments are ready, and is protected by HMAC-signed playlist and asset URLs (the signed master also carries the resolver's trust decision, so a provider-resolved file on a release CDN can be remuxed without opening the endpoint to arbitrary hosts). The built-in HTTPS source allowlist includes `r2.dev`, `cloudflarestorage.com`, `cloudfront.net`, `googleusercontent.com`, `workers.dev`, Pixeldrain, and the HubCloud/GDFlix release chains (`hubcloud.ist`, `hubdrive.pics`, `gdflix.dev`, `gdflix.io`, `busycdn.xyz`, `indexserver.site`). Add trusted suffixes with `MULTITRACK_ALLOWED_HOSTS`; do not allow untrusted hosts. Tune job count and cache limits with the `MULTITRACK_*` settings in `.env.example`.
 
 Codec/device combinations such as HEVC/AV1 profiles, HDR/Dolby Vision, AC-3/E-AC-3, and progressive MKV may not work in every browser. Use a compatible source/server when necessary; the backend does not transcode video to conceal these limitations.
 
