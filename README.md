@@ -163,10 +163,11 @@ To replace the deprecated VidStuck upstream, Server Andromeda uses a resilient c
    - **Coverage:** Extensive South Indian dubs (Tamil, Telugu, Malayalam, Kannada, Hindi), K-dramas, C-dramas, anime, and Hollywood multi-audio.
    - **Protocol:** AES-128-CBC encryption (`IV == key`), dynamically derived on-the-fly from `/v0.1/system/getSecurityKey/1`. Yields language-tagged master HLS playlists per dub track via `/film-api/v2.0.1/movie/getVideo2`.
 
-2. **Priority 2: NetMirror Dynamic Discovery & Rotating Domain Tracking**
-   - **Coverage:** Official OTT platform mirrors (Netflix, Prime Video, Disney+/Hotstar) with embedded multi-audio renditions.
-   - **Dynamic Discovery Network:** Rather than hardcoding static web numbers (`net27.cc`), the resolver queries the `checknewtv.php` discovery network (`mobiledetect.app`, `mobiledetects.com`, `mobidetect.cc`, etc.) to dynamically resolve the active API backend (`https://tv.imgcdn.kim`).
-   - **Live Rotating Domain Tracker:** Automatically extracts the active web mirror domain (e.g. `net52.cc`, `net77.cc`) from API response headers (`img_referer`, `referer`), dynamically updating video chunk and subtitle proxy headers without code changes.
+2. **Priority 2: NetMirror Web-Mirror Pool (TMDB-id keyed)**
+   - **Coverage:** Official OTT platform mirrors (Netflix, Prime Video, Disney+/Hotstar) with embedded multi-audio renditions. `GET /api/embed-tmdb/<tmdbId>` is keyed on the TMDB id (TV: `?type=tv&se=&ep=`), so identity is exact by construction.
+   - **Mirror rotation:** `NETMIRROR_WEB_MIRRORS` (default `net27.cc`, `net52.cc`, `net77.cc`, `netmiror.com`) is walked in order until a mirror answers; the answering origin is remembered and used as the stream `Referer`.
+   - **NewTV discovery is a fallback only:** the `checknewtv.php` network (`mobiledetect.app`, `mobidetect.cc`, ...) still resolves to an API base (e.g. `https://tv.imgcdn.kim`), but that base currently answers `403 Page Not Found` for `newtv/*` and `embed-tmdb`. The resolver tries it first and rotates mirrors when it fails.
+   - **Last live probe (2026-10-04, `diagnostics/netmirror-probe.json`):** `net27.cc` live (TV title returned 4 streams + 13 captions; a movie not in their catalog returns `ok:true` + "couldn't find this title" which is treated as a miss), `net52.cc`/`net77.cc`/`netmiror.com` 404.
 
 3. **Clean Waterfall Failover: Server 2 (Ursa / 4K UHD)**
    - If both internal Andromeda tiers return no playable streams for a given title, Andromeda cleanly cascades to Server 2 (Ursa) in the waterfall failover chain.
