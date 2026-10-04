@@ -35,7 +35,15 @@ const {
   resolveMoviesdrive4k,
   resolveHicine4k,
   resolveDahmer4k,
-  resolveStreamForServer
+  resolveStreamForServer,
+  parse4khdhubSearchCards,
+  get4kDownloadBlocks,
+  decode4khdhubRedirectHtml,
+  extractWrappedMediaTargets,
+  isHubcloudGeneratorUrl,
+  normalizePlayableUrl,
+  scorePlayableUrl,
+  probePlayableMediaUrl
 } = require('../src/services/resolver');
 const {
   resolveHamsterWheelServer,
@@ -211,7 +219,9 @@ async function probePlayable(label, targetUrl, { headers = {}, relativeToWorker 
       contentLengthHeader: res.headers.get('content-length') || null,
       firstBytes: buf.byteLength,
       magic: head.toString('hex'),
+      headText: head.toString('utf8').replace(/[^\x20-\x7e]/g, '.').slice(0, 40),
       looksLikeHtml: /^\s*<!doctype|^\s*<html/i.test(head.toString('utf8')),
+      looksLikeScript: /^\s*(?:\(function|!function|function\s*\(|var\s|let\s|const\s|window\.|document\.|<script)/i.test(head.toString('utf8')),
       latencyMs: Date.now() - started
     };
   } catch (error) {
@@ -249,6 +259,8 @@ async function probeWorkerEndToEnd(title, server) {
   };
   if (out.stream) {
     out.playback = {
+      resolvedTarget: String(body.stream.rawUrl || '').slice(0, 300),
+      proxyTarget: String(body.stream.streamUrl || '').slice(0, 300),
       proxy: await probePlayable('worker-proxy', body.stream.streamUrl, { relativeToWorker: true }),
       direct: body.stream.rawUrl ? await probePlayable('direct', body.stream.rawUrl) : null
     };
@@ -269,7 +281,11 @@ async function probeNodeWaterfall(metadata, server) {
   };
 }
 
-/** Per-tier Ursa detail: which 4K tier answered, and why the others did not. */
+/**
+ * Per-tier Ursa detail: which 4K tier answered, why the others did not, and
+ * whether the URL the tier returned is actually playable media. The last part
+ * is what caught Server 3 returning a JavaScript landing page as "verified 4K".
+ */
 async function probeUrsaTiers(metadata) {
   const tiers = [
     ['4khdhub', () => resolve4khdhub(metadata, '')],
@@ -281,12 +297,19 @@ async function probeUrsaTiers(metadata) {
     tiers.map(async ([id, run]) => {
       try {
         const res = await run();
+        const rawUrl = (res && res.rawUrl) || null;
         return [
           id,
           {
             ok: !!(res && res.ok && res.streamUrl),
             reason: res && res.reason ? res.reason : null,
-            rawUrl: shortUrl(res && res.rawUrl),
+            rawUrl: shortUrl(rawUrl),
+            rawUrlFull: rawUrl ? String(rawUrl).slice(0, 300) : null,
+            score: rawUrl ? scorePlayableUrl(rawUrl) : null,
+            qualifiesViaScoreOnly: !!(
+              rawUrl && scorePlayableUrl(rawUrl) >= 0
+            ),
+            playback: rawUrl ? await probePlayable(id, rawUrl) : null,
             qualities: ((res && res.qualities) || []).map((q) => q.label)
           }
         ];
@@ -296,6 +319,87 @@ async function probeUrsaTiers(metadata) {
     })
   );
   return Object.fromEntries(entries);
+}
+
+/**
+ * Capture the 4KHDHub -> greenmotors redirector -> HubCloud generator chain so a
+ * wrong terminal URL can be diagnosed offline: every candidate the generator
+ * page exposes, its score, and whether it verifies as media.
+ */
+async function probeFourKChain(metadata) {
+  const host = config.upstreams.fourkhdhubBase;
+  const out = { host, searchUrl: null, cards: [], buttons: [] };
+  const searchRes = await fetch(`${host}/?s=${encodeURIComponent(metadata.title)}`, {
+    headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/131.0.0.0' }
+  });
+  out.searchStatus = searchRes.status;
+  const searchHtml = await searchRes.text();
+  const cards = parse4khdhubSearchCards(searchHtml, host);
+  out.cards = cards.slice(0, 4).map((c) => ({ title: c.title, year: c.year, href: c.href, isSeries: c.isSeries }));
+  const wanted = cards.find((c) => (metadata.type === 'tv' ? c.isSeries : !c.isSeries)) || cards[0];
+  if (!wanted) return out;
+
+  const detailUrl = new URL(wanted.href, host).href;
+  out.detailUrl = detailUrl;
+  const detailRes = await fetch(detailUrl, {
+    headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/131.0.0.0', Referer: host }
+  });
+  const detailHtml = await detailRes.text();
+  out.detailStatus = detailRes.status;
+
+  const blocks = get4kDownloadBlocks(detailHtml, metadata.type === 'tv', metadata.season, metadata.episode);
+  for (const block of blocks.slice(0, 3)) {
+    for (const match of block.html.matchAll(/<a\b[^>]*href\s*=\s*(?:"([^"]*)"|'([^']*)')/gi)) {
+      const href = new URL((match[1] || match[2]).replace(/&amp;/g, '&'), detailUrl).href;
+      if (!/[?&]id=[^&#\s"']+/i.test(href)) continue;
+      const entry = { href: href.slice(0, 300), decoded: null, generator: null, candidates: [] };
+      try {
+        const landing = await fetch(href, { headers: { 'User-Agent': 'Mozilla/5.0', Referer: detailUrl } });
+        const html = await landing.text();
+        entry.landingFinalUrl = String(landing.url || '').slice(0, 200);
+        entry.decoded = decode4khdhubRedirectHtml(html, landing.url || href);
+      } catch (error) {
+        entry.error = String(error && error.message);
+      }
+
+      const generator = entry.decoded && entry.decoded.url ? entry.decoded.url : null;
+      entry.generator = generator ? String(generator).slice(0, 200) : null;
+      if (!generator) {
+        out.buttons.push(entry);
+        continue;
+      }
+
+      try {
+        const genRes = await fetch(generator, {
+          headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/131.0.0.0', Referer: entry.landingFinalUrl || href }
+        });
+        const genHtml = await genRes.text();
+        entry.generatorStatus = genRes.status;
+        entry.generatorFinalUrl = String(genRes.url || '').slice(0, 200);
+        entry.generatorHtmlHead = genHtml.slice(0, 700);
+        const seen = new Set();
+        for (const urlMatch of genHtml.replace(/\\\//g, '/').matchAll(/https?:\/\/[^\s"'<>)\\]+/gi)) {
+          const candidate = urlMatch[0].replace(/[.,;:]+$/, '');
+          if (seen.has(candidate) || seen.size >= 14) continue;
+          seen.add(candidate);
+          const normalized = normalizePlayableUrl(candidate);
+          const score = scorePlayableUrl(normalized);
+          const wrapped = extractWrappedMediaTargets(normalized);
+          entry.candidates.push({
+            url: candidate.slice(0, 240),
+            score,
+            isGenerator: isHubcloudGeneratorUrl(normalized),
+            wrapped: wrapped.length ? wrapped.map((w) => w.slice(0, 160)) : undefined,
+            playback: score >= 0 ? await probePlayable('candidate', normalized) : undefined
+          });
+        }
+      } catch (error) {
+        entry.generatorError = String(error && error.message);
+      }
+      out.buttons.push(entry);
+    }
+  }
+  return out;
 }
 
 /** Per-provider Hamster detail. */
@@ -374,6 +478,11 @@ async function probeTitle(title) {
     if (server === 'ursa') serverReport.tiers = await safe('ursa:tiers', () => probeUrsaTiers(metadata));
     if (server === 'hamster') serverReport.providers = await safe('hamster:providers', () => probeHamsterProviders(metadata));
     entry.servers[server] = serverReport;
+  }
+  if (SERVERS.includes('ursa')) {
+    // One title is enough to fingerprint the 4KHDHub chain; more titles only
+    // re-fetch the same redirector pages.
+    entry.fourKChain = await safe('ursa:chain', () => probeFourKChain(metadata));
   }
   return entry;
 }
