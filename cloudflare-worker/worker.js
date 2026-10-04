@@ -1985,6 +1985,11 @@ function isHubcloudGeneratorUrl(u) {
       /(^|\.)hubcdn\./.test(host) ||
       /(^|\.)gamerxyt\.com$/.test(host) ||
       /^gpdl\d*\./.test(host) ||
+      // MoviesDrive now links through HubCloud's browser-only recovery path;
+      // keep recognizing it even when the page resolves a relative href on a
+      // MoviesDrive host before the endpoint redirects to hubcloud.ist.
+      /\/drive\/search-recover\.php$/i.test(url.pathname) ||
+      (/\/drive\/[A-Za-z0-9_-]+$/i.test(url.pathname) && /(?:hubcloud|moviesdrive)/i.test(host)) ||
       // third-party hosts reuse the HubCloud wrapper scripts verbatim
       /\/(?:hubcloud|hubcdn)\.php(?:\?|$)/i.test(url.pathname)
     );
@@ -4106,6 +4111,7 @@ async function resolveMoviesdrive4kWorker(metadata, preferredAudio = '', env = {
     const wantedTitle = String(metadata.title || '').toLowerCase().replace(/[^a-z0-9\s]/g, ' ').replace(/\s+/g, ' ').trim();
 
     let postHtml = '';
+    let postBaseUrl = '';
     let activeHost = '';
 
     for (const host of hosts.slice(0, 3)) {
@@ -4187,6 +4193,7 @@ async function resolveMoviesdrive4kWorker(metadata, preferredAudio = '', env = {
           continue;
         }
         activeHost = host;
+        postBaseUrl = postRes.url || postUrl;
         if (postHtml) break;
       }
     }
@@ -4197,14 +4204,16 @@ async function resolveMoviesdrive4kWorker(metadata, preferredAudio = '', env = {
     const seasonNum = Number(metadata.season || 1);
     const episodeNum = Number(metadata.episode || 1);
 
-    const sections = postHtml.split(/<h5\b[^>]*>/i);
+    const sections = postHtml.split(/<h[1-6]\b[^>]*>/i);
     for (const sec of sections.slice(1)) {
-      const headingEnd = sec.indexOf('</h5>');
+      const headingClose = sec.match(/<\/h[1-6]>/i);
+      const headingEnd = headingClose ? headingClose.index : -1;
       const headingText = (headingEnd !== -1 ? sec.slice(0, headingEnd) : sec.slice(0, 240))
         .replace(/<[^>]+>/g, ' ')
         .replace(/\s+/g, ' ')
         .trim();
-      const bodyPart = headingEnd !== -1 ? sec.slice(headingEnd + 5, headingEnd + 1800) : sec;
+      const bodyStart = headingEnd !== -1 ? headingEnd + headingClose[0].length : 0;
+      const bodyPart = sec.slice(bodyStart, bodyStart + 1800);
 
       if (/\.zip\b|\bpack\b/i.test(headingText) && isTv && !/single\s*episode/i.test(headingText)) {
         continue;
@@ -4213,12 +4222,14 @@ async function resolveMoviesdrive4kWorker(metadata, preferredAudio = '', env = {
       const height = parseResolutionHeight(headingText);
       const audioHints = parseHicineAudioHints(hicineAudioHintText(headingText));
 
-      const linkRe = /<a\b[^>]*href=["'](https?:\/\/[^"']+)["'][^>]*>([\s\S]*?)<\/a>/gi;
+      const linkRe = /<a\b[^>]*href=["']([^"']+)["'][^>]*>([\s\S]*?)<\/a>/gi;
       let lm;
       while ((lm = linkRe.exec(bodyPart))) {
-        const href = lm[1].trim().replace(/&amp;/g, '&');
+        const rawHref = lm[1].trim().replace(/&amp;/g, '&');
+        let href;
+        try { href = new URL(rawHref, postBaseUrl || `${activeHost}/`).href; } catch { continue; }
         const linkLabel = lm[2].replace(/<[^>]+>/g, ' ').trim();
-        if (!/mdrive|hubcloud|hubcdn|vcloud|gdflix/i.test(`${href} ${linkLabel}`)) continue;
+        if (!/mdrive|hubcloud|hubcdn|vcloud|gdflix|search-recover|\/drive\//i.test(`${href} ${linkLabel}`)) continue;
 
         candidates.push({
           url: href,
