@@ -1,9 +1,5 @@
-// Hamster Wheel fans out to real, rotating Hindi release hosts. This suite is
-// hermetic (every upstream is mocked), so the fan-out is disabled here: the
-// waterfall still exercises the hamster branch and records a deterministic
-// `hamster_no_candidates` (diag: disabled) attempt instead of calling the
-// internet. Parsers/ranking are covered by test/hamster.test.js.
-process.env.HAMSTER_ENABLED = 'false';
+// This suite is hermetic: every upstream (TMDB, CastleTV, NetMirror, HiCine)
+// is mocked locally, so the waterfall never touches the internet.
 
 const http = require('http');
 const fs = require('fs');
@@ -1978,8 +1974,8 @@ async function runTests() {
         .map((s) => s.id);
       assert.deepStrictEqual(
         failoverOrder,
-        ['andromeda', 'centaurus', 'hamster'],
-        'waterfall order must follow the live catalog (andromeda -> centaurus -> hamster)'
+        ['andromeda', 'centaurus'],
+        'waterfall order must follow the live catalog (andromeda -> centaurus)'
       );
 
       // 11f. Cloudflare Worker: Multi-Tier Andromeda Resolution, Debug Telemetry & Waterfall Failover
@@ -2047,8 +2043,7 @@ async function runTests() {
       const catalog = require('../src/services/serverCatalog');
       const expected = [
         ['andromeda', 'Fiber Optic Speedrun', 'Multi-Audio • Primary', 1],
-        ['centaurus', 'Gigachad Node', 'Adaptive • Multi-Quality', 2],
-        ['hamster', 'Hamster Wheel', 'Hindi First • Multi-Audio • Max Coverage', 3]
+        ['centaurus', 'Gigachad Node', 'Adaptive • Multi-Quality', 2]
       ];
 
       // 13a. The Node backend serves the catalog order verbatim.

@@ -3,7 +3,7 @@ const config = require('../config');
 const { resolveTmdbMetadata } = require('../services/tmdb');
 const { resolveSkipSegments } = require('../services/segments');
 const { resolveSubtitles, fetchAndConvertSubtitleToVtt } = require('../services/subtitles');
-const { resolveStreamForServer, resolveAndromedaServer, diagnoseHamster, diagnoseCentaurus } = require('../services/resolver');
+const { resolveStreamForServer, resolveAndromedaServer, diagnoseCentaurus } = require('../services/resolver');
 const serverCatalog = require('../services/serverCatalog');
 const { handleStreamProxy } = require('../services/proxy');
 const { serveMasterPlaylist, serveGeneratedFile } = require('../services/multitrack');
@@ -256,8 +256,8 @@ router.get('/resolve/:type/:tmdbId', async (req, res) => {
     const episode = parseInt(req.query.episode || '1', 10);
     const server = String(req.query.server || 'andromeda').toLowerCase();
     const audio = String(req.query.audio || '');
-    // Multi-source servers (centaurus) accept `?source=` to pin one source; the
-    // Worker uses it to delegate only the Anime Dub Hindi half of the waterfall.
+    // Multi-source servers (centaurus) accept `?source=` to pin one source;
+    // pinned requests do not fall through to the other servers.
     const requestedSource = String(req.query.source || '').toLowerCase();
     const onlySource = /^[a-z]{3,24}$/.test(requestedSource) ? requestedSource : '';
 
@@ -295,30 +295,8 @@ router.get('/resolve/:type/:tmdbId', async (req, res) => {
         servers_no_link: 'Upstream has no stream link for this title on this server.',
         upstream_timeout: 'Timed out talking to the upstream provider.',
         upstream_exception: 'Unhandled error contacting the upstream provider.',
-        hamster_no_candidates: 'Hamster Wheel found no Hindi sources for this title.',
-        hamster_no_playable_stream:
-          'Hamster Wheel found release links but none of them played back (hosts may be down or IP-blocked).',
-        hamster_failed: 'Hamster Wheel hit an unexpected error.',
         no_title: 'Title metadata could not be resolved (TMDB unreachable?), so upstreams were not queried.',
-        animedubhindi_no_post: 'The Hindi-dub anime source has no release for this title.',
-        animedubhindi_no_episode_page: 'The Hindi-dub anime post has no episode page yet.',
-        animedubhindi_episode_not_found: 'The Hindi-dub anime source has not uploaded this episode yet.',
-        animedubhindi_no_release_links: 'The Hindi-dub anime episode has no HubCloud/GDFlix links.',
-        animedubhindi_no_playable_stream:
-          'The Hindi-dub anime release links did not play back (hosts may be down or IP-blocked).',
-        animedubhindi_backend_not_configured: 'The anime source needs the Node backend (ANIMEDUBHINDI_BACKEND_URL).',
-        animedrive_no_post: 'The second Hindi-dub anime source has no release for this title.',
-        animedrive_no_episode_page: 'The second Hindi-dub anime post has no links page yet.',
-        animedrive_episode_not_found: 'The second Hindi-dub anime source has not uploaded this episode yet.',
-        animedrive_no_release_links: 'The second Hindi-dub anime episode has no HubCloud/GDFlix rows.',
-        animedrive_no_playable_stream:
-          'The second Hindi-dub anime release links did not play back (hosts may be down or IP-blocked).',
-        animedrive_backend_not_configured: 'The second anime source needs the Node backend (ANIMEDRIVE_BACKEND_URL).',
-        centaurus_no_source:
-          'All Centaurus sources (HiCine, Anime Dub Hindi, AnimeDrive) found nothing for this title.',
-        hamster_backend_not_configured:
-          'Hamster Wheel needs the Node backend configured (HAMSTER_BACKEND_URL on the Worker).',
-        hamster_backend_unreachable: 'Hamster Wheel backend could not be reached.',
+        centaurus_no_source: 'Centaurus (HiCine) found nothing for this title.',
       };
       const humanReason = firstFailed
         ? reasonMap[firstFailed.reason] || firstFailed.reason
@@ -353,31 +331,10 @@ router.get('/resolve/:type/:tmdbId', async (req, res) => {
 });
 
 /**
- * GET /api/admin/hamster/diagnose/:type/:tmdbId
- * Runs the Hamster Wheel fan-out and reports every provider candidate, the
- * unrolled direct URL, and whether the media probe accepted it. Answers
- * "why is 4KHDHub not giving a raw link?" with data rather than logs.
- * Protected by the admin key like the other /api/admin routes.
- */
-router.get('/admin/hamster/diagnose/:type/:tmdbId', requireAdminAuth, async (req, res) => {
-  try {
-    const { type, tmdbId } = req.params;
-    const season = parseInt(req.query.season || '1', 10);
-    const episode = parseInt(req.query.episode || '1', 10);
-    const metadata = await resolveTmdbMetadata(type, tmdbId, season, episode);
-    const report = await diagnoseHamster(metadata);
-    return res.json(report);
-  } catch (err) {
-    return res.status(500).json({ ok: false, error: err.message });
-  }
-});
-
-/**
  * GET /api/admin/centaurus/diagnose/:type/:tmdbId
- * Runs all Centaurus sources (HiCine, Anime Dub Hindi, AnimeDrive) and reports
- * what each produced — including the anime sources' per-step diag strings
- * (search hit, episode page, rows, unroll/probe outcome). Answers "is an anime
- * source working for this title?" with data instead of logs.
+ * Runs the Centaurus source (HiCine) and reports what it produced — including
+ * per-step diag strings (search hit, quality rows, unroll/probe outcome).
+ * Answers "is Centaurus working for this title?" with data instead of logs.
  * Protected by the admin key like the other /api/admin routes.
  */
 router.get('/admin/centaurus/diagnose/:type/:tmdbId', requireAdminAuth, async (req, res) => {

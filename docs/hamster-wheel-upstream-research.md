@@ -3,6 +3,16 @@
 **Date:** 2026-10-04 · **Scope:** find the best upstream engine for a third server (`hamster`)
 **Requirements:** no multi-audio/multi-language needed · priority #1 = availability (title coverage), #2 = accuracy (correct title/episode match)
 
+> **Status (2026-10-04):** the Hamster Wheel server and the two anime blog
+> sources (Anime Dub Hindi, AnimeDrive) were **removed** from the product that
+> same day — every one of them only resolved when a Node backend deployment
+> existed, and the deployed product is a free-plan Cloudflare Worker with no
+> Node tier. Their release hosts are additionally unreachable from Cloudflare
+> egress (`4khdhub.one` IP/ASN-banned, `hubcloud.ist` behind a Turnstile wall,
+> `4khdhub.click` error 1016). This document is kept as the research record
+> (why these sites, what was reachable, codec/season traps) in case a real
+> host ever becomes available — the removal is a revert away in git history.
+
 ---
 
 ## TL;DR
