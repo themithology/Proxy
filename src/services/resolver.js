@@ -4645,8 +4645,7 @@ async function resolveStreamForServer(metadata, requestedServerId = 'andromeda',
   // Build the ordered waterfall starting with the user's selected server, then
   // the live priority order. Reading it from config.servers (instead of a frozen
   // constant) is what makes an owner re-prioritisation via /api/admin/upstreams
-  // show up in the player immediately; opt-in servers such as `hindi` are
-  // excluded so they are only ever used when explicitly requested.
+  // show up in the player immediately.
   const prioritized = enabledServers
     .filter((s) => s.fallback !== false)
     .map((s) => s.id);
@@ -4669,10 +4668,6 @@ async function resolveStreamForServer(metadata, requestedServerId = 'andromeda',
       resolved = await resolveUrsaServer(metadata, srvId, preferredAudio);
     } else if (srvId === 'centaurus') {
       resolved = await resolveHicineServer(metadata);
-    } else if (srvId === 'hindi') {
-      // Lazy require: dubCatalog consumes the provider resolvers above.
-      const { resolveHindiServer } = require('./dubCatalog');
-      resolved = await resolveHindiServer(metadata, preferredAudio || 'hi');
     }
     const latencyMs = Date.now() - t0;
 

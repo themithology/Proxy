@@ -28,11 +28,7 @@ import hamsterCore from '../src/services/hamsterCore.js';
 const USER_AGENT =
   'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36';
 
-/**
- * Player-visible servers plus opt-in (hidden) cascades, in priority order.
- * `listed: false` entries (the TMDB-id verified Hindi cascade) stay resolvable
- * via ?server=hindi but never appear in the player's server array.
- */
+/** Player-visible servers in waterfall priority order (shared catalog). */
 const SERVERS = serverCatalog.workerServerList();
 
 
@@ -4579,258 +4575,6 @@ async function resolveUrsaUpstream(metadata, requestedServerId = 'ursa', preferr
   };
 }
 
-/* ------------------------------------------------------------------ *
- * TMDB-id keyed Hindi dub layer
- *
- * "hindi" is an opt-in server: it is only used when a client asks for
- * ?server=hindi (it is excluded from the implicit waterfall). Every provider
- * answer is identity-checked against the TMDB title before it can be used, so
- * a same-name film can never be returned. The dub inventory endpoint
- * (/api/dubs) exposes every language a verified provider offers.
- * ------------------------------------------------------------------ */
-
-const DUBS_FAST_PROVIDERS = ['castletv', 'netmirror'];
-const DUBS_DEEP_PROVIDERS = ['castletv', 'netmirror', 'ursa', 'centaurus'];
-const HINDI_PROVIDER_ORDER = ['castletv', 'netmirror', 'ursa', 'centaurus', 'atlas'];
-
-function payloadHasHindi(resolved) {
-  return Boolean(
-    resolved &&
-      Array.isArray(resolved.audioTracks) &&
-      resolved.audioTracks.some(
-        (track) =>
-          track.lang === 'hi' ||
-          (Array.isArray(track.languages) && track.languages.includes('hi')) ||
-          /hindi/i.test(String(track.label || ''))
-      )
-  );
-}
-
-function collectPayloadLanguages(resolved) {
-  const languages = new Map();
-  (resolved?.audioTracks || []).forEach((track) => {
-    const codes = Array.isArray(track.languages) && track.languages.length
-      ? track.languages
-      : track.lang
-        ? [track.lang]
-        : [];
-    codes.forEach((code) => {
-      const key = String(code || '').toLowerCase();
-      if (!key) return;
-      const existing = languages.get(key) || {
-        code: key,
-        label: track.label || code,
-        playable: false,
-        default: false
-      };
-      existing.playable = existing.playable || Boolean(track.streamUrl || track.rawUrl);
-      existing.default = existing.default || Boolean(track.default);
-      languages.set(key, existing);
-    });
-  });
-  return Array.from(languages.values());
-}
-
-async function resolveDubProvider(providerId, metadata, preferredAudio, env) {
-  if (providerId === 'castletv') return resolveCastletvUpstream(metadata, preferredAudio, env);
-  if (providerId === 'netmirror') return resolveNetmirrorUpstream(metadata, preferredAudio, env);
-  if (providerId === 'ursa') return resolveUrsaUpstream(metadata, 'ursa', preferredAudio, env);
-  if (providerId === 'centaurus') return resolveHicineUpstream(metadata, env);
-  if (providerId === 'atlas') return resolveVidstuckUpstream(metadata, 'atlas', env);
-  return null;
-}
-
-/**
- * Server "hindi": first identity-verified provider that actually carries a
- * Hindi track. If none does, the verified original-audio stream is returned
- * with hindiAvailable:false instead of a wrong-title "Hindi" stream.
- */
-async function resolveHindiUpstream(metadata, preferredAudio = 'hi', env = null, options = {}) {
-  const configuredOrder = env && env.HINDI_PROVIDERS
-    ? String(env.HINDI_PROVIDERS).split(',').map((s) => s.trim().toLowerCase()).filter(Boolean)
-    : null;
-  const order = options.providerIds || configuredOrder || HINDI_PROVIDER_ORDER;
-  const attempts = [];
-  let firstVerified = null;
-  // A Hindi stream from a title-hint provider is a last resort: a verified
-  // provider with Hindi is always preferred, even if it answers later.
-  let hintHindi = null;
-
-  for (const providerId of order) {
-    const startedAt = Date.now();
-    let resolved = null;
-    try {
-      resolved = await withTimeout(resolveDubProvider(providerId, metadata, preferredAudio, env), 12000);
-    } catch (error) {
-      attempts.push({ provider: providerId, ok: false, reason: String(error.message || error), latencyMs: Date.now() - startedAt });
-      continue;
-    }
-    if (!resolved || !resolved.streamUrl) {
-      attempts.push({ provider: providerId, ok: false, reason: 'no_stream', latencyMs: Date.now() - startedAt });
-      continue;
-    }
-
-    const hindi = payloadHasHindi(resolved);
-    const identityVerified = Boolean(resolved.identity && resolved.identity.verified);
-    const identityMethod = resolved.identity ? resolved.identity.method || 'provider-native' : 'provider-native';
-    attempts.push({ provider: providerId, ok: true, hindi, identityMethod, identityVerified, latencyMs: Date.now() - startedAt });
-    if (!firstVerified && identityVerified) firstVerified = { providerId, resolved };
-
-    if (hindi && identityVerified) {
-      return {
-        ...resolved,
-        server: 'hindi',
-        hindiAvailable: true,
-        hindiVerified: true,
-        identityMethod,
-        preferredAudio: 'hi',
-        providerId,
-        dubs: collectPayloadLanguages(resolved),
-        attempts,
-        identity: resolved.identity || null
-      };
-    }
-    if (hindi && !hintHindi) hintHindi = { providerId, resolved, identityMethod };
-  }
-
-  if (hintHindi) {
-    return {
-      ...hintHindi.resolved,
-      server: 'hindi',
-      hindiAvailable: true,
-      hindiVerified: false,
-      identityMethod: hintHindi.identityMethod,
-      preferredAudio: 'hi',
-      diagMessage:
-        'Hindi was found on a provider that matches by title hints rather than a TMDB/IMDb id; verify the title before playback.',
-      dubs: collectPayloadLanguages(hintHindi.resolved),
-      providerId: hintHindi.providerId,
-      attempts,
-      identity: hintHindi.resolved.identity || null
-    };
-  }
-
-  if (firstVerified) {
-    return {
-      ...firstVerified.resolved,
-      server: 'hindi',
-      hindiAvailable: false,
-      hindiVerified: false,
-      identityMethod: firstVerified.resolved.identity ? firstVerified.resolved.identity.method || 'provider-native' : 'provider-native',
-      preferredAudio: 'hi',
-      providerId: firstVerified.providerId,
-      diagMessage: 'No identity-verified Hindi dub found; serving the verified original-audio stream.',
-      dubs: collectPayloadLanguages(firstVerified.resolved),
-      attempts,
-      identity: firstVerified.resolved.identity || null
-    };
-  }
-
-  return { ok: false, reason: 'hindi_all_sources_failed', attempts, diag: { stage: 'hindi', message: 'No identity-verified source responded for this title.' } };
-}
-
-/** Dub inventory for /api/dubs/:type/:tmdbId. */
-async function buildWorkerDubCatalog(metadata, env, options = {}) {
-  const providerIds = options.deep ? DUBS_DEEP_PROVIDERS : DUBS_FAST_PROVIDERS;
-  const preferredAudio = options.preferredAudio || 'hi';
-
-  const settled = await Promise.all(
-    providerIds.map(async (providerId) => {
-      try {
-        const resolved = await withTimeout(resolveDubProvider(providerId, metadata, preferredAudio, env), options.deep ? 20000 : 12000);
-        return { providerId, resolved };
-      } catch {
-        return { providerId, resolved: null };
-      }
-    })
-  );
-
-  const providers = settled.map(({ providerId, resolved }) => {
-    if (!resolved || !resolved.streamUrl) {
-      return {
-        id: providerId,
-        ok: false,
-        identity: { verified: false, method: null },
-        languages: [],
-        hindi: false,
-        stream: null
-      };
-    }
-    const languages = collectPayloadLanguages(resolved);
-    return {
-      id: providerId,
-      ok: true,
-      sourceName: resolved.sourceName || providerId,
-      format: resolved.format || null,
-      identity: resolved.identity || { verified: false, method: 'provider-native' },
-      languages,
-      hindi: payloadHasHindi(resolved),
-      stream: {
-        server: resolved.server,
-        sourceName: resolved.sourceName,
-        format: resolved.format,
-        streamUrl: resolved.streamUrl,
-        rawUrl: resolved.rawUrl,
-        referer: resolved.referer || '',
-        headers: resolved.headers || {},
-        qualities: resolved.qualities || [],
-        audioTracks: resolved.audioTracks || [],
-        backupUrls: resolved.backupUrls || []
-      }
-    };
-  });
-
-  const languageMap = new Map();
-  providers.forEach((provider) => {
-    (provider.languages || []).forEach((language) => {
-      const key = language.code || language.label;
-      if (!key) return;
-      const existing = languageMap.get(key) || { code: language.code, label: language.label, playable: false, providers: [] };
-      existing.playable = existing.playable || language.playable;
-      if (!existing.providers.includes(provider.id)) existing.providers.push(provider.id);
-      languageMap.set(key, existing);
-    });
-  });
-  const dubs = Array.from(languageMap.values()).sort((a, b) => {
-    const aHindi = a.code === 'hi' ? 0 : 1;
-    const bHindi = b.code === 'hi' ? 0 : 1;
-    if (aHindi !== bHindi) return aHindi - bHindi;
-    return String(a.label).localeCompare(String(b.label));
-  });
-
-  const verifiedHindiProvider = providers.find((provider) => provider.ok && provider.hindi && provider.identity.verified);
-  const hindiProvider = providers.find((provider) => provider.ok && provider.hindi);
-  const verifiedProvider = providers.find((provider) => provider.ok && provider.identity.verified);
-  const fallbackProvider = providers.find((provider) => provider.ok);
-  return {
-    mode: options.deep ? 'deep' : 'fast',
-    tmdbId: metadata.tmdbId,
-    type: metadata.type,
-    title: metadata.title,
-    year: metadata.releaseYear,
-    hindi: Boolean(verifiedHindiProvider),
-    hindiAnySource: Boolean(hindiProvider),
-    dubs,
-    providers,
-    best: verifiedHindiProvider
-      ? { providerId: verifiedHindiProvider.id, hindi: true, verified: true, stream: verifiedHindiProvider.stream }
-      : hindiProvider
-        ? {
-            providerId: hindiProvider.id,
-            hindi: true,
-            verified: false,
-            identityMethod: hindiProvider.identity.method,
-            stream: hindiProvider.stream
-          }
-        : verifiedProvider
-          ? { providerId: verifiedProvider.id, hindi: false, verified: true, stream: verifiedProvider.stream }
-          : fallbackProvider
-            ? { providerId: fallbackProvider.id, hindi: false, verified: false, stream: fallbackProvider.stream }
-            : null,
-    generatedAt: new Date().toISOString()
-  };
-}
-
 /** Per-upstream budgets keep the waterfall deterministic. */
 const WATERFALL_UPSTREAM_TIMEOUT_MS = 9000;
 // The 4KHDHub search includes a redirector chain and needs more room than a
@@ -4863,9 +4607,8 @@ async function resolveStreamWaterfall(metadata, requestedServer, preferredAudio,
     return { ...payload, servers: serverCatalog.buildServerPayload(SERVERS, payload.server) };
   }
 
-  // Waterfall order comes from the shared catalog's live priority order; opt-in
-  // servers (hindi) are excluded so they are only used when explicitly requested.
-  // An explicitly requested server is always attempted first.
+  // Waterfall order comes from the shared catalog's live priority order, and an
+  // explicitly requested server is always attempted first.
   const prioritized = serverCatalog.waterfallEnabledServers(SERVERS).map((s) => s.id);
   const order = [validServer, ...prioritized.filter((id) => id !== validServer)];
 
@@ -4904,11 +4647,6 @@ async function resolveStreamWaterfall(metadata, requestedServer, preferredAudio,
       resolved = await withTimeout(
         resolveHamsterWheelUpstream(metadata, srvId, preferredAudio),
         WATERFALL_UPSTREAM_TIMEOUT_MS
-      );
-    } else if (srvId === 'hindi') {
-      resolved = await withTimeout(
-        resolveHindiUpstream(metadata, preferredAudio || 'hi', env),
-        URSA_WATERFALL_TIMEOUT_MS
       );
     }
     const latencyMs = Date.now() - t0;
@@ -5365,38 +5103,6 @@ export default {
       });
     }
 
-    // GET /api/dubs/:type/:tmdbId - TMDB-id keyed dub inventory
-    const dubsMatch = pathname.match(/^\/api\/dubs\/(movie|tv|series)\/([^/]+)$/i);
-    if (dubsMatch) {
-      const [, rawDubsType, dubsTmdbId] = dubsMatch;
-      const dubsSeason = parseInt(url.searchParams.get('season') || url.searchParams.get('s') || '1', 10);
-      const dubsEpisode = parseInt(url.searchParams.get('episode') || url.searchParams.get('e') || '1', 10);
-      const deep = /^(1|true|yes)$/i.test(String(url.searchParams.get('deep') || ''));
-      const preferredAudio = (url.searchParams.get('audio') || 'hi').toLowerCase();
-
-      const dubsMetadata = await resolveTmdbMetadata(rawDubsType, dubsTmdbId, dubsSeason, dubsEpisode, env);
-      if (dubsMetadata.unresolvedTmdb) {
-        return jsonResponse(
-          { ok: false, error: `TMDB id ${dubsTmdbId} could not be resolved; refusing to fall back to a name search.` },
-          404
-        );
-      }
-      const catalog = await buildWorkerDubCatalog(dubsMetadata, env, { deep, preferredAudio });
-      return jsonResponse({
-        ok: true,
-        metadata: {
-          tmdbId: dubsMetadata.tmdbId,
-          type: dubsMetadata.type,
-          title: dubsMetadata.title,
-          originalTitle: dubsMetadata.originalTitle,
-          releaseYear: dubsMetadata.releaseYear,
-          imdbId: dubsMetadata.externalIds?.imdb_id || null,
-          season: dubsMetadata.season,
-          episode: dubsMetadata.episode
-        },
-        ...catalog
-      });
-    }
 
     // Match /api/(info|segments|subtitles|resolve)/:type/:tmdbId
     const apiMatch = pathname.match(/^\/api\/(info|segments|subtitles|resolve)\/(movie|tv|series)\/([^/]+)$/i);

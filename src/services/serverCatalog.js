@@ -68,24 +68,6 @@ const PRODUCTION_SERVERS = [
   }
 ];
 
-/**
- * Opt-in servers: resolvable only when a client explicitly asks for them
- * (`?server=hindi`). `fallback: false` keeps them out of the implicit
- * waterfall and `listed: false` keeps them out of the player's server array.
- */
-const OPT_IN_SERVERS = [
-  {
-    id: 'hindi',
-    name: 'Hindi',
-    badge: 'Hindi Dubs • TMDB-ID Verified',
-    priority: 90,
-    enabled: true,
-    fallback: false,
-    listed: false,
-    supportsMultiAudio: true
-  }
-];
-
 /** Waterfall order. Kept in sync with the priorities above by construction. */
 const WATERFALL_PRIORITY = PRODUCTION_SERVERS.map((s) => s.id);
 
@@ -138,8 +120,8 @@ function resolveServerId(list, requestedServerId) {
 function buildServerPayload(allServers, activeServerId = null) {
   const listed = listableServers(allServers);
   const activeId = activeServerId || null;
-  // A stream resolved by a hidden server (e.g. the opt-in Hindi cascade) would
-  // otherwise leave the modal with nothing highlighted.
+  // A stream resolved by a server that is not listed (e.g. an owner "custom"
+  // override) would otherwise leave the modal with nothing highlighted.
   const includesActive = listed.some((s) => s.id === activeId);
   const payload = listed.map((s) => ({ ...s, active: s.id === activeId }));
   if (activeId && !includesActive) {
@@ -150,13 +132,13 @@ function buildServerPayload(allServers, activeServerId = null) {
 }
 
 /**
- * Every server a backend knows how to resolve: production servers in priority
- * order plus opt-in cascades. This is what `config.servers` / the Worker's
- * SERVERS hold — use `listableServers()`/`buildServerPayload()` for anything the
- * player renders, and this list for resolution, /api/health and admin views.
+ * Every server a backend knows how to resolve, in waterfall priority order.
+ * This is what `config.servers` / the Worker's SERVERS hold — use
+ * `listableServers()`/`buildServerPayload()` for anything the player renders,
+ * and this list for resolution, /api/health and admin views.
  */
 function allServers() {
-  return [...PRODUCTION_SERVERS, ...OPT_IN_SERVERS].map((s) => ({ ...s }));
+  return PRODUCTION_SERVERS.map((s) => ({ ...s }));
 }
 
 /** @deprecated alias kept for readability at the call sites. */
@@ -166,7 +148,6 @@ const workerServerList = allServers;
 
 module.exports = {
   PRODUCTION_SERVERS,
-  OPT_IN_SERVERS,
   WATERFALL_PRIORITY,
   sortByPriority,
   listableServers,

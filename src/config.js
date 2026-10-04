@@ -141,7 +141,7 @@ const config = {
   // Server definitions (names, badges, priorities) live in the shared catalog so
   // the Worker that serves the player and this backend can never drift apart.
   // `servers` is kept in priority order, which is also the implicit waterfall
-  // order; opt-in servers (listed:false) stay resolvable but are never rendered.
+  // order.
   servers: serverCatalog.nodeServerList()
 };
 

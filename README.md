@@ -89,7 +89,6 @@ The value must be an absolute `http(s)` URL (a path prefix is allowed and traili
 - `GET /api/info/:type/:tmdbId` — TMDB metadata and skip segments.
 - `GET /api/segments/:type/:tmdbId` — intro, recap, and outro timestamps.
 - `GET /api/subtitles/:type/:tmdbId` — external subtitle tracks.
-- `GET /api/dubs/:type/:tmdbId` — TMDB-id keyed dub inventory (`?deep=1` also probes the 4K/download tiers, `?audio=hi` sets the preferred track).
 - `GET /api/resolve/:type/:tmdbId` — resolves a source and returns stream, audio, subtitle, and segment metadata.
 - `GET /api/proxy?url=...` — HLS/MP4 stream proxy.
 - `GET /api/multitrack/master.m3u8` and `/api/multitrack/file/:jobId/:filename` — signed Node-side audio-remux output.
@@ -111,61 +110,12 @@ server modal can never drift from what the waterfall actually tries:
 | 3        | `ursa` (`4k`)| FBI Surveillance Van | 4K UHD • Multi-Audio                   | 4KHDHub → MoviesDrive 4K → HiCine 4K UHD → DahmerMovies 4K |
 | 4        | `hamster`   | Hamster Wheel         | Multi-Language • OMSS Cascade          | Videasy → Peachify → VidSrc |
 | 5        | `atlas`     | Atlas                 | Adaptive • Backup                      | ZXC Backup Adaptive HLS |
-| opt-in   | `hindi`     | *(not listed)*        | Hindi Dubs • TMDB-ID Verified          | TMDB-id keyed Hindi dubs (`?server=hindi`) |
 
 Every `/api/resolve` payload carries the `servers` array in this exact order with
 the answering server flagged `active`, and it is rebuilt from the live catalog on
 every response — including cache hits — so a rebrand or re-prioritisation shows
 up in the player immediately. Owner priority changes made through
 `POST /api/admin/upstreams` feed the same array and the waterfall.
-
-### Hindi dubs and TMDB-id identity (Server 6 / `?server=hindi`)
-
-The multi-audio tiers (CastleTV, NetMirror) can only be searched by **name**, and those catalogs contain same-name collisions. A name search for `Fight Club` returns the 2023 Indian film — which happens to ship a Hindi dub — ahead of the 1999 film (TMDB `550`), so a naive first-row pick plays the wrong movie. The Hindi layer removes name ambiguity entirely:
-
-- Metadata is always resolved from the **TMDB id** first (`/api/info`, `/api/resolve`, `/api/dubs`), including original and alternative titles.
-- Every upstream search row/subject is scored against that identity (title + original/alt titles + release year + movie/series type), and only an exact-identity candidate can be used. Unverifiable results are a clean miss, so the waterfall moves on instead of playing a different film.
-- Provider years are release-ish, so movies tolerate a ±2-year drift (CastleTV lists Spirited Away as 2003) while decade-apart collisions — the 2023 "Fight Club" for TMDB `550` — are still rejected; exact-year candidates outrank drifted ones.
-- The matched identity is returned in the payload (`stream.identity`: `matchedTitle`, `matchedYear`, `upstreamId`, `score`, `reasons`, plus the rejected candidates) so clients can show and verify what was actually selected.
-- All dub languages the verified provider exposes are surfaced as `audioTracks` (CastleTV per-language tracks, NetMirror OTT audio); Hindi is the default when present, otherwise the preferred `?audio=` track.
-- If no identity-verified Hindi source exists for a title, the Hindi server returns the verified original-audio stream with `hindiAvailable: false` (never a wrong-title Hindi stream) and the dub inventory reports `hindi: false`.
-- Responses carry their provenance: `hindiVerified: true` means the Hindi track came from a TMDB/IMDb-anchored match, while `hindiVerified: false` + `identityMethod: "title-hint"` flags a provider that only matches by title hints (the resolution still reports `hindiAvailable`, so clients can decide whether to trust it).
-
-`GET /api/dubs/:type/:tmdbId` returns the full inventory for a title:
-
-```jsonc
-{
-  "ok": true,
-  "hindi": true,           // identity-verified Hindi source exists
-  "hindiAnySource": true,  // also true when only a title-hint provider reports Hindi
-  "dubs": [{ "code": "hi", "label": "Hindi", "playable": true, "providers": ["castletv"] }],
-  "providers": [
-    {
-      "id": "castletv",
-      "ok": true,
-      "identity": { "verified": true, "matchedTitle": "Dune: Part Two", "matchedYear": 2024, "upstreamId": "7475882100889600" },
-      "languages": [{ "code": "hi", "label": "Hindi", "playable": true }],
-      "hindi": true
-    }
-  ]
-}
-```
-
-Provider identity methods:
-
-| Provider      | Identity anchor                                                        |
-| ------------- | ---------------------------------------------------------------------- |
-| CastleTV      | TMDB title/original/alt titles + `publishTime` year + `movieType`       |
-| NetMirror     | TMDB id (`/api/embed-tmdb/<id>`)                                        |
-| MoviesDrive   | IMDb id from TMDB + title/year scoring                                  |
-| 4KHDHub       | Title + release year parsed from the search page                        |
-| HiCine        | title/year hints                                                        |
-| HiAnime       | MAL id from TMDB (anime only)                                           |
-| DahmerMovies | title (+year) directory path                                           |
-
-Operational notes:
-
-- `HINDI_PROVIDERS=castletv,netmirror` limits which providers the Hindi server and `/api/dubs` may use.
 
 ### Server 1 — Andromeda (Fiber Optic Speedrun) Multi-Tier Architecture
 

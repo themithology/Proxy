@@ -59,7 +59,6 @@ const {
 } = require('../src/services/multitrack');
 
 const identity = require('../src/services/identity');
-const { buildDubCatalog, resolveHindiServer } = require('../src/services/dubCatalog');
 
 function encryptCastleAes(plaintext, key) {
   const cipher = crypto.createCipheriv('aes-128-cbc', key, key);
@@ -1560,11 +1559,7 @@ async function runTests() {
     assert.strictEqual(health.json.ok, true);
     assert.strictEqual(health.json.brand, 'LOL Embed');
     assert.strictEqual(health.json.service, 'lol-embed-backend');
-    assert.ok(
-      Array.isArray(health.json.servers) &&
-        health.json.servers.length >= 5 &&
-        health.json.servers.includes('hindi')
-    );
+    assert.ok(Array.isArray(health.json.servers) && health.json.servers.length >= 5);
     const unsignedMultiTrack = await httpRequest(
       baseUrl,
       '/api/multitrack/master.m3u8?url=https%3A%2F%2Fpub-abc.r2.dev%2Fmovies%2FRRR.mkv'
@@ -2065,22 +2060,6 @@ async function runTests() {
         'an anime series must not match a movie request'
       );
 
-      // 11b-3. Dub inventory endpoint (/api/dubs) + the "hindi" server must
-      // report the verified 1999 film and never the 2023 film's Hindi dub.
-      const dubsRes = await httpRequest(baseUrl, '/api/dubs/movie/550?audio=hi');
-      assert.strictEqual(dubsRes.status, 200, 'GET /api/dubs/movie/550 must answer');
-      assert.strictEqual(dubsRes.json.ok, true);
-      assert.strictEqual(dubsRes.json.hindi, false, 'TMDB 550 has no Hindi dub on the mocked tiers');
-      const castleProvider = (dubsRes.json.providers || []).find((p) => p.id === 'castletv');
-      assert.ok(castleProvider && castleProvider.ok, 'CastleTV must appear in the dub inventory');
-      assert.strictEqual(castleProvider.identity.verified, true, 'CastleTV entry must be identity-verified');
-      assert.strictEqual(castleProvider.identity.matchedYear, 1999, 'CastleTV must have matched the 1999 film');
-      assert.strictEqual(castleProvider.identity.upstreamId, 'castle-fc-1999');
-      assert.ok(
-        !JSON.stringify(dubsRes.json).includes('fight-club-2023'),
-        'the 2023 film must never be reported for TMDB 550'
-      );
-
       const fcMetadata = {
         tmdbId: 550,
         title: 'Fight Club',
@@ -2090,78 +2069,9 @@ async function runTests() {
         genres: ['Drama', 'Thriller'],
         externalIds: { imdb_id: 'tt0137523' }
       };
-      const hindiMiss = await resolveHindiServer(fcMetadata, 'hi', { providerIds: ['castletv', 'netmirror'] });
-      assert.strictEqual(hindiMiss.server, 'hindi');
-      assert.strictEqual(hindiMiss.hindiAvailable, false, 'no identity-verified Hindi source exists for the 1999 film');
-      assert.strictEqual(hindiMiss.providerId, 'castletv', 'the verified original-audio stream is still returned');
-      assert.strictEqual(hindiMiss.identity.upstreamId, 'castle-fc-1999');
-      assert.ok(!String(hindiMiss.rawUrl).includes('2023'), 'wrong-title stream must never be returned');
-
-      const hindiHit = await resolveHindiServer(
-        {
-          tmdbId: 693134,
-          title: 'Dune: Part Two',
-          originalTitle: 'Dune: Part Two',
-          releaseYear: 2024,
-          type: 'movie'
-        },
-        'hi',
-        { providerIds: ['castletv', 'netmirror'] }
-      );
-      assert.strictEqual(hindiHit.hindiAvailable, true, 'verified Hindi dub must be reported as available');
-      assert.strictEqual(hindiHit.providerId, 'castletv');
-      assert.strictEqual(hindiHit.audioTracks.find((t) => t.default).lang, 'hi', 'Hindi must be the default track');
-      assert.ok((hindiHit.dubs || []).some((d) => d.code === 'hi'), 'dub inventory must list Hindi');
-
-      // The catalog object itself is usable standalone (worker parity).
-      const catalog = await buildDubCatalog(
-        { tmdbId: 693134, title: 'Dune: Part Two', originalTitle: 'Dune: Part Two', releaseYear: 2024, type: 'movie' },
-        { preferredAudio: 'hi' }
-      );
-      assert.strictEqual(catalog.hindi, true);
-      assert.ok(catalog.dubs.some((d) => d.code === 'hi' && d.providers.includes('castletv')));
-      assert.ok(
-        catalog.providers.every((p) => p.ok === false || p.identity.verified === true),
-        'every reported provider must be identity-verified'
-      );
-
-      // The Hindi server end-to-end over HTTP, using the HINDI_PROVIDERS knob.
-      const prevHindiProviders = config.upstreams.hindiProviders;
-      config.upstreams.hindiProviders = ['castletv', 'netmirror'];
-      try {
-        const hindiHttp = await httpRequest(baseUrl, '/api/resolve/movie/550?server=hindi&audio=hi');
-        assert.strictEqual(hindiHttp.status, 200, 'GET /api/resolve?server=hindi must answer');
-        assert.strictEqual(hindiHttp.json.ok, true);
-        assert.strictEqual(hindiHttp.json.stream.server, 'hindi');
-        assert.strictEqual(hindiHttp.json.stream.requestedServer, 'hindi');
-        assert.strictEqual(
-          hindiHttp.json.stream.hindiAvailable,
-          false,
-          'the 1999 film has no Hindi source on the mocked tiers'
-        );
-        assert.strictEqual(hindiHttp.json.stream.hindiVerified, false);
-        assert.strictEqual(hindiHttp.json.stream.identity.upstreamId, 'castle-fc-1999');
-        assert.ok(
-          !String(hindiHttp.json.stream.rawUrl).includes('2023'),
-          'the HTTP Hindi path must never serve the wrong-title stream'
-        );
-      } finally {
-        config.upstreams.hindiProviders = prevHindiProviders;
-      }
-
-      // `hindi` is opt-in: it must never take part in the implicit waterfall,
-      // so a default request resolves through the normal tiers only.
+      // The implicit waterfall resolves through the normal tiers only.
       const defaultWaterfall = await resolveStreamForServer(fcMetadata, 'andromeda', 'hi');
       assert.strictEqual(defaultWaterfall.server, 'andromeda', 'default waterfall must resolve Andromeda');
-      assert.ok(
-        !(defaultWaterfall.serverAttempts || []).some((attempt) => attempt.server === 'hindi'),
-        'the hindi server must not be attempted unless explicitly requested'
-      );
-      assert.strictEqual(
-        config.servers.find((server) => server.id === 'hindi').fallback,
-        false,
-        'the hindi server must be marked as an opt-in (fallback:false) server'
-      );
 
       // 11c. NetMirror Dynamic Sub-resolver: Discovery checknewtv.php & rotating referer tracker
       config.upstreams.netmirrorDiscoveryUrls = [mockUpstream.url];
@@ -2294,34 +2204,6 @@ async function runTests() {
       assert.ok(cfAndromedaJson.stream.audioTracks.length >= 4);
       assert.strictEqual(cfAndromedaJson.stream.activeAudioTrack.lang, 'hi');
 
-      // Worker parity: same-name collision must resolve the 1999 film, and the
-      // TMDB-id keyed dub inventory must never report the 2023 film.
-      const cfDubsRes = await callWorker('http://player.test/api/dubs/movie/550?audio=hi', workerEnv);
-      assert.strictEqual(cfDubsRes.status, 200, 'worker /api/dubs must answer');
-      const cfDubsJson = await cfDubsRes.json();
-      assert.strictEqual(cfDubsJson.ok, true);
-      assert.strictEqual(cfDubsJson.hindi, false, 'worker must not report a Hindi dub for the 1999 film');
-      const cfCastleProvider = (cfDubsJson.providers || []).find((p) => p.id === 'castletv');
-      assert.ok(cfCastleProvider && cfCastleProvider.ok, 'worker CastleTV entry must resolve');
-      assert.strictEqual(cfCastleProvider.identity.matchedYear, 1999);
-      assert.strictEqual(cfCastleProvider.identity.upstreamId, 'castle-fc-1999');
-      assert.ok(!JSON.stringify(cfDubsJson).includes('fight-club-2023'), 'worker must not surface the 2023 film');
-
-      const cfHindiRes = await callWorker(
-        'http://player.test/api/resolve/movie/550?server=hindi&audio=hi',
-        { ...workerEnv, HINDI_PROVIDERS: 'castletv,netmirror' }
-      );
-      assert.strictEqual(cfHindiRes.status, 200);
-      const cfHindiJson = await cfHindiRes.json();
-      assert.strictEqual(cfHindiJson.ok, true);
-      assert.strictEqual(cfHindiJson.stream.server, 'hindi');
-      assert.strictEqual(cfHindiJson.stream.hindiAvailable, false, 'worker must be honest about the missing Hindi dub');
-      assert.strictEqual(cfHindiJson.stream.identity.upstreamId, 'castle-fc-1999');
-      assert.ok(
-        !String(cfHindiJson.stream.rawUrl).includes('2023'),
-        'worker hindi server must never return the wrong-title stream'
-      );
-
       // Worker /api/debug/andromeda/:type/:tmdbId inspects Andromeda upstreams
       const cfDebugRes = await callWorker(
         'http://player.test/api/debug/andromeda/movie/693134',
@@ -2417,8 +2299,8 @@ async function runTests() {
         return httpRequest(parsed.origin, `${parsed.pathname}${parsed.search}`, { headers: { Range: 'bytes=0-64' } });
       });
 
-      // 12c. MoviesDrive 4K provider resolver (retained for the Hindi dub deep
-      // probe in /api/dubs?deep=1; no longer part of the Server 3 cascade)
+      // 12c. MoviesDrive 4K provider resolver (quality tier of the Server 3
+      // cascade, callable directly)
       const md4kRes = await resolveMoviesdrive4k(
         {
           title: 'Dune: Part Two',
@@ -2438,7 +2320,7 @@ async function runTests() {
         return httpRequest(parsed.origin, `${parsed.pathname}${parsed.search}`, { headers: { Range: 'bytes=0-64' } });
       });
 
-      // 12d. HiCine provider resolver (retained for Node's optional Hindi dub inventory)
+      // 12d. HiCine provider resolver (4K quality tier, callable directly)
       const hc4kRes = await resolveHicine4k(
         { title: 'Dune: Part Two', releaseYear: 2024, type: 'movie' },
         'hi'
@@ -2453,7 +2335,7 @@ async function runTests() {
         return httpRequest(parsed.origin, `${parsed.pathname}${parsed.search}`, { headers: { Range: 'bytes=0-64' } });
       });
 
-      // 12e. DahmerMovies provider resolver (retained for Node's optional Hindi dub inventory)
+      // 12e. DahmerMovies provider resolver (4K quality tier, callable directly)
       const dahmerRes = await resolveDahmer4k(
         { title: 'Dune: Part Two', releaseYear: 2024, type: 'movie' },
         'en'
@@ -2677,17 +2559,12 @@ async function runTests() {
         ['atlas', 'Atlas', 'Adaptive • Backup', 5]
       ];
 
-      // 13a. The Node backend serves the catalog order verbatim; the opt-in Hindi
-      // cascade stays resolvable but is never rendered as a server row.
+      // 13a. The Node backend serves the catalog order verbatim.
       assert.deepStrictEqual(
         config.servers.filter((s) => s.listed !== false).map((s) => [s.id, s.name, s.badge, s.priority]),
         expected,
         'Node config must expose the catalog names/badges/priorities in order'
       );
-      const hindiEntry = config.servers.find((s) => s.id === 'hindi');
-      assert.ok(hindiEntry, 'the opt-in Hindi cascade must stay resolvable on the Node backend');
-      assert.strictEqual(hindiEntry.listed, false, 'Hindi must never be rendered as a player server row');
-      assert.strictEqual(hindiEntry.fallback, false, 'Hindi must stay out of the implicit waterfall');
       assert.deepStrictEqual(
         catalog.WATERFALL_PRIORITY,
         expected.map((e) => e[0]),
@@ -2722,7 +2599,6 @@ async function runTests() {
         1,
         'exactly one server may ever be active'
       );
-      assert.ok(!payload.some((s) => s.id === 'hindi'), 'opt-in Hindi must stay out of the player list');
       assert.ok(!payload.some((s) => s.id === 'strings'), 'the removed Strings slot must not be listed');
 
       // 13d. The player must default to priority 1 and order rows defensively.
@@ -2754,10 +2630,6 @@ async function runTests() {
         healthJson.servers.slice(0, expected.length),
         expected.map((e) => e[0]),
         'worker /api/health must list the catalog ids in priority order first'
-      );
-      assert.ok(
-        healthJson.servers.includes('hindi'),
-        'worker /api/health must still report the opt-in Hindi capability'
       );
 
       const infoRes = await callWorker('http://player.test/api/info/tv/94605', catalogWorkerEnv);
