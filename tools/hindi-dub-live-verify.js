@@ -45,6 +45,15 @@ function summarizeCatalog(catalog) {
   return {
     mode: catalog.mode,
     hindi: catalog.hindi,
+    hindiAnySource: catalog.hindiAnySource ?? null,
+    best: catalog.best
+      ? {
+          providerId: catalog.best.providerId,
+          hindi: catalog.best.hindi,
+          verified: catalog.best.verified ?? null,
+          identityMethod: catalog.best.identityMethod || null
+        }
+      : null,
     dubs: catalog.dubs,
     providers: (catalog.providers || []).map((p) => ({
       id: p.id,
@@ -69,6 +78,9 @@ function summarizeResolve(resolved) {
     sourceName: resolved.sourceName || null,
     providerId: resolved.providerId || null,
     hindiAvailable: resolved.hindiAvailable ?? null,
+    hindiVerified: resolved.hindiVerified ?? null,
+    identityMethod: resolved.identityMethod || null,
+    diagMessage: resolved.diagMessage || null,
     identity: resolved.identity
       ? {
           matchedTitle: resolved.identity.matchedTitle,
