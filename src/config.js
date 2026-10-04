@@ -40,7 +40,6 @@ const config = {
   // Security & Handshake Signing
   adminSecret: process.env.ADMIN_SECRET || 'admin123',
   proxySecret: process.env.PROXY_SECRET || 'vidstuck-edge-hmac-secret-key-2026-9f8e7d6c5b4a',
-  zxcAesKey: process.env.ZXC_AES_KEY || '7f4c9e2a81d63b05c4f7a9e8126d3b50e1a8c7f23d9465ab0c6e9f1d4a7b832c',
   tokenTtlSeconds: parseInt(process.env.TOKEN_TTL_SECONDS || '14400', 10), // 4 hours
 
   // Node-only MKV/MP4 audio remuxing. `enabled` is finalized by the multitrack
@@ -104,29 +103,11 @@ const config = {
       .filter(Boolean),
 
     // Ursa uses MoviesDrive + 4KHDHub; remaining 4K hosts serve optional dub lookups.
-    fourkhdhubBase: process.env.FOURKHDHUB_BASE_URL || 'https://4khdhub.one',
-    fourkhdhubHosts: (
-      process.env.FOURKHDHUB_HOSTS ||
-      'https://4khdhub.one,https://4khdhub.link,https://4khdhub.fans,https://4khdhub.ink,https://4khdhub.click'
-    )
-      .split(',')
-      .map((s) => s.trim().replace(/\/$/, ''))
-      .filter(Boolean),
-    moviesdriveBase: process.env.MOVIESDRIVE_BASE_URL || 'https://new5.moviesdrive.christmas',
-    moviesdriveHosts: (
-      process.env.MOVIESDRIVE_HOSTS ||
-      'https://new5.moviesdrive.christmas,https://new4.moviesdrive.christmas,https://moviesdrives.cfd,https://moviesdrive.world,https://moviesdrive.design'
-    )
-      .split(',')
-      .map((s) => s.trim().replace(/\/$/, ''))
-      .filter(Boolean),
-    dahmerBase: process.env.DAHMER_BASE_URL || 'https://a.111477.xyz',
     domainDiscoveryUrl:
       process.env.DOMAIN_DISCOVERY_URL ||
       'https://raw.githubusercontent.com/SaurabhKaperwan/Utils/refs/heads/main/urls.json',
 
     vidstuckBase: process.env.VIDSTUCK_BASE_URL || 'https://vidstuck.xyz',
-    zxcBase: process.env.ZXC_BASE_URL || 'https://zxcstream.icu',
     vidsrcDataUrl: process.env.VIDSRC_DATA_URL || 'https://data.vidsrc.sh/api.php',
     hicineApiBase: process.env.HICINE_API_BASE || 'https://api.hicine.sbs',
     hianimeBase: process.env.HIANIME_BASE_URL || 'https://hianime.at',

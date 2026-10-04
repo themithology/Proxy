@@ -245,29 +245,13 @@ class TelemetryAndAdminEngine {
     const targets = [
       {
         serverId: 'andromeda',
-        name: 'VidStuck / ZXC Primary',
-        url: `${config.upstreams.vidstuckBase}/backend/tmdb/details/tv/94605?language=en-US`
-      },
-      {
-        serverId: 'ursa',
-        name: 'VidSrc.sh WASM API',
-        url: `${config.upstreams.vidsrcDataUrl}?type=tv&tmdb=94605&season=1&episode=1&stream_urls`,
-        headers: { Referer: 'https://vidsrc.sh/' }
+        name: 'CastleTV Multi-Audio API',
+        url: `${config.upstreams.castletvBase}/v0.1/system/getSecurityKey/1`
       },
       {
         serverId: 'centaurus',
         name: 'HiCine Direct API',
         url: `${config.upstreams.hicineApiBase}/api/search/arcane`
-      },
-      {
-        serverId: 'atlas',
-        name: 'ZXC Stream Mirror',
-        url: `${config.upstreams.zxcBase}/movie`
-      },
-      {
-        serverId: 'hamster',
-        name: 'Videasy Multi-Language',
-        url: `https://api.videasy.net/mb-flix/sources-with-title?tmdb=94605`
       }
     ];
 

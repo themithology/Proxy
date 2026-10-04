@@ -41,30 +41,6 @@ const PRODUCTION_SERVERS = [
     priority: 2,
     enabled: true,
     supportsMultiAudio: true
-  },
-  {
-    id: 'ursa',
-    name: 'FBI Surveillance Van',
-    badge: '4K UHD • Multi-Audio',
-    priority: 3,
-    enabled: true,
-    supportsMultiAudio: true
-  },
-  {
-    id: 'hamster',
-    name: 'Hamster Wheel',
-    badge: 'Multi-Language • OMSS Cascade',
-    priority: 4,
-    enabled: true,
-    supportsMultiAudio: true
-  },
-  {
-    id: 'atlas',
-    name: 'Atlas',
-    badge: 'Adaptive • Backup',
-    priority: 5,
-    enabled: true,
-    supportsMultiAudio: true
   }
 ];
 
