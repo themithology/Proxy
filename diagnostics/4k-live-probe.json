@@ -1,5 +1,5 @@
 {
-  "startedAt": "2026-10-04T10:02:38.509Z",
+  "startedAt": "2026-10-04T10:42:17.982Z",
   "runner": "github-actions",
   "node": "v22.23.3",
   "upstreams": {
@@ -33,7 +33,7 @@
               "host": "https://4khdhub.one",
               "url": "https://4khdhub.one/?s=Dune%3A%20Part%20Two",
               "status": 200,
-              "latencyMs": 498,
+              "latencyMs": 310,
               "cards": [
                 {
                   "title": "Dune: Part Two",
@@ -59,8 +59,8 @@
                 "error": null
               },
               "unroll": {
-                "url": "https://video-downloads.googleusercontent.com/ADGPM2kheDjXYLz0FYtwXxTl9DLue9lCX3UEl74mRhXghA6dr_bmza2CGppFSQGsclCVh8Rd7c8bWJT2gaaBaUTe9IyL7HU8XtFxIrZyRi11Mp_dG4Pp9f-znbI_6-whxb6st3KUlb6xTGOJUSFbVOIc7OgViXvcFIAmmulqZVUZmMEuqTUtb_lDSkE9zeMzBzvLojxzb3nHLbUcIE9-iOY7zVDSJxInKcVITKl0DAmR0BBWP_MJTEs",
-                "attemptedAt": "2026-10-04T10:02:45.747Z"
+                "url": "https://withered-firefly-73e3.gahoj890489301.workers.dev/423e4f6b84ec6e7393a020c3d4de8bb15cd21937d442e1a82cbe944b73e60de259832942f024427d278fd68ec46f4eb9::e1647e26f7936859e5a949ef93c22a0d/1398009276/Dune%20-%20Part%20Two%20(2024)%202160p%20UHD%20BluRay%20REMUX%20DV%20HDR%2010bit%20HEVC%20[Hindi%20DDP%205.1%20+%20English%20TrueHD%20Atmos%207.1]%20x265%20(FraMeSToR-LUMiX)%204KHDHub.com.mkv",
+                "attemptedAt": "2026-10-04T10:42:23.250Z"
               }
             },
             {
@@ -78,7 +78,7 @@
               },
               "unroll": {
                 "url": null,
-                "attemptedAt": "2026-10-04T10:02:45.997Z"
+                "attemptedAt": "2026-10-04T10:42:23.401Z"
               }
             },
             {
@@ -95,8 +95,8 @@
                 "error": null
               },
               "unroll": {
-                "url": "https://myfiles.directfile2.workers.dev/aab86b0e3435478b5361697e0f15f9e63e558dfaa3be9f230ec8907325f4d5bdfd75dc201b36618b89f61dd5b2e5e8de::e19541cf4483577f01cdfb6533566ce6/1398009276/Dune%20-%20Part%20Two%20(2024)%202160p%20UHD%20BluRay%20DV%20HDR%2010bit%20HEVC%20[Hindi%20DDP%205.1%20+%20English%20TrueHD%20Atmos%207.1]%20x265%20(W4NK3R-LUMiX)%204KHDHub.com.mkv",
-                "attemptedAt": "2026-10-04T10:02:50.076Z"
+                "url": "https://myfiles.directfile.workers.dev/ae62d80343bc912f0e34f0e90a773aaf78d0045e3e23085e57b666c53d410151e028ef139050bf69634035daf1d49f90::0ea07149002ef1b7c1d7a6e426802992/1398009276/Dune%20-%20Part%20Two%20(2024)%202160p%20UHD%20BluRay%20DV%20HDR%2010bit%20HEVC%20[Hindi%20DDP%205.1%20+%20English%20TrueHD%20Atmos%207.1]%20x265%20(W4NK3R-LUMiX)%204KHDHub.com.mkv",
+                "attemptedAt": "2026-10-04T10:42:27.459Z"
               }
             },
             {
@@ -114,7 +114,7 @@
               },
               "unroll": {
                 "url": null,
-                "attemptedAt": "2026-10-04T10:02:50.265Z"
+                "attemptedAt": "2026-10-04T10:42:27.528Z"
               }
             },
             {
@@ -131,8 +131,8 @@
                 "error": null
               },
               "unroll": {
-                "url": "https://index.cdn-utube.workers.dev/5ab644df48b1e195ba763da1b98b718b12157ef231e1f64dd94415e94a0ca724a45d4a9eecf93bf987ab978c29e91cb4::d46662e943aeb8a9ad7c522581db0665/1398009276/Dune%20-%20Part%20Two%20(2024)%201080p%20BluRay%20REMUX%20AVC%20[Hindi%20DDP%205.1%20+%20English%20TrueHD%20Atmos%207.1]%20x264%20(FraMeSToR-LUMiX)%204KHDHub.com.mkv",
-                "attemptedAt": "2026-10-04T10:02:54.369Z"
+                "url": "https://myfiles.directfile3.workers.dev/97892e11ec312a681e4fe305dfebb1f052492acc4f40bd8a270f3eb97de7abd6438026ac4fbe2b4eb5488e13167c29ab::55663b0ffea20b53cc36339ddb66c637/1398009276/Dune%20-%20Part%20Two%20(2024)%201080p%20BluRay%20REMUX%20AVC%20[Hindi%20DDP%205.1%20+%20English%20TrueHD%20Atmos%207.1]%20x264%20(FraMeSToR-LUMiX)%204KHDHub.com.mkv",
+                "attemptedAt": "2026-10-04T10:42:31.584Z"
               }
             },
             {
@@ -150,7 +150,7 @@
               },
               "unroll": {
                 "url": null,
-                "attemptedAt": "2026-10-04T10:02:54.530Z"
+                "attemptedAt": "2026-10-04T10:42:31.675Z"
               }
             },
             {
@@ -167,8 +167,8 @@
                 "error": null
               },
               "unroll": {
-                "url": "https://drive.microsoft-cdn.workers.dev/7212a8d481c0bc756c4759cc890339a97586aa8547e3695b5e4b49ecedf3ad73545a26dd96460e83a8a34a19c31b41ce::b33270acb5eb47efc964c2057fbc133d/1398009276/Dune%20-%20Part%20Two%20(2024)%201080p%20Hybrid%20BluRay%20[Hindi%20DDP%205.1%20+%20English%20DDP%207.1]%20x264%20(c0kE-LUMiX)%204KHDHub.com.mkv",
-                "attemptedAt": "2026-10-04T10:02:58.636Z"
+                "url": "https://hubloud-downloadcdn.vi-isp.workers.dev/a053551cd6fc68491e2ffc76dda49b7a69c4f88524a48835d866891e6f6bfe35092237d351ebc53d0781883a1352c8ac::58bc1e066c68a58ddc4b0bb7d4447eb1/1398009276/Dune%20-%20Part%20Two%20(2024)%201080p%20Hybrid%20BluRay%20[Hindi%20DDP%205.1%20+%20English%20DDP%207.1]%20x264%20(c0kE-LUMiX)%204KHDHub.com.mkv",
+                "attemptedAt": "2026-10-04T10:42:35.730Z"
               }
             },
             {
@@ -186,7 +186,7 @@
               },
               "unroll": {
                 "url": null,
-                "attemptedAt": "2026-10-04T10:02:58.800Z"
+                "attemptedAt": "2026-10-04T10:42:35.794Z"
               }
             },
             {
@@ -203,8 +203,8 @@
                 "error": null
               },
               "unroll": {
-                "url": "https://files.netflix-server-69.workers.dev/2f28f1b235075daf98da73c3f6780aecefb174981e8c24e953795d3e126637af7ad0b4d11e513bec516e23fcee3efbdc::2dc9e8c3597071e26d4479aeee98e344/1398009276/Dune%20-%20Part%20Two%20(2024)%201080p%20UHD%20DV%20HDR%2010bit%20HEVC%20[Hindi%20DDP%205.1%20+%20English%20DDP%207.1]%20x265%20(c0kE-LUMiX)%204KHDHub.com.mkv",
-                "attemptedAt": "2026-10-04T10:03:02.886Z"
+                "url": "https://video-downloads.googleusercontent.com/ADGPM2koPsNnDmjRKwS-CTAgaJaC3_dbLqaZAJvPxyyP6YIzogEOhoB4XspfexBe6Ga3wc5CACJVaaemdgebgPB3HjOMtriIUOfZv8xYr5bcF0mLT8priItLKVrvwd6hwUupkYftyP6pAkN2H8ixRVhFxYbhpB0rN37-uWHyv12EGsQMoaV4eV7fdmTG4jIUPenYJxF7nplnRw6H5moSwUM6iwdvoXctsJTpjcigehVydkxBmgmnt4A",
+                "attemptedAt": "2026-10-04T10:42:40.606Z"
               }
             },
             {
@@ -222,7 +222,7 @@
               },
               "unroll": {
                 "url": null,
-                "attemptedAt": "2026-10-04T10:03:03.056Z"
+                "attemptedAt": "2026-10-04T10:42:40.684Z"
               }
             },
             {
@@ -240,7 +240,7 @@
               },
               "unroll": {
                 "url": "https://pixeldrain.dev/api/file/ENbe9c4d?download",
-                "attemptedAt": "2026-10-04T10:03:07.147Z"
+                "attemptedAt": "2026-10-04T10:42:44.738Z"
               }
             },
             {
@@ -258,7 +258,7 @@
               },
               "unroll": {
                 "url": null,
-                "attemptedAt": "2026-10-04T10:03:07.310Z"
+                "attemptedAt": "2026-10-04T10:42:44.817Z"
               }
             },
             {
@@ -268,7 +268,7 @@
               "redirector": false,
               "unroll": {
                 "url": null,
-                "attemptedAt": "2026-10-04T10:03:07.310Z"
+                "attemptedAt": "2026-10-04T10:42:44.817Z"
               }
             },
             {
@@ -278,7 +278,7 @@
               "redirector": false,
               "unroll": {
                 "url": null,
-                "attemptedAt": "2026-10-04T10:03:07.310Z"
+                "attemptedAt": "2026-10-04T10:42:44.818Z"
               }
             },
             {
@@ -288,7 +288,7 @@
               "redirector": false,
               "unroll": {
                 "url": null,
-                "attemptedAt": "2026-10-04T10:03:07.310Z"
+                "attemptedAt": "2026-10-04T10:42:44.818Z"
               }
             },
             {
@@ -298,7 +298,7 @@
               "redirector": false,
               "unroll": {
                 "url": null,
-                "attemptedAt": "2026-10-04T10:03:07.310Z"
+                "attemptedAt": "2026-10-04T10:42:44.818Z"
               }
             },
             {
@@ -308,7 +308,7 @@
               "redirector": false,
               "unroll": {
                 "url": null,
-                "attemptedAt": "2026-10-04T10:03:07.310Z"
+                "attemptedAt": "2026-10-04T10:42:44.818Z"
               }
             },
             {
@@ -318,7 +318,7 @@
               "redirector": false,
               "unroll": {
                 "url": null,
-                "attemptedAt": "2026-10-04T10:03:07.310Z"
+                "attemptedAt": "2026-10-04T10:42:44.818Z"
               }
             },
             {
@@ -328,7 +328,7 @@
               "redirector": false,
               "unroll": {
                 "url": null,
-                "attemptedAt": "2026-10-04T10:03:07.310Z"
+                "attemptedAt": "2026-10-04T10:42:44.818Z"
               }
             },
             {
@@ -338,7 +338,7 @@
               "redirector": false,
               "unroll": {
                 "url": null,
-                "attemptedAt": "2026-10-04T10:03:07.310Z"
+                "attemptedAt": "2026-10-04T10:42:44.818Z"
               }
             },
             {
@@ -348,7 +348,7 @@
               "redirector": false,
               "unroll": {
                 "url": null,
-                "attemptedAt": "2026-10-04T10:03:07.310Z"
+                "attemptedAt": "2026-10-04T10:42:44.818Z"
               }
             }
           ],
@@ -357,24 +357,24 @@
             "reason": null,
             "tier": "4khdhub",
             "server": "ursa",
-            "rawUrl": "https://files.netflix-server-69.workers.dev/2f28f1b235075daf98da73c3f6780aecefb174981e8c24e953795d3e126637af7ad0b4d11e513bec516e23fcee3efbdc::2dc9e8c3597071e26d4479aeee98e344/1398009276/Dune%20-%20Part%20Two%20(2024)%201080p%20UHD%20DV%20HDR%2010bit%20HEVC%20[Hindi%20DDP%205.1%20+%20English%20DDP%207.1]%20x265%20(c0kE-LUMiX)%204KHDHub.com.mkv",
+            "rawUrl": "https://video-downloads.googleusercontent.com/ADGPM2koPsNnDmjRKwS-CTAgaJaC3_dbLqaZAJvPxyyP6YIzogEOhoB4XspfexBe6Ga3wc5CACJVaaemdgebgPB3HjOMtriIUOfZv8xYr5bcF0mLT8priItLKVrvwd6hwUupkYftyP6pAkN2H8ixRVhFxYbhpB0rN37-uWHyv12EGsQMoaV4eV7fdmTG4jIUPenYJxF7nplnRw6H5moSwUM6iwdvoXctsJTpjcigehVydkxBmgmnt4A",
             "qualityDegraded": false,
             "requestedQuality": "2160p",
             "qualities": [
               {
                 "label": "2160p (4K)",
                 "height": 2160,
-                "url": "https://files.netflix-server-69.workers.dev/2f28f1b235075daf98da73c3f6780aecefb174981e8c24e953795d3e126637af7ad0b4d11e513bec516e23fcee3efbdc::2dc9e8c3597071e26d4479aeee98e344/1398009276/Dune%20-%20Part%20Two%20(2024)%201080p%20UHD%20DV%20HDR%2010bit%20HEVC%20[Hindi%20DDP%205.1%20+%20English%20DDP%207.1]%20x265%20(c0kE-LUMiX)%204KHDHub.com.mkv"
+                "url": "https://video-downloads.googleusercontent.com/ADGPM2koPsNnDmjRKwS-CTAgaJaC3_dbLqaZAJvPxyyP6YIzogEOhoB4XspfexBe6Ga3wc5CACJVaaemdgebgPB3HjOMtriIUOfZv8xYr5bcF0mLT8priItLKVrvwd6hwUupkYftyP6pAkN2H8ixRVhFxYbhpB0rN37-uWHyv12EGsQMoaV4eV7fdmTG4jIUPenYJxF7nplnRw6H5moSwUM6iwdvoXctsJTpjcigehVydkxBmgmnt4A"
               },
               {
                 "label": "2160p (4K DV HDR)",
                 "height": 2160,
-                "url": "https://myfiles.directfile2.workers.dev/aab86b0e3435478b5361697e0f15f9e63e558dfaa3be9f230ec8907325f4d5bdfd75dc201b36618b89f61dd5b2e5e8de::e19541cf4483577f01cdfb6533566ce6/1398009276/Dune%20-%20Part%20Two%20(2024)%202160p%20UHD%20BluRay%20DV%20HDR%2010bit%20HEVC%20[Hindi%20DDP%205.1%20+%20English%20TrueHD%20Atmos%207.1]%20x265%20(W4NK3R-LUMiX)%204KHDHub.com.mkv"
+                "url": "https://myfiles.directfile.workers.dev/ae62d80343bc912f0e34f0e90a773aaf78d0045e3e23085e57b666c53d410151e028ef139050bf69634035daf1d49f90::0ea07149002ef1b7c1d7a6e426802992/1398009276/Dune%20-%20Part%20Two%20(2024)%202160p%20UHD%20BluRay%20DV%20HDR%2010bit%20HEVC%20[Hindi%20DDP%205.1%20+%20English%20TrueHD%20Atmos%207.1]%20x265%20(W4NK3R-LUMiX)%204KHDHub.com.mkv"
               },
               {
                 "label": "1080p",
                 "height": 1080,
-                "url": "https://drive.microsoft-cdn.workers.dev/7212a8d481c0bc756c4759cc890339a97586aa8547e3695b5e4b49ecedf3ad73545a26dd96460e83a8a34a19c31b41ce::b33270acb5eb47efc964c2057fbc133d/1398009276/Dune%20-%20Part%20Two%20(2024)%201080p%20Hybrid%20BluRay%20[Hindi%20DDP%205.1%20+%20English%20DDP%207.1]%20x264%20(c0kE-LUMiX)%204KHDHub.com.mkv"
+                "url": "https://hubloud-downloadcdn.vi-isp.workers.dev/a053551cd6fc68491e2ffc76dda49b7a69c4f88524a48835d866891e6f6bfe35092237d351ebc53d0781883a1352c8ac::58bc1e066c68a58ddc4b0bb7d4447eb1/1398009276/Dune%20-%20Part%20Two%20(2024)%201080p%20Hybrid%20BluRay%20[Hindi%20DDP%205.1%20+%20English%20DDP%207.1]%20x264%20(c0kE-LUMiX)%204KHDHub.com.mkv"
               },
               {
                 "label": "1080p (SDR)",
@@ -685,14 +685,14 @@
             "reason": null,
             "tier": "moviesdrive4k",
             "server": "ursa",
-            "rawUrl": "https://movies.aiplexmedia-server.workers.dev/a8ec8983152f10d7f5bbb575b02361b821ee11dfceabff866969eabe5fae180859d5d05b594e9bbcc2740ad5d7595797::ae89494e882b016083cb7b9c82fbc18e/1398009276/[Moviesdrives.com]-Dune.Part.Two.2024.2160p.4K.AMZN.WEB-DL.SDR.[Hindi.DDP5.1+English.DDPA5.1].H.265.[moviesdrives.com].mkv",
+            "rawUrl": "https://fancy-mountain-7dfb.terapiyo232.workers.dev/a2c68228ce0b7da387b26b929830d2317251c895b2dc92bcd177e6a385108e1e7915fc82f87dd9ee40cc14f772bc4fed::22d90364f02c15a6104e65ebf0ce2f2d/1398009276/[Moviesdrives.com]-Dune.Part.Two.2024.2160p.4K.AMZN.WEB-DL.SDR.[Hindi.DDP5.1+English.DDPA5.1].H.265.[moviesdrives.com].mkv",
             "qualityDegraded": false,
             "requestedQuality": "2160p",
             "qualities": [
               {
                 "label": "2160p (4K)",
                 "height": 2160,
-                "url": "https://movies.aiplexmedia-server.workers.dev/a8ec8983152f10d7f5bbb575b02361b821ee11dfceabff866969eabe5fae180859d5d05b594e9bbcc2740ad5d7595797::ae89494e882b016083cb7b9c82fbc18e/1398009276/[Moviesdrives.com]-Dune.Part.Two.2024.2160p.4K.AMZN.WEB-DL.SDR.[Hindi.DDP5.1+English.DDPA5.1].H.265.[moviesdrives.com].mkv"
+                "url": "https://fancy-mountain-7dfb.terapiyo232.workers.dev/a2c68228ce0b7da387b26b929830d2317251c895b2dc92bcd177e6a385108e1e7915fc82f87dd9ee40cc14f772bc4fed::22d90364f02c15a6104e65ebf0ce2f2d/1398009276/[Moviesdrives.com]-Dune.Part.Two.2024.2160p.4K.AMZN.WEB-DL.SDR.[Hindi.DDP5.1+English.DDPA5.1].H.265.[moviesdrives.com].mkv"
               },
               {
                 "label": "1080p",
@@ -712,7 +712,7 @@
           "failureReasons": [],
           "search": {
             "status": 200,
-            "latencyMs": 564,
+            "latencyMs": 424,
             "error": null,
             "match": "Dune: Part Two (2024)"
           },
@@ -732,46 +732,46 @@
               "unroll": "https://pixeldrain.dev/api/file/XKJ8hmH6?download"
             },
             {
+              "quality": "480p",
+              "height": 480,
+              "url": "https://frosty-snowflake-407a.renker2364.workers.dev/?vcloud=https://vcloud.fit/s2ocmccch4zu0jy",
+              "description": "https://frosty-snowflake-407a.renker2364.workers.dev/?vcloud=https://vcloud.fit/s2ocmccch4zu0jy, Link2, Link3, Link4, Link5, Link6, Link7, Dune: Part Two (2024) {Hindi-English} 480p AMZN WEB-DL [590MB], 590MB https://frosty-snowflake-407a.renker2364.workers.dev/?vcloud=https://vcloud.fit/s2ocmccch4zu0jy, Link2, Link3, Link4, Link5, Link6, Link7, Dune: Part Two (2024) {Hindi-English} 480p AMZN WEB-DL [590MB], 590MB",
+              "unroll": "https://pixeldrain.dev/api/file/ENyoc1L6?download"
+            },
+            {
               "quality": "1080p",
               "height": 1080,
               "url": "https://frosty-snowflake-407a.renker2364.workers.dev/?vcloud=https://vcloud.fit/qham98bwhss8p9m",
               "description": "https://frosty-snowflake-407a.renker2364.workers.dev/?vcloud=https://vcloud.fit/qham98bwhss8p9m, Link2, Link3, Link4, Link5, Link6, Link7, Dune: Part Two (2024) {Hindi-English} 1080p AMZN WEB-DL 10Bit HEVC [2.2GB], 2.2GB https://frosty-snowflake-407a.renker2364.workers.dev/?vcloud=https://vcloud.fit/qham98bwhss8p9m, Link2, Link3, Link4, Link5, Link6, Link7, Dune: Part Two (2024) {Hindi-English} 1080p AMZN WEB-DL 10Bit HEVC [2.2GB], 2.2GB",
-              "unroll": "https://556138dca7367763ed46eecaa4284eca.r2.cloudflarestorage.com/hub2/Dune.Part.Two.2024.1080p.10Bit.WEB-DL.Hindi.English.Esubs.Vegamovies.To.mkv?X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Credential=26b6cf8a0399b5880643f585c8c3dbe5%2F20261004%2Fauto%2Fs3%2Faws4_request&X-Amz-Date=20261004T092756Z&X-Amz-Expires=10800&X-Amz-SignedHeaders=host&response-content-disposition=Dune.Part.Two.2024.1080p.10Bit.WEB-DL.Hindi.English.Esubs.Vegamovies.To.mkv&X-Amz-Signature=eb3a4126a6df390ceeb8621270372b6d0b011271f5fde974597808b5e0b49e5c"
-            },
-            {
-              "quality": "1080p",
-              "height": 1080,
-              "url": "https://frosty-snowflake-407a.renker2364.workers.dev/?vcloud=https://vcloud.fit/ukqerqvnj1nibre",
-              "description": "https://frosty-snowflake-407a.renker2364.workers.dev/?vcloud=https://vcloud.fit/ukqerqvnj1nibre, Link2, Link3, Link4, Link5, Link6, Link7, Dune: Part Two (2024) [Hindi AMZN DDP5.1 640kbps + English AAC 5.1] 1080p 10bit DS4K WEBRip x265 HEVC Esubs [2.7GB], 2.7GB https://frosty-snowflake-407a.renker2364.workers.dev/?vcloud=https://vcloud.fit/ukqerqvnj1nibre, Link2, Link3, Link4, Link5, Link6, Link7, Dune: Part Two (2024) [Hindi AMZN DDP5.1 640kbps + English AAC 5.1] 1080p 10bit DS4K WEBRip x265 HEVC Esubs [2.7GB], 2.7GB",
-              "unroll": "https://556138dca7367763ed46eecaa4284eca.r2.cloudflarestorage.com/hub2/Dune.Part.Two.2024.1080p.10bit.DS4K.WEBRip.%5BHindi.AMZN.DDP5.1.640kbps.%2B.English.AAC.5.1%5D.x265.HEVC.Esubs.~.Vegamovies.To.mkv?X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Credential=26b6cf8a0399b5880643f585c8c3dbe5%2F20261004%2Fauto%2Fs3%2Faws4_request&X-Amz-Date=20261004T080912Z&X-Amz-Expires=10800&X-Amz-SignedHeaders=host&response-content-disposition=Dune.Part.Two.2024.1080p.10bit.DS4K.WEBRip.%5BHindi.AMZN.DDP5.1.640kbps.%2B.English.AAC.5.1%5D.x265.HEVC.Esubs.~.Vegamovies.To.mkv&X-Amz-Signature=55fbc435a19e151d4186f98225709554e9c2daa221cde623c566a935224815e6"
-            },
-            {
-              "quality": "720p",
-              "height": 720,
-              "url": "https://frosty-snowflake-407a.renker2364.workers.dev/?vcloud=https://vcloud.fit/bgj9nngxjjjx1n1",
-              "description": "https://frosty-snowflake-407a.renker2364.workers.dev/?vcloud=https://vcloud.fit/bgj9nngxjjjx1n1, Link2, Link3, Link4, Link5, Link6, Link7, Dune: Part Two (2024) {Hindi-English} 720p AMZN WEB-DL x264 [1.5GB], 1.5GB https://frosty-snowflake-407a.renker2364.workers.dev/?vcloud=https://vcloud.fit/bgj9nngxjjjx1n1, Link2, Link3, Link4, Link5, Link6, Link7, Dune: Part Two (2024) {Hindi-English} 720p AMZN WEB-DL x264 [1.5GB], 1.5GB",
-              "unroll": "https://556138dca7367763ed46eecaa4284eca.r2.cloudflarestorage.com/hub2/Dune.Part.Two.2024.720p.WEB-DL.HIN-ENG.x264.MSub.Vegamovies.To.mkv?X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Credential=26b6cf8a0399b5880643f585c8c3dbe5%2F20261004%2Fauto%2Fs3%2Faws4_request&X-Amz-Date=20261004T080909Z&X-Amz-Expires=10800&X-Amz-SignedHeaders=host&response-content-disposition=Dune.Part.Two.2024.720p.WEB-DL.HIN-ENG.x264.MSub.Vegamovies.To.mkv&X-Amz-Signature=0b7dadc8a04888a0b5ca9c11ba82c9dbb42df1c138187cf5b7c1c690e758dee7"
+              "unroll": "https://video-downloads.googleusercontent.com/ADGPM2lqS8WW54ixKU7QnmMJg6Ec40t5qzwnpAO_i4b2C-JU0I9o19s9lSi1cR7p7R-RP4gTDYSy6wFJDPR7YnTwx6nfsMgWMjve0hxFi-3bNBoL-IAE5vQqilHAoorqg4WIwHvId_8XejsBcTzpe-MqllgJ6FRjUxNyXSOFW92k1S6EY5bFo8udcYF_Q4Dx_AGk-XDXp6UOkqLY9OSrxUnai5SuaMfTlZgjMwQhO7g_eB1Ts5vGr8viky-CuYprv0Kb6fEPIQNn80IuA6kCLSktzvTZefeDYG7mHukoi4aZoYIY4AXTZHU6jvC30_xpEq1b8Y0ytsHsxcLZtLzDqdn4Q-p1dgXVOqLYdXATyiDjiltg-E4whgKKPeSAgCQwC9lyjcfhEo7gRNdugeLCGCt33wfxgnlxNDrrAe4mPDp45__VOsGXeQSbhBy25urWSCY8QNoKYsnyUfrJEkuZtjgJB4gjds5Rom9LJBUZy6uzqB7Pzhip5GzpbJ-A9PwklSoODWNOqIV3MwFqdHpf8HYCPKamwiQfEsgigHufV_8_mj9QkhSRWqkpW4do3fshOtrruMzVe5F_1LXQGc0mHAHAj0Xe6DtULrlso7tb7MxGxQitssb1IyB_6aUCIk2mUInG-RDp2Q4kPvDNFNxDi8ISBYCfns4Y6wd8XX4HEqde-veSWpLy3-UIemZpYkovHTMNXQVKOQdm_G-Nohvf7NOuHk6jF-JHZixPVAWYPTHsJ_L0NfbFpt7wT27X1lIUA8dXmMcIYuj1Tm0UU8Eu_PY6kjjwRGK18LnvL-brozneQUl6oJkFGKtOlRMeY3iM9QTtsn-QMzTQk63iKQP3m_pwcC0SZyxtUjyfQ1HGXbQnZ2OUNLc48guuT8Qf0t-GCUhCyKvi3rNjf4LfxhB0LFuFeQ3wd2uuXEwM-FIW6qGvEcEF5WulRKBs8K1RB4AvNNg0bZuig24wqcUUsfGgQi4p5VT4aZ7ifuu0Vq4pi0UC4-Gdzj_croHyAEIL0VSTa890lqaaQjC42640BpcfqtVMhHZUa6giVPBiQyD20BQHHF6TxrJCbXLk0T91VtOkycDkO4sKFr-eLK6HD95tWbaXbSbUCZ6t6G5_ZMdqJmCZUMOIbrO7Xi0hpcFz9CEab-JhPlcXMztHL3uBb5WtgTbhHGP4SugmXw"
             },
             {
               "quality": "720p",
               "height": 720,
               "url": "https://frosty-snowflake-407a.renker2364.workers.dev/?vcloud=https://vcloud.fit/ekefi7u51fti5ux",
               "description": "https://frosty-snowflake-407a.renker2364.workers.dev/?vcloud=https://vcloud.fit/ekefi7u51fti5ux, Link2, Link3, Link4, Link5, Link6, Link7, Dune: Part Two (2024) [Org Hindi DDP 5.1 192Kbps + English AAC 5.1] 720p AMZN WEB-DL 10Bit HEVC [1GB], 1GB https://frosty-snowflake-407a.renker2364.workers.dev/?vcloud=https://vcloud.fit/ekefi7u51fti5ux, Link2, Link3, Link4, Link5, Link6, Link7, Dune: Part Two (2024) [Org Hindi DDP 5.1 192Kbps + English AAC 5.1] 720p AMZN WEB-DL 10Bit HEVC [1GB], 1GB",
-              "unroll": "https://556138dca7367763ed46eecaa4284eca.r2.cloudflarestorage.com/hub2/Dune.Part.Two.2024.720p.10bit.AMZN.WEBRip.x265.HEVC.%5BOrg.Hindi.DDP.5.1.192Kbps.%2B.English.AAC.5.1%5D.ESubs.Vegamovies.To.mkv?X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Credential=26b6cf8a0399b5880643f585c8c3dbe5%2F20261004%2Fauto%2Fs3%2Faws4_request&X-Amz-Date=20261004T080912Z&X-Amz-Expires=10800&X-Amz-SignedHeaders=host&response-content-disposition=Dune.Part.Two.2024.720p.10bit.AMZN.WEBRip.x265.HEVC.%5BOrg.Hindi.DDP.5.1.192Kbps.%2B.English.AAC.5.1%5D.ESubs.Vegamovies.To.mkv&X-Amz-Signature=d41ae7cbac5df3d25147e22ec939311db21b756db5b660461eb6ab6889ee0512"
+              "unroll": "https://video-downloads.googleusercontent.com/ADGPM2lXcn3_k9B2gQCgcWwIPhbR2dFm1tB7jEwZOluHIpF-BNUFC7sbKR3W19kcUenpvn-0mgyQZGeFkgGdtGh2zbA9Jbm3S9Sd8FhDIUy1xfYdJoxliUXgONdjfMMEXkPjV-V28waFQf155J2wjDPhmGs5MCM8RcrsV8fGRsMuGA13edslGSfvRY-TcK0Wf0QR-yC1iI7xEZUKamrRPPF8ssoTDGzx_I2SUGkbeWKwwC4pWjioYg1UgKIpU5CkUwFpooaxVv1MOM4FhEkb3ILgcPdKW2PRLNKu4U5Nuo76r2dpIye5LF272za78uHJ1UG0XfLl6bhT_95C3VgTiKuJruAylCtHuPoYBrGzrXBPCIRbBD5iNpsYmmScpBPLiy1MBVDGC2ETHbBVKdd2FzD7BP27LqR_izf1IClyjACC3-kKCDeZRupZ3zVoSMq9nFVz-cN8L7ToGWRTsztxYtG_KscPwjf05bogTTcHHVKTVgyNoLM3dviu0649xkhlUC02a3AZ0F6hoi1ziIqXwAGydCv1Hvf67euhS3bJhDBkZO_KuWHyXhCNlE352XRVJNlQTwTbvw5wK7lqEHfQe-JmtOZ8-zDRLkV_2mWspaRi6texXx1eOXAy3e6tTQna24OaIwYdZoJ-n3wbF1oz31lDSyAUq59ANHUAHoH3O-x3iU8axzpEdPZfKHbHl1rwnQznN-QgMBIzC5qo5sdGFnQBzTND0IKVcVFb_RxOgAjNnoN-9t2rhkqaCbn3rsxK-BO54ecM3KfLwnRCYVlbEm8hNupEllt5VQqkktQ5Z9oFmTp_xg0wjUyl6KJS86MTvGXN7BvrdCIGdrUrOcWF6sMy9VKbtPS22ulEhJKJMTDMfvXyaXFJnhtr1ppsMB6jWuZxST_jTI5ppt9rWev28zIbslHgTwdValwk_r7elpUCrabHO1bDCMJiL4NlXJtHRnht7xrpqSA0C1oy_cCyva11NhzfLBpse183G6nSNRRLLJn1NUS6u8d2wZpKgA_uutOICGqblYgB_im3-l0cFeFnt1bA0ViwywTTzvRCZjtSvTTWCuYSppsR8X9A9PEDru4K5ucA7lXJgs_dtZ0A3V9tDrTPbJoFdKFvwK2luUq-_bzyaIU3d1Whrj83GxriDn04vAjl02u2pLQ9mrTWA2-tW3oReTgcuQ"
+            },
+            {
+              "quality": "1080p",
+              "height": 1080,
+              "url": "https://frosty-snowflake-407a.renker2364.workers.dev/?vcloud=https://vcloud.fit/ukqerqvnj1nibre",
+              "description": "https://frosty-snowflake-407a.renker2364.workers.dev/?vcloud=https://vcloud.fit/ukqerqvnj1nibre, Link2, Link3, Link4, Link5, Link6, Link7, Dune: Part Two (2024) [Hindi AMZN DDP5.1 640kbps + English AAC 5.1] 1080p 10bit DS4K WEBRip x265 HEVC Esubs [2.7GB], 2.7GB https://frosty-snowflake-407a.renker2364.workers.dev/?vcloud=https://vcloud.fit/ukqerqvnj1nibre, Link2, Link3, Link4, Link5, Link6, Link7, Dune: Part Two (2024) [Hindi AMZN DDP5.1 640kbps + English AAC 5.1] 1080p 10bit DS4K WEBRip x265 HEVC Esubs [2.7GB], 2.7GB",
+              "unroll": "https://video-downloads.googleusercontent.com/ADGPM2mHiTPa1cr94f5JQagXQH6npHepO3-UwJgWm_T1Yu3qLm4OPRrTPSiF90T3lxnzbgllhe7jEG9vJzVfzvgr4aF4IluDaVzcWBpkK6uLVEGUicMzFMJ-onXZPMotDgetZ1CwOucH-wmkLApp2ivGtiXTi_s_BXqdcXdX5Un35uRn61YxPq9eDcfZ3_DwGmQo3216WerZW1daOPGG5er5007mbsf8GvReREKjuUyHHl_beC4d6rF5gTbbZkjAToFkogSxllPvg7rdXWz0lNikHpHOrVGZHHPkWqtIl7ddfh9t5DczL-itpD0AQxl9JcPN5dCXNP50_yyMfeyUhyO1gS3AMYTKbulfqQfBspwUoYo5p1qUBcHc8YLm6yY-SgRpR-jzg7ISvI0U0of6M4F6CfgjajxIXFYeQdaB--4mOz5X7XQEcyJQr3igHqGYdyWRMNhPzYi2kSn770gVajzGGXwYn63mNbpf09xCs5lrcpC59c3k814UR-faqsPJ7zsAS36M8ZAF4LBtxCqqn0QMYMuFBWPN3qHAzRisOibNV51gZSc1HuxbSCSwVnuWwsNt-dyyQw7Ekqr_OzFfecgFUNqmvLYhqhywQmavMxdMV5DxaUOQrlpyWiscBrHuxSaxs-lArT9F5LSt7nnGibHVlNPY9T6U_pH800niH7iEOfSDDbqi6b20mR7hkUfTYJ43lO0XGNPmWeb5JoCRKkMW7Ll_oHwwZoPkA2UomJRlkkDtVeDcA9DcCm2pBduwH4KeohTrHKcbxEjcT_J9-58Y4Hv9pRuLRsIoo886K9o9DCTK_jEb2c4QB35gbv49tnSvu0u0SOTxiUbwlm6zQuaWPn8-j-MQq5SxN1YGI7AfC80fbymcDxv0IeiNcwlcR29wyZ-kAC2sPi0_ezMZxxvyf54HaCQjXSGDf9pvC9jwxwAkH-gPCCl2pIlFg8Q0XV8zG_mYJvJi6AmE89I5o2jjQxTN5p4ZMlKLreSeK9ZpIIWwcfCvvlQLDKx43Bvjs0tmFdVaWZHoqflpJoNTQsWDtJGYYSPW2npwKU-izqwPwxoO1CuXvi2cgN22L1nOuNeE4efeHkVQAXu65HcLZJvSv2XgNFA7BTvXtc9oLyP5vnr5E-KxAfsbQDDiaQiT_dsTnRQSRBB5F2w9TiASBF62X80Ozgc9mA"
+            },
+            {
+              "quality": "720p",
+              "height": 720,
+              "url": "https://frosty-snowflake-407a.renker2364.workers.dev/?vcloud=https://vcloud.fit/bgj9nngxjjjx1n1",
+              "description": "https://frosty-snowflake-407a.renker2364.workers.dev/?vcloud=https://vcloud.fit/bgj9nngxjjjx1n1, Link2, Link3, Link4, Link5, Link6, Link7, Dune: Part Two (2024) {Hindi-English} 720p AMZN WEB-DL x264 [1.5GB], 1.5GB https://frosty-snowflake-407a.renker2364.workers.dev/?vcloud=https://vcloud.fit/bgj9nngxjjjx1n1, Link2, Link3, Link4, Link5, Link6, Link7, Dune: Part Two (2024) {Hindi-English} 720p AMZN WEB-DL x264 [1.5GB], 1.5GB",
+              "unroll": "https://video-downloads.googleusercontent.com/ADGPM2mhLrhXPLUsY5_YVCFg-MmJ62sFU-FtV2th5Yk7o2MV9puhyFKUWNhuCv9_UXYygjaAfPXWLHUHKE-2vydKBj0jmGrk0Gf5DhBkk4dg88PgcoK4WJFaitdevQcJ_pVPy011O1Mb53BhOtsQMqaDQucIbkqMnBIrBOiS9FyWcBxsqf26eyC7l31xlv_W2HbE3OkSd_uOXN0g-kstKi6wVcMeKkgshHm5w4pZNEp8no_T4lI18GYZbHywnx6-R3d7gBPC9ME9UM_kKejJVFiFtUMBlpY2kVdzPtSlYLJIYAT_FnrDSPSpdTRHBGLtR28BuNy2KOrX0x6AgoJxYVJNIYZv_PMw0DxXgiCoI2V97YdOCSmv8BTjkudYOxMjmAO--8bgcf9j1hPb8-MAw2RMrk4qRU4qFRKIJeYWPsrwOlvQCqnu4ZqXp8v2cK3WlPOYCka_TPty9P7e9SQe2pZ86k1gW_3B4lrC3YS_G8P9X6GdN_9-wjwpnnpP8FLowziS3eG_awLHrnO7_rpWb9vZjkcFZrQvKd0SB76xQjs3-0K7R-WjoH9ecfGbPTtyQQl33bmzg3mTYMoSWz0amzGrvY7OmC8UAhXTknbbLP8wCkGnm8vM-NyWoqGRYEu1CHXjlGjI7BH5mVJG9UpepHyAuzMm3vnfQ693A8E1acyoQRl0rKzKVGPqTSypidzYLf7La0prU9uY00PqJkA2u618qTUNTFz08Ld25608vQbG_Xbz3n6rm2TNtrjhZJ47sLVHjkw4Yw1Blnggf3h1jAs5fp2kDa0b540O2YOR0E6ts97edtcTVu0GEZbtIaJTuSWXgPKqekVhYW4Y8HjfjAAlbcwbg5npf-mWk1sbnVVE7pWmjCcdzdEysg5s5ENufdd4p5xlio-KR2Et0uWeyJlxMBFdn8jNXOjdrKdzXyys0pkE151sLLUZjFmS3SQZYTfe1RbdYSt-62q0BuTWQlAc8gEcLXT7ZvwWYA3PLhM4g3onHcLYMpE9_gDPq567E8POJq5VzuTNTR2IFNWckA3KcTmxlYxZskcPI0LbGFhvUhtgBqZM_1mxBuMOdLKP0cnBzQzI6NNF6U5sv2IjcXVb4HY-9uKbeu9H0HnTSQJeGcBeLIHquvpaqeToY9tUEU3lxznVrGNBkqhIAgZKRx1NHCxab0UDFA"
             },
             {
               "quality": "1080p",
               "height": 1080,
               "url": "https://frosty-snowflake-407a.renker2364.workers.dev/?vcloud=https://vcloud.fit/i5jxwewaivmwxva",
               "description": "https://frosty-snowflake-407a.renker2364.workers.dev/?vcloud=https://vcloud.fit/i5jxwewaivmwxva, Link2, Link3, Link4, Link5, Link6, Link7, [60FPS] Dune: Part Two (2024) [Org Hindi DDP 5.1 640Kbps + English DDP 5.1] 1080p 10bit [60FPS] AMZN WEBRip x265 HEVC [5.6GB], 5.6GB https://frosty-snowflake-407a.renker2364.workers.dev/?vcloud=https://vcloud.fit/i5jxwewaivmwxva, Link2, Link3, Link4, Link5, Link6, Link7, [60FPS] Dune: Part Two (2024) [Org Hindi DDP 5.1 640Kbps + English DDP 5.1] 1080p 10bit [60FPS] AMZN WEBRip x265 HEVC [5.6GB], 5.6GB",
-              "unroll": "https://556138dca7367763ed46eecaa4284eca.r2.cloudflarestorage.com/hub2/Dune.-.Part.Two.2024.1080p.10bit.%5B60FPS%5D.AMZN.WEBRip.x265.HEVC.%5BOrg.Hindi.DDP.5.1.640Kbps.%2B.English.DDP.5.1%5D.ESubs.Vegamovies.To.mkv?X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Credential=26b6cf8a0399b5880643f585c8c3dbe5%2F20261004%2Fauto%2Fs3%2Faws4_request&X-Amz-Date=20261004T080912Z&X-Amz-Expires=10800&X-Amz-SignedHeaders=host&response-content-disposition=Dune.-.Part.Two.2024.1080p.10bit.%5B60FPS%5D.AMZN.WEBRip.x265.HEVC.%5BOrg.Hindi.DDP.5.1.640Kbps.%2B.English.DDP.5.1%5D.ESubs.Vegamovies.To.mkv&X-Amz-Signature=998d8ee04490fd659eb8aa6ab17bf084b2a9d2020afdbb80bff894250f15d396"
-            },
-            {
-              "quality": "480p",
-              "height": 480,
-              "url": "https://frosty-snowflake-407a.renker2364.workers.dev/?vcloud=https://vcloud.fit/s2ocmccch4zu0jy",
-              "description": "https://frosty-snowflake-407a.renker2364.workers.dev/?vcloud=https://vcloud.fit/s2ocmccch4zu0jy, Link2, Link3, Link4, Link5, Link6, Link7, Dune: Part Two (2024) {Hindi-English} 480p AMZN WEB-DL [590MB], 590MB https://frosty-snowflake-407a.renker2364.workers.dev/?vcloud=https://vcloud.fit/s2ocmccch4zu0jy, Link2, Link3, Link4, Link5, Link6, Link7, Dune: Part Two (2024) {Hindi-English} 480p AMZN WEB-DL [590MB], 590MB",
-              "unroll": "https://pixeldrain.dev/api/file/ENyoc1L6?download"
+              "unroll": "https://video-downloads.googleusercontent.com/ADGPM2nwNq8DGS0Q_2YNOtup8k0oxVv4EU75St2JlsyQD9FeHaJpqwrqwH9Lo8JLCDYDMoXm-uKvJC0Py5MFo8tQ_4n19iUdedv5cMp1xy97lozpL-rQ4JnKM4Y8thsLaWhEsgEtUtJWWu5B0Os74fL81gReDM--YBw1kEiqTVJpUpnDxWOCpACliPNKQn0SCAgAKv1yyJEiICQyx0fl_-etlceC3mF4uOlyGGOf75wp9dFa-1PNR-ES5Qd8c4ysyxiGreULdOuAvcNbnXK12gtmUsZhhuNEiItVoUtqFFqMYeZP6HzSijwisSELyfV8aYT_llP005JJjmJ-mYiYOo9Fx84AJPWBnWgp91PnbP5aZGxQvP10fbfWwd9M5XhDVypb-opXIszEAhj2dB9zA4CbERmKY-o2sF2hKkpA_9DmsqMuBgju24W0hi1YScWjc0i4Tf-ayvnqX3HU-PnjDzSNY6ROhVopgzvirrhBmJOgLImrs93mevhRMYh0_7zmt2tT1iqS3LS4uY1izE7HVy1kmnnjK33ii3J3L-fcDCUPgi-fOUgm4xcQXUbnUD5R9dgRFGm3cBGPVTa0lTjR1Jt3NuKca989Pl3NZXL8aDwQjf_pw7wf0BbwO2pNCYwu183cVtAjtjo_ohtMQV50bAZgjxm8XifsZuJ6lESg6S_Hg61F2fyRiPsjznTPLSvExEfCquzG92RVouivKsiQzVSGStxB8RIn__nGtojgLP9pcj7_fngK6KevSmE8fykFWR1cqZuJ8sZODXHDJRyRo7Kkxj7rjon6r3b5OdDjF-tm3izh17rwp9YYN2QiIqUU61KtL4zSBSQX34kvr3UKlCsf-dNzvDpPtMVUWmoHh4uM4aAkjprIyZqOX1YC92MJ1ZlR9IW2teDdOE8DVodR5imShSkDch8I3z_R_x9loBw9Ni5gvZaAHVKfGPp5BoD1IfZ6sDUercaZGIpmeSWlycSDuHuty4z9TiwbsH8xM-pDNVBoRjD5pZucZBacEbRlbJXtiQogUf6TwlS0U89E7CcJcvmBVlE6h3skwGctRs9gk8iyL-QMP3PoEiLnDIJXSvcx367UFlKgRXI4sj1An6g33UhmIrLD6E12FAlnecFd35woVw4rhRUaE-LFjiSMHLSzAhAC8JOFrfglcPYtvXGuN4Dg0OFtVA"
             }
           ],
           "resolver": {
@@ -779,14 +779,19 @@
             "reason": null,
             "tier": "hicine4k",
             "server": "ursa",
-            "rawUrl": "https://556138dca7367763ed46eecaa4284eca.r2.cloudflarestorage.com/hub2/Dune.Part.Two.2024.2160p.4K.AMZN.WEB-DL.SDR.%5BHindi.DDP5.1%2BEnglish.DDPA5.1%5D.H.265.Vegamovies.To.mkv?X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Credential=26b6cf8a0399b5880643f585c8c3dbe5%2F20261004%2Fauto%2Fs3%2Faws4_request&X-Amz-Date=20261004T092802Z&X-Amz-Expires=10800&X-Amz-SignedHeaders=host&response-content-disposition=Dune.Part.Two.2024.2160p.4K.AMZN.WEB-DL.SDR.%5BHindi.DDP5.1%2BEnglish.DDPA5.1%5D.H.265.Vegamovies.To.mkv&X-Amz-Signature=fe7d968d1acd67d9f404ca4cbe8e2c1e064db2fdb76d7c4535480f070092b743",
+            "rawUrl": "https://video-downloads.googleusercontent.com/ADGPM2lmQhsXKUojfcu9HZWhGSxfZFBNuJbSK5VI_FPyjDyPeRzPWxN57_PLKsWO_tYA1xX_IhmnMWpqyIDmWQkQmKRIpZOFRi9oUVFzCh0isYUn9v_1ukKXaY9pkfoTp8UUJi6iVLqBHByE_WlaoxyKJv-uCkXnH5lfz0kODvJqzKRgmFRrjQl8nnlmrF0NQCvW14c59qRvw31PyoAGUIvjJgf7NiYM_60WCJr5YAi0dCitvn29hk63RoRPiGHgbKRIRBcozxX3YmQy6jFwyu1GM1bfgWr_ud1Xg85qMjzkjeg4p--DN5PHHFLWcVER5ghGn09QS6o3eX5LU2A4ZFIwgLU-StUop4dDkX7K-40O05RWGIBoT8-RuluceER-SR4i8TsqjT-rcOcpX62DRkYALpFJvUsWFeozsvYfYWXbBGXfAcJN-nEo3QskslCtn0Zlq4B1ChZaPhhXwAwyH8vKJZhrTVkf_75-XFtiSzBB1F5izJNmLZsa3NtQIMUIx53lMA6DP0G0bE4exj5JRMI985CInkix77FC7FfX1AGdcmCE7KbMDeyFDFO8UG5u6RTQaKHa7tfCqb1LbaD3ypXQdAhm8Y1jhDvPzGEJ_UXJfeQapJaLrK97QsERZ8Cv_KygrrKQHz0t5xwlDFKCRYCzJlTpmmHf1XHlnJeBjSARIgrK1j2r4h5XkjgQzDmSPIPjaZiMhRtgQkxMdow-IffOEqAylaEcSW1krV1VBmTGJ3sXXLhXL4ElhK5iMCy1R1h_7gRNMHoEZe9TsjPj9ikTm2YIQiMqfY2m0h8_4uLW-P650LDx1HfIPW0ySaQeh3fdwizJ1bOPHqrPu3378RiVC7FHb5gbS8C5XXgim8kCpZzTqKOUhmrPs470c9l13FcIe5DIcKHf8eNEVCBfwg-NiI9JyP_nVGMGBzKSeqZpA2ujSOrleLweqF_6b73vVckzHgqfuFZsEVqNq_feqDf8pG8mtpnBu-meqvPgZv971-qev_k4VexU8SWRVXkf9O0ZUXvkL0jtzV7TlOINbZDE39f2QrJK5vosxoEQ-6f4ICKS2gh1CBw4tjGRfiOsZNqtts_iYwdatiYrqdgosYulEYiysGgeO9y9HQ2mpa00qyYafuY5SuXjWti9RRoaYZ0fyDdJQ_G1oDL7P-LYlu6xJgsW9efRLA",
             "qualityDegraded": false,
             "requestedQuality": "2160p",
             "qualities": [
               {
                 "label": "2160p (4K)",
                 "height": 2160,
-                "url": "https://556138dca7367763ed46eecaa4284eca.r2.cloudflarestorage.com/hub2/Dune.Part.Two.2024.2160p.4K.AMZN.WEB-DL.SDR.%5BHindi.DDP5.1%2BEnglish.DDPA5.1%5D.H.265.Vegamovies.To.mkv?X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Credential=26b6cf8a0399b5880643f585c8c3dbe5%2F20261004%2Fauto%2Fs3%2Faws4_request&X-Amz-Date=20261004T092802Z&X-Amz-Expires=10800&X-Amz-SignedHeaders=host&response-content-disposition=Dune.Part.Two.2024.2160p.4K.AMZN.WEB-DL.SDR.%5BHindi.DDP5.1%2BEnglish.DDPA5.1%5D.H.265.Vegamovies.To.mkv&X-Amz-Signature=fe7d968d1acd67d9f404ca4cbe8e2c1e064db2fdb76d7c4535480f070092b743"
+                "url": "https://video-downloads.googleusercontent.com/ADGPM2lmQhsXKUojfcu9HZWhGSxfZFBNuJbSK5VI_FPyjDyPeRzPWxN57_PLKsWO_tYA1xX_IhmnMWpqyIDmWQkQmKRIpZOFRi9oUVFzCh0isYUn9v_1ukKXaY9pkfoTp8UUJi6iVLqBHByE_WlaoxyKJv-uCkXnH5lfz0kODvJqzKRgmFRrjQl8nnlmrF0NQCvW14c59qRvw31PyoAGUIvjJgf7NiYM_60WCJr5YAi0dCitvn29hk63RoRPiGHgbKRIRBcozxX3YmQy6jFwyu1GM1bfgWr_ud1Xg85qMjzkjeg4p--DN5PHHFLWcVER5ghGn09QS6o3eX5LU2A4ZFIwgLU-StUop4dDkX7K-40O05RWGIBoT8-RuluceER-SR4i8TsqjT-rcOcpX62DRkYALpFJvUsWFeozsvYfYWXbBGXfAcJN-nEo3QskslCtn0Zlq4B1ChZaPhhXwAwyH8vKJZhrTVkf_75-XFtiSzBB1F5izJNmLZsa3NtQIMUIx53lMA6DP0G0bE4exj5JRMI985CInkix77FC7FfX1AGdcmCE7KbMDeyFDFO8UG5u6RTQaKHa7tfCqb1LbaD3ypXQdAhm8Y1jhDvPzGEJ_UXJfeQapJaLrK97QsERZ8Cv_KygrrKQHz0t5xwlDFKCRYCzJlTpmmHf1XHlnJeBjSARIgrK1j2r4h5XkjgQzDmSPIPjaZiMhRtgQkxMdow-IffOEqAylaEcSW1krV1VBmTGJ3sXXLhXL4ElhK5iMCy1R1h_7gRNMHoEZe9TsjPj9ikTm2YIQiMqfY2m0h8_4uLW-P650LDx1HfIPW0ySaQeh3fdwizJ1bOPHqrPu3378RiVC7FHb5gbS8C5XXgim8kCpZzTqKOUhmrPs470c9l13FcIe5DIcKHf8eNEVCBfwg-NiI9JyP_nVGMGBzKSeqZpA2ujSOrleLweqF_6b73vVckzHgqfuFZsEVqNq_feqDf8pG8mtpnBu-meqvPgZv971-qev_k4VexU8SWRVXkf9O0ZUXvkL0jtzV7TlOINbZDE39f2QrJK5vosxoEQ-6f4ICKS2gh1CBw4tjGRfiOsZNqtts_iYwdatiYrqdgosYulEYiysGgeO9y9HQ2mpa00qyYafuY5SuXjWti9RRoaYZ0fyDdJQ_G1oDL7P-LYlu6xJgsW9efRLA"
+              },
+              {
+                "label": "2160p (4K DV HDR)",
+                "height": 2160,
+                "url": "https://video-downloads.googleusercontent.com/ADGPM2mMXnDtes-txe_xLbTzqgFx-UYXe3m2WX-BPGLeLPY9bMpRPT8HkI5Ut7HF3SBhu6gEboaHBNbzNUKt3d64HJr5cak9jMdYOKmabmrCjFbwtnK3z2tDTkDFMEire4wAIuvhTk5-w3SBPBHdQEDRae9qcxT2qT1yn5DbImNUD07vhWY1O5Mhfa46ajmEwkL9h_VPE4f58HkUlvLxIvZiQW-NkS2F5eyceYVNJXDddmzq0pIfC8iSwWK1OsFOgL3VteH0nzoYG-vUU9ElHAYKRbFUDRzoakPNIS3cnHA83VwVvDeeVuotyGtqkEmD_ggj6CDutIGSTykUyD2HoEY88Y30m2izWYhdZnfE6Owa2otYSdwlt8oa9aDmzE97Cvz_fdxvniaK5S0W5kiI9UlwabO2LeCqur_ED0FoHsf9FR1pmI_u3fh9EWt-0bNQinP2KRaxw6vp1frWjDAxxNody8Q4dJX_ymkGa9GJreEEsxGf0JcTj5JOeOUpnSHtdbtJcAqoiaA45GeCpn3irDSw8nhx9q0IGl6pU37tzoIpk7ZDvXytud6p5uDMpZRWh8KhbiwhXNZlHKdDqs7ntcQYQIY-86go7UE7dTIsnvUbdOWpZ9r7jbr2R4luYftWbkb3O9_cl1VV73hl1LkawlEamSdp6Hpunv7xY_LpiX3Ig_004oN3hR_ZV2TeQ7vS7uZg1c8VgyuaoT1JUF7wcCWAFimkBV9BmEeMPAyLjDDYztKpBzQ_n7tmS9Tkfoujp1CJrebaYCXLjpjTMD8cBj4VrdI_x-ZYYw2wqRP7tP1wwfiD0QOg6yGMma1SO_zKgDl9AVeXiOcrIZ2nYX4FE36b8h64euh8_nyhzkpojEt2qBgWlXB2GOUQU7MVQKqPINvwSrKm8Ecws54n2Ny0qDBCoiEE5DdPnY_nJd2hXqtiSBkN0MUrqLUakqrFx1Hoa7E4SQp-sW7WpyWLLwUNyT6jlwV8_cbzkDWYQAGwvRFAFGz1g8dIbIUb_BZYDvUp1e9LoB6vQoxL5yun7_4_RMTkCOEr4e8kZC6YiVBSZFkvfJ7Y6yPMXVRTFJN-v81zml6CfQjY0hS7Z3e9AOEDC-FP20QYg_0LMjVmw4u8aLHBhLMXvkfi8v3OsSp7H6R3tx2T8LOKiMJrBhuo8KNaRYyPj7SxmW9k0g"
               },
               {
                 "label": "1080p",
@@ -811,13 +816,13 @@
             {
               "url": "https://a.111477.xyz/movies/Dune%20Part%20Two%20(2024)/",
               "status": 403,
-              "latencyMs": 255,
+              "latencyMs": 78,
               "error": null
             },
             {
               "url": "https://a.111477.xyz/movies/Dune%20Part%20Two/",
               "status": 403,
-              "latencyMs": 43,
+              "latencyMs": 29,
               "error": null
             }
           ],
@@ -840,24 +845,24 @@
         "reason": null,
         "tier": "4khdhub",
         "server": "ursa",
-        "rawUrl": "https://files.netflix-server-69.workers.dev/2f28f1b235075daf98da73c3f6780aecefb174981e8c24e953795d3e126637af7ad0b4d11e513bec516e23fcee3efbdc::2dc9e8c3597071e26d4479aeee98e344/1398009276/Dune%20-%20Part%20Two%20(2024)%201080p%20UHD%20DV%20HDR%2010bit%20HEVC%20[Hindi%20DDP%205.1%20+%20English%20DDP%207.1]%20x265%20(c0kE-LUMiX)%204KHDHub.com.mkv",
+        "rawUrl": "https://video-downloads.googleusercontent.com/ADGPM2koPsNnDmjRKwS-CTAgaJaC3_dbLqaZAJvPxyyP6YIzogEOhoB4XspfexBe6Ga3wc5CACJVaaemdgebgPB3HjOMtriIUOfZv8xYr5bcF0mLT8priItLKVrvwd6hwUupkYftyP6pAkN2H8ixRVhFxYbhpB0rN37-uWHyv12EGsQMoaV4eV7fdmTG4jIUPenYJxF7nplnRw6H5moSwUM6iwdvoXctsJTpjcigehVydkxBmgmnt4A",
         "qualityDegraded": false,
         "requestedQuality": "2160p",
         "qualities": [
           {
             "label": "2160p (4K)",
             "height": 2160,
-            "url": "https://files.netflix-server-69.workers.dev/2f28f1b235075daf98da73c3f6780aecefb174981e8c24e953795d3e126637af7ad0b4d11e513bec516e23fcee3efbdc::2dc9e8c3597071e26d4479aeee98e344/1398009276/Dune%20-%20Part%20Two%20(2024)%201080p%20UHD%20DV%20HDR%2010bit%20HEVC%20[Hindi%20DDP%205.1%20+%20English%20DDP%207.1]%20x265%20(c0kE-LUMiX)%204KHDHub.com.mkv"
+            "url": "https://video-downloads.googleusercontent.com/ADGPM2koPsNnDmjRKwS-CTAgaJaC3_dbLqaZAJvPxyyP6YIzogEOhoB4XspfexBe6Ga3wc5CACJVaaemdgebgPB3HjOMtriIUOfZv8xYr5bcF0mLT8priItLKVrvwd6hwUupkYftyP6pAkN2H8ixRVhFxYbhpB0rN37-uWHyv12EGsQMoaV4eV7fdmTG4jIUPenYJxF7nplnRw6H5moSwUM6iwdvoXctsJTpjcigehVydkxBmgmnt4A"
           },
           {
             "label": "2160p (4K DV HDR)",
             "height": 2160,
-            "url": "https://myfiles.directfile2.workers.dev/aab86b0e3435478b5361697e0f15f9e63e558dfaa3be9f230ec8907325f4d5bdfd75dc201b36618b89f61dd5b2e5e8de::e19541cf4483577f01cdfb6533566ce6/1398009276/Dune%20-%20Part%20Two%20(2024)%202160p%20UHD%20BluRay%20DV%20HDR%2010bit%20HEVC%20[Hindi%20DDP%205.1%20+%20English%20TrueHD%20Atmos%207.1]%20x265%20(W4NK3R-LUMiX)%204KHDHub.com.mkv"
+            "url": "https://myfiles.directfile.workers.dev/ae62d80343bc912f0e34f0e90a773aaf78d0045e3e23085e57b666c53d410151e028ef139050bf69634035daf1d49f90::0ea07149002ef1b7c1d7a6e426802992/1398009276/Dune%20-%20Part%20Two%20(2024)%202160p%20UHD%20BluRay%20DV%20HDR%2010bit%20HEVC%20[Hindi%20DDP%205.1%20+%20English%20TrueHD%20Atmos%207.1]%20x265%20(W4NK3R-LUMiX)%204KHDHub.com.mkv"
           },
           {
             "label": "1080p",
             "height": 1080,
-            "url": "https://drive.microsoft-cdn.workers.dev/7212a8d481c0bc756c4759cc890339a97586aa8547e3695b5e4b49ecedf3ad73545a26dd96460e83a8a34a19c31b41ce::b33270acb5eb47efc964c2057fbc133d/1398009276/Dune%20-%20Part%20Two%20(2024)%201080p%20Hybrid%20BluRay%20[Hindi%20DDP%205.1%20+%20English%20DDP%207.1]%20x264%20(c0kE-LUMiX)%204KHDHub.com.mkv"
+            "url": "https://hubloud-downloadcdn.vi-isp.workers.dev/a053551cd6fc68491e2ffc76dda49b7a69c4f88524a48835d866891e6f6bfe35092237d351ebc53d0781883a1352c8ac::58bc1e066c68a58ddc4b0bb7d4447eb1/1398009276/Dune%20-%20Part%20Two%20(2024)%201080p%20Hybrid%20BluRay%20[Hindi%20DDP%205.1%20+%20English%20DDP%207.1]%20x264%20(c0kE-LUMiX)%204KHDHub.com.mkv"
           },
           {
             "label": "1080p (SDR)",
@@ -872,45 +877,45 @@
             {
               "step": "4khdhub_attempt",
               "detail": "Attempting Tier 1: 4KHDHub (2160p UHD Multi-Audio)...",
-              "t": 1791108188520
+              "t": 1791110566078
             },
             {
               "step": "moviesdrive4k_attempt",
               "detail": "Attempting Tier 2: MoviesDrive 4K (Typesense IMDb + 2160p HubCloud)...",
-              "t": 1791108188520
+              "t": 1791110566078
             },
             {
               "step": "hicine4k_attempt",
               "detail": "Attempting Tier 3: HiCine 4K UHD (2160p vcloud worker)...",
-              "t": 1791108188520
+              "t": 1791110566078
             },
             {
               "step": "dahmer4k_attempt",
               "detail": "Attempting Tier 4: DahmerMovies 4K (2160p direct directory)...",
-              "t": 1791108188520
+              "t": 1791110566078
             },
             {
               "step": "4khdhub_success",
               "detail": "Resolved verified 4K (2160p (4K)) via 4khdhub",
-              "t": 1791108190631
+              "t": 1791110568213
             },
             {
               "step": "moviesdrive4k_failed",
               "detail": "moviesdrive4k returned no verified 2160p stream",
-              "t": 1791108190631
+              "t": 1791110568213
             },
             {
               "step": "hicine4k_failed",
               "detail": "hicine4k returned no verified 2160p stream",
-              "t": 1791108190631
+              "t": 1791110568213
             },
             {
               "step": "dahmer4k_failed",
               "detail": "dahmer4k_directory_not_found",
-              "t": 1791108190631
+              "t": 1791110568213
             }
           ],
-          "startedAt": "2026-10-04T10:03:08.520Z",
+          "startedAt": "2026-10-04T10:42:46.078Z",
           "message": "Resolved verified 4K stream via 4khdhub (2160p (4K))",
           "selectedTier": "4khdhub",
           "qualityDegraded": false
@@ -940,7 +945,7 @@
               "host": "https://4khdhub.one",
               "url": "https://4khdhub.one/?s=Fight%20Club",
               "status": 200,
-              "latencyMs": 277,
+              "latencyMs": 291,
               "cards": [
                 {
                   "title": "Fight Club",
@@ -966,8 +971,8 @@
                 "error": null
               },
               "unroll": {
-                "url": "https://c6b1e8c93683bdde581e2164cb9657c9.r2.cloudflarestorage.com/hub/88534ab08243571e51f2c500bf9eb20e?X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Credential=ce3806fdca997f65e356f3b6fc2f735d%2F20261004%2Fauto%2Fs3%2Faws4_request&X-Amz-Date=20261004T100311Z&X-Amz-Expires=28800&X-Amz-SignedHeaders=host&response-content-disposition=attachment%3B%20filename%3D%22Fight%20Club%20%281999%29%20REPACK%202160p%20UHD%20BluRay%20REMUX%20HDR%2010bit%20HEVC%20%5BHindi%20DDP%202.0%20%2B%20English%20DTS-HD%20MA%205.1%5D%20x265%20%28CiNEPHiLES-LUMiX%29.mkv%22&X-Amz-Signature=666d7a514e15c003a762395afcbd944916e460e17a7f298e69415dac8acb9cc4",
-                "attemptedAt": "2026-10-04T10:03:15.133Z"
+                "url": "https://c6b1e8c93683bdde581e2164cb9657c9.r2.cloudflarestorage.com/hub/88534ab08243571e51f2c500bf9eb20e?X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Credential=ce3806fdca997f65e356f3b6fc2f735d%2F20261004%2Fauto%2Fs3%2Faws4_request&X-Amz-Date=20261004T104248Z&X-Amz-Expires=28800&X-Amz-SignedHeaders=host&response-content-disposition=attachment%3B%20filename%3D%22Fight%20Club%20%281999%29%20REPACK%202160p%20UHD%20BluRay%20REMUX%20HDR%2010bit%20HEVC%20%5BHindi%20DDP%202.0%20%2B%20English%20DTS-HD%20MA%205.1%5D%20x265%20%28CiNEPHiLES-LUMiX%29.mkv%22&X-Amz-Signature=6ea12634bd4ea0c7eca8f24f841f883061123a79c490925cbb755aa1086f02ba",
+                "attemptedAt": "2026-10-04T10:42:52.640Z"
               }
             },
             {
@@ -984,8 +989,8 @@
                 "error": null
               },
               "unroll": {
-                "url": "https://c6b1e8c93683bdde581e2164cb9657c9.r2.cloudflarestorage.com/hub/88534ab08243571e51f2c500bf9eb20e?X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Credential=ce3806fdca997f65e356f3b6fc2f735d%2F20261004%2Fauto%2Fs3%2Faws4_request&X-Amz-Date=20261004T100311Z&X-Amz-Expires=28800&X-Amz-SignedHeaders=host&response-content-disposition=attachment%3B%20filename%3D%22Fight%20Club%20%281999%29%20REPACK%202160p%20UHD%20BluRay%20REMUX%20HDR%2010bit%20HEVC%20%5BHindi%20DDP%202.0%20%2B%20English%20DTS-HD%20MA%205.1%5D%20x265%20%28CiNEPHiLES-LUMiX%29.mkv%22&X-Amz-Signature=666d7a514e15c003a762395afcbd944916e460e17a7f298e69415dac8acb9cc4",
-                "attemptedAt": "2026-10-04T10:03:15.542Z"
+                "url": "https://c6b1e8c93683bdde581e2164cb9657c9.r2.cloudflarestorage.com/hub/88534ab08243571e51f2c500bf9eb20e?X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Credential=ce3806fdca997f65e356f3b6fc2f735d%2F20261004%2Fauto%2Fs3%2Faws4_request&X-Amz-Date=20261004T104248Z&X-Amz-Expires=28800&X-Amz-SignedHeaders=host&response-content-disposition=attachment%3B%20filename%3D%22Fight%20Club%20%281999%29%20REPACK%202160p%20UHD%20BluRay%20REMUX%20HDR%2010bit%20HEVC%20%5BHindi%20DDP%202.0%20%2B%20English%20DTS-HD%20MA%205.1%5D%20x265%20%28CiNEPHiLES-LUMiX%29.mkv%22&X-Amz-Signature=6ea12634bd4ea0c7eca8f24f841f883061123a79c490925cbb755aa1086f02ba",
+                "attemptedAt": "2026-10-04T10:42:52.886Z"
               }
             },
             {
@@ -1002,8 +1007,8 @@
                 "error": null
               },
               "unroll": {
-                "url": "https://sweet-resonance-cb61.wacesi18123678.workers.dev/c705e8982683cf283baacad25bd545cd3f928c574f000a830b5e04b4ccf1221a55754f711afaf87e4e001a9e211af0bc::6ab918840138b8e659ffa013a3802cc6/1398009276/Fight%20Club%20(1999)%202160p%20UHD%20BluRay%20HDR%2010bit%20HEVC%20[Hindi%20DDP%202.0%20+%20English%20DTS-HD%20MA%205.1]%20x265%20(j3rico-LUMiX).mkv",
-                "attemptedAt": "2026-10-04T10:03:19.643Z"
+                "url": "https://jio.server-9.workers.dev/2a984d860565d56d45e814c5824fb6292dfc5b5795c4cc9e5ff7cfd41ba9a1928e912d487d0afe8845c74d514699a7f9::b5c94dd1aee48516d4aa56de594be102/1398009276/Fight%20Club%20(1999)%202160p%20UHD%20BluRay%20HDR%2010bit%20HEVC%20[Hindi%20DDP%202.0%20+%20English%20DTS-HD%20MA%205.1]%20x265%20(j3rico-LUMiX).mkv",
+                "attemptedAt": "2026-10-04T10:42:57.327Z"
               }
             },
             {
@@ -1020,8 +1025,8 @@
                 "error": null
               },
               "unroll": {
-                "url": "https://sweet-resonance-cb61.wacesi18123678.workers.dev/c705e8982683cf283baacad25bd545cd3f928c574f000a830b5e04b4ccf1221a55754f711afaf87e4e001a9e211af0bc::6ab918840138b8e659ffa013a3802cc6/1398009276/Fight%20Club%20(1999)%202160p%20UHD%20BluRay%20HDR%2010bit%20HEVC%20[Hindi%20DDP%202.0%20+%20English%20DTS-HD%20MA%205.1]%20x265%20(j3rico-LUMiX).mkv",
-                "attemptedAt": "2026-10-04T10:03:20.456Z"
+                "url": "https://video-downloads.googleusercontent.com/ADGPM2l8wC2QC-iMNwNi-dQ0glgY6MpAIkeCg0XbH0hnk7ghWB-vF01WB9buU-s_DbmdtC3Wtt4k9Ov2Bm-i1WiQ9V9nlOehrFOW5fVKZQeGMybFXH3VXeaSu-ugGAsZl6fnp1QXFiW1QoO8vxY9PE2OOvD0vtiIYDSXtlYiCle4Qd3OK19fEJJAPc-2G34psh2jeO_EhVKTVhurkHArlO4ajavwD0SNk3oxweX9wGatbzjsXlLRnBL84YiT-mkyxFw__Styi9LaWmgw83v8NESmkEOMUyHRtnFqufEmBDptttHTvjNI2vdi7DB8-JnyGOGojucswvr-d_xn3Vy9l6J2_Mn9-181xIj1b9aEMtAwXrIG0T9OA1yEFDuW8VjLQP5rZEcyFBFt1FA60izSRA7tvX6p6CaOHKcUlW3aN7IpIQg-D9l_6srvzr1Jrkiq3QQnFLe55N5Uz3zFm75HbWJEXP6TvXCy9ORBnowDTI1uhEEXZuhDb5NJ_E97255fwi4rHGcbbVw7bndKN1A0oDG3h6p3K_qWvcaZLq8irR-Lmrup1DqiPLyMh9qur885dmrbr9MIrdR1GryrY-biMt7qPbRlmAZdJVlKTIkyowSEsr7l9n8cgQVaA8_a3HVzjmHL5lAE5UiPrAutukgWZt6fO2EiCKLv1PScehEPL4ukhU5KLydUa4BsVRkfnTWeiIC1NlKDhlVCszgZqO9aqhEeC8QAEHG0yMrAgXt9rll22a932lGdZXl1rXnHmlfXFj0RCz3U4tFMB47XnGDsoqk82BfMchK3UvQJDzJlLr37NvVQ-t8r5x8dZ78ZoJi0o_sZf_D-Z2mcKj4r33fXoe83EI6eRYqeSmgyOL00Re2TLGQeCRMEEh3yhC6lgrGiybZWPprLZpl6_pPKkf3zw_X4ELjyAV2cFxkj1PnOW4H_p8Dwi03OlqPwvtwdn_r4rTnzzEcNBrSCr5p1XCSmM6LuqFQgCil_KkC94MOfaXPAoe_9HrzOlzM-xvUrpAr3xiM2G5FSsuYxdJFChkCoNvRQLgyfERE4_9pC7hiI3wx-lzgTSHIURgC5ZAnCCUMJx6UK3NMg5M82niKpuBP5ua5qCNkJiZmZ0LAS7dTCttF1uXd0ZyLv4IBdZC-JX6MvNb6zpvPdNyj-osGYGef8jvs3GbaZYcGFrQ",
+                "attemptedAt": "2026-10-04T10:43:03.495Z"
               }
             },
             {
@@ -1038,8 +1043,8 @@
                 "error": null
               },
               "unroll": {
-                "url": "https://c6b1e8c93683bdde581e2164cb9657c9.r2.cloudflarestorage.com/hub/9eab6d41539f887dff3a73818da20a78?X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Credential=ce3806fdca997f65e356f3b6fc2f735d%2F20261004%2Fauto%2Fs3%2Faws4_request&X-Amz-Date=20261004T100320Z&X-Amz-Expires=28800&X-Amz-SignedHeaders=host&response-content-disposition=attachment%3B%20filename%3D%22Fight%20Club%20%281999%29%201080p%20BluRay%20REMUX%20AVC%20%5BHindi%20DDP%202.0%20%2B%20English%20DTS-HD%20MA%205.1%5D%20x264-LUMiX.mkv%22&X-Amz-Signature=9c7339a279f1aa84bb64822a48d4af86148912661e3c0c66041424176c586c4c",
-                "attemptedAt": "2026-10-04T10:03:24.572Z"
+                "url": "https://c6b1e8c93683bdde581e2164cb9657c9.r2.cloudflarestorage.com/hub/9eab6d41539f887dff3a73818da20a78?X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Credential=ce3806fdca997f65e356f3b6fc2f735d%2F20261004%2Fauto%2Fs3%2Faws4_request&X-Amz-Date=20261004T104303Z&X-Amz-Expires=28800&X-Amz-SignedHeaders=host&response-content-disposition=attachment%3B%20filename%3D%22Fight%20Club%20%281999%29%201080p%20BluRay%20REMUX%20AVC%20%5BHindi%20DDP%202.0%20%2B%20English%20DTS-HD%20MA%205.1%5D%20x264-LUMiX.mkv%22&X-Amz-Signature=d7060b97bd76c653ab129ddf080bf3a96203557d737bdd665805ac22ae70ecd5",
+                "attemptedAt": "2026-10-04T10:43:07.565Z"
               }
             },
             {
@@ -1056,8 +1061,8 @@
                 "error": null
               },
               "unroll": {
-                "url": "https://c6b1e8c93683bdde581e2164cb9657c9.r2.cloudflarestorage.com/hub/9eab6d41539f887dff3a73818da20a78?X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Credential=ce3806fdca997f65e356f3b6fc2f735d%2F20261004%2Fauto%2Fs3%2Faws4_request&X-Amz-Date=20261004T100320Z&X-Amz-Expires=28800&X-Amz-SignedHeaders=host&response-content-disposition=attachment%3B%20filename%3D%22Fight%20Club%20%281999%29%201080p%20BluRay%20REMUX%20AVC%20%5BHindi%20DDP%202.0%20%2B%20English%20DTS-HD%20MA%205.1%5D%20x264-LUMiX.mkv%22&X-Amz-Signature=9c7339a279f1aa84bb64822a48d4af86148912661e3c0c66041424176c586c4c",
-                "attemptedAt": "2026-10-04T10:03:24.863Z"
+                "url": "https://c6b1e8c93683bdde581e2164cb9657c9.r2.cloudflarestorage.com/hub/9eab6d41539f887dff3a73818da20a78?X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Credential=ce3806fdca997f65e356f3b6fc2f735d%2F20261004%2Fauto%2Fs3%2Faws4_request&X-Amz-Date=20261004T104303Z&X-Amz-Expires=28800&X-Amz-SignedHeaders=host&response-content-disposition=attachment%3B%20filename%3D%22Fight%20Club%20%281999%29%201080p%20BluRay%20REMUX%20AVC%20%5BHindi%20DDP%202.0%20%2B%20English%20DTS-HD%20MA%205.1%5D%20x264-LUMiX.mkv%22&X-Amz-Signature=d7060b97bd76c653ab129ddf080bf3a96203557d737bdd665805ac22ae70ecd5",
+                "attemptedAt": "2026-10-04T10:43:07.856Z"
               }
             },
             {
@@ -1074,8 +1079,8 @@
                 "error": null
               },
               "unroll": {
-                "url": "https://c6b1e8c93683bdde581e2164cb9657c9.r2.cloudflarestorage.com/hub/429254543198c6f1e0f43bc5d39e6d09?X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Credential=ce3806fdca997f65e356f3b6fc2f735d%2F20261004%2Fauto%2Fs3%2Faws4_request&X-Amz-Date=20261004T100325Z&X-Amz-Expires=28800&X-Amz-SignedHeaders=host&response-content-disposition=attachment%3B%20filename%3D%22Fight%20Club%20%281999%29%201080p%20BluRay%20%5BHindi%20DDP%202.0%20%2B%20English%20DDP%205.1%5D%20x264%20%28ZoroSenpai-LUMiX%29.mkv%22&X-Amz-Signature=c2985761936eea4bfe5b744a048b114c7dbda48bc43bbc4a0cc989ae4c048eb1",
-                "attemptedAt": "2026-10-04T10:03:28.943Z"
+                "url": "https://c6b1e8c93683bdde581e2164cb9657c9.r2.cloudflarestorage.com/hub/429254543198c6f1e0f43bc5d39e6d09?X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Credential=ce3806fdca997f65e356f3b6fc2f735d%2F20261004%2Fauto%2Fs3%2Faws4_request&X-Amz-Date=20261004T100414Z&X-Amz-Expires=28800&X-Amz-SignedHeaders=host&response-content-disposition=attachment%3B%20filename%3D%22Fight%20Club%20%281999%29%201080p%20BluRay%20%5BHindi%20DDP%202.0%20%2B%20English%20DDP%205.1%5D%20x264%20%28ZoroSenpai-LUMiX%29.mkv%22&X-Amz-Signature=cc01ff418f4521c013cbe3477a6a54d81c827891e5e90dc335ebf2223e1864a5",
+                "attemptedAt": "2026-10-04T10:43:11.907Z"
               }
             },
             {
@@ -1092,8 +1097,8 @@
                 "error": null
               },
               "unroll": {
-                "url": "https://c6b1e8c93683bdde581e2164cb9657c9.r2.cloudflarestorage.com/hub/429254543198c6f1e0f43bc5d39e6d09?X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Credential=ce3806fdca997f65e356f3b6fc2f735d%2F20261004%2Fauto%2Fs3%2Faws4_request&X-Amz-Date=20261004T100325Z&X-Amz-Expires=28800&X-Amz-SignedHeaders=host&response-content-disposition=attachment%3B%20filename%3D%22Fight%20Club%20%281999%29%201080p%20BluRay%20%5BHindi%20DDP%202.0%20%2B%20English%20DDP%205.1%5D%20x264%20%28ZoroSenpai-LUMiX%29.mkv%22&X-Amz-Signature=c2985761936eea4bfe5b744a048b114c7dbda48bc43bbc4a0cc989ae4c048eb1",
-                "attemptedAt": "2026-10-04T10:03:29.296Z"
+                "url": "https://c6b1e8c93683bdde581e2164cb9657c9.r2.cloudflarestorage.com/hub/429254543198c6f1e0f43bc5d39e6d09?X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Credential=ce3806fdca997f65e356f3b6fc2f735d%2F20261004%2Fauto%2Fs3%2Faws4_request&X-Amz-Date=20261004T100414Z&X-Amz-Expires=28800&X-Amz-SignedHeaders=host&response-content-disposition=attachment%3B%20filename%3D%22Fight%20Club%20%281999%29%201080p%20BluRay%20%5BHindi%20DDP%202.0%20%2B%20English%20DDP%205.1%5D%20x264%20%28ZoroSenpai-LUMiX%29.mkv%22&X-Amz-Signature=cc01ff418f4521c013cbe3477a6a54d81c827891e5e90dc335ebf2223e1864a5",
+                "attemptedAt": "2026-10-04T10:43:12.151Z"
               }
             },
             {
@@ -1110,8 +1115,8 @@
                 "error": null
               },
               "unroll": {
-                "url": "https://c6b1e8c93683bdde581e2164cb9657c9.r2.cloudflarestorage.com/hub/bc953c1f1cee5b851b6a0a9112531074?X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Credential=ce3806fdca997f65e356f3b6fc2f735d%2F20261004%2Fauto%2Fs3%2Faws4_request&X-Amz-Date=20261004T100329Z&X-Amz-Expires=28800&X-Amz-SignedHeaders=host&response-content-disposition=attachment%3B%20filename%3D%22Fight%20Club%20%281999%29%201080p%20UHD%20BluRay%20HDR%2010bit%20HEVC%20%5BHindi%20DDP%202.0%20%2B%20English%20DDP%205.1%5D%20x265%20%28HiDt-LUMiX%29.mkv%22&X-Amz-Signature=5a18b0d1d22a5f43967b901c2abc724e67f832a4d8290eb680a90c72f2d276a5",
-                "attemptedAt": "2026-10-04T10:03:33.406Z"
+                "url": "https://c6b1e8c93683bdde581e2164cb9657c9.r2.cloudflarestorage.com/hub/bc953c1f1cee5b851b6a0a9112531074?X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Credential=ce3806fdca997f65e356f3b6fc2f735d%2F20261004%2Fauto%2Fs3%2Faws4_request&X-Amz-Date=20261004T100414Z&X-Amz-Expires=28800&X-Amz-SignedHeaders=host&response-content-disposition=attachment%3B%20filename%3D%22Fight%20Club%20%281999%29%201080p%20UHD%20BluRay%20HDR%2010bit%20HEVC%20%5BHindi%20DDP%202.0%20%2B%20English%20DDP%205.1%5D%20x265%20%28HiDt-LUMiX%29.mkv%22&X-Amz-Signature=ccddc2137b66eb74f927efd6463558222bf3a015bc0e7fb23e9151eb02b78ed6",
+                "attemptedAt": "2026-10-04T10:43:16.204Z"
               }
             },
             {
@@ -1128,8 +1133,8 @@
                 "error": null
               },
               "unroll": {
-                "url": "https://c6b1e8c93683bdde581e2164cb9657c9.r2.cloudflarestorage.com/hub/bc953c1f1cee5b851b6a0a9112531074?X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Credential=ce3806fdca997f65e356f3b6fc2f735d%2F20261004%2Fauto%2Fs3%2Faws4_request&X-Amz-Date=20261004T100329Z&X-Amz-Expires=28800&X-Amz-SignedHeaders=host&response-content-disposition=attachment%3B%20filename%3D%22Fight%20Club%20%281999%29%201080p%20UHD%20BluRay%20HDR%2010bit%20HEVC%20%5BHindi%20DDP%202.0%20%2B%20English%20DDP%205.1%5D%20x265%20%28HiDt-LUMiX%29.mkv%22&X-Amz-Signature=5a18b0d1d22a5f43967b901c2abc724e67f832a4d8290eb680a90c72f2d276a5",
-                "attemptedAt": "2026-10-04T10:03:33.739Z"
+                "url": "https://c6b1e8c93683bdde581e2164cb9657c9.r2.cloudflarestorage.com/hub/bc953c1f1cee5b851b6a0a9112531074?X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Credential=ce3806fdca997f65e356f3b6fc2f735d%2F20261004%2Fauto%2Fs3%2Faws4_request&X-Amz-Date=20261004T100414Z&X-Amz-Expires=28800&X-Amz-SignedHeaders=host&response-content-disposition=attachment%3B%20filename%3D%22Fight%20Club%20%281999%29%201080p%20UHD%20BluRay%20HDR%2010bit%20HEVC%20%5BHindi%20DDP%202.0%20%2B%20English%20DDP%205.1%5D%20x265%20%28HiDt-LUMiX%29.mkv%22&X-Amz-Signature=ccddc2137b66eb74f927efd6463558222bf3a015bc0e7fb23e9151eb02b78ed6",
+                "attemptedAt": "2026-10-04T10:43:16.426Z"
               }
             },
             {
@@ -1139,7 +1144,7 @@
               "redirector": false,
               "unroll": {
                 "url": null,
-                "attemptedAt": "2026-10-04T10:03:33.740Z"
+                "attemptedAt": "2026-10-04T10:43:16.426Z"
               }
             },
             {
@@ -1149,17 +1154,7 @@
               "redirector": false,
               "unroll": {
                 "url": null,
-                "attemptedAt": "2026-10-04T10:03:33.740Z"
-              }
-            },
-            {
-              "href": "https://4khdhub.one/mobland-series-98/",
-              "label": "Drama Crime Hindi English Dual Language 2160p 1080p BluRay REMUX Series 10Bit DV HDR SDR MobLand 2025 • S1.0-S2.0 EP03",
-              "block": "Fight Club (1080p BluRay HDR H265) 18.66 GB Hindi, English BluRay Fight Club (1999) 1080p UHD BluRay HDR 10bit HEVC [Hindi DDP 2.0 + English DDP 5.1] x265 (HiDt-LUMiX).mkv BluRay BluRay 1080p Hindi, English HDR H265 4kHDHub.com 18.66 GB Download HubCloud&nbsp; Download HubCloud&nbsp; /* download toggles handled by site-interactions.js */ How to Download Click on the download link of your choice. Wait for the page to load and bypass any ads if necessary. Click on the download button on the file h",
-              "redirector": false,
-              "unroll": {
-                "url": null,
-                "attemptedAt": "2026-10-04T10:03:33.740Z"
+                "attemptedAt": "2026-10-04T10:43:16.426Z"
               }
             },
             {
@@ -1169,7 +1164,17 @@
               "redirector": false,
               "unroll": {
                 "url": null,
-                "attemptedAt": "2026-10-04T10:03:33.740Z"
+                "attemptedAt": "2026-10-04T10:43:16.426Z"
+              }
+            },
+            {
+              "href": "https://4khdhub.one/red-queen-series-8255/",
+              "label": "1080p 10Bit 2160p Action & Adventure Amazon Prime Video Crime Drama English HDR Mystery SDR Series Spanish Tamil Telugu Thriller Red Queen 2024 • S1.0-S2.0",
+              "block": "Fight Club (1080p BluRay HDR H265) 18.66 GB Hindi, English BluRay Fight Club (1999) 1080p UHD BluRay HDR 10bit HEVC [Hindi DDP 2.0 + English DDP 5.1] x265 (HiDt-LUMiX).mkv BluRay BluRay 1080p Hindi, English HDR H265 4kHDHub.com 18.66 GB Download HubCloud&nbsp; Download HubCloud&nbsp; /* download toggles handled by site-interactions.js */ How to Download Click on the download link of your choice. Wait for the page to load and bypass any ads if necessary. Click on the download button on the file h",
+              "redirector": false,
+              "unroll": {
+                "url": null,
+                "attemptedAt": "2026-10-04T10:43:16.426Z"
               }
             },
             {
@@ -1179,7 +1184,7 @@
               "redirector": false,
               "unroll": {
                 "url": null,
-                "attemptedAt": "2026-10-04T10:03:33.740Z"
+                "attemptedAt": "2026-10-04T10:43:16.427Z"
               }
             },
             {
@@ -1189,7 +1194,7 @@
               "redirector": false,
               "unroll": {
                 "url": null,
-                "attemptedAt": "2026-10-04T10:03:33.740Z"
+                "attemptedAt": "2026-10-04T10:43:16.427Z"
               }
             },
             {
@@ -1199,7 +1204,7 @@
               "redirector": false,
               "unroll": {
                 "url": null,
-                "attemptedAt": "2026-10-04T10:03:33.740Z"
+                "attemptedAt": "2026-10-04T10:43:16.427Z"
               }
             },
             {
@@ -1209,7 +1214,7 @@
               "redirector": false,
               "unroll": {
                 "url": null,
-                "attemptedAt": "2026-10-04T10:03:33.740Z"
+                "attemptedAt": "2026-10-04T10:43:16.427Z"
               }
             },
             {
@@ -1219,7 +1224,7 @@
               "redirector": false,
               "unroll": {
                 "url": null,
-                "attemptedAt": "2026-10-04T10:03:33.740Z"
+                "attemptedAt": "2026-10-04T10:43:16.427Z"
               }
             }
           ],
@@ -1228,24 +1233,24 @@
             "reason": null,
             "tier": "4khdhub",
             "server": "ursa",
-            "rawUrl": "https://c6b1e8c93683bdde581e2164cb9657c9.r2.cloudflarestorage.com/hub/bc953c1f1cee5b851b6a0a9112531074?X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Credential=ce3806fdca997f65e356f3b6fc2f735d%2F20261004%2Fauto%2Fs3%2Faws4_request&X-Amz-Date=20261004T100329Z&X-Amz-Expires=28800&X-Amz-SignedHeaders=host&response-content-disposition=attachment%3B%20filename%3D%22Fight%20Club%20%281999%29%201080p%20UHD%20BluRay%20HDR%2010bit%20HEVC%20%5BHindi%20DDP%202.0%20%2B%20English%20DDP%205.1%5D%20x265%20%28HiDt-LUMiX%29.mkv%22&X-Amz-Signature=5a18b0d1d22a5f43967b901c2abc724e67f832a4d8290eb680a90c72f2d276a5",
+            "rawUrl": "https://c6b1e8c93683bdde581e2164cb9657c9.r2.cloudflarestorage.com/hub/bc953c1f1cee5b851b6a0a9112531074?X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Credential=ce3806fdca997f65e356f3b6fc2f735d%2F20261004%2Fauto%2Fs3%2Faws4_request&X-Amz-Date=20261004T100414Z&X-Amz-Expires=28800&X-Amz-SignedHeaders=host&response-content-disposition=attachment%3B%20filename%3D%22Fight%20Club%20%281999%29%201080p%20UHD%20BluRay%20HDR%2010bit%20HEVC%20%5BHindi%20DDP%202.0%20%2B%20English%20DDP%205.1%5D%20x265%20%28HiDt-LUMiX%29.mkv%22&X-Amz-Signature=ccddc2137b66eb74f927efd6463558222bf3a015bc0e7fb23e9151eb02b78ed6",
             "qualityDegraded": false,
             "requestedQuality": "2160p",
             "qualities": [
               {
                 "label": "2160p (4K)",
                 "height": 2160,
-                "url": "https://c6b1e8c93683bdde581e2164cb9657c9.r2.cloudflarestorage.com/hub/bc953c1f1cee5b851b6a0a9112531074?X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Credential=ce3806fdca997f65e356f3b6fc2f735d%2F20261004%2Fauto%2Fs3%2Faws4_request&X-Amz-Date=20261004T100329Z&X-Amz-Expires=28800&X-Amz-SignedHeaders=host&response-content-disposition=attachment%3B%20filename%3D%22Fight%20Club%20%281999%29%201080p%20UHD%20BluRay%20HDR%2010bit%20HEVC%20%5BHindi%20DDP%202.0%20%2B%20English%20DDP%205.1%5D%20x265%20%28HiDt-LUMiX%29.mkv%22&X-Amz-Signature=5a18b0d1d22a5f43967b901c2abc724e67f832a4d8290eb680a90c72f2d276a5"
+                "url": "https://c6b1e8c93683bdde581e2164cb9657c9.r2.cloudflarestorage.com/hub/bc953c1f1cee5b851b6a0a9112531074?X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Credential=ce3806fdca997f65e356f3b6fc2f735d%2F20261004%2Fauto%2Fs3%2Faws4_request&X-Amz-Date=20261004T100414Z&X-Amz-Expires=28800&X-Amz-SignedHeaders=host&response-content-disposition=attachment%3B%20filename%3D%22Fight%20Club%20%281999%29%201080p%20UHD%20BluRay%20HDR%2010bit%20HEVC%20%5BHindi%20DDP%202.0%20%2B%20English%20DDP%205.1%5D%20x265%20%28HiDt-LUMiX%29.mkv%22&X-Amz-Signature=ccddc2137b66eb74f927efd6463558222bf3a015bc0e7fb23e9151eb02b78ed6"
               },
               {
                 "label": "2160p (4K HDR)",
                 "height": 2160,
-                "url": "https://sweet-resonance-cb61.wacesi18123678.workers.dev/c705e8982683cf283baacad25bd545cd3f928c574f000a830b5e04b4ccf1221a55754f711afaf87e4e001a9e211af0bc::6ab918840138b8e659ffa013a3802cc6/1398009276/Fight%20Club%20(1999)%202160p%20UHD%20BluRay%20HDR%2010bit%20HEVC%20[Hindi%20DDP%202.0%20+%20English%20DTS-HD%20MA%205.1]%20x265%20(j3rico-LUMiX).mkv"
+                "url": "https://video-downloads.googleusercontent.com/ADGPM2l8wC2QC-iMNwNi-dQ0glgY6MpAIkeCg0XbH0hnk7ghWB-vF01WB9buU-s_DbmdtC3Wtt4k9Ov2Bm-i1WiQ9V9nlOehrFOW5fVKZQeGMybFXH3VXeaSu-ugGAsZl6fnp1QXFiW1QoO8vxY9PE2OOvD0vtiIYDSXtlYiCle4Qd3OK19fEJJAPc-2G34psh2jeO_EhVKTVhurkHArlO4ajavwD0SNk3oxweX9wGatbzjsXlLRnBL84YiT-mkyxFw__Styi9LaWmgw83v8NESmkEOMUyHRtnFqufEmBDptttHTvjNI2vdi7DB8-JnyGOGojucswvr-d_xn3Vy9l6J2_Mn9-181xIj1b9aEMtAwXrIG0T9OA1yEFDuW8VjLQP5rZEcyFBFt1FA60izSRA7tvX6p6CaOHKcUlW3aN7IpIQg-D9l_6srvzr1Jrkiq3QQnFLe55N5Uz3zFm75HbWJEXP6TvXCy9ORBnowDTI1uhEEXZuhDb5NJ_E97255fwi4rHGcbbVw7bndKN1A0oDG3h6p3K_qWvcaZLq8irR-Lmrup1DqiPLyMh9qur885dmrbr9MIrdR1GryrY-biMt7qPbRlmAZdJVlKTIkyowSEsr7l9n8cgQVaA8_a3HVzjmHL5lAE5UiPrAutukgWZt6fO2EiCKLv1PScehEPL4ukhU5KLydUa4BsVRkfnTWeiIC1NlKDhlVCszgZqO9aqhEeC8QAEHG0yMrAgXt9rll22a932lGdZXl1rXnHmlfXFj0RCz3U4tFMB47XnGDsoqk82BfMchK3UvQJDzJlLr37NvVQ-t8r5x8dZ78ZoJi0o_sZf_D-Z2mcKj4r33fXoe83EI6eRYqeSmgyOL00Re2TLGQeCRMEEh3yhC6lgrGiybZWPprLZpl6_pPKkf3zw_X4ELjyAV2cFxkj1PnOW4H_p8Dwi03OlqPwvtwdn_r4rTnzzEcNBrSCr5p1XCSmM6LuqFQgCil_KkC94MOfaXPAoe_9HrzOlzM-xvUrpAr3xiM2G5FSsuYxdJFChkCoNvRQLgyfERE4_9pC7hiI3wx-lzgTSHIURgC5ZAnCCUMJx6UK3NMg5M82niKpuBP5ua5qCNkJiZmZ0LAS7dTCttF1uXd0ZyLv4IBdZC-JX6MvNb6zpvPdNyj-osGYGef8jvs3GbaZYcGFrQ"
               },
               {
                 "label": "1080p",
                 "height": 1080,
-                "url": "https://c6b1e8c93683bdde581e2164cb9657c9.r2.cloudflarestorage.com/hub/429254543198c6f1e0f43bc5d39e6d09?X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Credential=ce3806fdca997f65e356f3b6fc2f735d%2F20261004%2Fauto%2Fs3%2Faws4_request&X-Amz-Date=20261004T100325Z&X-Amz-Expires=28800&X-Amz-SignedHeaders=host&response-content-disposition=attachment%3B%20filename%3D%22Fight%20Club%20%281999%29%201080p%20BluRay%20%5BHindi%20DDP%202.0%20%2B%20English%20DDP%205.1%5D%20x264%20%28ZoroSenpai-LUMiX%29.mkv%22&X-Amz-Signature=c2985761936eea4bfe5b744a048b114c7dbda48bc43bbc4a0cc989ae4c048eb1"
+                "url": "https://c6b1e8c93683bdde581e2164cb9657c9.r2.cloudflarestorage.com/hub/429254543198c6f1e0f43bc5d39e6d09?X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Credential=ce3806fdca997f65e356f3b6fc2f735d%2F20261004%2Fauto%2Fs3%2Faws4_request&X-Amz-Date=20261004T100414Z&X-Amz-Expires=28800&X-Amz-SignedHeaders=host&response-content-disposition=attachment%3B%20filename%3D%22Fight%20Club%20%281999%29%201080p%20BluRay%20%5BHindi%20DDP%202.0%20%2B%20English%20DDP%205.1%5D%20x264%20%28ZoroSenpai-LUMiX%29.mkv%22&X-Amz-Signature=cc01ff418f4521c013cbe3477a6a54d81c827891e5e90dc335ebf2223e1864a5"
               }
             ],
             "diag": null
@@ -1558,38 +1563,38 @@
           "failureReasons": [],
           "search": {
             "status": 200,
-            "latencyMs": 16,
+            "latencyMs": 318,
             "error": null,
             "match": "Fight Club (2023)"
           },
           "vcloud": [
             {
-              "quality": "480p",
-              "height": 480,
-              "url": "https://frosty-snowflake-407a.renker2364.workers.dev/?vcloud=https://vcloud.fit/jjxkkln4rxxolln",
-              "description": "https://frosty-snowflake-407a.renker2364.workers.dev/?vcloud=https://vcloud.fit/jjxkkln4rxxolln, Link2, Link3, Link4, Link5, Link6, Link7, Fight Club (2023) {Hindi ORG. Dubbed} WEB-DL 480p [480MB], 480MB https://frosty-snowflake-407a.renker2364.workers.dev/?vcloud=https://vcloud.fit/jjxkkln4rxxolln, Link2, Link3, Link4, Link5, Link6, Link7, Fight Club (2023) {Hindi ORG. Dubbed} WEB-DL 480p [480MB], 480MB",
-              "unroll": "https://556138dca7367763ed46eecaa4284eca.r2.cloudflarestorage.com/hub2/Fight.Club.2023.Hindi.480p.WEB-DL.E.Sub.Vegamovies.to.mkv?X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Credential=26b6cf8a0399b5880643f585c8c3dbe5%2F20261004%2Fauto%2Fs3%2Faws4_request&X-Amz-Date=20261004T082939Z&X-Amz-Expires=10800&X-Amz-SignedHeaders=host&response-content-disposition=Fight.Club.2023.Hindi.480p.WEB-DL.E.Sub.Vegamovies.to.mkv&X-Amz-Signature=d5c4221aa43a5d377b2eb20ee68c218dd8a87baf2cceb6a0553091a982afa062"
+              "quality": "720p",
+              "height": 720,
+              "url": "https://frosty-snowflake-407a.renker2364.workers.dev/?vcloud=https://vcloud.fit/7zsbvcvt8xw4qxk",
+              "description": "https://frosty-snowflake-407a.renker2364.workers.dev/?vcloud=https://vcloud.fit/7zsbvcvt8xw4qxk, Link2, Link3, Link4, Link5, Link6, Link7, Fight Club (2023) {Hindi ORG. Dubbed} WEB-DL 720p [1.3GB], 1.3GB https://frosty-snowflake-407a.renker2364.workers.dev/?vcloud=https://vcloud.fit/7zsbvcvt8xw4qxk, Link2, Link3, Link4, Link5, Link6, Link7, Fight Club (2023) {Hindi ORG. Dubbed} WEB-DL 720p [1.3GB], 1.3GB",
+              "unroll": "https://video-downloads.googleusercontent.com/ADGPM2noyQtBhSNIxl4ztrOagwTLfFguUpMGlv6BXtchA-s4b_bOSv2biJEzFV3HyjChhMCsIhi7fOF5yWHtElfpsht1ToQtoPfugsXPdjBMRaJ1NWRhHDFVfsJKVjidfiL2dJC9ILmKJjY7ZUV7fy1O4bhw5TEUz79xkOa7_nW5W9Ts7VE8Vfo7GZ7GJmbtzbjJvxE3bIPbgKuoycKaaOaDTZdXakqVDBcN9mtg8kQnckinLF5Dfn2cKkGtnOrRNjrajvch9_VATpJ8IYx2lymvtBhXEG99-t_rmV3big8LNWV5ZE0bop4as0hW8hpiVlPblkRq8OYo91N-UF83rI8C-nXmVeLZN1Y_r40l0h7Qq4VQbYvkd7E-BN_HV5-lsSCV7Vy1O74HeRsxzV54tBbKXLKVzaCXqSasAyba7NrtB3UAd2j1efMsEUw-XHaAOKcIB3_EbLyXDWWZOHQOdH0B7HTAbQZKTCS6Y72r8HCVBLDIHgv-QjlOziFzepGvy2K-0TOPuYjJMUtCRlzGFmID1n_RiaDHUp-xrKRyFElnDtK2F4voiQvtK3Ua4uH2atuB1YXLRlQKUh7xwSmm89nqA7-zvX4F48BK4kJpNEQmQJHQdtjpOAZcbm_BGLjHQQUdHyilD3KZ7I4RdM3zsbuGBIhp8tq_rG3fvLxUo-atbZQZp9fWfAl9pZybxHGIlvex3CRVgyhuPHH1LKjxTryWCSGDpwCik05XZVz21imFCWwyeFe4Q9gD6AwlpN4XiQ28ocPO3dK9_1qazrFbV0ax4ERrArD91T8bnZUcClJ00OVJf0Vdbmx89Nyq7dwK1FKA8rXZc4B35IOhY8jlzV62Rr56cPqQWUL863hoAbr6PHTJYT8mdQJNoS2ehrXBUYMnuHL2KzStA9mDCYKugZqMhtd9vBlQv-mNqOZNu6q_znuSZqZ48v-wnTfIMfSwjM8JzseQn4rNv375F7lFVVyR2A6eRmbvIW4lj93ZcLGoZmjsGmvdoCCbPyaTsxC1PIgmJwCpHiezgw2XPvoz-JVm8MxRhGl0BIWe_VqHF8_xon2j7kXi_jbjxHjzDYCP1AP0QyI_Ds4j5AGrRF1IPjgbrfSQJ9mCIGF3304rDoFqWuvntS2g30_0EjeVhM8iNmEhOsx2WWIhHqblnPoOL_dTBrWgMmZLcg"
             },
             {
               "quality": "1080p",
               "height": 1080,
               "url": "https://frosty-snowflake-407a.renker2364.workers.dev/?vcloud=https://vcloud.fit/mvv3ey3pvvmyh3g",
               "description": "https://frosty-snowflake-407a.renker2364.workers.dev/?vcloud=https://vcloud.fit/mvv3ey3pvvmyh3g, Link2, Link3, Link4, Link5, Link6, Link7, Fight Club (2023) {Hindi ORG. Dubbed} WEB-DL 1080p [2.5GB], 2.5GB https://frosty-snowflake-407a.renker2364.workers.dev/?vcloud=https://vcloud.fit/mvv3ey3pvvmyh3g, Link2, Link3, Link4, Link5, Link6, Link7, Fight Club (2023) {Hindi ORG. Dubbed} WEB-DL 1080p [2.5GB], 2.5GB",
-              "unroll": "https://pub-f4ba9fb2017042968ec12c06f4b42344.r2.dev/7c6c2dbe0fc60b35619f0cb223323c47?token=1791102582"
+              "unroll": "https://video-downloads.googleusercontent.com/ADGPM2lS5eKWJPhJBEvbrQ8nt54ct9V0f-irVxMnL9hKQMweHOeZgJ_17a8QNmySdLdye8axPWmkPgMT5aLhGtc-zbQA2zDCHOop6wBJKJDZIbzfLNTaqo5uUg0oC_jKDWbDNBemGPVaE5vw3LWuXCvy6_tG8LYxEoW8_seDuyR4wS61PCHgj8A2WvgEInu0k64_QZ4LF1qyNJhRbHvNhXUjiP3E8JrYT30AtXXttWZok8-QBgTXmLZZ1PHGaXclyDB5ept_LxauxJ16qIOWy2QOL_SaRO1gpp6BMIsKWtBFeu5a82HL0dL82PDN8y9I9pMJC9jm371MiwUw5n2uxV8vz5jPVM6ycR_hXE6XiKfEda64hBe8Fa7Ijc66l9KRfMTYd_wYk1M1UgK0YrxZTjtjT-SiOTt9Ke4Oo5hzH_48N2SPsxV9DPWwSWJ2QV6cxGhKqkGjuD_5p0IcdqY7KU4GYaPyKB0ifeCCvZJikdw01_b5_0KVEeBL37rNOLcEDg-c6BRRM_TvBfekf4booL6U8Crbfy8dDGLDKqIrGpWKCt2dHQmfTLXtjOTCsX5VKckLC_Yc9GEFFdeZlgtDKXeNe_NhBIqGRhF9yibv9WwWXc9qKnPWlhGGn9efRYeUbw451oU1O6tyD03zb5_UmqoDcIydv4nAiI-isJYwILfUbuX6xuAHBEeazvYQfRNifBg-2BWoGbEwZYH5JN9nVQoFKUuPKqjWVoKCwZboAwtEYwjNBKftao_qMBk-N1FH2SzNWXfEAqYA71I3Nes2GjtMvLvXJPm_yJ_KmMcIKJZ05OQYRCLgp5kLllQ50MoflxcfBbmP7LsO73bCYn4LzEyY_tNvcU0xD4ivpCORuxRPWR2XpViSopDX7yabTSkNzH1S2vYZ1mn8cIcdsid_xhDOtCoXlL1xqn4bRB_ysyqrj4UQkgM0_du7nq3jaQObyqJgZ9e2tZj6jnn8sg9F0YukokvgtHs6V9zD_3M6ja-jSBr3laeEsDljFtrmQzapDZWcAxvoN4iTETmZfwOPpmvrcUQAEXKzrHRuBBkH8oYvXuWTfL5-LmxaC7ecKmAA1SYD4MaCHxDdGipFltmEP0e3kH6wxr5i5zi6FWBgKnTZ-3re5fk3PvVKyk3Ae3633xfcmI0c7qsoZqJtjmaMF_4Gs3bLrwpSEQ"
             },
             {
-              "quality": "720p",
-              "height": 720,
-              "url": "https://frosty-snowflake-407a.renker2364.workers.dev/?vcloud=https://vcloud.fit/7zsbvcvt8xw4qxk",
-              "description": "https://frosty-snowflake-407a.renker2364.workers.dev/?vcloud=https://vcloud.fit/7zsbvcvt8xw4qxk, Link2, Link3, Link4, Link5, Link6, Link7, Fight Club (2023) {Hindi ORG. Dubbed} WEB-DL 720p [1.3GB], 1.3GB https://frosty-snowflake-407a.renker2364.workers.dev/?vcloud=https://vcloud.fit/7zsbvcvt8xw4qxk, Link2, Link3, Link4, Link5, Link6, Link7, Fight Club (2023) {Hindi ORG. Dubbed} WEB-DL 720p [1.3GB], 1.3GB",
-              "unroll": "https://pub-f4ba9fb2017042968ec12c06f4b42344.r2.dev/2a1569f02b214e92e6a1c00a6b5e936c?token=1791102580"
+              "quality": "480p",
+              "height": 480,
+              "url": "https://frosty-snowflake-407a.renker2364.workers.dev/?vcloud=https://vcloud.fit/jjxkkln4rxxolln",
+              "description": "https://frosty-snowflake-407a.renker2364.workers.dev/?vcloud=https://vcloud.fit/jjxkkln4rxxolln, Link2, Link3, Link4, Link5, Link6, Link7, Fight Club (2023) {Hindi ORG. Dubbed} WEB-DL 480p [480MB], 480MB https://frosty-snowflake-407a.renker2364.workers.dev/?vcloud=https://vcloud.fit/jjxkkln4rxxolln, Link2, Link3, Link4, Link5, Link6, Link7, Fight Club (2023) {Hindi ORG. Dubbed} WEB-DL 480p [480MB], 480MB",
+              "unroll": "https://video-downloads.googleusercontent.com/ADGPM2nIaRolHa3kQg-UKe1sVHJ6Q16QqehIqDt_QNcg1FFuAEeeMo9r0D7HYonhJOEnPk2vG6vt7DuXtVLSfxD1gLiOMk2QagwHyuN6PMD6DnAq7Hx5Af7CC5AN6hT_URG9FLbvq0BTudlRknqOcEtQiJxc8PfCwzd5R731bAaDL3dGlYD3PUXpF18ke5NilwzIt_60n0FsiPspyCsmWPdOxxMAgi55OjIV_udWS6nZxWZaWsI-0zUszJyzLi_ZgzN7_mZvjQjKSEFeQuiOIy4uvr2qXWCJs3JinyKzX46kSp-yV03V5qiF_8DlcJlKnK1AYPisM35kTO02iGm4B9Cl3G8ZUTqNGNrC1MoRNRBV-CrG7VHkeFpIb-XH-TDA8U5U6zxEpkgSJ3-60cChWUw10fJeAG5sOXtLomWwgI7IWmwI8RA-ofAtz8g6hXQLHDblvmgHYPFeAne36niVJp-cUAN0B8vOnY0V2menjwrHuhwmRlPGLw2Uz75Jos30kwhf2Fw7YLXGVJd2-I6pcAIX-AU7i_RMV-OBVGy-CtIzfTR3c39Yn3pY2CgNjpq1UP51S5PAEbk_hDiOr1abpMKuT8OqBsDns4AjMHU289Rvzg8GbFfD0uKR2ps-_StX4Hmwn0l8QqwLuIJ95ElbhByAbUTJ6zbagdk0zZlkzHk9ggeTlm-A50pIxK9wjZ9XYAfc8Z_6HLNO2SpyzJmf8frQAt5a_wmr8I_RVfiUbP9wnRv3ShvrX_dddkoF8sP2S0U2r6dfhxuzAOP8V23CQY1YsEt9IxOIkTbahcalr9-1VWrYjwJRJjoKuz9NOaLMEr52VC6ERUzSJcJkVZuLvZvVA_-pSloH-7A31cVofyVMpe8nSQ1LStwn9vZtIX2qbOZxJXwm8A7NR1IiVnWlapMtd6Qp8KTeWN4fU_zxnXB1jPjPrFpkC3CI0blWi9wil0eExPQAtHkW7QDCA91WSIkR5F0rrJRIbzKUOfFoGGXL9SayM0fN-kwRBm5fNgSteLWgkRo39cIHq4rFn6v1HAhK2LP-Y0u2MQaVi33XNvWgpMiVoNH609KwjjRn5evAKV9CNsO3FZVdvUPtTHbB1kRYHgzf5ICqgcAk4CE2EOoCLPxYKudFdx-2ea1kO8A0i0AqvCUtzoUYAR56JfetJCWw54q_M9ty_g"
             },
             {
               "quality": "1080p",
               "height": 1080,
               "url": "https://frosty-snowflake-407a.renker2364.workers.dev/?vcloud=https://vcloud.fit/_copdk6pfc9uwgg",
               "description": "https://frosty-snowflake-407a.renker2364.workers.dev/?vcloud=https://vcloud.fit/_copdk6pfc9uwgg, Link2, Link3, Link4, Link5, Link6, Link7, Fight Club (2023) {Multi Audio} WEB-DL 1080p [4GB], 4GB https://frosty-snowflake-407a.renker2364.workers.dev/?vcloud=https://vcloud.fit/_copdk6pfc9uwgg, Link2, Link3, Link4, Link5, Link6, Link7, Fight Club (2023) {Multi Audio} WEB-DL 1080p [4GB], 4GB",
-              "unroll": "https://pixeldrain.dev/api/file/vt5Fzr8R?download"
+              "unroll": "https://video-downloads.googleusercontent.com/ADGPM2loaAppWy2_opoTckG_taBigcxj5_9cH9Nar7Uy58QiDKKwjFKVQqvTgeISgmNTBjz6oNtYqLb-ijqdhzAiOOserf48A2Z3NcqDvE3sCg3UxR3IBbDeMVNOHQi2F-UksTuuFqStJ73LJE-orQLhtAnJ3riUwMluey2EM9eTC6MCtBG1DpzrM3BfBPTTxh_G0EloyVt_zwUWl00xSQJHIIjVeYehRvxrdcDHYN5QYKmtuSnphYCGkpAWr0UZqf1GhW0kKcBon1tP3Tfzx0G0C3cEk03lGkMiD8F7zISSDW6Q5ryYAiwruxumcTd4IOEbmEs21MpCoRxxWfBFISTg_S2FFbym7TrssHaVTLKaGcWhoi2sXAGQ7PT76Q-EGtVOpWElstZb14VHDTboJNb0ADBQzWFaketIwxTFIMzL9OsYTmirs5Yo92L8GgPZYP98GU-WNttGhl_d8Cb6VGa1CN5op_pFXuhIspqK8vJycYOAufBcYa1i5A6kDeWmGruTdB4cdmFbqchY5ZIq_N20J_ccSjxvA1c0gVJ9_YrlT-IrRmt5uIcZz-AsvEmNTXLa9xK01p87LZaqtMND1wpkdm5zOy6vCWkzbi14-lfd9xh5U_t8FtinE5TYpPbexaFqhTgON4dfAW5T3iBPS0R54PQ9TKyOi5TjpxJssXXJhDcCWNWUZxv3fgQfTkW7I_Z48wIeCo3ft2Yzw5B7mEERK6AHkEqcrSeVkfSd6EmQb8v7_rLNwrVARf0p07QpxHujm4eHPEKL3YtS-ck7FMhIr_aWMZXKhF10KDfV6kFY3UsYuRmNMI0Cu1HBSwlbSKV_rjme1H0eiVRmYfUWrjxSsKRQp7tKUNWlsfIQpRUMnREp99XYNTgI6gjLfkOslXEhhL16n4TtebTNAZR-HkO8W34fkLlY0-i-2r-f9rXiN29ubt1K0mm23lkOVJW6qS89wxTHyBCpE3SXfgN4JO3F376MtUzsh4Ip_hR2dPjR9j7DPqZtZhvRkzaQJe552ehpiJvi8kO4zzxqsQs9n3ONc935Y-mTmQI-MB-S6ZbumPnpeseLqp47cK3_FZe5JNniS5NOGUfGY4iA84nVbkJC0_4EPfLwP4kth5QeEvlwqzIPBdUJg-vnPIyVBGmh2CNau21hJr-szCZtJca4Dt0TCnRojnbTnQ"
             }
           ],
           "resolver": {
@@ -1597,29 +1602,29 @@
             "reason": null,
             "tier": "hicine4k",
             "server": "ursa",
-            "rawUrl": "https://pixeldrain.dev/api/file/vt5Fzr8R?download",
+            "rawUrl": "https://video-downloads.googleusercontent.com/ADGPM2loaAppWy2_opoTckG_taBigcxj5_9cH9Nar7Uy58QiDKKwjFKVQqvTgeISgmNTBjz6oNtYqLb-ijqdhzAiOOserf48A2Z3NcqDvE3sCg3UxR3IBbDeMVNOHQi2F-UksTuuFqStJ73LJE-orQLhtAnJ3riUwMluey2EM9eTC6MCtBG1DpzrM3BfBPTTxh_G0EloyVt_zwUWl00xSQJHIIjVeYehRvxrdcDHYN5QYKmtuSnphYCGkpAWr0UZqf1GhW0kKcBon1tP3Tfzx0G0C3cEk03lGkMiD8F7zISSDW6Q5ryYAiwruxumcTd4IOEbmEs21MpCoRxxWfBFISTg_S2FFbym7TrssHaVTLKaGcWhoi2sXAGQ7PT76Q-EGtVOpWElstZb14VHDTboJNb0ADBQzWFaketIwxTFIMzL9OsYTmirs5Yo92L8GgPZYP98GU-WNttGhl_d8Cb6VGa1CN5op_pFXuhIspqK8vJycYOAufBcYa1i5A6kDeWmGruTdB4cdmFbqchY5ZIq_N20J_ccSjxvA1c0gVJ9_YrlT-IrRmt5uIcZz-AsvEmNTXLa9xK01p87LZaqtMND1wpkdm5zOy6vCWkzbi14-lfd9xh5U_t8FtinE5TYpPbexaFqhTgON4dfAW5T3iBPS0R54PQ9TKyOi5TjpxJssXXJhDcCWNWUZxv3fgQfTkW7I_Z48wIeCo3ft2Yzw5B7mEERK6AHkEqcrSeVkfSd6EmQb8v7_rLNwrVARf0p07QpxHujm4eHPEKL3YtS-ck7FMhIr_aWMZXKhF10KDfV6kFY3UsYuRmNMI0Cu1HBSwlbSKV_rjme1H0eiVRmYfUWrjxSsKRQp7tKUNWlsfIQpRUMnREp99XYNTgI6gjLfkOslXEhhL16n4TtebTNAZR-HkO8W34fkLlY0-i-2r-f9rXiN29ubt1K0mm23lkOVJW6qS89wxTHyBCpE3SXfgN4JO3F376MtUzsh4Ip_hR2dPjR9j7DPqZtZhvRkzaQJe552ehpiJvi8kO4zzxqsQs9n3ONc935Y-mTmQI-MB-S6ZbumPnpeseLqp47cK3_FZe5JNniS5NOGUfGY4iA84nVbkJC0_4EPfLwP4kth5QeEvlwqzIPBdUJg-vnPIyVBGmh2CNau21hJr-szCZtJca4Dt0TCnRojnbTnQ",
             "qualityDegraded": true,
             "requestedQuality": "2160p",
             "qualities": [
               {
                 "label": "1080p",
                 "height": 1080,
-                "url": "https://pixeldrain.dev/api/file/vt5Fzr8R?download"
+                "url": "https://video-downloads.googleusercontent.com/ADGPM2loaAppWy2_opoTckG_taBigcxj5_9cH9Nar7Uy58QiDKKwjFKVQqvTgeISgmNTBjz6oNtYqLb-ijqdhzAiOOserf48A2Z3NcqDvE3sCg3UxR3IBbDeMVNOHQi2F-UksTuuFqStJ73LJE-orQLhtAnJ3riUwMluey2EM9eTC6MCtBG1DpzrM3BfBPTTxh_G0EloyVt_zwUWl00xSQJHIIjVeYehRvxrdcDHYN5QYKmtuSnphYCGkpAWr0UZqf1GhW0kKcBon1tP3Tfzx0G0C3cEk03lGkMiD8F7zISSDW6Q5ryYAiwruxumcTd4IOEbmEs21MpCoRxxWfBFISTg_S2FFbym7TrssHaVTLKaGcWhoi2sXAGQ7PT76Q-EGtVOpWElstZb14VHDTboJNb0ADBQzWFaketIwxTFIMzL9OsYTmirs5Yo92L8GgPZYP98GU-WNttGhl_d8Cb6VGa1CN5op_pFXuhIspqK8vJycYOAufBcYa1i5A6kDeWmGruTdB4cdmFbqchY5ZIq_N20J_ccSjxvA1c0gVJ9_YrlT-IrRmt5uIcZz-AsvEmNTXLa9xK01p87LZaqtMND1wpkdm5zOy6vCWkzbi14-lfd9xh5U_t8FtinE5TYpPbexaFqhTgON4dfAW5T3iBPS0R54PQ9TKyOi5TjpxJssXXJhDcCWNWUZxv3fgQfTkW7I_Z48wIeCo3ft2Yzw5B7mEERK6AHkEqcrSeVkfSd6EmQb8v7_rLNwrVARf0p07QpxHujm4eHPEKL3YtS-ck7FMhIr_aWMZXKhF10KDfV6kFY3UsYuRmNMI0Cu1HBSwlbSKV_rjme1H0eiVRmYfUWrjxSsKRQp7tKUNWlsfIQpRUMnREp99XYNTgI6gjLfkOslXEhhL16n4TtebTNAZR-HkO8W34fkLlY0-i-2r-f9rXiN29ubt1K0mm23lkOVJW6qS89wxTHyBCpE3SXfgN4JO3F376MtUzsh4Ip_hR2dPjR9j7DPqZtZhvRkzaQJe552ehpiJvi8kO4zzxqsQs9n3ONc935Y-mTmQI-MB-S6ZbumPnpeseLqp47cK3_FZe5JNniS5NOGUfGY4iA84nVbkJC0_4EPfLwP4kth5QeEvlwqzIPBdUJg-vnPIyVBGmh2CNau21hJr-szCZtJca4Dt0TCnRojnbTnQ"
               },
               {
                 "label": "1080p (Alt)",
                 "height": 1080,
-                "url": "https://pub-f4ba9fb2017042968ec12c06f4b42344.r2.dev/7c6c2dbe0fc60b35619f0cb223323c47?token=1791102582"
+                "url": "https://video-downloads.googleusercontent.com/ADGPM2lS5eKWJPhJBEvbrQ8nt54ct9V0f-irVxMnL9hKQMweHOeZgJ_17a8QNmySdLdye8axPWmkPgMT5aLhGtc-zbQA2zDCHOop6wBJKJDZIbzfLNTaqo5uUg0oC_jKDWbDNBemGPVaE5vw3LWuXCvy6_tG8LYxEoW8_seDuyR4wS61PCHgj8A2WvgEInu0k64_QZ4LF1qyNJhRbHvNhXUjiP3E8JrYT30AtXXttWZok8-QBgTXmLZZ1PHGaXclyDB5ept_LxauxJ16qIOWy2QOL_SaRO1gpp6BMIsKWtBFeu5a82HL0dL82PDN8y9I9pMJC9jm371MiwUw5n2uxV8vz5jPVM6ycR_hXE6XiKfEda64hBe8Fa7Ijc66l9KRfMTYd_wYk1M1UgK0YrxZTjtjT-SiOTt9Ke4Oo5hzH_48N2SPsxV9DPWwSWJ2QV6cxGhKqkGjuD_5p0IcdqY7KU4GYaPyKB0ifeCCvZJikdw01_b5_0KVEeBL37rNOLcEDg-c6BRRM_TvBfekf4booL6U8Crbfy8dDGLDKqIrGpWKCt2dHQmfTLXtjOTCsX5VKckLC_Yc9GEFFdeZlgtDKXeNe_NhBIqGRhF9yibv9WwWXc9qKnPWlhGGn9efRYeUbw451oU1O6tyD03zb5_UmqoDcIydv4nAiI-isJYwILfUbuX6xuAHBEeazvYQfRNifBg-2BWoGbEwZYH5JN9nVQoFKUuPKqjWVoKCwZboAwtEYwjNBKftao_qMBk-N1FH2SzNWXfEAqYA71I3Nes2GjtMvLvXJPm_yJ_KmMcIKJZ05OQYRCLgp5kLllQ50MoflxcfBbmP7LsO73bCYn4LzEyY_tNvcU0xD4ivpCORuxRPWR2XpViSopDX7yabTSkNzH1S2vYZ1mn8cIcdsid_xhDOtCoXlL1xqn4bRB_ysyqrj4UQkgM0_du7nq3jaQObyqJgZ9e2tZj6jnn8sg9F0YukokvgtHs6V9zD_3M6ja-jSBr3laeEsDljFtrmQzapDZWcAxvoN4iTETmZfwOPpmvrcUQAEXKzrHRuBBkH8oYvXuWTfL5-LmxaC7ecKmAA1SYD4MaCHxDdGipFltmEP0e3kH6wxr5i5zi6FWBgKnTZ-3re5fk3PvVKyk3Ae3633xfcmI0c7qsoZqJtjmaMF_4Gs3bLrwpSEQ"
               },
               {
                 "label": "720p",
                 "height": 720,
-                "url": "https://pub-f4ba9fb2017042968ec12c06f4b42344.r2.dev/2a1569f02b214e92e6a1c00a6b5e936c?token=1791102580"
+                "url": "https://video-downloads.googleusercontent.com/ADGPM2noyQtBhSNIxl4ztrOagwTLfFguUpMGlv6BXtchA-s4b_bOSv2biJEzFV3HyjChhMCsIhi7fOF5yWHtElfpsht1ToQtoPfugsXPdjBMRaJ1NWRhHDFVfsJKVjidfiL2dJC9ILmKJjY7ZUV7fy1O4bhw5TEUz79xkOa7_nW5W9Ts7VE8Vfo7GZ7GJmbtzbjJvxE3bIPbgKuoycKaaOaDTZdXakqVDBcN9mtg8kQnckinLF5Dfn2cKkGtnOrRNjrajvch9_VATpJ8IYx2lymvtBhXEG99-t_rmV3big8LNWV5ZE0bop4as0hW8hpiVlPblkRq8OYo91N-UF83rI8C-nXmVeLZN1Y_r40l0h7Qq4VQbYvkd7E-BN_HV5-lsSCV7Vy1O74HeRsxzV54tBbKXLKVzaCXqSasAyba7NrtB3UAd2j1efMsEUw-XHaAOKcIB3_EbLyXDWWZOHQOdH0B7HTAbQZKTCS6Y72r8HCVBLDIHgv-QjlOziFzepGvy2K-0TOPuYjJMUtCRlzGFmID1n_RiaDHUp-xrKRyFElnDtK2F4voiQvtK3Ua4uH2atuB1YXLRlQKUh7xwSmm89nqA7-zvX4F48BK4kJpNEQmQJHQdtjpOAZcbm_BGLjHQQUdHyilD3KZ7I4RdM3zsbuGBIhp8tq_rG3fvLxUo-atbZQZp9fWfAl9pZybxHGIlvex3CRVgyhuPHH1LKjxTryWCSGDpwCik05XZVz21imFCWwyeFe4Q9gD6AwlpN4XiQ28ocPO3dK9_1qazrFbV0ax4ERrArD91T8bnZUcClJ00OVJf0Vdbmx89Nyq7dwK1FKA8rXZc4B35IOhY8jlzV62Rr56cPqQWUL863hoAbr6PHTJYT8mdQJNoS2ehrXBUYMnuHL2KzStA9mDCYKugZqMhtd9vBlQv-mNqOZNu6q_znuSZqZ48v-wnTfIMfSwjM8JzseQn4rNv375F7lFVVyR2A6eRmbvIW4lj93ZcLGoZmjsGmvdoCCbPyaTsxC1PIgmJwCpHiezgw2XPvoz-JVm8MxRhGl0BIWe_VqHF8_xon2j7kXi_jbjxHjzDYCP1AP0QyI_Ds4j5AGrRF1IPjgbrfSQJ9mCIGF3304rDoFqWuvntS2g30_0EjeVhM8iNmEhOsx2WWIhHqblnPoOL_dTBrWgMmZLcg"
               },
               {
                 "label": "480p",
                 "height": 480,
-                "url": "https://556138dca7367763ed46eecaa4284eca.r2.cloudflarestorage.com/hub2/Fight.Club.2023.Hindi.480p.WEB-DL.E.Sub.Vegamovies.to.mkv?X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Credential=26b6cf8a0399b5880643f585c8c3dbe5%2F20261004%2Fauto%2Fs3%2Faws4_request&X-Amz-Date=20261004T082939Z&X-Amz-Expires=10800&X-Amz-SignedHeaders=host&response-content-disposition=Fight.Club.2023.Hindi.480p.WEB-DL.E.Sub.Vegamovies.to.mkv&X-Amz-Signature=d5c4221aa43a5d377b2eb20ee68c218dd8a87baf2cceb6a0553091a982afa062"
+                "url": "https://video-downloads.googleusercontent.com/ADGPM2nIaRolHa3kQg-UKe1sVHJ6Q16QqehIqDt_QNcg1FFuAEeeMo9r0D7HYonhJOEnPk2vG6vt7DuXtVLSfxD1gLiOMk2QagwHyuN6PMD6DnAq7Hx5Af7CC5AN6hT_URG9FLbvq0BTudlRknqOcEtQiJxc8PfCwzd5R731bAaDL3dGlYD3PUXpF18ke5NilwzIt_60n0FsiPspyCsmWPdOxxMAgi55OjIV_udWS6nZxWZaWsI-0zUszJyzLi_ZgzN7_mZvjQjKSEFeQuiOIy4uvr2qXWCJs3JinyKzX46kSp-yV03V5qiF_8DlcJlKnK1AYPisM35kTO02iGm4B9Cl3G8ZUTqNGNrC1MoRNRBV-CrG7VHkeFpIb-XH-TDA8U5U6zxEpkgSJ3-60cChWUw10fJeAG5sOXtLomWwgI7IWmwI8RA-ofAtz8g6hXQLHDblvmgHYPFeAne36niVJp-cUAN0B8vOnY0V2menjwrHuhwmRlPGLw2Uz75Jos30kwhf2Fw7YLXGVJd2-I6pcAIX-AU7i_RMV-OBVGy-CtIzfTR3c39Yn3pY2CgNjpq1UP51S5PAEbk_hDiOr1abpMKuT8OqBsDns4AjMHU289Rvzg8GbFfD0uKR2ps-_StX4Hmwn0l8QqwLuIJ95ElbhByAbUTJ6zbagdk0zZlkzHk9ggeTlm-A50pIxK9wjZ9XYAfc8Z_6HLNO2SpyzJmf8frQAt5a_wmr8I_RVfiUbP9wnRv3ShvrX_dddkoF8sP2S0U2r6dfhxuzAOP8V23CQY1YsEt9IxOIkTbahcalr9-1VWrYjwJRJjoKuz9NOaLMEr52VC6ERUzSJcJkVZuLvZvVA_-pSloH-7A31cVofyVMpe8nSQ1LStwn9vZtIX2qbOZxJXwm8A7NR1IiVnWlapMtd6Qp8KTeWN4fU_zxnXB1jPjPrFpkC3CI0blWi9wil0eExPQAtHkW7QDCA91WSIkR5F0rrJRIbzKUOfFoGGXL9SayM0fN-kwRBm5fNgSteLWgkRo39cIHq4rFn6v1HAhK2LP-Y0u2MQaVi33XNvWgpMiVoNH609KwjjRn5evAKV9CNsO3FZVdvUPtTHbB1kRYHgzf5ICqgcAk4CE2EOoCLPxYKudFdx-2ea1kO8A0i0AqvCUtzoUYAR56JfetJCWw54q_M9ty_g"
               }
             ],
             "diag": null
@@ -1634,13 +1639,13 @@
             {
               "url": "https://a.111477.xyz/movies/Fight%20Club%20(1999)/",
               "status": 403,
-              "latencyMs": 38,
+              "latencyMs": 17,
               "error": null
             },
             {
               "url": "https://a.111477.xyz/movies/Fight%20Club/",
               "status": 403,
-              "latencyMs": 41,
+              "latencyMs": 18,
               "error": null
             }
           ],
@@ -1663,24 +1668,24 @@
         "reason": null,
         "tier": "4khdhub",
         "server": "ursa",
-        "rawUrl": "https://c6b1e8c93683bdde581e2164cb9657c9.r2.cloudflarestorage.com/hub/bc953c1f1cee5b851b6a0a9112531074?X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Credential=ce3806fdca997f65e356f3b6fc2f735d%2F20261004%2Fauto%2Fs3%2Faws4_request&X-Amz-Date=20261004T100329Z&X-Amz-Expires=28800&X-Amz-SignedHeaders=host&response-content-disposition=attachment%3B%20filename%3D%22Fight%20Club%20%281999%29%201080p%20UHD%20BluRay%20HDR%2010bit%20HEVC%20%5BHindi%20DDP%202.0%20%2B%20English%20DDP%205.1%5D%20x265%20%28HiDt-LUMiX%29.mkv%22&X-Amz-Signature=5a18b0d1d22a5f43967b901c2abc724e67f832a4d8290eb680a90c72f2d276a5",
+        "rawUrl": "https://c6b1e8c93683bdde581e2164cb9657c9.r2.cloudflarestorage.com/hub/bc953c1f1cee5b851b6a0a9112531074?X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Credential=ce3806fdca997f65e356f3b6fc2f735d%2F20261004%2Fauto%2Fs3%2Faws4_request&X-Amz-Date=20261004T100414Z&X-Amz-Expires=28800&X-Amz-SignedHeaders=host&response-content-disposition=attachment%3B%20filename%3D%22Fight%20Club%20%281999%29%201080p%20UHD%20BluRay%20HDR%2010bit%20HEVC%20%5BHindi%20DDP%202.0%20%2B%20English%20DDP%205.1%5D%20x265%20%28HiDt-LUMiX%29.mkv%22&X-Amz-Signature=ccddc2137b66eb74f927efd6463558222bf3a015bc0e7fb23e9151eb02b78ed6",
         "qualityDegraded": false,
         "requestedQuality": "2160p",
         "qualities": [
           {
             "label": "2160p (4K)",
             "height": 2160,
-            "url": "https://c6b1e8c93683bdde581e2164cb9657c9.r2.cloudflarestorage.com/hub/bc953c1f1cee5b851b6a0a9112531074?X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Credential=ce3806fdca997f65e356f3b6fc2f735d%2F20261004%2Fauto%2Fs3%2Faws4_request&X-Amz-Date=20261004T100329Z&X-Amz-Expires=28800&X-Amz-SignedHeaders=host&response-content-disposition=attachment%3B%20filename%3D%22Fight%20Club%20%281999%29%201080p%20UHD%20BluRay%20HDR%2010bit%20HEVC%20%5BHindi%20DDP%202.0%20%2B%20English%20DDP%205.1%5D%20x265%20%28HiDt-LUMiX%29.mkv%22&X-Amz-Signature=5a18b0d1d22a5f43967b901c2abc724e67f832a4d8290eb680a90c72f2d276a5"
+            "url": "https://c6b1e8c93683bdde581e2164cb9657c9.r2.cloudflarestorage.com/hub/bc953c1f1cee5b851b6a0a9112531074?X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Credential=ce3806fdca997f65e356f3b6fc2f735d%2F20261004%2Fauto%2Fs3%2Faws4_request&X-Amz-Date=20261004T100414Z&X-Amz-Expires=28800&X-Amz-SignedHeaders=host&response-content-disposition=attachment%3B%20filename%3D%22Fight%20Club%20%281999%29%201080p%20UHD%20BluRay%20HDR%2010bit%20HEVC%20%5BHindi%20DDP%202.0%20%2B%20English%20DDP%205.1%5D%20x265%20%28HiDt-LUMiX%29.mkv%22&X-Amz-Signature=ccddc2137b66eb74f927efd6463558222bf3a015bc0e7fb23e9151eb02b78ed6"
           },
           {
             "label": "2160p (4K HDR)",
             "height": 2160,
-            "url": "https://sweet-resonance-cb61.wacesi18123678.workers.dev/c705e8982683cf283baacad25bd545cd3f928c574f000a830b5e04b4ccf1221a55754f711afaf87e4e001a9e211af0bc::6ab918840138b8e659ffa013a3802cc6/1398009276/Fight%20Club%20(1999)%202160p%20UHD%20BluRay%20HDR%2010bit%20HEVC%20[Hindi%20DDP%202.0%20+%20English%20DTS-HD%20MA%205.1]%20x265%20(j3rico-LUMiX).mkv"
+            "url": "https://video-downloads.googleusercontent.com/ADGPM2l8wC2QC-iMNwNi-dQ0glgY6MpAIkeCg0XbH0hnk7ghWB-vF01WB9buU-s_DbmdtC3Wtt4k9Ov2Bm-i1WiQ9V9nlOehrFOW5fVKZQeGMybFXH3VXeaSu-ugGAsZl6fnp1QXFiW1QoO8vxY9PE2OOvD0vtiIYDSXtlYiCle4Qd3OK19fEJJAPc-2G34psh2jeO_EhVKTVhurkHArlO4ajavwD0SNk3oxweX9wGatbzjsXlLRnBL84YiT-mkyxFw__Styi9LaWmgw83v8NESmkEOMUyHRtnFqufEmBDptttHTvjNI2vdi7DB8-JnyGOGojucswvr-d_xn3Vy9l6J2_Mn9-181xIj1b9aEMtAwXrIG0T9OA1yEFDuW8VjLQP5rZEcyFBFt1FA60izSRA7tvX6p6CaOHKcUlW3aN7IpIQg-D9l_6srvzr1Jrkiq3QQnFLe55N5Uz3zFm75HbWJEXP6TvXCy9ORBnowDTI1uhEEXZuhDb5NJ_E97255fwi4rHGcbbVw7bndKN1A0oDG3h6p3K_qWvcaZLq8irR-Lmrup1DqiPLyMh9qur885dmrbr9MIrdR1GryrY-biMt7qPbRlmAZdJVlKTIkyowSEsr7l9n8cgQVaA8_a3HVzjmHL5lAE5UiPrAutukgWZt6fO2EiCKLv1PScehEPL4ukhU5KLydUa4BsVRkfnTWeiIC1NlKDhlVCszgZqO9aqhEeC8QAEHG0yMrAgXt9rll22a932lGdZXl1rXnHmlfXFj0RCz3U4tFMB47XnGDsoqk82BfMchK3UvQJDzJlLr37NvVQ-t8r5x8dZ78ZoJi0o_sZf_D-Z2mcKj4r33fXoe83EI6eRYqeSmgyOL00Re2TLGQeCRMEEh3yhC6lgrGiybZWPprLZpl6_pPKkf3zw_X4ELjyAV2cFxkj1PnOW4H_p8Dwi03OlqPwvtwdn_r4rTnzzEcNBrSCr5p1XCSmM6LuqFQgCil_KkC94MOfaXPAoe_9HrzOlzM-xvUrpAr3xiM2G5FSsuYxdJFChkCoNvRQLgyfERE4_9pC7hiI3wx-lzgTSHIURgC5ZAnCCUMJx6UK3NMg5M82niKpuBP5ua5qCNkJiZmZ0LAS7dTCttF1uXd0ZyLv4IBdZC-JX6MvNb6zpvPdNyj-osGYGef8jvs3GbaZYcGFrQ"
           },
           {
             "label": "1080p",
             "height": 1080,
-            "url": "https://c6b1e8c93683bdde581e2164cb9657c9.r2.cloudflarestorage.com/hub/429254543198c6f1e0f43bc5d39e6d09?X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Credential=ce3806fdca997f65e356f3b6fc2f735d%2F20261004%2Fauto%2Fs3%2Faws4_request&X-Amz-Date=20261004T100325Z&X-Amz-Expires=28800&X-Amz-SignedHeaders=host&response-content-disposition=attachment%3B%20filename%3D%22Fight%20Club%20%281999%29%201080p%20BluRay%20%5BHindi%20DDP%202.0%20%2B%20English%20DDP%205.1%5D%20x264%20%28ZoroSenpai-LUMiX%29.mkv%22&X-Amz-Signature=c2985761936eea4bfe5b744a048b114c7dbda48bc43bbc4a0cc989ae4c048eb1"
+            "url": "https://c6b1e8c93683bdde581e2164cb9657c9.r2.cloudflarestorage.com/hub/429254543198c6f1e0f43bc5d39e6d09?X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Credential=ce3806fdca997f65e356f3b6fc2f735d%2F20261004%2Fauto%2Fs3%2Faws4_request&X-Amz-Date=20261004T100414Z&X-Amz-Expires=28800&X-Amz-SignedHeaders=host&response-content-disposition=attachment%3B%20filename%3D%22Fight%20Club%20%281999%29%201080p%20BluRay%20%5BHindi%20DDP%202.0%20%2B%20English%20DDP%205.1%5D%20x264%20%28ZoroSenpai-LUMiX%29.mkv%22&X-Amz-Signature=cc01ff418f4521c013cbe3477a6a54d81c827891e5e90dc335ebf2223e1864a5"
           }
         ],
         "diag": {
@@ -1690,45 +1695,45 @@
             {
               "step": "4khdhub_attempt",
               "detail": "Attempting Tier 1: 4KHDHub (2160p UHD Multi-Audio)...",
-              "t": 1791108214902
+              "t": 1791110598083
             },
             {
               "step": "moviesdrive4k_attempt",
               "detail": "Attempting Tier 2: MoviesDrive 4K (Typesense IMDb + 2160p HubCloud)...",
-              "t": 1791108214902
+              "t": 1791110598083
             },
             {
               "step": "hicine4k_attempt",
               "detail": "Attempting Tier 3: HiCine 4K UHD (2160p vcloud worker)...",
-              "t": 1791108214902
+              "t": 1791110598083
             },
             {
               "step": "dahmer4k_attempt",
               "detail": "Attempting Tier 4: DahmerMovies 4K (2160p direct directory)...",
-              "t": 1791108214902
+              "t": 1791110598083
             },
             {
               "step": "4khdhub_success",
               "detail": "Resolved verified 4K (2160p (4K)) via 4khdhub",
-              "t": 1791108219075
+              "t": 1791110599534
             },
             {
               "step": "moviesdrive4k_failed",
               "detail": "moviesdrive4k_unroll_failed",
-              "t": 1791108219075
+              "t": 1791110599534
             },
             {
               "step": "hicine4k_failed",
               "detail": "hicine4k returned no verified 2160p stream",
-              "t": 1791108219075
+              "t": 1791110599534
             },
             {
               "step": "dahmer4k_failed",
               "detail": "dahmer4k_directory_not_found",
-              "t": 1791108219075
+              "t": 1791110599534
             }
           ],
-          "startedAt": "2026-10-04T10:03:34.902Z",
+          "startedAt": "2026-10-04T10:43:18.083Z",
           "message": "Resolved verified 4K stream via 4khdhub (2160p (4K))",
           "selectedTier": "4khdhub",
           "qualityDegraded": false
@@ -1758,7 +1763,7 @@
               "host": "https://4khdhub.one",
               "url": "https://4khdhub.one/?s=Arcane",
               "status": 200,
-              "latencyMs": 302,
+              "latencyMs": 273,
               "cards": [
                 {
                   "title": "Arcane",
@@ -1785,7 +1790,7 @@
               },
               "unroll": {
                 "url": "https://pixeldrain.dev/api/file/nrDZ4gP4?download",
-                "attemptedAt": "2026-10-04T10:03:47.046Z"
+                "attemptedAt": "2026-10-04T10:43:24.287Z"
               }
             },
             {
@@ -1803,7 +1808,7 @@
               },
               "unroll": {
                 "url": "https://pixeldrain.dev/api/file/nrDZ4gP4?download",
-                "attemptedAt": "2026-10-04T10:03:47.913Z"
+                "attemptedAt": "2026-10-04T10:43:25.171Z"
               }
             },
             {
@@ -1820,8 +1825,8 @@
                 "error": null
               },
               "unroll": {
-                "url": "https://c6b1e8c93683bdde581e2164cb9657c9.r2.cloudflarestorage.com/hub/31fe1982d0b697cd04016c40f0feb504?X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Credential=ce3806fdca997f65e356f3b6fc2f735d%2F20261004%2Fauto%2Fs3%2Faws4_request&X-Amz-Date=20261004T100348Z&X-Amz-Expires=28800&X-Amz-SignedHeaders=host&response-content-disposition=attachment%3B%20filename%3D%22Arcane.S02E01.Heavy.Is.the.Crown.1080p.BluRay.REMUX.AVC.TrueHD.Atmos.7.1-dOwn.mkv%22&X-Amz-Signature=cd11e7cb59e3f1a260226168c6bebb9db8b9d5f22a3e7a18532157b714813941",
-                "attemptedAt": "2026-10-04T10:03:52.071Z"
+                "url": "https://c6b1e8c93683bdde581e2164cb9657c9.r2.cloudflarestorage.com/hub/31fe1982d0b697cd04016c40f0feb504?X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Credential=ce3806fdca997f65e356f3b6fc2f735d%2F20261004%2Fauto%2Fs3%2Faws4_request&X-Amz-Date=20261004T104325Z&X-Amz-Expires=28800&X-Amz-SignedHeaders=host&response-content-disposition=attachment%3B%20filename%3D%22Arcane.S02E01.Heavy.Is.the.Crown.1080p.BluRay.REMUX.AVC.TrueHD.Atmos.7.1-dOwn.mkv%22&X-Amz-Signature=49036801e25e5668c4cc63f90a3e382a69873b306cce31f2186f8279fede8901",
+                "attemptedAt": "2026-10-04T10:43:29.236Z"
               }
             },
             {
@@ -1838,8 +1843,8 @@
                 "error": null
               },
               "unroll": {
-                "url": "https://c6b1e8c93683bdde581e2164cb9657c9.r2.cloudflarestorage.com/hub/31fe1982d0b697cd04016c40f0feb504?X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Credential=ce3806fdca997f65e356f3b6fc2f735d%2F20261004%2Fauto%2Fs3%2Faws4_request&X-Amz-Date=20261004T100348Z&X-Amz-Expires=28800&X-Amz-SignedHeaders=host&response-content-disposition=attachment%3B%20filename%3D%22Arcane.S02E01.Heavy.Is.the.Crown.1080p.BluRay.REMUX.AVC.TrueHD.Atmos.7.1-dOwn.mkv%22&X-Amz-Signature=cd11e7cb59e3f1a260226168c6bebb9db8b9d5f22a3e7a18532157b714813941",
-                "attemptedAt": "2026-10-04T10:03:52.477Z"
+                "url": "https://c6b1e8c93683bdde581e2164cb9657c9.r2.cloudflarestorage.com/hub/31fe1982d0b697cd04016c40f0feb504?X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Credential=ce3806fdca997f65e356f3b6fc2f735d%2F20261004%2Fauto%2Fs3%2Faws4_request&X-Amz-Date=20261004T104325Z&X-Amz-Expires=28800&X-Amz-SignedHeaders=host&response-content-disposition=attachment%3B%20filename%3D%22Arcane.S02E01.Heavy.Is.the.Crown.1080p.BluRay.REMUX.AVC.TrueHD.Atmos.7.1-dOwn.mkv%22&X-Amz-Signature=49036801e25e5668c4cc63f90a3e382a69873b306cce31f2186f8279fede8901",
+                "attemptedAt": "2026-10-04T10:43:29.488Z"
               }
             },
             {
@@ -1857,7 +1862,7 @@
               },
               "unroll": {
                 "url": "https://pixeldrain.dev/api/file/9X6mdXG9?download",
-                "attemptedAt": "2026-10-04T10:03:56.592Z"
+                "attemptedAt": "2026-10-04T10:43:33.541Z"
               }
             },
             {
@@ -1875,7 +1880,7 @@
               },
               "unroll": {
                 "url": "https://pixeldrain.dev/api/file/9X6mdXG9?download",
-                "attemptedAt": "2026-10-04T10:03:57.690Z"
+                "attemptedAt": "2026-10-04T10:43:34.349Z"
               }
             }
           ],
@@ -2234,7 +2239,7 @@
           "failureReasons": [],
           "search": {
             "status": 200,
-            "latencyMs": 50,
+            "latencyMs": 366,
             "error": null,
             "match": "Arcane: League Of Legends"
           },
@@ -2286,13 +2291,13 @@
             {
               "url": "https://a.111477.xyz/tvs/Arcane/Season%2001/",
               "status": 403,
-              "latencyMs": 47,
+              "latencyMs": 17,
               "error": null
             },
             {
               "url": "https://a.111477.xyz/tvs/Arcane/Season%201/",
               "status": 403,
-              "latencyMs": 37,
+              "latencyMs": 21,
               "error": null
             }
           ],
@@ -2347,45 +2352,45 @@
             {
               "step": "4khdhub_attempt",
               "detail": "Attempting Tier 1: 4KHDHub (2160p UHD Multi-Audio)...",
-              "t": 1791108242154
+              "t": 1791110618767
             },
             {
               "step": "moviesdrive4k_attempt",
               "detail": "Attempting Tier 2: MoviesDrive 4K (Typesense IMDb + 2160p HubCloud)...",
-              "t": 1791108242154
+              "t": 1791110618767
             },
             {
               "step": "hicine4k_attempt",
               "detail": "Attempting Tier 3: HiCine 4K UHD (2160p vcloud worker)...",
-              "t": 1791108242154
+              "t": 1791110618767
             },
             {
               "step": "dahmer4k_attempt",
               "detail": "Attempting Tier 4: DahmerMovies 4K (2160p direct directory)...",
-              "t": 1791108242154
+              "t": 1791110618767
             },
             {
               "step": "4khdhub_success",
               "detail": "Resolved verified 4K (2160p (4K)) via 4khdhub",
-              "t": 1791108243884
+              "t": 1791110623628
             },
             {
               "step": "moviesdrive4k_failed",
               "detail": "moviesdrive4k_unroll_failed",
-              "t": 1791108243884
+              "t": 1791110623628
             },
             {
               "step": "hicine4k_failed",
               "detail": "hicine4k returned no verified 2160p stream",
-              "t": 1791108243884
+              "t": 1791110623628
             },
             {
               "step": "dahmer4k_failed",
               "detail": "dahmer4k_directory_not_found",
-              "t": 1791108243884
+              "t": 1791110623628
             }
           ],
-          "startedAt": "2026-10-04T10:04:02.154Z",
+          "startedAt": "2026-10-04T10:43:38.767Z",
           "message": "Resolved verified 4K stream via 4khdhub (2160p (4K))",
           "selectedTier": "4khdhub",
           "qualityDegraded": false
@@ -2409,6 +2414,6 @@
       "https://moviesdrive.design"
     ]
   },
-  "finishedAt": "2026-10-04T10:04:03.884Z",
-  "durationMs": 85375
+  "finishedAt": "2026-10-04T10:43:43.628Z",
+  "durationMs": 85646
 }
