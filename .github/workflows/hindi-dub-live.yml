@@ -49,17 +49,25 @@ jobs:
       - name: Persist report on the branch
         if: github.ref != 'refs/heads/main'
         run: |
+          set -x
           git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add -f diagnostics/hindi-dub-live.json
-          git diff --cached --quiet && echo "no report changes" && exit 0
-          git commit -m "chore(research): live hindi dub verification report [skip ci]"
-          # Concurrent runs can land here together; rebase and retry.
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com" 
+          # The report is a generated artifact: each attempt re-parents it onto
+          # the current remote tip (ours always wins) and pushes, so concurrent
+          # runs cannot deadlock on a rebase conflict.
           for attempt in 1 2 3 4 5; do
-            git push && exit 0
-            echo "push attempt ${attempt} failed, rebasing..."
-            git fetch origin "${GITHUB_REF_NAME}"
-            git rebase --autostash "origin/${GITHUB_REF_NAME}" || git rebase --abort || true
+            git fetch -q origin "${GITHUB_REF_NAME}"
+            git reset --soft "origin/${GITHUB_REF_NAME}"
+            git add -f diagnostics/hindi-dub-live.json
+            if git diff --cached --quiet; then
+              echo "report already up to date"
+              exit 0
+            fi
+            git commit -q -m "chore(research): live hindi dub verification report [skip ci]"
+            if git push; then
+              exit 0
+            fi
+            echo "push attempt ${attempt} lost the race, retrying..."
             sleep 5
           done
           echo "could not persist the report after retries" >&2
