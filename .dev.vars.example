@@ -1,0 +1,15 @@
+# Copy to .dev.vars for local `wrangler dev` / `node scripts/dev-worker.mjs`.
+# .dev.vars is gitignored — never commit real secrets.
+#
+# Generate one with:
+#   node -e "console.log(require('crypto').randomBytes(32).toString('base64url'))"
+#
+# PROXY_SECRET MUST be identical on every runtime that signs or verifies proxy
+# URLs (this Worker, any EXTERNAL_PROXY_POOL node, and the Node backend).
+# For production use `npx wrangler secret put`, NOT this file and NOT [vars].
+ADMIN_SECRET=
+PROXY_SECRET=
+
+# Local development only: lets the SSRF guard accept loopback/LAN mock upstreams.
+# Never set this in production (the Node runtime ignores it when NODE_ENV=production).
+# PROXY_ALLOW_PRIVATE_TARGETS=true

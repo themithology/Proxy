@@ -1,7 +1,43 @@
 import http from 'http';
 import fs from 'fs';
 import path from 'path';
+import crypto from 'crypto';
 import workerModule from '../cloudflare-worker/worker.js';
+
+/**
+ * Load `.dev.vars` the way `wrangler dev` does. The Worker has no secret
+ * fallbacks any more (ADMIN_SECRET / PROXY_SECRET used to default to published
+ * values), so a local harness has to supply them or every signed route fails
+ * closed with a 503.
+ */
+function loadDevVars() {
+  const file = path.resolve('.dev.vars');
+  const vars = {};
+  try {
+    for (const line of fs.readFileSync(file, 'utf8').split(/\r?\n/)) {
+      const trimmed = line.trim();
+      if (!trimmed || trimmed.startsWith('#')) continue;
+      const eq = trimmed.indexOf('=');
+      if (eq < 1) continue;
+      vars[trimmed.slice(0, eq).trim()] = trimmed.slice(eq + 1).trim();
+    }
+  } catch {
+    // No .dev.vars is fine; fall back to generated ephemeral secrets below.
+  }
+  return vars;
+}
+
+const devVars = loadDevVars();
+const workerEnv = { ...devVars, ...process.env };
+
+if (!workerEnv.PROXY_SECRET || !workerEnv.ADMIN_SECRET) {
+  console.warn(
+    '[dev-worker] PROXY_SECRET/ADMIN_SECRET missing from .dev.vars and the environment; ' +
+    'generating ephemeral ones. Copy .dev.vars.example to .dev.vars to make them stable.'
+  );
+  workerEnv.PROXY_SECRET = workerEnv.PROXY_SECRET || crypto.randomBytes(32).toString('base64url');
+  workerEnv.ADMIN_SECRET = workerEnv.ADMIN_SECRET || crypto.randomBytes(32).toString('base64url');
+}
 
 const PORT = parseInt(process.env.PLAYER_PORT || '8787', 10);
 const HOST = process.env.HOST || '0.0.0.0';
@@ -48,7 +84,7 @@ const server = http.createServer(async (req, res) => {
     });
     const webRes = await workerModule.fetch(
       webReq,
-      { ASSETS: mockAssets, ...process.env },
+      { ASSETS: mockAssets, ...workerEnv },
       { waitUntil() {} }
     );
     res.statusCode = webRes.status;
@@ -65,4 +101,6 @@ const server = http.createServer(async (req, res) => {
 
 server.listen(PORT, HOST, () => {
   console.log(`[LOL Embed Player] Listening on http://${HOST}:${PORT}`);
+  console.log(`[LOL Embed Player] admin key (X-Admin-Key): ${workerEnv.ADMIN_SECRET}`);
+  console.log(`[LOL Embed Player] dashboard: http://localhost:${PORT}/reze?key=${workerEnv.ADMIN_SECRET}`);
 });

@@ -1,9 +1,14 @@
 const { Readable } = require('stream');
 const config = require('../config');
-const { createSignedProxyUrl, verifyProxySignature } = require('../utils/crypto');
+const { createSignedProxyUrl, verifyProxyRequest } = require('../utils/crypto');
+const { inspectMediaTarget, duplicatedSignedParamsFromQuery } = require('../utils/proxySign');
 
 const DEFAULT_USER_AGENT =
   'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36';
+
+/** Redirects are followed by hand so every hop can be re-checked for SSRF. */
+const MAX_UPSTREAM_REDIRECTS = 5;
+const REDIRECT_STATUSES = new Set([301, 302, 303, 307, 308]);
 
 /**
  * Picks a proxy base URL from the configured Edge Proxy Pool (round-robin)
@@ -29,24 +34,26 @@ function getProxyNodeBase(reqBaseUrl = '') {
  *   token — per-host JWT (from <host>/generate.php) stamped onto every rewritten
  *           manifest/segment URI by the proxy.
  *   cookie — upstream session cookie forwarded by the proxy (vidstuck.xyz).
+ *
+ * Every one of those parameters is part of the signature. They used to be
+ * appended to the query string after signing, which let anyone holding a valid
+ * signed URL add `&cookie=`/`&origin=` and use this server as an authenticated
+ * request relay.
  */
 function buildProxyStreamUrl(targetUrl, referer = '', origin = '', options = {}) {
   if (!targetUrl) return '';
   if (targetUrl.startsWith('/api/proxy?')) return targetUrl;
-  const { mode = '', token = '', cookie = '' } = options || {};
+  const { mode = '', token = '', cookie = '', vidsrcStamp = '' } = options || {};
   const baseUrl = getProxyNodeBase('');
-  const signed = createSignedProxyUrl(targetUrl, {
+  return createSignedProxyUrl(targetUrl, {
     referer,
     origin,
+    cookie,
+    mode,
+    token,
+    vidsrcStamp,
     baseUrl
   });
-  if (!mode && !token && !cookie) return signed;
-  const [path, query = ''] = signed.split('?');
-  const params = new URLSearchParams(query);
-  if (mode) params.set('mode', mode);
-  if (token) params.set('token', token);
-  if (cookie) params.set('cookie', cookie);
-  return `${path}?${params.toString()}`;
 }
 
 /**
@@ -59,6 +66,13 @@ async function fetchVidsrcHostToken(hostOrigin, referer = '') {
   if (!hostOrigin) return '';
   const cached = jwTokenCache.get(hostOrigin);
   if (cached && Date.now() < cached.exp) return cached.token;
+
+  // The host origin comes from a caller-supplied URL, so guard it the same way
+  // as the media target: no loopback/link-local/metadata token minting.
+  const guarded = inspectMediaTarget(`${hostOrigin}/generate.php`, {
+    allowPrivateTargets: config.proxyAllowPrivateTargets
+  });
+  if (!guarded.ok) return '';
 
   let token = '';
   try {
@@ -126,17 +140,16 @@ function rewriteM3u8Manifest(m3u8Content, baseManifestUrl, refererOrOpts = '') {
     // must carry the token or the CDN answers 403.
     if (token) absoluteUrl = stampTokenOnUrl(absoluteUrl, token, isSegmentOverride || true);
     const proxyBase = getProxyNodeBase(reqBaseUrl);
-    const signed = createSignedProxyUrl(absoluteUrl, {
+    // mode and token are signed here, not appended afterwards: an unsigned
+    // `mode=full`/`token=` on a signed URL would let a caller redirect our
+    // rewrite behavior or inject a token we never issued.
+    return createSignedProxyUrl(absoluteUrl, {
       referer,
       origin,
+      mode,
+      token,
       baseUrl: proxyBase
     });
-    if (!token && mode === 'manifest') return signed;
-    const [path, query = ''] = signed.split('?');
-    const params = new URLSearchParams(query);
-    if (mode) params.set('mode', mode);
-    if (token) params.set('token', token);
-    return `${path}?${params.toString()}`;
   };
 
   const rewrittenLines = lines.map((line) => {
@@ -161,6 +174,50 @@ function rewriteM3u8Manifest(m3u8Content, baseManifestUrl, refererOrOpts = '') {
   });
 
   return rewrittenLines.join('\n');
+}
+
+/**
+ * Follow redirects by hand so every hop is re-validated against the SSRF guard.
+ *
+ * `redirect: 'follow'` alone is not enough: an allowlisted public host can 302
+ * to `http://169.254.169.254/latest/meta-data/` or `http://127.0.0.1:6379/`, and
+ * the fetch would happily follow it. Returns `{ response, finalUrl, blocked }`.
+ */
+async function fetchWithGuardedRedirects(startUrl, init, options = {}) {
+  const { allowPrivateTargets = false, maxRedirects = MAX_UPSTREAM_REDIRECTS } = options;
+  let currentUrl = startUrl;
+  let lastInspection = inspectMediaTarget(currentUrl, { allowPrivateTargets });
+  if (!lastInspection.ok) {
+    return { response: null, finalUrl: currentUrl, blocked: lastInspection.reason };
+  }
+
+  for (let hop = 0; hop <= maxRedirects; hop += 1) {
+    const response = await fetch(currentUrl, { ...init, redirect: 'manual' });
+    if (!REDIRECT_STATUSES.has(response.status)) {
+      return { response, finalUrl: currentUrl, blocked: '' };
+    }
+    const location = response.headers.get('location');
+    if (!location) {
+      return { response, finalUrl: currentUrl, blocked: '' };
+    }
+    if (hop === maxRedirects) {
+      return { response: null, finalUrl: currentUrl, blocked: 'too_many_redirects' };
+    }
+    let nextUrl;
+    try {
+      nextUrl = new URL(location, currentUrl).toString();
+    } catch {
+      return { response: null, finalUrl: currentUrl, blocked: 'malformed_redirect' };
+    }
+    lastInspection = inspectMediaTarget(nextUrl, { allowPrivateTargets });
+    if (!lastInspection.ok) {
+      // Do not leak the blocked destination back to the caller.
+      return { response: null, finalUrl: currentUrl, blocked: lastInspection.reason };
+    }
+    // 303 (and historically 301/302) downgrade to GET and drop the body.
+    currentUrl = nextUrl;
+  }
+  return { response: null, finalUrl: currentUrl, blocked: 'too_many_redirects' };
 }
 
 /**
@@ -199,20 +256,36 @@ async function handleStreamProxy(req, res) {
     });
   }
 
-  // Verify HMAC signature if both exp and sig are provided
-  if (exp && sig && !verifyProxySignature(targetUrl, referer, exp, sig)) {
+  // Reject HTTP parameter pollution before anything else is evaluated.
+  const duplicated = duplicatedSignedParamsFromQuery(req.query);
+  if (duplicated.length > 0) {
+    return res.status(400).json({ error: 'Duplicate proxy parameters are not allowed' });
+  }
+
+  // MANDATORY signature check. This used to run only when the caller supplied
+  // both `exp` and `sig`, which meant omitting them skipped verification
+  // entirely and exposed an unauthenticated open proxy. Every parameter that
+  // influences the upstream request is covered by the v2 signature, so none of
+  // them can be appended to a legitimately signed URL afterwards.
+  const signatureValid = verifyProxyRequest(
+    { url: targetUrl, referer, origin, cookie, mode, token: passthroughToken, vidsrcStamp, exp },
+    sig,
+    config.proxySecret
+  );
+  if (!signatureValid) {
     return res.status(403).json({ error: 'Invalid or expired proxy signature' });
   }
 
-  let parsedUrl;
-  try {
-    parsedUrl = new URL(targetUrl);
-    if (!['http:', 'https:'].includes(parsedUrl.protocol)) {
-      return res.status(400).json({ error: 'Only http:// and https:// URLs are supported' });
-    }
-  } catch {
-    return res.status(400).json({ error: 'Malformed target URL' });
+  // SSRF guard: http(s) only, no embedded credentials, and no
+  // loopback/link-local/private/reserved destination.
+  const targetInspection = inspectMediaTarget(targetUrl, {
+    allowPrivateTargets: config.proxyAllowPrivateTargets
+  });
+  if (!targetInspection.ok) {
+    const status = targetInspection.reason === 'malformed_url' ? 400 : 403;
+    return res.status(status).json({ error: 'Target URL is not permitted' });
   }
+  const parsedUrl = targetInspection.url;
 
   // Only ever send Referer/Origin when the caller explicitly asked for them — a
   // synthesized Referer is exactly what trips Pixeldrain's hotlink filter and the
@@ -253,22 +326,34 @@ async function handleStreamProxy(req, res) {
   }
 
   try {
-    const upstreamRes = await fetch(upstreamUrl, {
-      method: req.method === 'HEAD' ? 'HEAD' : 'GET',
-      headers: upstreamHeaders,
-      redirect: 'follow',
-      signal: AbortSignal.timeout(15000)
-    });
+    const { response: upstreamRes, finalUrl, blocked } = await fetchWithGuardedRedirects(
+      upstreamUrl,
+      {
+        method: req.method === 'HEAD' ? 'HEAD' : 'GET',
+        headers: upstreamHeaders,
+        signal: AbortSignal.timeout(15000)
+      },
+      { allowPrivateTargets: config.proxyAllowPrivateTargets }
+    );
+
+    if (blocked) {
+      // Never echo the destination: that would turn the guard into a port/host
+      // scanner for whoever is probing us.
+      return res.status(403).json({ error: 'Upstream target is not permitted' });
+    }
 
     if (!upstreamRes.ok && upstreamRes.status !== 206) {
+      // The upstream hostname is deliberately not echoed back: it is provider
+      // topology, and the caller does not need it to play media.
       return res.status(upstreamRes.status).json({
-        error: `Upstream returned HTTP ${upstreamRes.status}`,
-        target: parsedUrl.hostname
+        error: `Upstream returned HTTP ${upstreamRes.status}`
       });
     }
 
     const contentType = (upstreamRes.headers.get('content-type') || '').toLowerCase();
-    const finalUrl = upstreamRes.url || parsedUrl.toString();
+    // `finalUrl` comes from the guarded redirect walk, so it is a URL we have
+    // already re-validated for SSRF on the last hop.
+    const resolvedFinalUrl = finalUrl || upstreamRes.url || parsedUrl.toString();
     const isM3u8 =
       contentType.includes('mpegurl') ||
       contentType.includes('m3u8') ||
@@ -279,7 +364,7 @@ async function handleStreamProxy(req, res) {
       if (text.trim().startsWith('#EXTM3U')) {
         // 'full' mode (or a JWT-stamped response) rewrites every variant AND
         // segment URI through the proxy with the host token attached.
-        const rewritten = rewriteM3u8Manifest(text, finalUrl, {
+        const rewritten = rewriteM3u8Manifest(text, resolvedFinalUrl, {
           referer,
           origin,
           reqBaseUrl: '',

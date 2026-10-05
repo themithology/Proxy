@@ -26,12 +26,216 @@ import skipSegments from '../src/services/skipSegments.js';
 import subtitleSources from '../src/services/subtitleSources.js';
 import tmdbArtwork from '../src/services/tmdbArtwork.js';
 import statsAggregate from '../src/services/statsAggregate.js';
+// Shared security core: the SAME signing/SSRF/rate-limit/payload-filter code the
+// Node backend runs, so a URL signed by one runtime verifies on the other and a
+// field hidden by one cannot leak from the other.
+import proxySign from '../src/utils/proxySign.js';
+import rateLimitShared from '../src/utils/rateLimit.js';
+import publicPayload from '../src/services/publicPayload.js';
 
 const USER_AGENT =
   'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36';
 
 /** Player-visible servers in waterfall priority order (shared catalog). */
 const SERVERS = serverCatalog.workerServerList();
+
+/* ------------------------------------------------------------------------ */
+/* Secrets                                                                   */
+/* ------------------------------------------------------------------------ */
+
+/**
+ * Secrets are read from `env` per request and mirrored here so the deep resolver
+ * call sites (which sign proxy URLs but do not receive `env`) can reach them
+ * without threading a parameter through ~15 call sites.
+ *
+ * There are NO fallback values. `ADMIN_SECRET` and `PROXY_SECRET` used to
+ * default to `admin123` and a committed HMAC key — both published in this
+ * repository — which meant any deployment that forgot to set them was fully
+ * controllable by anyone who had read the source. Missing/weak secrets now fail
+ * closed: /api/proxy and /api/admin/* answer 503/401 instead of running open.
+ */
+const activeSecrets = { proxySecret: '', adminSecret: '' };
+
+/**
+ * PROXY_ALLOW_PRIVATE_TARGETS relaxes the SSRF guard so `wrangler dev` and the
+ * hermetic test suite can reach a loopback/LAN mock upstream. Cloudflare's edge
+ * cannot route to a private network, so in a real deployment this flag only
+ * weakens a hostname check that would never have connected anyway — but it is
+ * still logged loudly, because enabling it in production is never correct.
+ */
+const activeFlags = { allowPrivateTargets: false };
+let warnedAboutPrivateTargets = false;
+
+function loadSecrets(env = {}) {
+  activeSecrets.proxySecret = proxySign.isUsableSecret(env.PROXY_SECRET) ? String(env.PROXY_SECRET).trim() : '';
+  activeSecrets.adminSecret = proxySign.isUsableSecret(env.ADMIN_SECRET) ? String(env.ADMIN_SECRET).trim() : '';
+  activeFlags.allowPrivateTargets =
+    String(env.PROXY_ALLOW_PRIVATE_TARGETS || '').trim().toLowerCase() === 'true';
+  if (activeFlags.allowPrivateTargets && !warnedAboutPrivateTargets) {
+    warnedAboutPrivateTargets = true;
+    console.error(
+      '[LOL Embed] PROXY_ALLOW_PRIVATE_TARGETS=true — the SSRF guard will accept loopback/private targets. ' +
+      'This is for local development and tests only; remove it from any real deployment.'
+    );
+  }
+  return activeSecrets;
+}
+
+function secretsProblem(env = {}) {
+  const problems = [];
+  if (!activeSecrets.proxySecret) {
+    problems.push(`PROXY_SECRET ${proxySign.describeSecretProblem(env.PROXY_SECRET) || 'is not usable'}`);
+  }
+  if (!activeSecrets.adminSecret) {
+    problems.push(`ADMIN_SECRET ${proxySign.describeSecretProblem(env.ADMIN_SECRET) || 'is not usable'}`);
+  }
+  return problems;
+}
+
+const SECRET_SETUP_HINT =
+  'Set a strong random value with `npx wrangler secret put PROXY_SECRET` (and ADMIN_SECRET). ' +
+  'Never put them in [vars] in wrangler.toml. PROXY_SECRET must match every other runtime that signs or verifies proxy URLs.';
+
+/* ------------------------------------------------------------------------ */
+/* Rate limiting (per isolate)                                               */
+/* ------------------------------------------------------------------------ */
+
+const MINUTE = 60 * 1000;
+const limiters = {
+  // /api/resolve is the scrapeable surface: TMDB ids are sequential integers, so
+  // an anonymous crawler can walk the entire catalog. It stays public by design
+  // (this is an embed API) but it is throttled.
+  resolve: rateLimitShared.createRateLimiter({ name: 'resolve', limit: 30, windowMs: MINUTE }),
+  proxy: rateLimitShared.createRateLimiter({ name: 'proxy', limit: 600, windowMs: MINUTE }),
+  metadata: rateLimitShared.createRateLimiter({ name: 'metadata', limit: 120, windowMs: MINUTE }),
+  adminAuth: rateLimitShared.createRateLimiter({ name: 'admin-auth', limit: 10, windowMs: MINUTE })
+};
+
+/**
+ * Enforce a limiter. Returns a 429 Response, or null when the request may pass.
+ * Keyed on cf-connecting-ip, which Cloudflare sets from the real TCP peer and a
+ * client cannot forge.
+ */
+function enforceRateLimit(request, url, limiter) {
+  const key = rateLimitShared.requestClientKey(request, url);
+  const decision = limiter.check(key);
+  if (decision.allowed) return null;
+  return jsonResponse(
+    {
+      ok: false,
+      error: 'Rate limit exceeded. Slow down.',
+      scope: limiter.name,
+      limit: decision.limit,
+      retryAfterSeconds: Math.max(1, Math.ceil(decision.retryAfterMs / 1000))
+    },
+    429,
+    limiter.headers(decision)
+  );
+}
+
+/**
+ * Owner authentication for the Worker. Returns a Response to send when access is
+ * denied, or null when the caller is the owner.
+ *
+ * Failed attempts are throttled; successful ones are not counted. Counting
+ * successes too would lock the owner out of /reze, which fires several admin
+ * calls on every dashboard load.
+ *
+ * `?key=` is NOT accepted: query strings end up in Cloudflare access logs, in
+ * Referer headers sent to third parties and in browser history. The /reze
+ * dashboard already sends X-Admin-Key (public/reze.html) and still accepts
+ * /reze?key=... to seed sessionStorage, so the owner UI is unaffected.
+ */
+function workerAdminAuthFailure(request, url) {
+  if (!activeSecrets.adminSecret) {
+    console.error(`[LOL Embed] ADMIN_SECRET is not configured or is a published sample value. ${SECRET_SETUP_HINT}`);
+    return jsonResponse(
+      {
+        ok: false,
+        error: 'The admin API is disabled on this deployment because ADMIN_SECRET is not configured.',
+        hint: SECRET_SETUP_HINT
+      },
+      503
+    );
+  }
+
+  const providedKey =
+    request.headers.get('x-admin-key') ||
+    (request.headers.get('authorization') || '').replace(/^Bearer\s+/i, '');
+
+  if (providedKey && proxySign.constantTimeEqual(providedKey, activeSecrets.adminSecret)) {
+    return null;
+  }
+
+  const throttle = limiters.adminAuth.check(rateLimitShared.requestClientKey(request, url));
+  if (!throttle.allowed) {
+    return jsonResponse(
+      {
+        ok: false,
+        error: 'Too many admin authentication attempts. Try again later.',
+        retryAfterSeconds: Math.max(1, Math.ceil(throttle.retryAfterMs / 1000))
+      },
+      429,
+      limiters.adminAuth.headers(throttle)
+    );
+  }
+  return jsonResponse({ ok: false, error: 'Unauthorized: Invalid Admin Key' }, 401);
+}
+
+/**
+ * True when the caller presented a valid admin key and asked for unfiltered
+ * internals with `?detail=1`. The owner keeps the upstream diagnostics that
+ * used to be served to every anonymous caller.
+ */
+function workerWantsAdminDetail(request, url = null) {
+  try {
+    const target = url || new URL(request.url);
+    if (target.searchParams.get('detail') !== '1') return false;
+  } catch {
+    return false;
+  }
+  if (!activeSecrets.adminSecret) return false;
+  const provided =
+    request.headers.get('x-admin-key') ||
+    (request.headers.get('authorization') || '').replace(/^Bearer\s+/i, '');
+  return !!provided && proxySign.constantTimeEqual(provided, activeSecrets.adminSecret);
+}
+
+/** SSRF guard for an outbound media target (see utils/proxySign.js). */
+function inspectWorkerTarget(targetUrl) {
+  return proxySign.inspectMediaTarget(targetUrl, {
+    allowPrivateTargets: activeFlags.allowPrivateTargets
+  });
+}
+
+/**
+ * Follow redirects by hand so every hop is re-checked. `redirect: 'follow'`
+ * would let an allowlisted public host bounce the request anywhere.
+ */
+async function workerFetchGuarded(startUrl, init, maxRedirects = 5) {
+  const REDIRECTS = new Set([301, 302, 303, 307, 308]);
+  let currentUrl = startUrl;
+  let inspection = inspectWorkerTarget(currentUrl);
+  if (!inspection.ok) return { response: null, finalUrl: currentUrl, blocked: inspection.reason };
+
+  for (let hop = 0; hop <= maxRedirects; hop += 1) {
+    const response = await fetch(currentUrl, { ...init, redirect: 'manual' });
+    if (!REDIRECTS.has(response.status)) return { response, finalUrl: currentUrl, blocked: '' };
+    const location = response.headers.get('location');
+    if (!location) return { response, finalUrl: currentUrl, blocked: '' };
+    if (hop === maxRedirects) return { response: null, finalUrl: currentUrl, blocked: 'too_many_redirects' };
+    let nextUrl;
+    try {
+      nextUrl = new URL(location, currentUrl).toString();
+    } catch {
+      return { response: null, finalUrl: currentUrl, blocked: 'malformed_redirect' };
+    }
+    inspection = inspectWorkerTarget(nextUrl);
+    if (!inspection.ok) return { response: null, finalUrl: currentUrl, blocked: inspection.reason };
+    currentUrl = nextUrl;
+  }
+  return { response: null, finalUrl: currentUrl, blocked: 'too_many_redirects' };
+}
 
 
 // Runtime-editable Upstream Config & Telemetry State in Cloudflare Worker
@@ -628,16 +832,22 @@ function corsHeaders(extra = {}) {
     'Access-Control-Allow-Origin': '*',
     'Access-Control-Allow-Methods': 'GET, POST, HEAD, OPTIONS',
     'Access-Control-Allow-Headers': 'Content-Type, Range, Authorization, X-Requested-With, X-Admin-Key',
-    'Access-Control-Expose-Headers': 'Content-Length, Content-Range, Content-Type, Accept-Ranges',
+    // Retry-After / RateLimit-* are exposed so an embedded player can back off
+    // intelligibly instead of just seeing an opaque 429.
+    'Access-Control-Expose-Headers':
+      'Content-Length, Content-Range, Content-Type, Accept-Ranges, Retry-After, RateLimit-Limit, RateLimit-Remaining, RateLimit-Reset',
     'Content-Security-Policy': 'frame-ancestors *;',
     ...extra
   };
 }
 
-function jsonResponse(data, status = 200) {
+function jsonResponse(data, status = 200, extraHeaders = null) {
   return new Response(JSON.stringify(data), {
     status,
-    headers: corsHeaders({ 'Content-Type': 'application/json; charset=utf-8' })
+    headers: corsHeaders({
+      'Content-Type': 'application/json; charset=utf-8',
+      ...(extraHeaders || {})
+    })
   });
 }
 
@@ -787,11 +997,39 @@ function srtToVtt(rawText) {
  * `cookie` (optional) is forwarded upstream — required by Origin/Referer-gated
  * origins such as vidstuck.xyz which also pin a session cookie.
  */
+/** Emitted once so a missing secret is loud in the logs but not per-request spam. */
+let warnedAboutMissingProxySecret = false;
+
+function warnMissingProxySecret() {
+  if (warnedAboutMissingProxySecret) return;
+  warnedAboutMissingProxySecret = true;
+  console.error(`[LOL Embed] PROXY_SECRET is not configured or is a published sample value. ${SECRET_SETUP_HINT}`);
+}
+
 function buildWorkerProxyUrl(targetUrl, referer = '', mode = 'manifest', cookie = '') {
-  const params = new URLSearchParams({ url: targetUrl, mode });
-  if (referer) params.set('referer', referer);
-  if (cookie) params.set('cookie', cookie);
-  return `/api/proxy?${params.toString()}`;
+  if (!targetUrl) return '';
+  if (String(targetUrl).startsWith('/api/proxy?')) return targetUrl;
+
+  if (!activeSecrets.proxySecret) {
+    // Fail closed: emit an unsigned URL that /api/proxy rejects with an explicit
+    // 503, instead of producing a URL that would work without a signature.
+    warnMissingProxySecret();
+    const params = new URLSearchParams({ url: targetUrl, mode: mode || 'manifest' });
+    if (referer) params.set('referer', referer);
+    if (cookie) params.set('cookie', cookie);
+    return `/api/proxy?${params.toString()}`;
+  }
+
+  // Every parameter that changes what the proxy sends upstream is inside the
+  // signature. They used to be plain query params, so anyone holding one signed
+  // URL could append &cookie= / &origin= / &mode= / &token= and reuse it.
+  return proxySign.createSignedProxyUrl(targetUrl, {
+    referer,
+    cookie,
+    mode: mode || 'manifest',
+    baseUrl: '',
+    secret: activeSecrets.proxySecret
+  });
 }
 
 /**
@@ -3563,11 +3801,25 @@ function rewriteManifest(m3u8, baseUrl, workerProxyBase, referer, origin, mode, 
     // In 'manifest' mode (default on Cloudflare), only proxy nested .m3u8 playlists & keys;
     // let heavy .ts/.m4s video segments stream directly from upstream CDN to save Worker request quota!
     if (mode === 'manifest' && !isPlaylistOrKey) return abs;
-    const p = new URLSearchParams({ url: abs, mode });
-    if (referer) p.set('referer', referer);
-    if (origin) p.set('origin', origin);
-    if (token) p.set('token', token);
-    return `${workerProxyBase}?${p.toString()}`;
+    if (!activeSecrets.proxySecret) {
+      warnMissingProxySecret();
+      const p = new URLSearchParams({ url: abs, mode });
+      if (referer) p.set('referer', referer);
+      if (origin) p.set('origin', origin);
+      if (token) p.set('token', token);
+      return `${workerProxyBase}?${p.toString()}`;
+    }
+    // `workerProxyBase` already ends in /api/proxy; createSignedProxyUrl appends
+    // it, so pass the origin as the base.
+    const signBase = String(workerProxyBase || '').replace(/\/api\/proxy\/?$/, '');
+    return proxySign.createSignedProxyUrl(abs, {
+      referer,
+      origin,
+      token,
+      mode,
+      baseUrl: signBase,
+      secret: activeSecrets.proxySecret
+    });
   };
 
   return m3u8
@@ -3594,22 +3846,70 @@ async function handleProxyRequest(request, url) {
   const cookie = url.searchParams.get('cookie') || '';
   const passthroughToken = url.searchParams.get('token') || '';
   const vidsrcStamp = url.searchParams.get('vidsrcStamp') === '1';
+  const exp = url.searchParams.get('exp') || '';
+  const sig = url.searchParams.get('sig') || '';
 
+  // This route used to answer a bare `?url=` for anyone and even advertised the
+  // syntax in its own response, which made the Worker an unauthenticated open
+  // relay: arbitrary target, arbitrary Referer/Origin/Cookie, billed to this
+  // account and attributable to it. It now only serves URLs this service signed.
   if (!targetUrl) {
     return jsonResponse({
-      ok: true,
+      ok: false,
       brand: 'LOL Embed',
       worker: 'LOL Embed Cloudflare Worker',
-      usage: '/api/proxy?url=https://example.com/master.m3u8&referer=https://upstream.site/'
+      error: 'This endpoint only serves signed URLs issued by /api/resolve.'
     });
   }
 
-  let parsed;
-  try {
-    parsed = new URL(targetUrl);
-  } catch {
-    return jsonResponse({ ok: false, error: 'Invalid ?url= parameter' }, 400);
+  // Throttle before doing any work: the proxy is the most expensive route here.
+  const throttled = enforceRateLimit(request, url, limiters.proxy);
+  if (throttled) return throttled;
+
+  if (!activeSecrets.proxySecret) {
+    warnMissingProxySecret();
+    return jsonResponse(
+      {
+        ok: false,
+        error: 'The stream proxy is not configured on this deployment.',
+        hint: SECRET_SETUP_HINT
+      },
+      503
+    );
   }
+
+  // Reject HTTP parameter pollution before anything else is evaluated: Express
+  // and Workers read duplicate query keys differently, which is exactly the
+  // setup for validating one value and acting on another.
+  const duplicatedParams = proxySign.duplicatedSignedParams(url.searchParams);
+  if (duplicatedParams.length > 0) {
+    return jsonResponse({ ok: false, error: 'Duplicate proxy parameters are not allowed' }, 400);
+  }
+
+  // MANDATORY signature verification. The v2 signature covers url, referer,
+  // origin, cookie, mode, token and vidsrcStamp, so none of them can be appended
+  // to a legitimately signed URL afterwards.
+  const signatureValid = proxySign.verifyProxyRequest(
+    { url: targetUrl, referer, origin, cookie, mode, token: passthroughToken, vidsrcStamp, exp },
+    sig,
+    activeSecrets.proxySecret
+  );
+  if (!signatureValid) {
+    return jsonResponse({ ok: false, error: 'Invalid or expired proxy signature' }, 403);
+  }
+
+  // SSRF guard: http(s) only, no embedded credentials, no loopback/link-local/
+  // private/reserved destination. Cloudflare's edge cannot route to a private
+  // network, but this keeps the two runtimes behaving identically and stops
+  // scheme smuggling (file:, data:, gopher:) and `http://trusted@evil/` tricks.
+  const inspection = inspectWorkerTarget(targetUrl);
+  if (!inspection.ok) {
+    return jsonResponse(
+      { ok: false, error: inspection.reason === 'malformed_url' ? 'Invalid ?url= parameter' : 'Target URL is not permitted' },
+      inspection.reason === 'malformed_url' ? 400 : 403
+    );
+  }
+  const parsed = inspection.url;
 
   // Only ever send Referer/Origin when the caller explicitly asked for them —
   // a synthesized Referer is what triggered Pixeldrain's hotlink filter and the
@@ -3642,14 +3942,23 @@ async function handleProxyRequest(request, url) {
   const range = request.headers.get('Range');
   if (range) upstreamHeaders.set('Range', range);
 
-  const upstreamResp = await fetch(upstreamUrl.toString(), {
+  // Redirects are followed by hand so each hop is re-validated: an allowlisted
+  // public host must not be able to bounce this Worker somewhere else.
+  const guarded = await workerFetchGuarded(upstreamUrl.toString(), {
     method: request.method === 'HEAD' ? 'HEAD' : 'GET',
-    headers: upstreamHeaders,
-    redirect: 'follow'
+    headers: upstreamHeaders
   });
+  if (guarded.blocked || !guarded.response) {
+    // Do not echo the blocked destination back to the caller.
+    return jsonResponse({ ok: false, error: 'Upstream target is not permitted' }, 403);
+  }
+  const upstreamResp = guarded.response;
 
   const contentType = (upstreamResp.headers.get('content-type') || '').toLowerCase();
-  const finalUrl = upstreamResp.url || upstreamUrl.toString();
+  // `guarded.finalUrl` is the last hop of the redirect walk, which was itself
+  // re-validated by the SSRF guard, so relative manifest URIs resolve against a
+  // URL we have already approved.
+  const finalUrl = guarded.finalUrl || upstreamResp.url || upstreamUrl.toString();
   const isM3u8 =
     contentType.includes('mpegurl') ||
     contentType.includes('m3u8') ||
@@ -3712,12 +4021,17 @@ export default {
     const { pathname } = url;
     statsQueue.enabled = !!statsStub(env);
 
+    // Bind this request's secrets before any route can sign or verify with them.
+    loadSecrets(env);
+
     if (request.method === 'OPTIONS') {
       return new Response(null, { status: 204, headers: corsHeaders() });
     }
 
-    // Support standalone proxy mode at root `/?url=https://...` or `/api/proxy?url=https://...`
-    if (pathname === '/api/proxy' || (pathname === '/' && url.searchParams.has('url'))) {
+    // The stream proxy lives at /api/proxy ONLY. It used to also answer a bare
+    // `/?url=https://...`, an undocumented second entry point to the same
+    // unauthenticated relay; the root path keeps its documented JSON behavior.
+    if (pathname === '/api/proxy') {
       recordWorkerDomainHit(request, url, 'proxy');
       // Segment hits come from the player page itself (Referer = this Worker),
       // so they only count towards the totals, not towards a site.
@@ -3733,15 +4047,8 @@ export default {
 
     // --- Owner Admin API Routes (/api/admin/*) ---
     if (pathname.startsWith('/api/admin/')) {
-      const expectedKey = env.ADMIN_SECRET || 'admin123';
-      const providedKey =
-        request.headers.get('x-admin-key') ||
-        url.searchParams.get('key') ||
-        (request.headers.get('authorization') || '').replace(/^Bearer\s+/i, '');
-
-      if (!providedKey || providedKey !== expectedKey) {
-        return jsonResponse({ ok: false, error: 'Unauthorized: Invalid Admin Key' }, 401);
-      }
+      const adminAuthFailure = workerAdminAuthFailure(request, url);
+      if (adminAuthFailure) return adminAuthFailure;
 
       if (pathname === '/api/admin/overview' && request.method === 'GET') {
         return jsonResponse({
@@ -3833,6 +4140,12 @@ export default {
     // were resolved, etc.
     const andromedaDebugMatch = pathname.match(/^\/api\/debug\/andromeda\/(movie|tv)\/([^/]+)$/);
     if (andromedaDebugMatch && request.method === 'GET') {
+      // This route was UNAUTHENTICATED while the Node equivalent required the
+      // admin key. It answers with the live upstream base URLs and the resolver's
+      // complete raw output (rawUrl, sourceName, diag) — the entire provider map,
+      // handed to anyone who guessed the path. Owner-only now, matching Node.
+      const debugAuthFailure = workerAdminAuthFailure(request, url);
+      if (debugAuthFailure) return debugAuthFailure;
       const [, dbgType, dbgTmdb] = andromedaDebugMatch;
       const dbgSeason = parseInt(url.searchParams.get('season') || '1', 10);
       const dbgEpisode = parseInt(url.searchParams.get('episode') || '1', 10);
@@ -3861,7 +4174,9 @@ export default {
           result: direct
         });
       } catch (err) {
-        return jsonResponse({ ok: false, error: err.message }, 500);
+        // Owner-only route, so detail is acceptable — but log it too.
+        console.error('[LOL Embed] andromeda debug failed:', err && err.message ? err.message : err);
+        return jsonResponse({ ok: false, error: 'Diagnostic request failed' }, 500);
       }
     }
 
@@ -3910,12 +4225,19 @@ export default {
     if (pathname === '/api/subtitles/proxy') {
       const subUrl = url.searchParams.get('url');
       if (!subUrl) return new Response('Missing url', { status: 400, headers: corsHeaders() });
+      const subThrottled = enforceRateLimit(request, url, limiters.metadata);
+      if (subThrottled) return subThrottled;
       const cfg = subtitleSourceConfig(env);
       const allowed = subtitleSources.isAllowedSubtitleUrl(subUrl, {
         bases: [cfg.stremioBase, cfg.wyzieBase, cfg.subdlBase, cfg.subdlDownloadBase],
         extraHosts: cfg.extraProxyHosts
       });
       if (!allowed) return new Response('Subtitle host not allowed', { status: 403, headers: corsHeaders() });
+      // SUBTITLE_PROXY_HOSTS accepts `*` (any host), so the allowlist alone can
+      // be widened into a relay by configuration. The SSRF guard is unconditional.
+      if (!inspectWorkerTarget(subUrl).ok) {
+        return new Response('Subtitle host not allowed', { status: 403, headers: corsHeaders() });
+      }
       try {
         const vtt = await fetchSubtitleAsVtt(subUrl, {
           encoding: url.searchParams.get('enc') || '',
@@ -3929,7 +4251,9 @@ export default {
           })
         });
       } catch (err) {
-        return new Response(`Subtitle error: ${err.message}`, { status: 502, headers: corsHeaders() });
+        // err.message can contain the upstream subtitle URL; keep it server-side.
+        console.warn('[LOL Embed] subtitle proxy error:', err && err.message ? err.message : err);
+        return new Response('Subtitle fetch failed', { status: 502, headers: corsHeaders() });
       }
     }
 
@@ -3947,6 +4271,15 @@ export default {
     const apiMatch = pathname.match(/^\/api\/(info|segments|subtitles|resolve)\/(movie|tv|series)\/([^/]+)$/i);
     if (apiMatch) {
       const [, action, rawType, tmdbId] = apiMatch;
+      // /api/resolve is the expensive, enumerable surface (TMDB ids are
+      // sequential integers). It stays public by design — this is an embed API —
+      // but a crawler walking the whole catalog now hits a 429.
+      const apiThrottled = enforceRateLimit(
+        request,
+        url,
+        action === 'resolve' ? limiters.resolve : limiters.metadata
+      );
+      if (apiThrottled) return apiThrottled;
       const season = parseInt(url.searchParams.get('season') || url.searchParams.get('s') || '1', 10);
       const episode = parseInt(url.searchParams.get('episode') || url.searchParams.get('e') || '1', 10);
       const server = (url.searchParams.get('server') || 'andromeda').toLowerCase();
@@ -4045,33 +4378,49 @@ export default {
             server: firstFailed ? firstFailed.server : server,
             reason: firstFailed ? firstFailed.reason : (streamData && streamData.reason) || 'no_stream'
           });
-          return jsonResponse(
-            {
-              ok: false,
-              error: 'Unable to resolve stream from upstream providers for this title.',
-              explanation: humanReason,
-              serverExplanation: humanDiag,
-              requestedServer: (streamData && streamData.requestedServer) || server,
-              failedReason: firstFailed ? firstFailed.reason : null,
-              serverAttempts: attempts,
-              metadata,
-              subtitles,
-              segments,
-              servers: (streamData && streamData.servers) || serverCatalog.buildServerPayload(SERVERS, null)
-            },
-            502
-          );
+          const detailed = workerWantsAdminDetail(request);
+          const failureBody = {
+            ok: false,
+            error: 'Unable to resolve stream from upstream providers for this title.',
+            requestedServer: (streamData && streamData.requestedServer) || server,
+            failedReason: firstFailed ? firstFailed.reason : null,
+            serverAttempts: attempts,
+            metadata,
+            subtitles,
+            segments,
+            servers: (streamData && streamData.servers) || serverCatalog.buildServerPayload(SERVERS, null)
+          };
+          // These strings name upstream providers ("VidStuck domain may have
+          // changed") and carry per-step diag traces, so they are owner-only.
+          if (detailed) {
+            failureBody.explanation = humanReason;
+            failureBody.serverExplanation = humanDiag;
+          } else {
+            console.warn(
+              `[LOL Embed] resolve failed for ${rawType}/${tmdbId} s${season}e${episode}: ${humanReason}` +
+              (humanDiag ? ` | ${humanDiag}` : '')
+            );
+          }
+          return jsonResponse(publicPayload.sanitizeResolveBody(failureBody, { detailed }), 502);
         }
 
         recordStatsEvent(env, ctx, { kind: 'resolve', ...statsBase, server: streamData.server || server });
-        return jsonResponse({
-          ok: true,
-          metadata,
-          stream: streamData,
-          subtitles,
-          segments,
-          servers: streamData.servers
-        });
+        // Whitelist filter (shared with the Node backend): drops rawUrl, diag,
+        // sourceName/provider, upstreamId and the rest of the resolver's
+        // internal bookkeeping before it reaches an anonymous caller.
+        return jsonResponse(
+          publicPayload.sanitizeResolveBody(
+            {
+              ok: true,
+              metadata,
+              stream: streamData,
+              subtitles,
+              segments,
+              servers: streamData.servers
+            },
+            { detailed: workerWantsAdminDetail(request) }
+          )
+        );
       }
     }
 

@@ -19,15 +19,28 @@
 //   /embed?type=tv&tmdb=94605&s=1&e=1&t=1m30s&autoskip=1  start offset + auto-skip on
 //   /host                                             host page: the player in an iframe + the postMessage control API
 //   /docs  (alias /documentation)                     public documentation page
-//   /reze?key=admin123                                owner dashboard fed with seeded demo statistics
+//   /reze?key=$ADMIN_SECRET                           owner dashboard fed with seeded demo statistics
+//                                                     (the mock prints its key on startup)
 
 import http from 'http';
 import fs from 'fs';
 import path from 'path';
+import crypto from 'crypto';
 import { createRequire } from 'module';
 
 const require = createRequire(import.meta.url);
 const statsAggregate = require('../src/services/statsAggregate.js');
+
+// The mock used to hardcode `admin123`, which kept the published default alive in
+// the tooling and in the README's example URL. It now mirrors production: read
+// ADMIN_SECRET from the environment, else generate an ephemeral one and print it.
+const MOCK_ADMIN_SECRET =
+  (process.env.ADMIN_SECRET || '').trim() || crypto.randomBytes(24).toString('base64url');
+if (!(process.env.ADMIN_SECRET || '').trim()) {
+  console.log(`[player-mock] ADMIN_SECRET not set — generated an ephemeral one for this session.`);
+}
+console.log(`[player-mock] admin key: ${MOCK_ADMIN_SECRET}`);
+console.log(`[player-mock] dashboard:  http://localhost:${process.env.PLAYER_PORT || '8790'}/reze?key=${MOCK_ADMIN_SECRET}`);
 
 const PORT = parseInt(process.env.PLAYER_PORT || '8790', 10);
 const HOST = process.env.HOST || '0.0.0.0';
@@ -346,8 +359,16 @@ const server = http.createServer((req, res) => {
   }
 
   if (pathname.startsWith('/api/admin/')) {
-    const provided = req.headers['x-admin-key'] || url.searchParams.get('key') || '';
-    if (provided !== 'admin123') return json(res, 401, { ok: false, error: 'Unauthorized: Invalid Admin Key' });
+    // Header-only, matching production: `?key=` in a query string leaks into
+    // access logs, Referer headers and browser history.
+    const provided =
+      req.headers['x-admin-key'] ||
+      String(req.headers.authorization || '').replace(/^Bearer\s+/i, '');
+    const expected = Buffer.from(MOCK_ADMIN_SECRET);
+    const given = Buffer.from(String(provided || ''));
+    const ok =
+      given.length === expected.length && crypto.timingSafeEqual(given, expected);
+    if (!ok) return json(res, 401, { ok: false, error: 'Unauthorized: Invalid Admin Key' });
     const adminPayload = () => ({
       ok: true,
       stats: { persistent: false, ...demoStats.snapshot({ limit: 25 }) },
