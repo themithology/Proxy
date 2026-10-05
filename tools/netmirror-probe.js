@@ -16,6 +16,21 @@
 const fs = require('fs');
 const path = require('path');
 
+// This probe is a read-only diagnostic: it inspects upstream discovery and
+// endpoints and calls resolveNetmirror() directly. It never serves traffic,
+// never issues a signed URL to a client, and needs no deployment credentials.
+//
+// `src/config.js` refuses to load without real ADMIN_SECRET/PROXY_SECRET values
+// when NODE_ENV is production (which is also the default when NODE_ENV is
+// unset). That fail-closed behaviour is correct for a deployment, but it would
+// make this tool unrunnable in CI, where no deployment secrets exist. Unless
+// the operator has explicitly asked for a production process, run as
+// non-production so config generates throwaway secrets for this run. They are
+// never used to sign anything and do not survive the process.
+if (!String(process.env.NODE_ENV || '').trim()) {
+  process.env.NODE_ENV = 'development';
+}
+
 const outIdx = process.argv.indexOf('--out');
 const OUT = outIdx !== -1 && process.argv[outIdx + 1] ? process.argv[outIdx + 1] : 'diagnostics/netmirror-probe.json';
 
