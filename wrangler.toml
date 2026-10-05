@@ -26,10 +26,31 @@ tag = "v1"
 new_sqlite_classes = ["StatsStore"]
 
 [vars]
-# Key for /reze and /api/admin/* — change it before deploying.
-ADMIN_SECRET = "admin123"
+# ---------------------------------------------------------------------------
+# ADMIN_SECRET and PROXY_SECRET are deliberately NOT here.
+#
+# They used to be committed in plaintext ("admin123" and a fixed HMAC key), and
+# those exact strings were also the in-code fallbacks — so any deployment that
+# forgot to override them was fully controllable by anyone who had read this
+# repo: /api/admin/* hot-swaps upstream URLs and AES keys and injects arbitrary
+# stream URLs for any TMDB id, and PROXY_SECRET signs every proxy URL.
+#
+# Set them as Cloudflare *secrets* (encrypted, never in git):
+#   npx wrangler secret put PROXY_SECRET
+#   npx wrangler secret put ADMIN_SECRET
+#
+# Generate one with:
+#   node -e "console.log(require('crypto').randomBytes(32).toString('base64url'))"
+#
+# PROXY_SECRET MUST be identical on every runtime that signs or verifies proxy
+# URLs (this Worker, any Worker in EXTERNAL_PROXY_POOL, and the Node backend),
+# otherwise URLs signed by one are rejected by another.
+#
+# The Worker fails CLOSED without them: /api/proxy answers 503 and /api/admin/*
+# answers 503, rather than running unauthenticated. Local `wrangler dev` reads
+# .dev.vars (gitignored) so development needs no secrets committed.
+# ---------------------------------------------------------------------------
 TMDB_API_KEY = "47a1a7df542d3d483227f758a7317dff"
-PROXY_SECRET = "vidstuck-edge-hmac-secret-key-2026-9f8e7d6c5b4a"
 CASTLETV_BASE_URL = "https://api.hlowb.com"
 NETMIRROR_BASE_URL = "https://net27.cc"
 HICINE_API_BASE = "https://api.hicine.sbs"
@@ -59,13 +80,18 @@ ADS_ENABLED = "true"
 # The embed URL also accepts a per-request `?api=<url>` override.
 API_BASE_URL = ""
 
-# Preview-safe vars for `npx wrangler preview` (Workers Builds runs this for
-# branch builds). Values must be non-production; <REPLACE_ME> is rejected.
-# The TMDB values below are the public sample keys committed in this repo.
+# Preview vars for `npx wrangler preview` (Workers Builds runs this for branch
+# builds). Values must be non-production; <REPLACE_ME> is rejected.
+#
+# ADMIN_SECRET / PROXY_SECRET are intentionally ABSENT here too. A preview URL is
+# publicly reachable, so committing a known preview secret would recreate exactly
+# the forgeable-signature / open-relay hole on the preview deployment. Previews
+# therefore fail closed: /api/proxy and /api/admin/* return 503 with a hint, while
+# the player page, docs and dashboard shell still render. To exercise playback in
+# a remote preview, set the secrets for that environment explicitly instead of
+# committing them.
 [previews.vars]
-ADMIN_SECRET = "preview-admin-secret-not-production"
 TMDB_API_KEY = "47a1a7df542d3d483227f758a7317dff"
-PROXY_SECRET = "preview-proxy-secret-not-production"
 API_BASE_URL = ""
 ADS_ENABLED = "false"
 CASTLETV_BASE_URL = "https://api.hlowb.com"

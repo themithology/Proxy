@@ -8,28 +8,134 @@ const serverCatalog = require('../services/serverCatalog');
 const { handleStreamProxy } = require('../services/proxy');
 const { serveMasterPlaylist, serveGeneratedFile } = require('../services/multitrack');
 const { generateHandshakeToken } = require('../utils/crypto');
+const { constantTimeEqual, inspectMediaTarget } = require('../utils/proxySign');
+const { createRateLimiter, expressClientKey } = require('../utils/rateLimit');
+const { sanitizeResolveBody } = require('../services/publicPayload');
 const { srtToVtt } = require('../utils/srtToVtt');
 const { circuitBreaker } = require('../utils/cache');
 const { telemetry } = require('../services/telemetry');
 
 const router = express.Router();
 
+/* ------------------------------------------------------------------------ */
+/* Rate limiting                                                             */
+/* ------------------------------------------------------------------------ */
+
+const MINUTE = 60 * 1000;
+const limits = config.rateLimit;
+
+const resolveLimiter = createRateLimiter({ name: 'resolve', limit: limits.resolvePerMinute, windowMs: MINUTE });
+const proxyLimiter = createRateLimiter({ name: 'proxy', limit: limits.proxyPerMinute, windowMs: MINUTE });
+const metadataLimiter = createRateLimiter({ name: 'metadata', limit: limits.metadataPerMinute, windowMs: MINUTE });
+const handshakeLimiter = createRateLimiter({ name: 'handshake', limit: limits.handshakePerMinute, windowMs: MINUTE });
+// Failed admin-key attempts, keyed by client. This is a brute-force oracle:
+// the admin key guards live upstream/AES-key swaps and arbitrary stream
+// overrides, so guessing must be slow.
+const adminAuthLimiter = createRateLimiter({ name: 'admin-auth', limit: limits.adminAuthPerMinute, windowMs: MINUTE });
+
 /**
- * Middleware: Authenticate Owner Admin Requests via `X-Admin-Key` header or `?key=` query
+ * Express middleware enforcing one of the named limiters per client.
+ *
+ * The key is the least-spoofable identity available (see utils/rateLimit.js):
+ * `cf-connecting-ip` when behind Cloudflare, else the trusted-proxy-reduced
+ * `req.ip`. Raw client-supplied X-Forwarded-For is only a last resort, and
+ * `trust proxy` is pinned to a hop count in src/server.js so it cannot be
+ * forged into a fresh bucket on every request.
+ */
+function rateLimit(limiter) {
+  return (req, res, next) => {
+    if (!limits.enabled) return next();
+    const decision = limiter.check(
+      expressClientKey(req, { trustForwardedHeaders: limits.trustForwardedHeaders })
+    );
+    for (const [header, value] of Object.entries(limiter.headers(decision))) {
+      res.setHeader(header, value);
+    }
+    if (!decision.allowed) {
+      return res.status(429).json({
+        ok: false,
+        error: 'Rate limit exceeded. Slow down.',
+        scope: limiter.name,
+        limit: decision.limit,
+        retryAfterSeconds: Math.max(1, Math.ceil(decision.retryAfterMs / 1000))
+      });
+    }
+    return next();
+  };
+}
+
+/* ------------------------------------------------------------------------ */
+/* Admin authentication                                                      */
+/* ------------------------------------------------------------------------ */
+
+/**
+ * Middleware: authenticate owner admin requests.
+ *
+ * Accepted: `X-Admin-Key: <secret>` or `Authorization: Bearer <secret>`.
+ *
+ * The `?key=<secret>` query form was REMOVED. Query strings end up in proxy and
+ * access logs, in `Referer` headers sent to third parties, and in browser
+ * history — an admin secret in a URL leaks through every one of them. The /reze
+ * dashboard already sends `X-Admin-Key` (public/reze.html), and still accepts
+ * `/reze?key=…` to seed sessionStorage, so nothing in the owner UI regressed.
+ *
+ * Comparison is constant-time, and failures are rate-limited per client.
  */
 function requireAdminAuth(req, res, next) {
   const provided =
     req.headers['x-admin-key'] ||
-    req.query.key ||
     (req.headers.authorization || '').replace(/^Bearer\s+/i, '');
 
-  if (!provided || provided !== config.adminSecret) {
-    return res.status(401).json({
+  if (typeof provided === 'string' && provided && constantTimeEqual(provided, config.adminSecret)) {
+    return next();
+  }
+
+  // Only FAILED attempts consume the budget. Counting successes too would lock
+  // the owner out of /reze, which fires several admin calls per dashboard load.
+  const throttle = adminAuthLimiter.check(
+    expressClientKey(req, { trustForwardedHeaders: limits.trustForwardedHeaders })
+  );
+  if (!throttle.allowed) {
+    return res.status(429).json({
       ok: false,
-      error: 'Unauthorized: Invalid or missing Admin Key (X-Admin-Key)'
+      error: 'Too many admin authentication attempts. Try again later.',
+      retryAfterSeconds: Math.max(1, Math.ceil(throttle.retryAfterMs / 1000))
     });
   }
-  return next();
+  return res.status(401).json({
+    ok: false,
+    error: 'Unauthorized: Invalid or missing Admin Key (X-Admin-Key)'
+  });
+}
+
+/**
+ * True when the caller is the authenticated owner and explicitly asked for
+ * unfiltered internals (`?detail=1`). Diagnostics stay available to the owner
+ * instead of being served to every anonymous caller.
+ */
+function wantsAdminDetail(req) {
+  const requested = String(req.query.detail || '') === '1';
+  if (!requested) return false;
+  const provided =
+    req.headers['x-admin-key'] ||
+    (req.headers.authorization || '').replace(/^Bearer\s+/i, '');
+  return typeof provided === 'string' && !!provided && constantTimeEqual(provided, config.adminSecret);
+}
+
+/**
+ * Internal error responses never echo `err.message`. Resolver errors routinely
+ * contain upstream hostnames, endpoint paths and provider responses — exactly
+ * the topology that should not be handed to an anonymous caller. The real
+ * message is logged server-side and returned only to an authenticated owner.
+ */
+function internalError(req, res, err, context) {
+  const message = err && err.message ? err.message : String(err);
+  console.error(`[LOL Embed] ${context || 'request'} failed:`, message);
+  return res.status(500).json({
+    ok: false,
+    error: 'Internal error while resolving this request.',
+    ...(wantsAdminDetail(req) ? { detail: message } : {})
+  });
 }
 
 /**
@@ -60,7 +166,7 @@ router.get('/health', (req, res) => {
  * Public, cacheable list of the player-visible servers (ids are what
  * `?server=` accepts). Never carries upstream/provider names.
  */
-router.get('/servers', (req, res) => {
+router.get('/servers', rateLimit(metadataLimiter), (req, res) => {
   res.setHeader('Cache-Control', 'public, max-age=300');
   res.json({
     ok: true,
@@ -74,7 +180,7 @@ router.get('/servers', (req, res) => {
  * GET /api/catalog
  * Returns a small list of popular TMDB titles for API clients and smoke tests
  */
-router.get('/catalog', async (req, res) => {
+router.get('/catalog', rateLimit(metadataLimiter), async (req, res) => {
   const defaultCatalog = [
     {
       tmdbId: 94605,
@@ -142,7 +248,7 @@ router.get('/catalog', async (req, res) => {
  * POST /api/handshake
  * Generates short-lived session token (like VidStuck's /backend/meow)
  */
-router.post('/handshake', express.json(), (req, res) => {
+router.post('/handshake', rateLimit(handshakeLimiter), express.json(), (req, res) => {
   const { type = 'movie', id = '', season = 1, episode = 1 } = req.body || {};
   if (!id) {
     return res.status(400).json({ ok: false, error: 'Missing TMDB id' });
@@ -164,7 +270,7 @@ router.post('/handshake', express.json(), (req, res) => {
  * GET /api/info/:type/:tmdbId
  * Resolves TMDB ID -> Unified Metadata + External IDs (IMDb, TVDB, MAL) + Episodes
  */
-router.get('/info/:type/:tmdbId', async (req, res) => {
+router.get('/info/:type/:tmdbId', rateLimit(metadataLimiter), async (req, res) => {
   try {
     const { type, tmdbId } = req.params;
     const season = parseInt(req.query.season || '1', 10);
@@ -181,7 +287,7 @@ router.get('/info/:type/:tmdbId', async (req, res) => {
       servers: serverCatalog.listableServers(config.servers)
     });
   } catch (err) {
-    return res.status(500).json({ ok: false, error: err.message });
+    return internalError(req, res, err, 'request');
   }
 });
 
@@ -189,7 +295,7 @@ router.get('/info/:type/:tmdbId', async (req, res) => {
  * GET /api/segments/:type/:tmdbId
  * Returns Skip Intro / Recap / Next Episode timestamps using only TMDB ID
  */
-router.get('/segments/:type/:tmdbId', async (req, res) => {
+router.get('/segments/:type/:tmdbId', rateLimit(metadataLimiter), async (req, res) => {
   try {
     const { type, tmdbId } = req.params;
     const season = parseInt(req.query.season || '1', 10);
@@ -199,7 +305,7 @@ router.get('/segments/:type/:tmdbId', async (req, res) => {
     const segments = await resolveSkipSegments(metadata);
     return res.json({ ok: true, ...segments });
   } catch (err) {
-    return res.status(500).json({ ok: false, error: err.message });
+    return internalError(req, res, err, 'request');
   }
 });
 
@@ -209,12 +315,17 @@ router.get('/segments/:type/:tmdbId', async (req, res) => {
  * and converts it to WebVTT on the fly. Not a general relay: only subtitle
  * hosts and the configured source mirrors are allowed.
  */
-router.get('/subtitles/proxy', async (req, res) => {
+router.get('/subtitles/proxy', rateLimit(metadataLimiter), async (req, res) => {
   const targetUrl = typeof req.query.url === 'string' ? req.query.url : '';
   if (!targetUrl) {
     return res.status(400).send('Missing subtitle url');
   }
   if (!isProxyableSubtitleUrl(targetUrl)) {
+    return res.status(403).send('Subtitle host not allowed');
+  }
+  // SUBTITLE_PROXY_HOSTS accepts `*` (any host), so the allowlist alone can be
+  // widened into a relay by configuration. The SSRF guard is unconditional.
+  if (!inspectMediaTarget(targetUrl, { allowPrivateTargets: config.proxyAllowPrivateTargets }).ok) {
     return res.status(403).send('Subtitle host not allowed');
   }
   try {
@@ -227,7 +338,9 @@ router.get('/subtitles/proxy', async (req, res) => {
     res.setHeader('Cache-Control', 'public, max-age=7200');
     return res.send(vtt);
   } catch (err) {
-    return res.status(502).send(`Subtitle proxy error: ${err.message}`);
+    // err.message can contain the upstream subtitle URL; keep it server-side.
+    console.warn('[LOL Embed] subtitle proxy error:', err && err.message ? err.message : err);
+    return res.status(502).send('Subtitle fetch failed');
   }
 });
 
@@ -235,7 +348,7 @@ router.get('/subtitles/proxy', async (req, res) => {
  * POST /api/subtitles/convert
  * Converts uploaded .srt or .vtt text into normalized WebVTT (for local subtitle upload)
  */
-router.post('/subtitles/convert', express.text({ type: '*/*', limit: '5mb' }), (req, res) => {
+router.post('/subtitles/convert', rateLimit(metadataLimiter), express.text({ type: '*/*', limit: '5mb' }), (req, res) => {
   const raw = typeof req.body === 'string' ? req.body : '';
   const vtt = srtToVtt(raw);
   res.setHeader('Content-Type', 'text/vtt; charset=utf-8');
@@ -247,7 +360,7 @@ router.post('/subtitles/convert', express.text({ type: '*/*', limit: '5mb' }), (
  * GET /api/subtitles/:type/:tmdbId
  * Returns multi-language subtitle tracks using only TMDB ID
  */
-router.get('/subtitles/:type/:tmdbId', async (req, res) => {
+router.get('/subtitles/:type/:tmdbId', rateLimit(metadataLimiter), async (req, res) => {
   try {
     const { type, tmdbId } = req.params;
     const season = parseInt(req.query.season || '1', 10);
@@ -262,7 +375,7 @@ router.get('/subtitles/:type/:tmdbId', async (req, res) => {
       tracks
     });
   } catch (err) {
-    return res.status(500).json({ ok: false, error: err.message });
+    return internalError(req, res, err, 'request');
   }
 });
 
@@ -272,7 +385,7 @@ router.get('/subtitles/:type/:tmdbId', async (req, res) => {
  * Input: TMDB ID (+ season & episode for TV, + optional server & audio track)
  * Output: Metadata, External IDs, Stream URL (proxied M3U8/MP4), Audio Tracks, Qualities, Subtitles, Skip Segments
  */
-router.get('/resolve/:type/:tmdbId', async (req, res) => {
+router.get('/resolve/:type/:tmdbId', rateLimit(resolveLimiter), async (req, res) => {
   try {
     const { type, tmdbId } = req.params;
     const season = parseInt(req.query.season || '1', 10);
@@ -331,11 +444,14 @@ router.get('/resolve/:type/:tmdbId', async (req, res) => {
         season,
         episode
       });
-      return res.status(502).json({
+      // The detailed failure report (per-upstream diag traces, latencies, the
+      // human-readable upstream explanation) is owner-only. Anonymous callers
+      // get the coarse machine-readable reason, which is all the player needs to
+      // mark a server as failed and fall through.
+      const detailed = wantsAdminDetail(req);
+      const failureBody = {
         ok: false,
         error: 'Unable to resolve stream from upstream providers for this title.',
-        explanation: humanReason,
-        serverExplanation: humanDiag,
         requestedServer: (streamData && streamData.requestedServer) || server,
         failedReason: firstFailed ? firstFailed.reason : null,
         serverAttempts: attempts,
@@ -343,20 +459,38 @@ router.get('/resolve/:type/:tmdbId', async (req, res) => {
         subtitles,
         segments: segmentsData.segments,
         servers: (streamData && streamData.servers) || config.servers
-      });
+      };
+      // Provider-naming explanations are owner-only (see publicPayload.js).
+      if (detailed) {
+        failureBody.explanation = humanReason;
+        failureBody.serverExplanation = humanDiag;
+      } else {
+        console.warn(
+          `[LOL Embed] resolve failed for ${type}/${tmdbId} s${season}e${episode}: ${humanReason}` +
+          (humanDiag ? ` | ${humanDiag}` : '')
+        );
+      }
+      return res.status(502).json(sanitizeResolveBody(failureBody, { detailed }));
     }
 
     telemetry.recordResolveOutcome(req, metadata, true, { server: streamData.server || server, season, episode });
-    return res.json({
-      ok: true,
-      metadata,
-      stream: streamData,
-      subtitles,
-      segments: segmentsData.segments,
-      servers: streamData.servers
-    });
+    // Whitelist filter: drops rawUrl, diag, sourceName/provider, upstreamId and
+    // the rest of the resolver's internal bookkeeping from the public body.
+    return res.json(
+      sanitizeResolveBody(
+        {
+          ok: true,
+          metadata,
+          stream: streamData,
+          subtitles,
+          segments: segmentsData.segments,
+          servers: streamData.servers
+        },
+        { detailed: wantsAdminDetail(req) }
+      )
+    );
   } catch (err) {
-    return res.status(500).json({ ok: false, error: err.message });
+    return internalError(req, res, err, 'request');
   }
 });
 
@@ -377,7 +511,7 @@ router.get('/admin/centaurus/diagnose/:type/:tmdbId', requireAdminAuth, async (r
     const report = await diagnoseCentaurus(metadata);
     return res.json(report);
   } catch (err) {
-    return res.status(500).json({ ok: false, error: err.message });
+    return internalError(req, res, err, 'request');
   }
 });
 
@@ -385,19 +519,19 @@ router.get('/admin/centaurus/diagnose/:type/:tmdbId', requireAdminAuth, async (r
  * GET /api/multitrack/master.m3u8
  * Lazily remuxes a signed, allowlisted direct media URL to fMP4 HLS audio renditions.
  */
-router.get('/multitrack/master.m3u8', (req, res) => serveMasterPlaylist(req, res));
+router.get('/multitrack/master.m3u8', rateLimit(proxyLimiter), (req, res) => serveMasterPlaylist(req, res));
 
 /**
  * GET /api/multitrack/file/:jobId/:filename
  * Serves generated playlists/segments only when their per-resource HMAC is valid.
  */
-router.get('/multitrack/file/:jobId/:filename', (req, res) => serveGeneratedFile(req, res));
+router.get('/multitrack/file/:jobId/:filename', rateLimit(proxyLimiter), (req, res) => serveGeneratedFile(req, res));
 
 /**
  * GET /api/proxy
  * M3U8 Manifest Rewriter & TS/MP4/MPD Segment Stream Proxy with CORS & Range support
  */
-router.get('/proxy', (req, res, next) => {
+router.get('/proxy', rateLimit(proxyLimiter), (req, res, next) => {
   telemetry.recordDomainActivity(req, 'proxy');
   return handleStreamProxy(req, res, next);
 });
@@ -454,7 +588,7 @@ router.post('/admin/probe', requireAdminAuth, async (req, res) => {
       snapshot: telemetry.getDashboardSnapshot()
     });
   } catch (err) {
-    return res.status(500).json({ ok: false, error: err.message });
+    return internalError(req, res, err, 'request');
   }
 });
 
@@ -558,8 +692,18 @@ router.get('/debug/andromeda/:type/:tmdbId', requireAdminAuth, async (req, res) 
       result
     });
   } catch (err) {
-    return res.status(500).json({ ok: false, error: err.message });
+    return internalError(req, res, err, 'request');
   }
 });
+
+// Exposed so the verification suite can reset limiter state and assert the
+// throttling contract deterministically. Not part of the HTTP surface.
+router.rateLimiters = {
+  resolve: resolveLimiter,
+  proxy: proxyLimiter,
+  metadata: metadataLimiter,
+  handshake: handshakeLimiter,
+  adminAuth: adminAuthLimiter
+};
 
 module.exports = router;

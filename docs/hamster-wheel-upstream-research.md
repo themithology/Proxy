@@ -291,7 +291,10 @@ New debugging surface — this is how to answer "is it giving raw links?" withou
 reading logs:
 
 ```bash
-curl -s "localhost:3000/api/admin/hamster/diagnose/movie/693134?key=$ADMIN_SECRET" | jq
+# The admin key goes in a header. `?key=` is no longer accepted: query strings
+# leak into access logs, Referer headers and browser history.
+curl -s -H "X-Admin-Key: $ADMIN_SECRET" \
+  "localhost:3000/api/admin/hamster/diagnose/movie/693134" | jq
 # → { providers: [{id, ok, ms, count, diag}], candidates: [{provider, url,
 #     kind, quality, audio, playable, probeStatus, probeContentType, ms}] }
 ```

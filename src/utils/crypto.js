@@ -1,10 +1,28 @@
-const crypto = require('crypto');
-const config = require('../config');
+'use strict';
 
 /**
- * Derive 32-byte key and 16-byte IV using OpenSSL EVP_BytesToKey (MD5)
- * Matches `openssl enc -aes-256-cbc -md md5` and `CryptoJS.AES` without needing external packages.
+ * Config-bound signing facade for the Node backend.
+ *
+ * The algorithms live in `./proxySign.js`, which is dependency-free and shared
+ * with the Cloudflare Worker so a URL signed by one runtime verifies on the
+ * other. This file only injects `config.proxySecret` / `config.tokenTtlSeconds`
+ * so existing Node call sites keep their shorter signatures.
+ *
+ * Do NOT add a fallback secret here. `config.js` refuses to boot in production
+ * unless a strong `PROXY_SECRET` is configured, and `proxySign.signProxyParams`
+ * throws rather than signing with a published default.
  */
+
+const config = require('../config');
+const proxySign = require('./proxySign');
+
+/**
+ * Derive 32-byte key and 16-byte IV using OpenSSL EVP_BytesToKey (MD5).
+ * Matches `openssl enc -aes-256-cbc -md md5` and `CryptoJS.AES` without needing
+ * external packages. Retained for the CastleTV AES-128-CBC upstream handshake.
+ */
+const crypto = require('crypto');
+
 function evpBytesToKeyMd5(passphrase, salt) {
   const passBuf = Buffer.from(String(passphrase), 'utf8');
   let derived = Buffer.alloc(0);
@@ -21,93 +39,63 @@ function evpBytesToKeyMd5(passphrase, salt) {
   };
 }
 
-/**
- * Generates an HMAC-SHA256 signature for proxy URLs (`url|referer|exp`).
- */
+/** HMAC-SHA256 signature for proxy payloads (`url|referer|exp`). */
 function signProxyParams(targetUrl, referer = '', exp = 0, secret = config.proxySecret) {
-  return crypto
-    .createHmac('sha256', secret)
-    .update(`${targetUrl}|${referer || ''}|${exp}`)
-    .digest('hex')
-    .slice(0, 32);
+  return proxySign.signProxyParams(targetUrl, referer, exp, secret);
 }
 
 /**
- * Verifies an HMAC-SHA256 proxy signature.
+ * Verify a proxy signature. Fail-closed: a missing exp or sig is a rejection,
+ * never a bypass.
  */
-function verifyProxySignature(targetUrl, referer = '', exp = 0, sig = '') {
-  if (!targetUrl || !exp || !sig) return false;
-  const now = Math.floor(Date.now() / 1000);
-  if (Number(exp) < now) return false;
-  const expected = signProxyParams(targetUrl, referer, exp);
-  try {
-    return crypto.timingSafeEqual(Buffer.from(sig), Buffer.from(expected));
-  } catch {
-    return false;
-  }
+function verifyProxySignature(targetUrl, referer = '', exp = 0, sig = '', secret = config.proxySecret) {
+  return proxySign.verifyProxySignature(targetUrl, referer, exp, sig, secret);
 }
 
-/**
- * Creates a signed proxy URL with an expiration timestamp.
- */
+/** Create a signed proxy URL with an expiration timestamp. */
 function createSignedProxyUrl(targetUrl, options = {}) {
-  const {
-    referer = '',
-    origin = '',
-    baseUrl = '',
-    ttlSeconds = config.tokenTtlSeconds || 14400
-  } = options;
-
-  const exp = Math.floor(Date.now() / 1000) + ttlSeconds;
-  const sig = signProxyParams(targetUrl, referer, exp);
-
-  const params = new URLSearchParams();
-  params.set('url', targetUrl);
-  if (referer) params.set('referer', referer);
-  if (origin) params.set('origin', origin);
-  params.set('exp', String(exp));
-  params.set('sig', sig);
-
-  return `${baseUrl}/api/proxy?${params.toString()}`;
+  return proxySign.createSignedProxyUrl(targetUrl, {
+    ttlSeconds: config.tokenTtlSeconds || 14400,
+    secret: config.proxySecret,
+    ...options
+  });
 }
 
-/**
- * Generates a short-lived signed session handshake token (like VidStuck's /backend/meow).
- */
-function generateHandshakeToken(payload = {}) {
-  const exp = Math.floor(Date.now() / 1000) + (config.tokenTtlSeconds || 14400);
-  const body = Buffer.from(JSON.stringify({ ...payload, exp }), 'utf8').toString('base64url');
-  const sig = crypto
-    .createHmac('sha256', config.proxySecret)
-    .update(body)
-    .digest('base64url');
-  return `${body}.${sig}`;
+/** Short-lived signed session handshake token (like VidStuck's /backend/meow). */
+function generateHandshakeToken(payload = {}, options = {}) {
+  return proxySign.generateHandshakeToken(payload, {
+    ttlSeconds: config.tokenTtlSeconds || 14400,
+    secret: config.proxySecret,
+    ...options
+  });
 }
 
-/**
- * Verifies a session handshake token.
- */
-function verifyHandshakeToken(token) {
-  if (!token || typeof token !== 'string' || !token.includes('.')) return null;
-  const [body, sig] = token.split('.');
-  const expectedSig = crypto
-    .createHmac('sha256', config.proxySecret)
-    .update(body)
-    .digest('base64url');
-  if (sig !== expectedSig) return null;
-  try {
-    const data = JSON.parse(Buffer.from(body, 'base64url').toString('utf8'));
-    if (data.exp && data.exp < Math.floor(Date.now() / 1000)) return null;
-    return data;
-  } catch {
-    return null;
-  }
+/** Verify a session handshake token. */
+function verifyHandshakeToken(token, options = {}) {
+  return proxySign.verifyHandshakeToken(token, {
+    secret: config.proxySecret,
+    ...options
+  });
 }
 
 module.exports = {
+  evpBytesToKeyMd5,
   signProxyParams,
   verifyProxySignature,
   createSignedProxyUrl,
   generateHandshakeToken,
-  verifyHandshakeToken
+  verifyHandshakeToken,
+  // v2 request signing: binds url + referer + origin + cookie + mode + token +
+  // vidsrcStamp + exp, so no unsigned parameter can be appended to a signed URL.
+  signProxyRequest: proxySign.signProxyRequest,
+  verifyProxyRequest: (params, sig, secret = config.proxySecret) =>
+    proxySign.verifyProxyRequest(params, sig, secret),
+  normalizeProxyRequestParams: proxySign.normalizeProxyRequestParams,
+  // Re-exported so Node call sites can reach the SSRF guard and secret checks
+  // without a second import path.
+  isInsecureSecret: proxySign.isInsecureSecret,
+  isUsableSecret: proxySign.isUsableSecret,
+  inspectMediaTarget: proxySign.inspectMediaTarget,
+  isPrivateOrReservedHost: proxySign.isPrivateOrReservedHost,
+  constantTimeEqual: proxySign.constantTimeEqual
 };

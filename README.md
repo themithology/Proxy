@@ -183,10 +183,10 @@ The value must be an absolute `http(s)` URL (a path prefix is allowed and traili
 - `GET /api/segments/:type/:tmdbId` — intro, recap, and credits timestamps (see *Skip segments*).
 - `GET /api/subtitles/:type/:tmdbId` — external subtitle tracks (see *Subtitles*).
 - `GET /api/subtitles/proxy?url=…&enc=…&lang=…` — fetches one subtitle file from an allowed subtitle host (gzip/zip unpacked, charset detected) and returns WebVTT.
-- `GET /api/resolve/:type/:tmdbId` — resolves a source and returns stream, audio, subtitle, and segment metadata.
-- `GET /api/proxy?url=...` — HLS/MP4 stream proxy.
+- `GET /api/resolve/:type/:tmdbId` — resolves a source and returns stream, audio, subtitle, and segment metadata. Rate-limited, and the body is whitelist-filtered (see *Security model*). Add `?detail=1` **with** `X-Admin-Key` for the unfiltered owner view (`rawUrl`, `sourceName`, `diag`, upstream traces).
+- `GET /api/proxy?url=…&exp=…&sig=…` — HLS/MP4 stream proxy. **Signed URLs only**: it serves URLs this service issued via `/api/resolve`, never an arbitrary `?url=`.
 - `GET /api/multitrack/master.m3u8` and `/api/multitrack/file/:jobId/:filename` — signed Node-side audio-remux output.
-- `/api/admin/*` — owner operations, all requiring `X-Admin-Key` (or `?key=`): `GET /api/admin/stats` (dashboard feed), `POST /api/admin/stats/reset`, `POST /api/admin/domains/block` (`{ domain, blocked }`), `GET`/`POST /api/admin/domains/ad-free` (`{ domain, adFree }`, player Worker), `GET /api/admin/overview`, `POST /api/admin/probe`, plus upstream configuration and source overrides. The `/reze` page is the UI for these.
+- `/api/admin/*` — owner operations, all requiring `X-Admin-Key` (or `Authorization: Bearer`; the `?key=` query form was removed because query strings leak into access logs, `Referer` headers and browser history): `GET /api/admin/stats` (dashboard feed), `POST /api/admin/stats/reset`, `POST /api/admin/domains/block` (`{ domain, blocked }`), `GET`/`POST /api/admin/domains/ad-free` (`{ domain, adFree }`, player Worker), `GET /api/admin/overview`, `POST /api/admin/probe`, plus upstream configuration and source overrides. The `/reze` page is the UI for these.
 
 Supported media types are `movie`, `tv`, and `series` where applicable. TV requests accept `season` and `episode` query parameters. Ids are TMDB ids; IMDb ids (`tt…`) are accepted everywhere a TMDB id is and translated once through TMDB's `/find` endpoint (cached for a day) — the responses and the host API always report the TMDB id.
 
@@ -288,7 +288,7 @@ used).
 Debug a title with the admin diagnostics endpoint:
 
 ```bash
-curl "$API/api/admin/centaurus/diagnose/tv/94605?season=1&episode=1&key=$ADMIN_SECRET"
+curl -H "X-Admin-Key: $ADMIN_SECRET" "$API/api/admin/centaurus/diagnose/tv/94605?season=1&episode=1"
 # → per-source {ok, ms, reason, diag, rawUrl, qualities}
 ```
 
@@ -344,7 +344,9 @@ npm test
 npm start
 ```
 
-The server listens on `0.0.0.0:3000` by default and serves the JSON API only — the player page ships with the Cloudflare Worker. Copy `.env.example` to `.env` and configure deployment-specific values. The Docker image installs FFmpeg (including FFprobe); for non-Docker hosts, install both binaries on `PATH`, or set `FFMPEG_PATH` and `FFPROBE_PATH`. Multitrack remuxing can be disabled with `MULTITRACK_ENABLED=false`.
+The server listens on `0.0.0.0:3000` by default and serves the JSON API only — the player page ships with the Cloudflare Worker. Copy `.env.example` to `.env` and configure deployment-specific values.
+
+`ADMIN_SECRET` and `PROXY_SECRET` are **required**: with `NODE_ENV=production` the process refuses to start without them and prints the exact command to generate one. In any other environment it generates ephemeral secrets and logs that it did, so `npm run dev` and `npm test` work with no configuration — signed URLs simply will not survive a restart. `PROXY_SECRET` must match the Worker's, or URLs signed by one runtime are rejected by the other. The Docker image installs FFmpeg (including FFprobe); for non-Docker hosts, install both binaries on `PATH`, or set `FFMPEG_PATH` and `FFPROBE_PATH`. Multitrack remuxing can be disabled with `MULTITRACK_ENABLED=false`.
 
 With Docker Compose:
 
@@ -361,9 +363,18 @@ npx wrangler login
 npx wrangler deploy
 ```
 
-Configure production secrets and variables in Cloudflare Worker settings. Set a strong `ADMIN_SECRET` (it is also the `/reze` dashboard key) and `PROXY_SECRET` before deployment; do not use the sample values in `wrangler.toml` for a public service. If the API runs on a separate Worker or Node deployment, set `API_BASE_URL` to its absolute URL (see above). The statistics Durable Object is created by the `[[migrations]]` block on the first deploy; to run without it, delete the `[[durable_objects.bindings]]` and `[[migrations]]` blocks (counters then live in isolate memory only).
+`ADMIN_SECRET` and `PROXY_SECRET` are **mandatory** and are no longer present in `wrangler.toml` — set them as Cloudflare secrets before deploying:
 
-Branch pushes run `wrangler preview` via Workers Builds, using the preview-safe values in the `[previews]` block of `wrangler.toml`; only merges to the production branch deploy the production configuration. Durable Object migrations are atomic and cannot be shipped by a preview/version upload, so the `v1` migration that creates the statistics object must land through a production `wrangler deploy` first (branch previews built before that fail with a migration error; afterwards they share the already-migrated class). If you ever rename `StatsStore`, add a new migration tag instead of editing `v1`.
+```bash
+npx wrangler secret put PROXY_SECRET   # signs every /api/proxy URL + multi-track master
+npx wrangler secret put ADMIN_SECRET   # guards /api/admin/* and /api/debug/*; also the /reze key
+# generate one with:
+node -e "console.log(require('crypto').randomBytes(32).toString('base64url'))"
+```
+
+Both used to be committed in plaintext (`admin123` and a fixed HMAC key) *and* used as in-code fallbacks, so a deploy that forgot to override them was fully controllable by anyone who had read the repo. There are no fallbacks now: without usable secrets the Worker **fails closed** — `/api/proxy` and `/api/admin/*` return `503` with a `hint` field, rather than running unauthenticated. `PROXY_SECRET` must be **identical** on every runtime that signs or verifies proxy URLs (this Worker, any `EXTERNAL_PROXY_POOL` node, and the Node backend), otherwise URLs signed by one are rejected by the other. Local `wrangler dev` / `scripts/dev-worker.mjs` read `.dev.vars` (gitignored; see `.dev.vars.example`). If the API runs on a separate Worker or Node deployment, set `API_BASE_URL` to its absolute URL (see above). The statistics Durable Object is created by the `[[migrations]]` block on the first deploy; to run without it, delete the `[[durable_objects.bindings]]` and `[[migrations]]` blocks (counters then live in isolate memory only).
+
+Branch pushes run `wrangler preview` via Workers Builds, using the preview-safe values in the `[previews.vars]` block of `wrangler.toml`; only merges to the production branch deploy the production configuration. `ADMIN_SECRET`/`PROXY_SECRET` are deliberately **absent** from `[previews.vars]`: a preview URL is publicly reachable, so committing a known preview secret would recreate the forgeable-signature hole on that deployment. Previews therefore fail closed for the proxy and admin routes while the player page, `/docs` and the `/reze` shell still render. Durable Object migrations are atomic and cannot be shipped by a preview/version upload, so the `v1` migration that creates the statistics object must land through a production `wrangler deploy` first (branch previews built before that fail with a migration error; afterwards they share the already-migrated class). If you ever rename `StatsStore`, add a new migration tag instead of editing `v1`.
 
 ### Ads
 
@@ -379,6 +390,62 @@ The `/embed` page carries one monetisation tag — a popunder script — at the 
 - To change networks, replace the tag and keep the markers.
 - Popunders open a new window on the viewer's next click. A host page that puts the player in a `sandbox`ed iframe must include `allow-popups allow-popups-to-escape-sandbox`, otherwise the browser blocks them silently. `data-cfasync="false"` keeps Cloudflare Rocket Loader from deferring the tag.
 
-## Security status
+## Security model
 
-The restored player page does **not** make source responses private or scraper-proof. The resolver API can still return source/proxy data, and permissive CORS is not authentication. Before the public main site launches, add an explicit client-auth/session design, short-lived signed access, rate limits, and a policy for avoiding raw upstream URLs in client responses. Do not treat CORS, iframe controls, or obscurity as source protection. These controls are intentionally not implemented in this change.
+The controls below are enforced in **both** runtimes from shared CommonJS modules (`src/utils/proxySign.js`, `src/utils/rateLimit.js`, `src/services/publicPayload.js`), so a URL signed by one verifies on the other and a field filtered by one cannot leak from the other. Suite 14 of `npm test` asserts each of them.
+
+### Secrets fail closed
+
+`ADMIN_SECRET` and `PROXY_SECRET` have no fallback values. The previous defaults (`admin123` and a fixed HMAC key) were committed to this repository, so any deployment that inherited them was fully controllable by anyone who had read the source. Now:
+
+- **Node** refuses to boot in production (`NODE_ENV=production`) when a secret is missing, shorter than 32 characters, or equal to a published sample. Outside production it generates an ephemeral secret and logs that it did.
+- **Worker** answers `503` on `/api/proxy` and `/api/admin/*` when a secret is unusable, with a `hint` explaining the fix.
+- Admin comparison is constant-time (`crypto.timingSafeEqual` over a SHA-256 digest, so length does not leak), and **failed** attempts are throttled per client. Successful attempts are not counted, so the `/reze` dashboard — which fires several admin calls per load — cannot lock the owner out.
+
+### The stream proxy is not a relay
+
+`/api/proxy` used to verify its signature *only when the caller supplied `exp` and `sig`*, which meant omitting them skipped verification entirely and exposed an unauthenticated open proxy with attacker-chosen `Referer`, `Origin` and `Cookie`. The Worker had **no** signature check at all, and also answered the same relay on a bare `/?url=…`.
+
+- A signature is now **mandatory**; a missing or expired one is a rejection, never a bypass.
+- The signature (v2) covers `url`, `referer`, `origin`, `cookie`, `mode`, `token` and `vidsrcStamp`. Those parameters were previously appended to the query string *after* signing, so anyone holding one legitimate signed URL — and every signed URL is visible in a viewer's network tab — could add `&cookie=…` and use the server as an authenticated request relay.
+- Repeating any signed parameter is rejected with `400`. Express parses duplicate keys into an array while the Workers runtime reads the first value; that divergence is the classic HTTP-parameter-pollution setup for validating one value and acting on another.
+- The root `/?url=…` alias is gone. `/` keeps its documented JSON behavior.
+- **SSRF guard** (`inspectMediaTarget`): `http`/`https` only, no embedded credentials (which bypass `http://trusted@evil/` allowlists), and no loopback, link-local, private, CGNAT, multicast or reserved destination — so the proxy cannot be aimed at `169.254.169.254`, `127.0.0.1:6379`, `*.internal` or the Docker socket on a single-machine box.
+- Redirects are followed **by hand** and every hop is re-validated. `redirect: 'follow'` alone would let an allowlisted public host bounce the request to an internal address.
+- `PROXY_ALLOW_PRIVATE_TARGETS` relaxes the guard for local dev and the hermetic test suite. It is **ignored** when `NODE_ENV=production`, and logs an error when enabled on the Worker.
+
+### Public payloads are whitelist-filtered
+
+`/api/resolve` used to return the resolver's whole working set to every anonymous caller: `rawUrl` (the direct provider CDN link), `sourceName`/`provider`, `upstreamId`, `centaurusSources`, and a `diag` object of per-step upstream traces. The player renders none of it — `public/js/embed.js` only ever *normalised* `rawUrl` and never played it — so it was disclosure without function. The UI comment claiming provider names "never reach the viewer" described rendering, not the response body.
+
+Filtering is a **whitelist** (`src/services/publicPayload.js`), not a blacklist: new internal fields are dropped until someone deliberately publishes them. Failure reasons are also downgraded to provider-neutral categories, because the raw codes name upstream machinery (`meow_403` is VidStuck's handshake endpoint, `centaurus_no_source` names a source). Owners get everything back with `?detail=1` plus `X-Admin-Key`; internal errors are logged server-side instead of echoing `err.message`.
+
+`GET /api/debug/andromeda/:type/:tmdbId` was **unauthenticated on the Worker** while the Node equivalent required the admin key. It returned the live upstream base URLs and the resolver's complete raw output — the entire provider map for a guessed path. It is owner-only on both runtimes now.
+
+**Still public by design:** for the Centaurus (HiCine) server the playable `streamUrl` is the provider's direct CDN URL rather than a proxied one ("Root Cause D: direct CDN playback … for regions where the Worker itself is the bottleneck"). That is a bandwidth/architecture decision in the resolver, not a filtering oversight, so the sanitizer preserves `streamUrl` exactly as resolved. Routing Centaurus through the proxy would reverse that decision — see *Open items*.
+
+### Rate limits
+
+TMDB ids are sequential integers, so `/api/resolve` is enumerable by a bare `for` loop. It stays public — this is an embed API — but it is throttled: `resolve` 30/min, `proxy` 600/min, `metadata` 120/min, `handshake` 30/min, failed admin auth 10/min. Responses carry `RateLimit-Limit`/`-Remaining`/`-Reset` and `Retry-After`, which are CORS-exposed so a player can back off intelligibly. Knobs are in `.env.example`.
+
+Client identity comes from **unforgeable sources only**: `cf-connecting-ip`, and otherwise the socket peer address. `X-Forwarded-For`, `X-Real-IP` and Express's `req.ip` are ignored, because all three derive from client-supplied headers — with `trust proxy` pinned to a hop count and no real proxy in front, Express still takes `req.ip` from the caller's own XFF, so rotating that header bought a fresh bucket on every request. That bypass was found and fixed while building this. `cf-connecting-ip` itself is only trusted when the TCP peer verifies against Cloudflare's published edge ranges (`isCloudflarePeer`); a directly exposed Node process ignores a forged copy and falls back to the socket address. Stale ranges degrade safely to the coarser socket identity, never to a bypass.
+
+Limits are per process (Node) or per isolate (Worker) — free, no latency, no storage, and enough to stop naive enumeration cold. They are **not** a global quota. For one, back `src/utils/rateLimit.js` with the existing `STATS` Durable Object. `RATE_LIMIT_TRUST_FORWARDED_HEADERS=true` is the opt-in for a non-Cloudflare proxy that rewrites XFF; enabling it without such a proxy re-opens the bypass above.
+
+### Headers and proxy trust
+
+`helmet` was a declared dependency that was never `require`d, so no security headers were applied. It is now wired up with two deliberate overrides: `crossOriginResourcePolicy: cross-origin` (proxied segments must be readable by a player on another origin, or every embed breaks) and `contentSecurityPolicy: false` (this runtime serves JSON and media, no HTML). `X-Powered-By` is disabled.
+
+`app.set('trust proxy', true)` trusted the **leftmost** X-Forwarded-For entry — the client-supplied one. It is pinned to `TRUST_PROXY_HOPS` (default `1`; use `2` for CF → nginx → node).
+
+### What is still not authentication
+
+`Access-Control-Allow-Origin: *` is a product decision (any site may embed), not a control. The site **block list** is cosmetic: `telemetry.extractDomain` reads `?parent=`, `?domain=`, `?embed_domain=`, `x-embed-domain`, then `Origin`/`Referer` — all client-controlled, so a blocked site simply omits the parameter and a scraper sends nothing. Treat it as attribution for the dashboard, not as access control.
+
+### Open items
+
+- **Centaurus direct playback.** Closing the last raw-URL exposure means routing Centaurus media through the proxy, which reverses the Root Cause D bandwidth decision. Worth a per-deployment switch rather than a silent change.
+- **Client auth / sessions.** There is still no notion of an authorized client. A signed handshake exists (`POST /api/handshake`) but nothing requires it, so `/api/resolve` remains anonymous-by-design and rate-limited rather than authenticated.
+- **Global rate limits.** Per-isolate counters understate a distributed crawler.
+- **DNS rebinding.** The SSRF guard validates hostnames and IP literals synchronously and does no DNS lookup, so a public hostname resolving to a private address is not caught at the guard. Redirect hops *are* re-validated; closing this fully needs DNS pinning on the resolved address.
+- **TMDB key.** The shared v3 key in `src/config.js` / `wrangler.toml` is free-tier and semi-public by nature, but a scraper walking the catalog burns *your* TMDB quota, and TMDB throttling then degrades resolution for everyone. Set your own `TMDB_API_KEY`.

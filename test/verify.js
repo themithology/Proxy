@@ -1,12 +1,40 @@
 // This suite is hermetic: every upstream (TMDB, CastleTV, NetMirror, HiCine)
 // is mocked locally, so the waterfall never touches the internet.
 
+// Security contract under test: the service refuses to run with the secrets that
+// used to be committed to this repository, so the suite must configure strong
+// ones BEFORE ../src/config is loaded. NODE_ENV != production also enables the
+// PROXY_ALLOW_PRIVATE_TARGETS hatch, which is the only way to proxy to the
+// 127.0.0.1 mock upstream. Production ignores that hatch entirely.
+const crypto = require('crypto');
+
+process.env.NODE_ENV = process.env.NODE_ENV || 'test';
+const TEST_ADMIN_SECRET =
+  process.env.ADMIN_SECRET || crypto.randomBytes(32).toString('base64url');
+const TEST_PROXY_SECRET =
+  process.env.PROXY_SECRET || crypto.randomBytes(32).toString('base64url');
+process.env.ADMIN_SECRET = TEST_ADMIN_SECRET;
+process.env.PROXY_SECRET = TEST_PROXY_SECRET;
+process.env.PROXY_ALLOW_PRIVATE_TARGETS = 'true';
+// Keep the suite deterministic: rate limits are asserted explicitly in suite 14
+// instead of tripping by accident elsewhere.
+process.env.RATE_LIMIT_ENABLED = 'false';
+
+/**
+ * Injected into every Worker env so the Worker does not fail closed, and so its
+ * SSRF guard permits the loopback mock upstream this suite runs against.
+ */
+const TEST_WORKER_SECRETS = {
+  ADMIN_SECRET: TEST_ADMIN_SECRET,
+  PROXY_SECRET: TEST_PROXY_SECRET,
+  PROXY_ALLOW_PRIVATE_TARGETS: 'true'
+};
+
 const http = require('http');
 const fs = require('fs');
 const path = require('path');
 const zlib = require('zlib');
 const assert = require('assert');
-const crypto = require('crypto');
 const config = require('../src/config');
 const { app } = require('../src/server');
 const {
@@ -18,6 +46,9 @@ const {
 const { srtToVtt } = require('../src/utils/srtToVtt');
 const { cache } = require('../src/utils/cache');
 const { rewriteM3u8Manifest } = require('../src/services/proxy');
+const proxySign = require('../src/utils/proxySign');
+const publicPayload = require('../src/services/publicPayload');
+const { createRateLimiter, expressClientKey, isCloudflarePeer } = require('../src/utils/rateLimit');
 const {
   parseHicineLinks,
   parseHicineAudioHints,
@@ -780,7 +811,7 @@ async function runTests() {
   console.log('==========================================================\n');
 
   // 1. Cryptographic Unit Tests (AES-256-CBC + HMAC-SHA256 + Handshake Token)
-  console.log('[1/13] Testing HMAC proxy signing & handshake tokens...');
+  console.log('[1/14] Testing HMAC proxy signing & handshake tokens...');
   const exp = Math.floor(Date.now() / 1000) + 3600;
   const sig = signProxyParams('https://cdn.example.com/hls/master.m3u8', 'https://vidstuck.xyz/', exp);
   assert.strictEqual(
@@ -800,7 +831,7 @@ async function runTests() {
   console.log('  ✔ Passed cryptographic verification.');
 
   // 2. HiCine Multi-Quality Link Parser Unit Tests
-  console.log('[2/13] Testing HiCine Multi-Quality Link Parser...');
+  console.log('[2/14] Testing HiCine Multi-Quality Link Parser...');
   const sampleHicineSeason1 = [
     'Episode 1 : ',
     '480p : https://frosty-snowflake-407a.renker2364.workers.dev/?vcloud=https://vcloud.fit/ep1_480, https://pixeldrain.dev/u/AbCdEf123',
@@ -1059,7 +1090,7 @@ async function runTests() {
   console.log('  ✔ Passed HiCine language parsing and multi-track payload tests.');
 
   // 3. SRT -> WebVTT Converter Unit Test
-  console.log('[3/13] Testing SubRip (.srt) to WebVTT (.vtt) Converter...');
+  console.log('[3/14] Testing SubRip (.srt) to WebVTT (.vtt) Converter...');
   const sampleSrt = `1\r\n00:00:02,500 --> 00:00:05,800\r\nWelcome to Piltover.\r\n\r\n2\r\n00:00:06,100 --> 00:00:09,450\r\nThe City of Progress.\r\n`;
   const convertedVtt = srtToVtt(sampleSrt);
   assert.ok(convertedVtt.startsWith('WEBVTT'), 'Output must start with WEBVTT header');
@@ -1070,7 +1101,7 @@ async function runTests() {
   console.log('  ✔ Passed SRT -> VTT conversion.');
 
   // 4. M3U8 Manifest Rewriter Unit Test
-  console.log('[4/13] Testing M3U8 Master & Media Playlist Rewriter...');
+  console.log('[4/14] Testing M3U8 Master & Media Playlist Rewriter...');
   const sampleMasterM3u8 = [
     '#EXTM3U',
     '#EXT-X-VERSION:3',
@@ -1120,7 +1151,7 @@ async function runTests() {
   config.upstreams.hicineApiBase = `${mockUpstream.url}/hicine`;
 
   // 4b. HubCloud generator unroller (Centaurus "All upstream servers failed" fix)
-  console.log('[4b/12] Testing HubCloud generator unroller (Centaurus)...');
+  console.log('[4b/14] Testing HubCloud generator unroller (Centaurus)...');
   assert.strictEqual(
     isHubcloudGeneratorUrl('https://gpdl2.hubcloud.ist/?id=abc::def'),
     true,
@@ -1413,7 +1444,7 @@ async function runTests() {
 
   try {
     // 5. Health & Handshake Endpoints
-    console.log('[5/13] Testing /api/health & /api/handshake...');
+    console.log('[5/14] Testing /api/health & /api/handshake...');
     const health = await httpRequest(baseUrl, '/api/health');
     assert.strictEqual(health.status, 200);
     assert.strictEqual(health.json.ok, true);
@@ -1467,7 +1498,7 @@ async function runTests() {
     console.log('  ✔ Passed /api/health & /api/handshake.');
 
     // 6. TMDB-ID Metadata & Real IntroDB Skip Segments Resolution
-    console.log('[6/13] Testing TMDB ID -> External IDs (IMDb/TVDB) & IntroDB Skip Intro Segments...');
+    console.log('[6/14] Testing TMDB ID -> External IDs (IMDb/TVDB) & IntroDB Skip Intro Segments...');
     const infoRes = await httpRequest(baseUrl, '/api/info/tv/94605?season=1&episode=1');
     assert.strictEqual(infoRes.status, 200);
     assert.strictEqual(infoRes.json.ok, true);
@@ -1552,7 +1583,7 @@ async function runTests() {
     console.log('  ✔ Passed TMDB -> IMDb/TVDB bridging & TheIntroDB/IntroDB/AniSkip segments.');
 
     // 7. Full Production Stream Resolution + OpenSubtitles .srt.gz Decompression + M3U8 Proxy
-    console.log('[7/13] Testing /api/resolve/movie/693134, OpenSubtitles .srt.gz -> .vtt, & /api/proxy...');
+    console.log('[7/14] Testing /api/resolve/movie/693134, OpenSubtitles .srt.gz -> .vtt, & /api/proxy...');
     const resolveRes = await httpRequest(
       baseUrl,
       '/api/resolve/movie/693134?server=andromeda'
@@ -1561,10 +1592,43 @@ async function runTests() {
     assert.strictEqual(resolveRes.json.ok, true);
     assert.strictEqual(resolveRes.json.stream.server, 'andromeda');
     assert.ok(resolveRes.json.stream.streamUrl.startsWith('/api/proxy?url='));
+    // The public payload must not carry `rawUrl` at all. It is the direct
+    // provider CDN link, and handing it to anonymous callers is what lets anyone
+    // bypass the proxy and harvest sources straight from the response body.
+    assert.strictEqual(
+      resolveRes.json.stream.rawUrl,
+      undefined,
+      'the public resolve payload must not expose rawUrl'
+    );
+    assert.deepStrictEqual(
+      publicPayload.findLeaks(resolveRes.json),
+      [],
+      'the public resolve payload must not leak resolver internals'
+    );
+
+    // The owner view (?detail=1 + X-Admin-Key) still carries full diagnostics,
+    // and the "no demo videos" guarantee is checked there.
+    const detailedResolveRes = await httpRequest(
+      baseUrl,
+      '/api/resolve/movie/693134?server=andromeda&detail=1',
+      { headers: { 'X-Admin-Key': TEST_ADMIN_SECRET } }
+    );
+    assert.strictEqual(detailedResolveRes.status, 200);
+    const detailedRawUrl = detailedResolveRes.json.stream.rawUrl || '';
+    assert.ok(detailedRawUrl, 'the owner detail view must still expose rawUrl');
     assert.ok(
-      !resolveRes.json.stream.rawUrl.includes('Sintel') &&
-        !resolveRes.json.stream.rawUrl.includes('BigBuckBunny'),
+      !detailedRawUrl.includes('Sintel') && !detailedRawUrl.includes('BigBuckBunny'),
       'Zero test/demo videos allowed in stream output'
+    );
+    // ?detail=1 WITHOUT the admin key must not unlock anything.
+    const detailWithoutKey = await httpRequest(
+      baseUrl,
+      '/api/resolve/movie/693134?server=andromeda&detail=1'
+    );
+    assert.strictEqual(
+      detailWithoutKey.json.stream.rawUrl,
+      undefined,
+      '?detail=1 must not expose internals without the admin key'
     );
     assert.ok(resolveRes.json.stream.audioTracks.length >= 4, 'Multi-language audio tracks must be returned');
     const upstreamDefaultTracks = resolveRes.json.stream.audioTracks.filter((track) => track.default);
@@ -1635,7 +1699,7 @@ async function runTests() {
     // 8. Backend-only public surface: service metadata + social image, no web UI.
     // 8. Node API public surface: service metadata + social image, JSON-only.
     // (The /embed player page ships with the Cloudflare Worker; suite 10 covers it.)
-    console.log('[8/13] Testing LOL Embed branding, meta image, and JSON-only Node surface...');
+    console.log('[8/14] Testing LOL Embed branding, meta image, and JSON-only Node surface...');
     const rootInfo = await httpRequest(baseUrl, '/');
     assert.strictEqual(rootInfo.status, 200);
     assert.strictEqual(rootInfo.json.brand, 'LOL Embed');
@@ -1658,7 +1722,7 @@ async function runTests() {
     console.log('  ✔ Passed backend-only root, metadata image, and JSON-only Node surface checks.');
 
     // 9. Owner Admin Panel (/admin, Domain Telemetry, Source Replacer, Domain Blocking, Custom Overrides)
-    console.log('[9/13] Testing JSON Admin API, Domain Telemetry, Source Replacement & Firewall...');
+    console.log('[9/14] Testing JSON Admin API, Domain Telemetry, Source Replacement & Firewall...');
 
     // Simulate API requests from an external client domain (there is no embed page).
     await httpRequest(baseUrl, '/api/resolve/tv/94605?season=1&episode=1&parent=https://partner-cinema.to', {
@@ -1670,7 +1734,7 @@ async function runTests() {
     assert.strictEqual(unauthAdmin.status, 401, 'Admin API must reject requests without X-Admin-Key');
 
     // Verify authorized /api/admin/overview includes partner-cinema.to telemetry
-    const adminHeaders = { 'X-Admin-Key': 'admin123', 'Content-Type': 'application/json' };
+    const adminHeaders = { 'X-Admin-Key': TEST_ADMIN_SECRET, 'Content-Type': 'application/json' };
     const overview = await httpRequest(baseUrl, '/api/admin/overview', { headers: adminHeaders });
     assert.strictEqual(overview.status, 200);
     assert.strictEqual(overview.json.ok, true);
@@ -1759,14 +1823,20 @@ async function runTests() {
     const resolvedOverride = await httpRequest(baseUrl, '/api/resolve/movie/999999');
     assert.strictEqual(resolvedOverride.status, 200);
     assert.strictEqual(resolvedOverride.json.stream.server, 'custom');
-    assert.ok(resolvedOverride.json.stream.rawUrl.includes('custom-override.m3u8'));
+    // rawUrl is owner-only now, so prove the override took effect through the
+    // signed proxy URL the public payload does expose.
+    assert.strictEqual(resolvedOverride.json.stream.rawUrl, undefined);
+    assert.ok(
+      decodeURIComponent(resolvedOverride.json.stream.streamUrl).includes('custom-override.m3u8'),
+      'the custom override must be the resolved source'
+    );
     console.log('  ✔ Passed JSON Admin API, Domain Telemetry, Firewall & Live Source Replacement.');
 
     // 10. Worker player page: /embed serves the player, player assets load,
     // the API base URL is configurable for a separate API Worker, `/` stays
     // JSON for API clients (with a browser-only rickroll easter egg), and the
     // portal/admin UI stays removed.
-    console.log('[10/13] Testing Worker /embed player page, assets, API base config & root behavior...');
+    console.log('[10/14] Testing Worker /embed player page, assets, API base config & root behavior...');
     const workerModule = await import('../cloudflare-worker/worker.js');
     const workerFetch = workerModule.default.fetch;
 
@@ -1801,7 +1871,7 @@ async function runTests() {
       }
     };
     const callWorker = (target, env = {}, headers = {}) =>
-      workerFetch(new Request(target, { headers }), { ASSETS: mockAssets, ...env }, { waitUntil() {} });
+      workerFetch(new Request(target, { headers }), { ASSETS: mockAssets, ...TEST_WORKER_SECRETS, ...env }, { waitUntil() {} });
 
     // 10a. /embed serves the player page with the separately configured API Worker URL injected.
     const embedRes = await callWorker(
@@ -1843,13 +1913,13 @@ async function runTests() {
     assert.ok((await adsOnRes.text()).includes(AD_TAG), 'ADS_ENABLED=true keeps the ad tag');
 
     // Per-site ad settings are admin-only and use the host page domain.
-    const adsAdminKey = { 'X-Admin-Key': 'admin123' };
+    const adsAdminKey = { 'X-Admin-Key': TEST_ADMIN_SECRET };
     assert.strictEqual((await callWorker('http://player.test/api/admin/domains/ad-free')).status, 401, 'ad settings need the admin key');
     const addAdFree = await workerFetch(new Request('http://player.test/api/admin/domains/ad-free', {
       method: 'POST',
       headers: { ...adsAdminKey, 'Content-Type': 'application/json' },
       body: JSON.stringify({ domain: 'https://WWW.PARTNER-ADFREE.EXAMPLE/watch', adFree: true })
-    }), { ASSETS: mockAssets }, { waitUntil() {} });
+    }), { ASSETS: mockAssets, ...TEST_WORKER_SECRETS }, { waitUntil() {} });
     assert.strictEqual(addAdFree.status, 200);
     assert.deepStrictEqual((await addAdFree.json()).adFreeDomains, ['partner-adfree.example'], 'ad-free domains should normalize URLs and www');
     const partnerAdFreeEmbed = await callWorker(
@@ -1868,7 +1938,7 @@ async function runTests() {
       method: 'POST',
       headers: { ...adsAdminKey, 'Content-Type': 'application/json' },
       body: JSON.stringify({ domain: 'partner-adfree.example', adFree: false })
-    }), { ASSETS: mockAssets }, { waitUntil() {} });
+    }), { ASSETS: mockAssets, ...TEST_WORKER_SECRETS }, { waitUntil() {} });
     assert.deepStrictEqual((await removeAdFree.json()).adFreeDomains, [], 'turning the exception off should restore ads');
     const restoredAdsEmbed = await callWorker(
       'http://player.test/embed?type=tv&tmdb=94605&s=1&e=1',
@@ -2001,7 +2071,7 @@ async function runTests() {
     // Priority 1: CastleTV (South Indian, Asian, Hollywood dubs)
     // Priority 2: NetMirror (Official OTT platform mirrors)
     // Waterfall Failover: When both tiers miss, cleanly hand off to Server 2 (Centaurus)
-    console.log('[11/13] Testing Server Andromeda Multi-Tier Architecture & Waterfall Failover...');
+    console.log('[11/14] Testing Server Andromeda Multi-Tier Architecture & Waterfall Failover...');
 
     // 11a. CastleTV Unit & Sub-resolver: Security key handshake, AES-128-CBC encryption, multi-audio tracks
     const castleKey = buildCastleKey('MTIzNDU2Nzg5MA==');
@@ -2274,14 +2344,44 @@ async function runTests() {
       const cfAndromedaJson = await cfAndromedaRes.json();
       assert.strictEqual(cfAndromedaJson.ok, true);
       assert.strictEqual(cfAndromedaJson.stream.server, 'andromeda');
-      assert.strictEqual(cfAndromedaJson.stream.sourceName, 'CastleTV');
+      // The upstream provider name is owner-only: it used to be served to every
+      // anonymous caller of /api/resolve, which published the whole provider map.
+      assert.strictEqual(
+        cfAndromedaJson.stream.sourceName,
+        undefined,
+        'the public Worker payload must not expose the upstream provider name'
+      );
       assert.ok(cfAndromedaJson.stream.audioTracks.length >= 4);
       assert.strictEqual(cfAndromedaJson.stream.activeAudioTrack.lang, 'hi');
 
-      // Worker /api/debug/andromeda/:type/:tmdbId inspects Andromeda upstreams
-      const cfDebugRes = await callWorker(
+      const cfAndromedaDetailedRes = await callWorker(
+        'http://player.test/api/resolve/movie/693134?server=andromeda&audio=hi&detail=1',
+        workerEnv,
+        { 'X-Admin-Key': TEST_ADMIN_SECRET }
+      );
+      const cfAndromedaDetailed = await cfAndromedaDetailedRes.json();
+      assert.strictEqual(
+        cfAndromedaDetailed.stream.sourceName,
+        'CastleTV',
+        'the owner detail view must still report which upstream answered'
+      );
+
+      // Worker /api/debug/andromeda/:type/:tmdbId inspects Andromeda upstreams.
+      // It must require the admin key: it answers with live upstream base URLs and
+      // the resolver's complete raw output.
+      const cfDebugUnauth = await callWorker(
         'http://player.test/api/debug/andromeda/movie/693134',
         workerEnv
+      );
+      assert.strictEqual(
+        cfDebugUnauth.status,
+        401,
+        '/api/debug/andromeda must not publish upstream base URLs without the admin key'
+      );
+      const cfDebugRes = await callWorker(
+        'http://player.test/api/debug/andromeda/movie/693134',
+        workerEnv,
+        { 'X-Admin-Key': TEST_ADMIN_SECRET }
       );
       assert.strictEqual(cfDebugRes.status, 200);
       const cfDebugJson = await cfDebugRes.json();
@@ -2304,7 +2404,15 @@ async function runTests() {
         'centaurus',
         'Worker waterfall must fall back to Server 2 (Centaurus)'
       );
-      assert.ok(cfWaterfallJson.stream.rawUrl, 'the fallback stream must carry a playable URL');
+      assert.ok(
+        typeof cfWaterfallJson.stream.streamUrl === 'string' && cfWaterfallJson.stream.streamUrl,
+        'the fallback stream must carry a playable URL'
+      );
+      assert.strictEqual(
+        cfWaterfallJson.stream.rawUrl,
+        undefined,
+        'the Worker must apply the same public-payload filter as the Node backend'
+      );
 
     } finally {
       config.upstreams.castletvBase = origCastleBase;
@@ -2315,7 +2423,7 @@ async function runTests() {
 
     // 13. Server catalog: a rebrand / re-prioritisation must reach BOTH backends
     // and the player's server modal, with no stale names, slots, or order.
-    console.log('[12/13] Testing shared server catalog, worker servers array & player defaults...');
+    console.log('[12/14] Testing shared server catalog, worker servers array & player defaults...');
     {
       const catalog = require('../src/services/serverCatalog');
       const expected = [
@@ -2485,11 +2593,11 @@ async function runTests() {
     console.log('  ✔ Passed shared server catalog, worker servers array & player default tests.');
 
     // 13. Documentation page, owner dashboard (/reze), usage statistics & persistence
-    console.log('[13/13] Testing /docs, the /reze dashboard, usage statistics, blocking, ad-free sites & persistence...');
+    console.log('[13/14] Testing /docs, the /reze dashboard, usage statistics, blocking, ad-free sites & persistence...');
     {
-      const adminKey = { 'X-Admin-Key': 'admin123' };
+      const adminKey = { 'X-Admin-Key': TEST_ADMIN_SECRET };
       const callWorkerWith = (target, env = {}, init = {}) =>
-        workerFetch(new Request(target, init), { ASSETS: mockAssets, ...env }, { waitUntil() {} });
+        workerFetch(new Request(target, init), { ASSETS: mockAssets, ...TEST_WORKER_SECRETS, ...env }, { waitUntil() {} });
       const statsEnv = {
         CASTLETV_BASE_URL: `${mockUpstream.url}/castletv`,
         NETMIRROR_BASE_URL: `${mockUpstream.url}/netmirror`,
@@ -2576,7 +2684,23 @@ async function runTests() {
       const failResolve = await callWorker('http://player.test/api/resolve/movie/550?server=andromeda&parent=https://fan-site.example', allDownEnv, { 'CF-IPCountry': 'PK' });
       assert.strictEqual(failResolve.status, 502, 'all-down upstreams must produce a failed resolve');
       assert.ok(Date.now() - failT0 < 8000, 'down upstreams must fail fast');
-      await callWorker(`http://player.test/api/proxy?url=${encodeURIComponent(`${mockUpstream.url}/castletv-down`)}`, statsEnv, { Referer: 'http://player.test/embed/tv/94605/1/1' });
+      // The Worker proxy only serves URLs this service signed. Build one the same
+      // way buildWorkerProxyUrl does, then prove an unsigned request is refused.
+      const signedWorkerProxyUrl = proxySign.createSignedProxyUrl(
+        `${mockUpstream.url}/castletv-down`,
+        { baseUrl: 'http://player.test', secret: TEST_PROXY_SECRET }
+      );
+      await callWorker(signedWorkerProxyUrl, statsEnv, { Referer: 'http://player.test/embed/tv/94605/1/1' });
+      const unsignedWorkerProxy = await callWorker(
+        `http://player.test/api/proxy?url=${encodeURIComponent(`${mockUpstream.url}/castletv-down`)}`,
+        statsEnv,
+        { Referer: 'http://player.test/embed/tv/94605/1/1' }
+      );
+      assert.strictEqual(
+        unsignedWorkerProxy.status,
+        403,
+        'the Worker proxy must refuse an unsigned URL instead of relaying it'
+      );
 
       const statsRes = await callWorker('http://player.test/api/admin/stats?limit=10', statsEnv, adminKey);
       assert.strictEqual(statsRes.status, 200);
@@ -2716,18 +2840,18 @@ async function runTests() {
         const pending = [];
         const doEnv = { ...statsEnv, STATS: { idFromName: (name) => name, get: () => stub } };
         const doCtx = { waitUntil: (p) => pending.push(p) };
-        const doEmbed = await workerFetch(new Request('http://player.test/embed/movie/693134', { headers: { Referer: 'https://durable.example/' } }), { ASSETS: mockAssets, ...doEnv }, doCtx);
+        const doEmbed = await workerFetch(new Request('http://player.test/embed/movie/693134', { headers: { Referer: 'https://durable.example/' } }), { ASSETS: mockAssets, ...TEST_WORKER_SECRETS, ...doEnv }, doCtx);
         assert.strictEqual(doEmbed.status, 200);
-        const doAdFreeEmbed = await workerFetch(new Request('http://player.test/embed/movie/693134', { headers: { Referer: 'https://www.partner.example/watch' } }), { ASSETS: mockAssets, ...doEnv }, doCtx);
+        const doAdFreeEmbed = await workerFetch(new Request('http://player.test/embed/movie/693134', { headers: { Referer: 'https://www.partner.example/watch' } }), { ASSETS: mockAssets, ...TEST_WORKER_SECRETS, ...doEnv }, doCtx);
         assert.ok(!(await doAdFreeEmbed.text()).includes(AD_TAG), 'Durable Object settings must suppress ads after an isolate restart');
-        const doAdFreeSettings = await workerFetch(new Request('http://player.test/api/admin/domains/ad-free', { headers: adminKey }), { ASSETS: mockAssets, ...doEnv }, doCtx);
+        const doAdFreeSettings = await workerFetch(new Request('http://player.test/api/admin/domains/ad-free', { headers: adminKey }), { ASSETS: mockAssets, ...TEST_WORKER_SECRETS, ...doEnv }, doCtx);
         assert.deepStrictEqual((await doAdFreeSettings.json()).adFreeDomains, ['partner.example']);
         await Promise.all(pending);
-        const doStats = await (await workerFetch(new Request('http://player.test/api/admin/stats', { headers: adminKey }), { ASSETS: mockAssets, ...doEnv }, doCtx)).json();
+        const doStats = await (await workerFetch(new Request('http://player.test/api/admin/stats', { headers: adminKey }), { ASSETS: mockAssets, ...TEST_WORKER_SECRETS, ...doEnv }, doCtx)).json();
         assert.strictEqual(doStats.stats.persistent, true, 'with the binding the dashboard must report durable storage');
         assert.ok(doStats.stats.domains.some((d) => d.domain === 'durable.example' && d.embeds === 1), 'embed events must reach the Durable Object');
         assert.ok(!doStats.stats.domains.some((d) => d.domain === 'fan-site.example'), 'the durable snapshot must not mix in the in-isolate fallback counters');
-        const doBlocked = await workerFetch(new Request('http://player.test/api/resolve/movie/693134?server=andromeda&parent=https://other.example'), { ASSETS: mockAssets, ...doEnv }, doCtx);
+        const doBlocked = await workerFetch(new Request('http://player.test/api/resolve/movie/693134?server=andromeda&parent=https://other.example'), { ASSETS: mockAssets, ...TEST_WORKER_SECRETS, ...doEnv }, doCtx);
         assert.strictEqual(doBlocked.status, 403, 'the block-list persisted in the object must gate resolves');
         db.close();
       } else {
@@ -2735,6 +2859,423 @@ async function runTests() {
       }
     }
     console.log('  ✔ Passed documentation, dashboard, statistics, blocking, per-site ads & persistence tests.');
+
+
+    // 14. Security contract: signed proxy only, SSRF guard, secret hygiene,
+    //     header-only admin auth, public-payload filtering and rate limits.
+    console.log('[14/14] Testing the security contract: signed relay, SSRF guard, secrets, admin auth & rate limits...');
+    {
+      // --- 14a. Secret hygiene: the values committed to this repo must be refused ---
+      assert.ok(proxySign.isInsecureSecret('admin123'), 'the committed ADMIN_SECRET default must be treated as insecure');
+      assert.ok(
+        proxySign.isInsecureSecret('vidstuck-edge-hmac-secret-key-2026-9f8e7d6c5b4a'),
+        'the committed PROXY_SECRET default must be treated as insecure'
+      );
+      assert.ok(
+        proxySign.isInsecureSecret('change-this-to-a-random-hmac-secret-key'),
+        'the .env.example placeholder must be treated as insecure'
+      );
+      assert.ok(!proxySign.isUsableSecret('too-short'), 'a short secret must not be usable');
+      assert.ok(!proxySign.isUsableSecret(''), 'an empty secret must not be usable');
+      assert.ok(proxySign.isUsableSecret(TEST_PROXY_SECRET), 'the configured test secret must be usable');
+      assert.notStrictEqual(config.adminSecret, 'admin123', 'the running config must not use the published admin default');
+      assert.notStrictEqual(
+        config.proxySecret,
+        'vidstuck-edge-hmac-secret-key-2026-9f8e7d6c5b4a',
+        'the running config must not use the published proxy default'
+      );
+
+      // --- 14b. SSRF guard ---
+      const blockedTargets = [
+        ['http://169.254.169.254/latest/meta-data/', 'private_or_reserved_host'],
+        ['http://127.0.0.1:6379/', 'private_or_reserved_host'],
+        ['http://10.0.0.5/video.m3u8', 'private_or_reserved_host'],
+        ['http://192.168.1.1/', 'private_or_reserved_host'],
+        ['http://172.16.0.1/', 'private_or_reserved_host'],
+        ['http://100.64.0.1/', 'private_or_reserved_host'],
+        ['http://[::1]/x.m3u8', 'private_or_reserved_host'],
+        ['http://localhost:8080/x.m3u8', 'private_or_reserved_host'],
+        ['http://db.internal/x', 'private_or_reserved_host'],
+        ['http://host.docker.internal/x', 'private_or_reserved_host'],
+        ['http://cdn.example@127.0.0.1/x', 'credentials_in_url'],
+        ['file:///etc/passwd', 'unsupported_protocol'],
+        ['data:text/plain,hello', 'unsupported_protocol'],
+        ['gopher://127.0.0.1:6379/_INFO', 'unsupported_protocol'],
+        ['not a url at all', 'malformed_url']
+      ];
+      for (const [target, reason] of blockedTargets) {
+        const verdict = proxySign.inspectMediaTarget(target, { allowPrivateTargets: false });
+        assert.strictEqual(verdict.ok, false, `${target} must be rejected by the SSRF guard`);
+        assert.strictEqual(verdict.reason, reason, `${target} must be rejected as ${reason}`);
+      }
+      assert.ok(
+        proxySign.inspectMediaTarget('https://cdn.example/seg-001.ts', { allowPrivateTargets: false }).ok,
+        'a normal public https media target must be allowed'
+      );
+      assert.ok(
+        proxySign.inspectMediaTarget('http://8.8.8.8/x.ts', { allowPrivateTargets: false }).ok,
+        'a normal public http media target must be allowed'
+      );
+      // The dev/test hatch must never be honored in production.
+      assert.strictEqual(
+        config.isProduction && config.proxyAllowPrivateTargets,
+        false,
+        'the private-target hatch must never be enabled in production'
+      );
+
+      // --- 14c. The v2 signature binds every parameter that reaches upstream ---
+      const signed = proxySign.createSignedProxyUrl('https://cdn.example/master.m3u8', {
+        referer: 'https://upstream.example/',
+        origin: 'https://upstream.example',
+        cookie: 'SESSION=abc',
+        mode: 'full',
+        token: 'jwt-token',
+        baseUrl: '',
+        secret: TEST_PROXY_SECRET
+      });
+      const signedParams = new URL(signed, 'https://base.test').searchParams;
+      const signedFields = {
+        url: signedParams.get('url'),
+        referer: signedParams.get('referer'),
+        origin: signedParams.get('origin'),
+        cookie: signedParams.get('cookie'),
+        mode: signedParams.get('mode'),
+        token: signedParams.get('token'),
+        vidsrcStamp: '',
+        exp: signedParams.get('exp')
+      };
+      assert.ok(signed.startsWith('/api/proxy?url='), '`url` must stay the first query parameter');
+      assert.ok(
+        proxySign.verifyProxyRequest(signedFields, signedParams.get('sig'), TEST_PROXY_SECRET),
+        'a freshly signed proxy request must verify'
+      );
+      // Each parameter is tampered with in turn; every one must break the sig.
+      const tamperKeys = ['url', 'referer', 'origin', 'cookie', 'mode', 'token'];
+      for (const key of tamperKeys) {
+        const tampered = { ...signedFields, [key]: `${signedFields[key] || ''}-tampered` };
+        assert.strictEqual(
+          proxySign.verifyProxyRequest(tampered, signedParams.get('sig'), TEST_PROXY_SECRET),
+          false,
+          `tampering with "${key}" must invalidate the signature`
+        );
+      }
+      assert.strictEqual(
+        proxySign.verifyProxyRequest({ ...signedFields, vidsrcStamp: '1' }, signedParams.get('sig'), TEST_PROXY_SECRET),
+        false,
+        'adding vidsrcStamp must invalidate the signature'
+      );
+      assert.strictEqual(
+        proxySign.verifyProxyRequest(signedFields, '', TEST_PROXY_SECRET),
+        false,
+        'an absent signature must be rejected, not treated as "no signature required"'
+      );
+      assert.strictEqual(
+        proxySign.verifyProxyRequest({ ...signedFields, exp: '1000000000' }, signedParams.get('sig'), TEST_PROXY_SECRET),
+        false,
+        'an expired signature must be rejected'
+      );
+      assert.strictEqual(
+        proxySign.verifyProxyRequest(signedFields, signedParams.get('sig'), proxySign.generateSecret()),
+        false,
+        'a signature must not verify against a different secret'
+      );
+
+      // --- 14d. Node /api/proxy is no longer an open relay ---
+      const signedResolve = await httpRequest(baseUrl, '/api/resolve/movie/693134?server=andromeda');
+      assert.strictEqual(signedResolve.status, 200, signedResolve.body);
+      const issuedProxyUrl = signedResolve.json.stream.streamUrl;
+      assert.ok(issuedProxyUrl.startsWith('/api/proxy?url='), 'resolve must hand out a signed proxy URL');
+
+      const unsignedProxy = await httpRequest(
+        baseUrl,
+        issuedProxyUrl.replace(/&exp=[^&]*/, '').replace(/&sig=[^&]*/, '')
+      );
+      assert.strictEqual(
+        unsignedProxy.status,
+        403,
+        '/api/proxy must refuse a request with no signature instead of relaying it'
+      );
+
+      const cookieTampered = await httpRequest(baseUrl, `${issuedProxyUrl}&cookie=${encodeURIComponent('SESSION=evil')}`);
+      assert.strictEqual(
+        cookieTampered.status,
+        403,
+        '/api/proxy must refuse a cookie appended to a legitimately signed URL'
+      );
+
+      // Repeating a signed parameter is HTTP parameter pollution: Express would
+      // read `mode` as an array while the Workers runtime reads the first value.
+      // Both runtimes must refuse the request outright.
+      const modeTampered = await httpRequest(baseUrl, `${issuedProxyUrl}&mode=full`);
+      assert.strictEqual(
+        modeTampered.status,
+        400,
+        '/api/proxy must reject a repeated signed parameter instead of guessing which one wins'
+      );
+
+      const signedProxyFetch = await httpRequest(baseUrl, issuedProxyUrl);
+      assert.ok(
+        [200, 206].includes(signedProxyFetch.status),
+        `the signed proxy URL issued by resolve must still work (got ${signedProxyFetch.status})`
+      );
+
+      // --- 14e. Admin auth: header only, constant-time, no query-string key ---
+      const adminByQuery = await httpRequest(
+        baseUrl,
+        `/api/admin/overview?key=${encodeURIComponent(TEST_ADMIN_SECRET)}`
+      );
+      assert.strictEqual(
+        adminByQuery.status,
+        401,
+        'the admin key must no longer be accepted as a ?key= query parameter'
+      );
+      const adminWrongKey = await httpRequest(baseUrl, '/api/admin/overview', {
+        headers: { 'X-Admin-Key': 'definitely-not-the-key' }
+      });
+      assert.strictEqual(adminWrongKey.status, 401, 'a wrong admin key must be rejected');
+      const adminHeader = await httpRequest(baseUrl, '/api/admin/overview', {
+        headers: { 'X-Admin-Key': TEST_ADMIN_SECRET }
+      });
+      assert.strictEqual(adminHeader.status, 200, 'the admin key must still work via X-Admin-Key');
+      const adminBearer = await httpRequest(baseUrl, '/api/admin/overview', {
+        headers: { Authorization: `Bearer ${TEST_ADMIN_SECRET}` }
+      });
+      assert.strictEqual(adminBearer.status, 200, 'the admin key must work via Authorization: Bearer');
+
+      // --- 14f. Security headers and pinned trust proxy ---
+      const healthRes = await httpRequest(baseUrl, '/api/health');
+      assert.strictEqual(healthRes.headers['x-powered-by'], undefined, 'X-Powered-By must not be advertised');
+      assert.strictEqual(
+        healthRes.headers['x-content-type-options'],
+        'nosniff',
+        'helmet must actually be applied (it was a declared-but-unused dependency)'
+      );
+      assert.strictEqual(
+        app.get('trust proxy'),
+        config.trustProxyHops,
+        'trust proxy must be pinned to a hop count, not `true` (which trusts client-supplied XFF)'
+      );
+      assert.notStrictEqual(app.get('trust proxy'), true, 'trust proxy must not be `true`');
+
+      // --- 14g. The Worker fails closed without configured secrets ---
+      const workerSignedUrl = proxySign.createSignedProxyUrl(`${mockUpstream.url}/castletv-down`, {
+        baseUrl: 'http://player.test',
+        secret: TEST_PROXY_SECRET
+      });
+      const noSecretEnv = {
+        CASTLETV_BASE_URL: `${mockUpstream.url}/castletv`,
+        NETMIRROR_BASE_URL: `${mockUpstream.url}/netmirror`,
+        HICINE_API_BASE: `${mockUpstream.url}/hicine`,
+        TMDB_BASE_URL: `${mockUpstream.url}/tmdb`
+      };
+      const workerNoProxySecret = await workerFetch(
+        new Request(workerSignedUrl),
+        { ASSETS: mockAssets, ...noSecretEnv, ADMIN_SECRET: TEST_ADMIN_SECRET },
+        { waitUntil() {} }
+      );
+      assert.strictEqual(
+        workerNoProxySecret.status,
+        503,
+        'the Worker proxy must fail closed (503) when PROXY_SECRET is missing, not run unauthenticated'
+      );
+
+      const workerNoAdminSecret = await workerFetch(
+        new Request('http://player.test/api/admin/stats', {
+          headers: { 'X-Admin-Key': 'admin123' }
+        }),
+        { ASSETS: mockAssets, ...noSecretEnv, PROXY_SECRET: TEST_PROXY_SECRET },
+        { waitUntil() {} }
+      );
+      assert.strictEqual(
+        workerNoAdminSecret.status,
+        503,
+        'the Worker admin API must fail closed (503) when ADMIN_SECRET is missing'
+      );
+
+      // Repeating an existing signed parameter is HTTP parameter pollution: the
+      // Workers runtime reads searchParams.get() (first value) while Express
+      // yields an array, so the two would validate and act on different values.
+      const workerPolluted = await workerFetch(
+        new Request(`${workerSignedUrl}&exp=${encodeURIComponent(String(Math.floor(Date.now() / 1000) + 60))}`),
+        { ASSETS: mockAssets, ...TEST_WORKER_SECRETS },
+        { waitUntil() {} }
+      );
+      assert.strictEqual(
+        workerPolluted.status,
+        400,
+        'the Worker proxy must reject a repeated signed parameter'
+      );
+
+      // Adding a parameter that was NOT part of the signed request must break the
+      // signature rather than silently take effect.
+      const workerModeInjected = await workerFetch(
+        new Request(`${workerSignedUrl}&mode=full`),
+        { ASSETS: mockAssets, ...TEST_WORKER_SECRETS },
+        { waitUntil() {} }
+      );
+      assert.strictEqual(
+        workerModeInjected.status,
+        403,
+        'the Worker proxy must reject a mode that was not part of the signature'
+      );
+
+      const workerOldDefaultAdmin = await workerFetch(
+        new Request('http://player.test/api/admin/stats', { headers: { 'X-Admin-Key': 'admin123' } }),
+        { ASSETS: mockAssets, ...noSecretEnv, ADMIN_SECRET: 'admin123', PROXY_SECRET: TEST_PROXY_SECRET },
+        { waitUntil() {} }
+      );
+      assert.strictEqual(
+        workerOldDefaultAdmin.status,
+        503,
+        'the published "admin123" default must no longer grant admin access'
+      );
+
+      // The root `/?url=` alias used to be a second, undocumented entry point to
+      // the same relay. It must be gone and `/` must stay the JSON info route.
+      const rootUrlAlias = await workerFetch(
+        new Request(`http://player.test/?url=${encodeURIComponent(`${mockUpstream.url}/castletv-down`)}`),
+        { ASSETS: mockAssets, ...TEST_WORKER_SECRETS },
+        { waitUntil() {} }
+      );
+      const rootAliasBody = await rootUrlAlias.text();
+      assert.ok(
+        !rootAliasBody.startsWith('#EXTM3U'),
+        'the root path must no longer proxy an arbitrary ?url='
+      );
+
+      // --- 14h. Rate limiting ---
+      const limiter = createRateLimiter({ name: 'unit', limit: 3, windowMs: 60000 });
+      assert.strictEqual(limiter.check('ip:1.2.3.4').allowed, true);
+      assert.strictEqual(limiter.check('ip:1.2.3.4').allowed, true);
+      assert.strictEqual(limiter.check('ip:1.2.3.4').allowed, true);
+      const denied = limiter.check('ip:1.2.3.4');
+      assert.strictEqual(denied.allowed, false, 'the 4th request in the window must be denied');
+      assert.ok(denied.retryAfterMs > 0, 'a denied request must report how long to wait');
+      assert.ok(limiter.headers(denied)['Retry-After'], 'a denied request must carry Retry-After');
+      assert.strictEqual(limiter.check('ip:9.9.9.9').allowed, true, 'a different client keeps its own bucket');
+      limiter.reset();
+      assert.strictEqual(limiter.check('ip:1.2.3.4').allowed, true, 'reset must clear the window');
+
+      // End to end: the throttle must actually answer 429 on a real route.
+      const apiRouter = require('../src/routes/api');
+      const savedEnabled = config.rateLimit.enabled;
+      config.rateLimit.enabled = true;
+      apiRouter.rateLimiters.handshake.reset();
+      const handshakeLimit = apiRouter.rateLimiters.handshake.limit;
+      let throttled = null;
+      for (let i = 0; i < handshakeLimit + 1; i += 1) {
+        const res = await httpRequest(baseUrl, '/api/handshake', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ type: 'movie', id: '693134' })
+        });
+        if (res.status === 429) { throttled = res; break; }
+        assert.strictEqual(res.status, 200, `handshake request ${i + 1} should succeed before the limit`);
+      }
+      assert.ok(throttled, `/api/handshake must 429 after ${handshakeLimit} requests per window`);
+      assert.strictEqual(throttled.json.ok, false);
+      assert.strictEqual(throttled.json.scope, 'handshake');
+      assert.ok(throttled.headers['retry-after'], 'the 429 must carry Retry-After');
+
+      // A forged X-Forwarded-For must NOT buy a fresh bucket. This bypass worked
+      // against the first version of the limiter: with `trust proxy` pinned to 1
+      // and no real proxy in front, Express still derived req.ip from the
+      // caller's own XFF value. Identity now comes from unforgeable sources only.
+      const spoofed = await httpRequest(baseUrl, '/api/handshake', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'X-Forwarded-For': '203.0.113.77' },
+        body: JSON.stringify({ type: 'movie', id: '693134' })
+      });
+      assert.strictEqual(
+        spoofed.status,
+        429,
+        'a spoofed X-Forwarded-For must not reset the rate-limit bucket'
+      );
+      const spoofedRealIp = await httpRequest(baseUrl, '/api/handshake', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'X-Real-IP': '203.0.113.77' },
+        body: JSON.stringify({ type: 'movie', id: '693134' })
+      });
+      assert.strictEqual(
+        spoofedRealIp.status,
+        429,
+        'a spoofed X-Real-IP must not reset the rate-limit bucket either'
+      );
+
+      // `cf-connecting-ip` is only trustworthy when the TCP peer really is a
+      // Cloudflare edge node. The socket peer cannot be forged, so verify against
+      // Cloudflare's published ranges instead of trusting the header on faith.
+      const keyFor = (peer, cfHeader) =>
+        expressClientKey({
+          headers: cfHeader ? { 'cf-connecting-ip': cfHeader } : {},
+          socket: { remoteAddress: peer }
+        });
+      assert.strictEqual(
+        keyFor('104.16.1.1', '203.0.113.5'),
+        'ip:203.0.113.5',
+        'behind a real Cloudflare edge the cf-connecting-ip is the client'
+      );
+      assert.strictEqual(
+        keyFor('127.0.0.1', '203.0.113.5'),
+        'ip:127.0.0.1',
+        'a forged cf-connecting-ip on a directly exposed process must be ignored'
+      );
+      assert.strictEqual(
+        keyFor('8.8.8.8', '203.0.113.5'),
+        'ip:8.8.8.8',
+        'a forged cf-connecting-ip from a non-Cloudflare peer must be ignored'
+      );
+      for (const cfPeer of ['173.245.48.1', '172.64.0.9', '162.158.0.1', '131.0.72.5', '2606:4700::1', '::ffff:104.16.0.1']) {
+        assert.ok(isCloudflarePeer(cfPeer), `${cfPeer} must be recognized as a Cloudflare edge address`);
+      }
+      for (const nonCf of ['10.0.0.1', '127.0.0.1', '8.8.8.8', '1.1.1.1', '172.16.0.1', '']) {
+        assert.ok(!isCloudflarePeer(nonCf), `${nonCf || '(empty)'} must not be treated as a Cloudflare edge address`);
+      }
+
+      // The documented opt-in for a non-Cloudflare proxy that rewrites XFF.
+      const savedTrust = config.rateLimit.trustForwardedHeaders;
+      config.rateLimit.trustForwardedHeaders = true;
+      const trustedXff = await httpRequest(baseUrl, '/api/handshake', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'X-Forwarded-For': '203.0.113.77' },
+        body: JSON.stringify({ type: 'movie', id: '693134' })
+      });
+      assert.strictEqual(
+        trustedXff.status,
+        200,
+        'with RATE_LIMIT_TRUST_FORWARDED_HEADERS=true the proxy-supplied XFF is honored'
+      );
+      config.rateLimit.trustForwardedHeaders = savedTrust;
+
+      config.rateLimit.enabled = savedEnabled;
+      apiRouter.rateLimiters.handshake.reset();
+
+      // --- 14i. The public resolve payload is filtered on BOTH runtimes ---
+      const publicBody = signedResolve.json;
+      assert.deepStrictEqual(
+        publicPayload.findLeaks(publicBody),
+        [],
+        `the public Node payload must not leak internals: ${JSON.stringify(publicPayload.findLeaks(publicBody))}`
+      );
+      const serialized = JSON.stringify(publicBody);
+      for (const forbidden of ['sourceName', 'provider', 'upstreamId', 'rawUrl', '"diag"', 'centaurusSource']) {
+        assert.ok(
+          !serialized.includes(forbidden),
+          `the public payload must not contain ${forbidden}`
+        );
+      }
+      // The player still gets everything it needs.
+      assert.ok(publicBody.stream.streamUrl, 'streamUrl must survive filtering');
+      assert.ok(Array.isArray(publicBody.stream.audioTracks), 'audioTracks must survive filtering');
+      assert.ok(publicBody.stream.audioTracks.length >= 4, 'audio tracks must survive filtering');
+      assert.ok(Array.isArray(publicBody.stream.qualities), 'qualities must survive filtering');
+      assert.ok(Array.isArray(publicBody.servers), 'the server catalog must survive filtering');
+      assert.ok(
+        publicBody.stream.audioTracks.every((t) => typeof t.streamUrl === 'string' && t.streamUrl),
+        'every audio track must keep its playable streamUrl'
+      );
+    }
+    console.log('  ✔ Passed the security contract suite.');
 
     console.log('\n==========================================================');
     console.log('  ALL PRODUCTION VERIFICATION SUITES PASSED (0 TEST VIDEOS)');
