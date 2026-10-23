@@ -1,12 +1,13 @@
 {
   "name": "lol-embed-backend",
   "version": "1.0.0",
-  "description": "LOL Embed backend: TMDB metadata, multi-source resolution, stream proxy, and Cloudflare Worker.",
+  "description": "LOL Embed backend: TMDB metadata, Goldmine (TMDB-Embed-API) MKV resolution, stream proxy, movi-player embed, and Cloudflare Worker.",
   "main": "src/server.js",
   "scripts": {
     "start": "node src/server.js",
     "dev": "node src/server.js",
-    "test": "node test/verify.js"
+    "test": "node test/verify.js",
+    "dev:player": "node scripts/dev-player-mock.mjs"
   },
   "repository": {
     "type": "git",
@@ -17,8 +18,7 @@
     "tmdb",
     "stream-api",
     "stream-proxy",
-    "cloudflare-workers",
-    "multitrack-audio"
+    "cloudflare-workers"
   ],
   "license": "MIT",
   "dependencies": {
@@ -29,5 +29,8 @@
     "dotenv": "^16.4.7",
     "express": "^4.21.2",
     "helmet": "^8.0.0"
+  },
+  "devDependencies": {
+    "@ffmpeg-installer/ffmpeg": "^1.1.0"
   }
 }

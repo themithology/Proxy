@@ -24,23 +24,28 @@
 /**
  * Player-visible production servers, in waterfall priority order.
  * `badge` is the description rendered under the name in the servers modal.
+ *
+ * The lineup is MKV-only: `goldmine` resolves through the owner-hosted
+ * TMDB-Embed-API (see src/services/goldmine.js), which aggregates a dozen
+ * stream providers into direct MKV/MP4/HLS sources. The player runs the
+ * progressive files through the bundled movi-player engine (FFmpeg WASM +
+ * WebCodecs) — multi-audio dubs switch inside one file, and the API's
+ * providers become the manually switchable sources under the server.
+ *
+ * The legacy HLS-only servers (andromeda/centaurus) were removed with the
+ * move to the MKV pipeline. The catalog machinery (priority order, listing,
+ * fallbacks, live admin edits) stays generic: adding a second server later
+ * is a one-entry change here.
  */
 const PRODUCTION_SERVERS = [
   {
-    id: 'andromeda',
-    name: 'Fiber Optic Speedrun',
-    badge: 'Multi-Audio • Primary',
+    id: 'goldmine',
+    name: 'Goldmine MKV',
+    badge: 'Multi-Audio Dubs • MKV',
     priority: 1,
     enabled: true,
-    supportsMultiAudio: true
-  },
-  {
-    id: 'centaurus',
-    name: 'Gigachad Node',
-    badge: 'Adaptive • Multi-Quality',
-    priority: 2,
-    enabled: true,
-    supportsMultiAudio: true
+    supportsMultiAudio: true,
+    engine: 'movi'
   }
 ];
 

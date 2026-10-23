@@ -44,28 +44,8 @@ const config = {
 
   // Security & Handshake Signing
   adminSecret: process.env.ADMIN_SECRET || 'admin123',
-  proxySecret: process.env.PROXY_SECRET || 'vidstuck-edge-hmac-secret-key-2026-9f8e7d6c5b4a',
+  proxySecret: process.env.PROXY_SECRET || 'lol-embed-edge-hmac-secret-key-2026-9f8e7d6c5b4a',
   tokenTtlSeconds: parseInt(process.env.TOKEN_TTL_SECONDS || '14400', 10), // 4 hours
-
-  // Node-only MKV/MP4 audio remuxing. `enabled` is finalized by the multitrack
-  // service after it detects both ffmpeg and ffprobe at startup.
-  multitrack: {
-    enabled: false,
-    requested: parseBoolean(process.env.MULTITRACK_ENABLED, true),
-    ffmpegPath: process.env.FFMPEG_PATH || 'ffmpeg',
-    ffprobePath: process.env.FFPROBE_PATH || 'ffprobe',
-    cacheDir: process.env.MULTITRACK_CACHE_DIR || path.join(os.tmpdir(), 'proxy-multitrack'),
-    probeCacheTtlMs: parsePositiveInteger(process.env.MULTITRACK_PROBE_CACHE_TTL_MS, 10 * 60 * 1000),
-    cacheTtlMs: parsePositiveInteger(process.env.MULTITRACK_CACHE_TTL_MS, 2 * 60 * 60 * 1000),
-    probeTimeoutMs: parsePositiveInteger(process.env.MULTITRACK_PROBE_TIMEOUT_MS, 8000),
-    startupTimeoutMs: parsePositiveInteger(process.env.MULTITRACK_STARTUP_TIMEOUT_MS, 30 * 1000),
-    jobTimeoutMs: parsePositiveInteger(process.env.MULTITRACK_JOB_TIMEOUT_MS, 20 * 60 * 1000),
-    maxJobs: Math.min(2, parsePositiveInteger(process.env.MULTITRACK_MAX_JOBS, 1)),
-    allowedHosts: (process.env.MULTITRACK_ALLOWED_HOSTS || '')
-      .split(',')
-      .map((host) => host.trim().toLowerCase().replace(/^\.|\.$/g, ''))
-      .filter(Boolean)
-  },
 
   // External Cloudflare Worker M3U8 Proxy Pool (Comma-separated URLs for load balancing)
   // Example: https://proxy-1.yourname.workers.dev,https://proxy-2.yourname.workers.dev
@@ -78,37 +58,30 @@ const config = {
   upstashRedisUrl: process.env.UPSTASH_REDIS_REST_URL || '',
   upstashRedisToken: process.env.UPSTASH_REDIS_REST_TOKEN || '',
 
-  // Upstream Provider Endpoints (Real Production Providers with Dynamic Discovery)
+  // Goldmine server — the owner-hosted TMDB-Embed-API instance
+  // (https://github.com/themithology/TMDB-Embed-API). It aggregates a dozen
+  // stream providers behind one JSON API and answers with direct MKV/MP4
+  // files (multi-audio dubs) plus HLS sources. The player runs the files
+  // through the bundled movi-player engine (FFmpeg WASM).
+  goldmine: {
+    apiBase: (
+      process.env.GOLDMINE_API_BASE ||
+      process.env.TMDB_EMBED_API_BASE ||
+      'https://rdp-running-campion.onrender.com'
+    ).replace(/\/+$/, ''),
+    // Generous by default: free-tier hosts (Render) cold-start slowly and the
+    // aggregate endpoint fans out to every enabled provider.
+    timeoutMs: parsePositiveInteger(process.env.GOLDMINE_TIMEOUT_MS, 30000),
+    // Wrap direct file URLs in this backend's signed /api/proxy (CORS +
+    // Range + server-side Referer/User-Agent — providers like Vidlink,
+    // CastleTV and VixSrc gate on headers a browser cannot send). URLs the
+    // TMDB-Embed-API already proxied itself (its own /ts-proxy host, when
+    // `enableProxy` is on there) always pass through untouched.
+    proxyStreams: parseBoolean(process.env.GOLDMINE_PROXY_STREAMS, true)
+  },
+
+  // External metadata endpoints (subtitles + skip segments)
   upstreams: {
-    castletvBase: process.env.CASTLETV_BASE_URL || 'https://api.hlowb.com',
-    castletvHosts: (process.env.CASTLETV_HOSTS || 'https://api.hlowb.com')
-      .split(',')
-      .map((s) => s.trim().replace(/\/$/, ''))
-      .filter(Boolean),
-
-    // MovieBox dynamic cluster pool (replaces deprecated api3.aoneroom.com / uwu.eat-peach.sbs)
-    // NetMirror dynamic discovery & rotating web mirror (replaces static net27.cc)
-    netmirrorBase: process.env.NETMIRROR_BASE_URL || 'https://net27.cc',
-    // Web mirrors that serve the TMDB-id keyed /api/embed-tmdb endpoint. The
-    // NewTV discovery API base (tv.imgcdn.kim) is regressed upstream, so these
-    // are tried directly (and rotated) before giving up on NetMirror.
-    netmirrorWebMirrors: (
-      process.env.NETMIRROR_WEB_MIRRORS ||
-      'https://net27.cc,https://net52.cc,https://net77.cc,https://netmiror.com'
-    )
-      .split(',')
-      .map((s) => s.trim().replace(/\/$/, ''))
-      .filter(Boolean),
-    netmirrorDiscoveryUrls: (
-      process.env.NETMIRROR_DISCOVERY_URLS ||
-      'https://mobiledetect.app,https://mobiledetects.com,https://mobidetect.cc,https://mobidetects.top,https://getimgcdn.com,https://mobidetect.art,https://mobidetect.click'
-    )
-      .split(',')
-      .map((s) => s.trim().replace(/\/$/, ''))
-      .filter(Boolean),
-
-    vidstuckBase: process.env.VIDSTUCK_BASE_URL || 'https://vidstuck.xyz',
-    hicineApiBase: process.env.HICINE_API_BASE || 'https://api.hicine.sbs',
     wyzieSubsUrl: process.env.WYZIE_SUBS_URL || 'https://sub.wyzie.ru',
     openSubtitlesStremioUrl: process.env.OPENSUBTITLES_STREMIO_URL || 'https://opensubtitles-v3.strem.io',
     subdlApiUrl: process.env.SUBDL_API_URL || 'https://api.subdl.com/api/v1',

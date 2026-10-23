@@ -248,15 +248,25 @@ class TelemetryAndAdminEngine {
   }
 
   /**
-   * Hot-swap upstream URLs, AES key, proxy pool, and server enabled/priority settings at runtime
+   * Hot-swap upstream URLs, proxy pool, and server enabled/priority settings at runtime
    */
   updateUpstreamsAndServers(payload = {}) {
     if (payload.upstreams && typeof payload.upstreams === 'object') {
       for (const [k, v] of Object.entries(payload.upstreams)) {
-        if (typeof v === 'string' && v.trim() && k in config.upstreams) {
+        if (typeof v !== 'string' || !v.trim()) continue;
+        // The Goldmine server's TMDB-Embed-API base lives on config.goldmine.
+        if (k === 'goldmineBase' || k === 'goldmineApiBase') {
+          config.goldmine.apiBase = v.trim().replace(/\/+$/, '');
+          continue;
+        }
+        if (k in config.upstreams) {
           config.upstreams[k] = v.trim().replace(/\/$/, '');
         }
       }
+    }
+
+    if (typeof payload.goldmineApiBase === 'string' && payload.goldmineApiBase.trim()) {
+      config.goldmine.apiBase = payload.goldmineApiBase.trim().replace(/\/+$/, '');
     }
 
     if (typeof payload.tmdbApiKey === 'string' && payload.tmdbApiKey.trim()) {
@@ -304,14 +314,14 @@ class TelemetryAndAdminEngine {
   async runLiveHealthProbes() {
     const targets = [
       {
-        serverId: 'andromeda',
-        name: 'CastleTV Multi-Audio API',
-        url: `${config.upstreams.castletvBase}/v0.1/system/getSecurityKey/1`
+        serverId: 'goldmine',
+        name: 'TMDB-Embed-API (Goldmine)',
+        url: `${config.goldmine.apiBase}/api/health`
       },
       {
-        serverId: 'centaurus',
-        name: 'HiCine Direct API',
-        url: `${config.upstreams.hicineApiBase}/api/search/arcane`
+        serverId: 'goldmine',
+        name: 'TMDB-Embed-API providers',
+        url: `${config.goldmine.apiBase}/api/providers`
       }
     ];
 
@@ -425,7 +435,7 @@ class TelemetryAndAdminEngine {
       domains: domainList,
       blockedDomains: Array.from(this.blockedDomains),
       servers,
-      upstreams: { ...config.upstreams },
+      upstreams: { goldmineBase: config.goldmine.apiBase, ...config.upstreams },
       externalProxyPool: [...config.externalProxyPool],
       customOverrides: Array.from(this.customOverrides.values()),
       stats: this.getStatsSnapshot()

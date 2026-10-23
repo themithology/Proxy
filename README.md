@@ -51,8 +51,8 @@ The page is served with `Content-Security-Policy: frame-ancestors *` so any site
 | `type`     | `tv` (default) or `movie`                                               |
 | `tmdb`     | TMDB ID (also accepted as `id`)                                          |
 | `s` / `e`  | Season / episode for TV (also `season` / `episode`)                      |
-| `server`   | Preferred upstream server: `andromeda` or `centaurus` (a stale/removed id falls back to the top-priority server) |
-| `source`   | Optional pin to one source of a multi-source server: `centaurus&source=hicine` (pinned requests do not fall through to other servers) |
+| `server`   | Preferred upstream server: `goldmine` (a stale/removed id falls back to the top-priority server) |
+| `source`   | Optional pin to one source (provider) of a server: `server=goldmine&source=<provider-id>` (pinned requests do not fall through to other sources) |
 | `api`      | Absolute API base URL override (see below)                               |
 | `lang`     | Preferred audio language (e.g. `hi`, `en`, `ta`)                         |
 | `sub`      | Preferred subtitle language (e.g. `en`); matched against the resolved tracks' language codes |
@@ -185,8 +185,7 @@ The value must be an absolute `http(s)` URL (a path prefix is allowed and traili
 - `GET /api/subtitles/proxy?url=…&enc=…&lang=…` — fetches one subtitle file from an allowed subtitle host (gzip/zip unpacked, charset detected) and returns WebVTT.
 - `GET /api/resolve/:type/:tmdbId` — resolves a source and returns stream, audio, subtitle, and segment metadata.
 - `GET /api/proxy?url=...` — HLS/MP4 stream proxy.
-- `GET /api/multitrack/master.m3u8` and `/api/multitrack/file/:jobId/:filename` — signed Node-side audio-remux output.
-- `/api/admin/*` — owner operations, all requiring `X-Admin-Key` (or `?key=`): `GET /api/admin/stats` (dashboard feed), `POST /api/admin/stats/reset`, `POST /api/admin/domains/block` (`{ domain, blocked }`), `GET`/`POST /api/admin/domains/ad-free` (`{ domain, adFree }`, player Worker), `GET /api/admin/overview`, `POST /api/admin/probe`, plus upstream configuration and source overrides. The `/reze` page is the UI for these.
+- `/api/admin/*` — owner operations, all requiring `X-Admin-Key` (or `?key=`): `GET /api/admin/stats` (dashboard feed), `POST /api/admin/stats/reset`, `POST /api/admin/domains/block` (`{ domain, blocked }`), `GET`/`POST /api/admin/domains/ad-free` (`{ domain, adFree }`, player Worker), `GET /api/admin/overview`, `POST /api/admin/probe`, `GET /api/admin/goldmine/diagnose/:type/:tmdbId`, plus upstream configuration and source overrides. The `/reze` page is the UI for these.
 
 Supported media types are `movie`, `tv`, and `series` where applicable. TV requests accept `season` and `episode` query parameters. Ids are TMDB ids; IMDb ids (`tt…`) are accepted everywhere a TMDB id is and translated once through TMDB's `/find` endpoint (cached for a day) — the responses and the host API always report the TMDB id.
 
@@ -234,15 +233,20 @@ Every track URL points at `/api/subtitles/proxy`, which downloads the file serve
 
 ## Source resolution and audio behavior
 
-The resolver supports the following server configurations. Names, badges and
-priorities live in `src/services/serverCatalog.js`, which both backends (the
-Node API and the Cloudflare Worker that serves `/embed`) import — so the player's
-server modal can never drift from what the waterfall actually tries:
+Names, badges and priorities live in `src/services/serverCatalog.js`, which both
+backends (the Node API and the Cloudflare Worker that serves `/embed`) import —
+so the player's server modal can never drift from what the waterfall actually
+tries:
 
-| Priority | Server id   | Player name           | Badge                                  | Cascade |
-|----------|-------------|-----------------------|----------------------------------------|---------|
-| 1        | `andromeda` | Fiber Optic Speedrun  | Multi-Audio • Primary                  | CastleTV → NetMirror |
-| 2        | `centaurus` | Gigachad Node         | Adaptive • Multi-Quality               | HiCine |
+| Priority | Server id  | Player name  | Badge                  | Cascade                                |
+|----------|------------|--------------|------------------------|----------------------------------------|
+| 1        | `goldmine` | Goldmine MKV | Multi-Audio Dubs • MKV | Owner-hosted TMDB-Embed-API instance    |
+
+The lineup is MKV-first and single-server. The legacy HLS-only servers
+(`andromeda`, `centaurus`) and the Node ffmpeg remux tier were removed with the
+move to Goldmine; the catalog machinery (priority order, listing, fallbacks,
+live admin edits) stays generic, so adding a second server later is a
+one-entry change.
 
 Every `/api/resolve` payload carries the `servers` array in this exact order with
 the answering server flagged `active`, and it is rebuilt from the live catalog on
@@ -250,83 +254,109 @@ every response — including cache hits — so a rebrand or re-prioritisation sh
 up in the player immediately. Owner priority changes made through
 `POST /api/admin/upstreams` feed the same array and the waterfall.
 
-### Server 1 — Andromeda (Fiber Optic Speedrun) Multi-Tier Architecture
+### Server — Goldmine (TMDB-Embed-API aggregation)
 
-Server Andromeda uses a resilient two-tier cascade backed by automatic dynamic discovery:
+Goldmine resolves through the owner-hosted
+[TMDB-Embed-API](https://github.com/themithology/TMDB-Embed-API) instance
+(`GOLDMINE_API_BASE`, defaulting to its Render deployment). One JSON call fans
+out to every provider enabled on that instance:
 
-1. **Priority 1: CastleTV (`api.hlowb.com`)**
-   - **Coverage:** Extensive South Indian dubs (Tamil, Telugu, Malayalam, Kannada, Hindi), K-dramas, C-dramas, anime, and Hollywood multi-audio.
-   - **Protocol:** AES-128-CBC encryption (`IV == key`), dynamically derived on-the-fly from `/v0.1/system/getSecurityKey/1`. Yields language-tagged master HLS playlists per dub track via `/film-api/v2.0.1/movie/getVideo2`.
-
-2. **Priority 2: NetMirror Web-Mirror Pool (TMDB-id keyed)**
-   - **Coverage:** Official OTT platform mirrors (Netflix, Prime Video, Disney+/Hotstar) with embedded multi-audio renditions. `GET /api/embed-tmdb/<tmdbId>` is keyed on the TMDB id (TV: `?type=tv&se=&ep=`), so identity is exact by construction.
-   - **Mirror rotation:** `NETMIRROR_WEB_MIRRORS` (default `net27.cc`, `net52.cc`, `net77.cc`, `netmiror.com`) is walked in order until a mirror answers; the answering origin is remembered and used as the stream `Referer`.
-   - **NewTV discovery is a fallback only:** the `checknewtv.php` network (`mobiledetect.app`, `mobidetect.cc`, ...) still resolves to an API base (e.g. `https://tv.imgcdn.kim`), but that base currently answers `403 Page Not Found` for `newtv/*` and `embed-tmdb`. The resolver tries it first and rotates mirrors when it fails.
-   - **Alternate URLs kept as backups:** the embed payload's `fallbackHls` and `direct` links are returned in `backupUrls`, because NetMirror's primary CDN (`*.hakunaymatata.com`) rate-limits aggressively (`HTTP 429`) and its `?sign=` links are short-lived — a miss means re-resolve, not retry.
-   - **Last live probe (2026-10-04, `diagnostics/netmirror-probe.json`):** `net27.cc` live (a TV title returned 4 streams + 13 subtitle languages; a movie not in their catalog returns `ok:true` + "couldn't find this title", treated as a miss), `net52.cc`/`net77.cc`/`netmiror.com` 404, and every CDN fetch from the CI runner was `429` regardless of Referer/Range/sign, so playback could not be confirmed from cloud IPs.
-   - **Not yet wired:** NetMirror's `captions[]` (13 languages on the probed episode, sourced from Moviebox's library) are still ignored by `/api/subtitles`, which currently uses the sources listed under *Subtitles* (OpenSubtitles via Stremio v3, optional Wyzie/SubDL).
-
-3. **Clean Waterfall Failover: Server 2 (Centaurus, HiCine)**
-   - If both internal Andromeda tiers return no playable streams for a given title, Andromeda cleanly cascades to the next server in the shared priority waterfall.
-
-### Server 2 — Centaurus (HiCine)
-
-Centaurus resolves through HiCine (`api.hicine.sbs`), and it runs entirely
-inside the Worker — no Node backend, no delegation:
-
-| Source | Upstream | Flow | Output |
-|--------|----------|------|--------|
-| `hicine` | `api.hicine.sbs` | Search API → quality tokens → vCloud/Pixeldrain | Direct MP4/HLS |
-
-HiCine publishes a small quality ladder per title and labels audio with
-filename-only hints (Hindi by default; Tamil/Telugu/English/Japanese when
-present). The ladder becomes the player's quality menu and the hints become the
-honest default audio row — see Audio Behavior & Remuxing for how embedded MKV
-tracks are handled (the Worker cannot remux them, so progressive fallback is
-used).
-
-Debug a title with the admin diagnostics endpoint:
-
-```bash
-curl "$API/api/admin/centaurus/diagnose/tv/94605?season=1&episode=1&key=$ADMIN_SECRET"
-# → per-source {ok, ms, reason, diag, rawUrl, qualities}
+```
+GET {GOLDMINE_API_BASE}/api/streams/{movie|series}/{tmdbId}[?season=&episode=]
+→ { success, tmdbId, imdbId, count, providerTimings,
+    streams: [ { name, title, url, quality, provider, headers?, subtitles? } ] }
 ```
 
-The two Hindi-dub anime blogs (Anime Dub Hindi, AnimeDrive) that used to be
-this server's sources 2 and 3 only worked on a Node backend — HTML extraction,
-release-host unrolling and the ffmpeg remux did not fit the free-tier Worker —
-and their release hosts are additionally unreachable from Cloudflare egress
-(one is IP-banned, the other serves a Turnstile wall). They were removed on
-2026-10-04; the research record (reachability, codec and season traps) is kept
-in `docs/hamster-wheel-upstream-research.md`.
+The shared resolver (`src/services/goldmine.js`, imported by **both** runtimes)
+then:
 
-### Audio Behavior & Remuxing
+- **Normalises** each row — quality labels to heights, containers from the URL,
+  provider display labels from the upstream's `/api/providers` catalog.
+- **Parses dub languages** from `name`, `title` and filename tags
+  (`… Hindi+Tamil Multi Audio …`, `…WEB-DL.HIN.DUB.x264…`) via the shared
+  language helpers (`src/services/languages.js`). URLs are stripped before
+  scanning, so CDN host names can never masquerade as language hints.
+- **Deduplicates mirrors** — same-height alternates of the best pick become
+  `backupUrls` instead of fake quality variants, while every row of the payload
+  becomes the player's Source 1…N list.
+- **Wraps header-gated files** — providers that demand a `Referer` /
+  `User-Agent` (headers browsers refuse to send) route through the signed
+  `/api/proxy?url=…` with server-side headers, CORS and Range support.
+  `GOLDMINE_PROXY_STREAMS=false` disables the wrapping; URLs the upstream
+  instance already proxied itself always pass through untouched.
+- **Pins one source manually** — `?source=<provider-id>` filters the aggregate
+  to a single provider (a pinned request never falls through to the others).
 
-Audio behavior is intentionally truthful:
+Failure reasons map 1:1 onto the API error contract (`goldmine_timeout`,
+`goldmine_unreachable`, `goldmine_http_error`, `goldmine_bad_response`,
+`goldmine_no_streams`, `goldmine_source_empty`, `goldmine_source_disabled`,
+`goldmine_source_unknown`) and surface verbatim on the player's error screen.
+The Worker wraps resolution in a small circuit breaker so a cold-starting
+free-tier instance cannot stall every request for the full timeout, and
+resolution results are cached per title (a re-resolve, not a retry, is the
+answer to a dead CDN link).
 
-- Upstream HLS audio renditions are exposed when they are actually switchable, and the player also adopts renditions it discovers in the parsed manifest — a single payload row hiding a multi-track HLS master still becomes a switchable menu.
-- Switching is index-first (`audioIndex` from the remux payload) and only claims success when a rendition actually changed; if the stream is a single progressive file the player says so instead of showing a fake "Audio switched" toast.
-- Quality rows are matched to HLS levels by resolution height (not array position), and CastleTV ladders are merged across every resolution rung, so the quality menu lists real 1080p/720p/480p entries instead of a lone "Auto". A remuxed file lists exactly one row at the file's native resolution.
-- HiCine has filename-only language hints, not structured language URLs; progressive sources remain one honest default row rather than duplicate entries for the same file.
-- Node deployments can use FFmpeg/FFprobe to remux embedded MKV/MP4 audio tracks into HLS. The video stream is copied; supported audio is copied and other audio is converted to AAC.
-- Cloudflare Workers do not run FFmpeg. They retain upstream HLS rendition switching and use progressive fallback for embedded MKV tracks; the browser cannot select embedded tracks from progressive MKV.
-- If remuxing is unavailable, unsafe for the source host, or fails, the resolver keeps the source's default audio and progressive fallback rather than claiming unsupported switching.
+Owner surface:
 
-The generated Node multitrack package is cached locally (default two hours), starts serving once initial segments are ready, and is protected by HMAC-signed playlist and asset URLs (the signed master also carries the resolver's trust decision, so a provider-resolved file on a release CDN can be remuxed without opening the endpoint to arbitrary hosts). The built-in HTTPS source allowlist includes `r2.dev`, `cloudflarestorage.com`, `cloudfront.net`, `googleusercontent.com`, `workers.dev`, Pixeldrain, and the HubCloud/GDFlix release chains (`hubcloud.ist`, `hubdrive.pics`, `gdflix.dev`, `gdflix.io`, `busycdn.xyz`, `indexserver.site`). Add trusted suffixes with `MULTITRACK_ALLOWED_HOSTS`; do not allow untrusted hosts. Tune job count and cache limits with the `MULTITRACK_*` settings in `.env.example`.
+```bash
+# Per-title, per-provider diagnostic (what every provider answered, languages, qualities)
+curl "$API/api/admin/goldmine/diagnose/tv/94605?season=1&episode=1&key=$ADMIN_SECRET"
 
-Codec/device combinations such as HEVC/AV1 profiles, HDR/Dolby Vision, AC-3/E-AC-3, and progressive MKV may not work in every browser. Use a compatible source/server when necessary; the backend does not transcode video to conceal these limitations.
+# Hot-swap the upstream instance / re-prioritise / disable — live, no redeploy
+curl -X POST "$API/api/admin/upstreams" -H "X-Admin-Key: $ADMIN_SECRET" \
+  -H 'Content-Type: application/json' \
+  -d '{"upstreams":{"goldmineBase":"https://my-instance.example"},"servers":[{"id":"goldmine","priority":1,"enabled":true}]}'
+```
+
+> **Owner note:** the upstream instance's biggest multi-dub provider only works
+> when its `FEBBOX_COOKIES` env var is set on the Render service; without it,
+> those rows simply never appear in `/api/streams` answers. The instance's own
+> `/api/config` endpoint is public — keep the TMDB key it exposes rotated or
+> lock the endpoint down.
+
+### Audio behavior & MKV playback
+
+Goldmine's direct MKV/MP4 files play through the bundled
+[movi-player](https://github.com/MrUjjwalG/movi-player) engine
+(`public/vendor/movi/element.js` — FFmpeg WASM demux + software/WebCodecs
+decode, self-contained, no COOP/COEP needed). That is what makes **multi-audio
+MKV in the browser** possible:
+
+- **One-click dubs:** `/api/resolve` reports the dub languages parsed from the
+  picked files up front (`languages` with counts, plus `audioTracks` for the
+  selected file), and the player renders them as language rows. Picking one
+  calls the engine's `selectAudioLang()` — the track switches inside the same
+  file, without re-resolving and without losing the position.
+- **Truthful tracks:** once the file is loaded the engine's `getAudioLangs()`
+  is the source of truth; parsed-but-absent hints are never offered as
+  switchable, and a single-audio file gets one honest row instead of fake
+  duplicates.
+- **HLS stays native:** aggregated HLS sources still play through hls.js with
+  rendition switching and manifest-discovered audio rows.
+- **Quality:** the quality menu lists real heights (1080p/720p/480p) from the
+  deduplicated ladder; a progressive file keeps exactly one row at its native
+  resolution.
+- **Subtitles:** embedded MKV tracks (SRT/ASS/VTT/PGS/DVB) are selectable
+  through the engine; the external `/api/subtitles` tracks layer on top as
+  usual.
+
+Codec/device combinations (HEVC/AV1 profiles, HDR/Dolby Vision, AC-3/E-AC-3)
+may still not play in every browser — the WASM engine software-decodes a lot,
+but nothing is transcoded server-side to conceal the limits.
 
 ## Player UI harness (optional local/dev tooling)
 
-`scripts/dev-player-mock.mjs` serves `public/` exactly like the Worker does but answers `/api/*` from an in-memory mock (a public HLS demo stream, fake episodes, segments and subtitles), so the player UI can be iterated on without TMDB keys or reachable upstreams:
+`scripts/dev-player-mock.mjs` serves `public/` exactly like the Worker does and mounts the **real backend** (`src/server.js`) behind it — `/api/resolve`, the waterfall, the Goldmine resolver, `/api/proxy` and the telemetry all run as in production — but points the upstream configuration at built-in mocks (a tiny TMDB stand-in, a TMDB-Embed-API stand-in answering provider-shaped JSON, skip-segment fixtures) plus a fixture CDN on port 8791 serving small real multi-audio MKV/MP4 files and a VTT (generated on first start, gitignored), so no internet or keys are needed:
 
 ```bash
-node scripts/dev-player-mock.mjs
-# http://localhost:8790/embed?type=tv&tmdb=94605&s=1&e=1                   happy path
-# http://localhost:8790/embed?type=tv&tmdb=94605&s=1&e=1&server=centaurus  server 2 fails -> automatic failover
-# http://localhost:8790/embed?type=movie&tmdb=0                            every server fails -> error screen with the server list inline
+npm run dev:player
+# http://localhost:8790/embed?type=tv&tmdb=94605&s=1&e=1            Goldmine MKV via the movi engine, dub-language chips (English/Hindi/Tamil), skip segments
+# http://localhost:8790/embed?type=tv&tmdb=94605&s=1&e=1&lang=ta    Tamil preselected
 # http://localhost:8790/embed?type=tv&tmdb=94605&s=1&e=1&t=1m30s&autoskip=1 start offset + auto-skip
-# http://localhost:8790/host                                                host page: iframe + the postMessage control API (buttons, live state, event log)
+# http://localhost:8790/embed?type=movie&tmdb=0                     every source empty -> error screen with the server list inline
+# http://localhost:8790/host                                        host page: iframe + the postMessage control API (buttons, live state, event log)
+# http://localhost:8790/reze?key=admin123                           owner dashboard against the real backend
+# ADS=1 npm run dev:player                                          serve the popunder ad tag too (stripped by default)
 ```
 
 `scripts/dev-worker.mjs` runs the real Worker code (`cloudflare-worker/worker.js`) against the live upstreams instead.
@@ -334,9 +364,9 @@ node scripts/dev-player-mock.mjs
 ## Run the Node backend (optional local/dev tooling)
 
 The Node server in this repository is **optional local/dev tooling only**. The
-deployed product is the Cloudflare Worker, and every deployed source
-(Andromeda, Centaurus/HiCine) resolves inside the Worker — nothing in
-production requires, or is delegated to, a Node deployment.
+deployed product is the Cloudflare Worker, and every deployed server
+(Goldmine) resolves inside the Worker through the same shared services —
+nothing in production requires, or is delegated to, a Node deployment.
 
 ```bash
 npm ci
@@ -344,7 +374,7 @@ npm test
 npm start
 ```
 
-The server listens on `0.0.0.0:3000` by default and serves the JSON API only — the player page ships with the Cloudflare Worker. Copy `.env.example` to `.env` and configure deployment-specific values. The Docker image installs FFmpeg (including FFprobe); for non-Docker hosts, install both binaries on `PATH`, or set `FFMPEG_PATH` and `FFPROBE_PATH`. Multitrack remuxing can be disabled with `MULTITRACK_ENABLED=false`.
+The server listens on `0.0.0.0:3000` by default and serves the JSON API only — the player page ships with the Cloudflare Worker. Copy `.env.example` to `.env` and configure deployment-specific values (`GOLDMINE_API_BASE`, secrets, optional subtitle keys).
 
 With Docker Compose:
 
@@ -361,7 +391,7 @@ npx wrangler login
 npx wrangler deploy
 ```
 
-Configure production secrets and variables in Cloudflare Worker settings. Set a strong `ADMIN_SECRET` (it is also the `/reze` dashboard key) and `PROXY_SECRET` before deployment; do not use the sample values in `wrangler.toml` for a public service. If the API runs on a separate Worker or Node deployment, set `API_BASE_URL` to its absolute URL (see above). The statistics Durable Object is created by the `[[migrations]]` block on the first deploy; to run without it, delete the `[[durable_objects.bindings]]` and `[[migrations]]` blocks (counters then live in isolate memory only).
+Configure production secrets and variables in Cloudflare Worker settings. Set a strong `ADMIN_SECRET` (it is also the `/reze` dashboard key) and `PROXY_SECRET` before deployment; do not use the sample values in `wrangler.toml` for a public service. `GOLDMINE_API_BASE` points the resolver at your TMDB-Embed-API instance (the `wrangler.toml` default is the owner's Render deployment); `GOLDMINE_TIMEOUT_MS` should stay generous while that instance is on a free tier (cold starts). If the API runs on a separate Worker or Node deployment, set `API_BASE_URL` to its absolute URL (see above). The statistics Durable Object is created by the `[[migrations]]` block on the first deploy; to run without it, delete the `[[durable_objects.bindings]]` and `[[migrations]]` blocks (counters then live in isolate memory only).
 
 Branch pushes run `wrangler preview` via Workers Builds, using the preview-safe values in the `[previews]` block of `wrangler.toml`; only merges to the production branch deploy the production configuration. Durable Object migrations are atomic and cannot be shipped by a preview/version upload, so the `v1` migration that creates the statistics object must land through a production `wrangler deploy` first (branch previews built before that fail with a migration error; afterwards they share the already-migrated class). If you ever rename `StatsStore`, add a new migration tag instead of editing `v1`.
 

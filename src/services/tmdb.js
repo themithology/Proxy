@@ -110,9 +110,7 @@ async function resolveTmdbMetadata(type, tmdbId, season = 1, episode = 1) {
   // 1. Primary: Official TMDB API v3 with append_to_response=external_ids
   if (config.tmdbApiKey || config.tmdbBearerToken) {
     const apiKeyParam = config.tmdbApiKey ? `api_key=${encodeURIComponent(config.tmdbApiKey)}&` : '';
-    // alternative_titles powers the TMDB-anchored identity gate used by the
-    // name-search upstreams (CastleTV): a localized or original
-    // title must be provably the same film, not just a title collision.
+    // alternative_titles stays in the shared append set (tmdbArtwork.js).
     // `images` (logos) + tagline + rating feed the player's connect / paused
     // screens; the selection logic is shared with the Worker (tmdbArtwork.js).
     const detailsUrl = `${config.tmdbBaseUrl}/${normalizedType}/${cleanId}?${apiKeyParam}${tmdbArtwork.DETAILS_APPEND}&language=en-US`;
@@ -192,77 +190,7 @@ async function resolveTmdbMetadata(type, tmdbId, season = 1, episode = 1) {
     }
   }
 
-  // 2. Secondary Live Fallback: VidStuck Backend TMDB Proxy + Cinemeta Episode Resolver
-  if (!result) {
-    const vidstuckUrl = `${config.upstreams.vidstuckBase}/backend/tmdb/details/${normalizedType}/${cleanId}?language=en-US`;
-    const vsData = await safeFetchJson(vidstuckUrl, {
-      headers: { Referer: `${config.upstreams.vidstuckBase}/` }
-    });
-
-    if (vsData && (vsData.id || vsData.title || vsData.name)) {
-      const releaseDate = vsData.release_date || vsData.first_air_date || '';
-      const releaseYear = releaseDate ? parseInt(releaseDate.slice(0, 4), 10) : null;
-      const genres = Array.isArray(vsData.genres) ? vsData.genres.map((g) => g.name) : [];
-      const title = vsData.title || vsData.name;
-      const imdbId = vsData.imdb_id || vsData.external_ids?.imdb_id || null;
-
-      let seasons = [];
-      let episodes = [];
-
-      if (normalizedType === 'tv') {
-        seasons = (vsData.seasons || [])
-          .filter((s) => s.season_number > 0)
-          .map((s) => ({
-            season_number: s.season_number,
-            name: s.name || `Season ${s.season_number}`,
-            episode_count: s.episode_count || 0
-          }));
-
-        // Populate episodes via Cinemeta if IMDb ID is present
-        if (imdbId) {
-          const cineData = await safeFetchJson(
-            `${config.upstreams.cinemetaUrl}/meta/series/${imdbId}.json`
-          );
-          if (cineData?.meta?.videos) {
-            episodes = cineData.meta.videos
-              .filter((v) => Number(v.season) === sNum)
-              .map((v) => ({
-                episode: Number(v.episode || v.number),
-                season: sNum,
-                title: v.name || v.title || `Episode ${v.episode || v.number}`,
-                runtime: parseInt(cineData.meta.runtime, 10) || null,
-                date: v.released ? String(v.released).slice(0, 10) : '',
-                still: v.thumbnail || (vsData.backdrop_path ? `${config.tmdbImageBase}/w780${vsData.backdrop_path}` : null),
-                overview: v.overview || v.description || ''
-              }));
-          }
-        }
-      }
-
-      result = {
-        tmdbId: Number(cleanId) || cleanId,
-        type: normalizedType,
-        title,
-        originalTitle: vsData.original_title || vsData.original_name || title,
-        releaseYear,
-        runtime: vsData.runtime || (Array.isArray(vsData.episode_run_time) && vsData.episode_run_time[0]) || null,
-        genres,
-        overview: vsData.overview || '',
-        backdrop: vsData.backdrop_path ? `${config.tmdbImageBase}/w1280${vsData.backdrop_path}` : null,
-        poster: vsData.poster_path ? `${config.tmdbImageBase}/w500${vsData.poster_path}` : null,
-        externalIds: {
-          imdb_id: imdbId,
-          tvdb_id: vsData.external_ids?.tvdb_id || null,
-          mal_id: null,
-          anilist_id: null
-        },
-        seasons,
-        episodes
-      };
-    }
-  }
-
-  // If neither API could be reached (e.g., offline environment or invalid TMDB ID), return minimal structural descriptor
+  // If TMDB could not be reached (e.g., offline environment or invalid TMDB ID), return minimal structural descriptor
   if (!result) {
     return {
       tmdbId: Number(cleanId) || cleanId,

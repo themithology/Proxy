@@ -28,7 +28,7 @@ function getProxyNodeBase(reqBaseUrl = '') {
  *           hosts), or 'direct'.
  *   token — per-host JWT (from <host>/generate.php) stamped onto every rewritten
  *           manifest/segment URI by the proxy.
- *   cookie — upstream session cookie forwarded by the proxy (vidstuck.xyz).
+ *   cookie — upstream session cookie forwarded by the proxy (session-gated hosts).
  */
 function buildProxyStreamUrl(targetUrl, referer = '', origin = '', options = {}) {
   if (!targetUrl) return '';
@@ -215,8 +215,8 @@ async function handleStreamProxy(req, res) {
   }
 
   // Only ever send Referer/Origin when the caller explicitly asked for them — a
-  // synthesized Referer is exactly what trips Pixeldrain's hotlink filter and the
-  // VidStuck/Pixeldrain 403s.
+  // synthesized Referer is exactly what trips release-host hotlink filters
+  // (Pixeldrain-style 403s).
   const upstreamHeaders = {
     'User-Agent': DEFAULT_USER_AGENT,
     Accept: '*/*',

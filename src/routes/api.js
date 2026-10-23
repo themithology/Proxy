@@ -3,16 +3,22 @@ const config = require('../config');
 const { resolveTmdbMetadata } = require('../services/tmdb');
 const { resolveSkipSegments } = require('../services/segments');
 const { resolveSubtitles, fetchAndConvertSubtitleToVtt, isProxyableSubtitleUrl } = require('../services/subtitles');
-const { resolveStreamForServer, resolveAndromedaServer, diagnoseCentaurus } = require('../services/resolver');
+const { resolveStreamForServer } = require('../services/resolver');
+const goldmine = require('../services/goldmine');
 const serverCatalog = require('../services/serverCatalog');
 const { handleStreamProxy } = require('../services/proxy');
-const { serveMasterPlaylist, serveGeneratedFile } = require('../services/multitrack');
 const { generateHandshakeToken } = require('../utils/crypto');
 const { srtToVtt } = require('../utils/srtToVtt');
 const { circuitBreaker } = require('../utils/cache');
 const { telemetry } = require('../services/telemetry');
 
 const router = express.Router();
+
+/** The catalog's top-priority live server — what an unpinned resolve uses. */
+function defaultServerId() {
+  const [top] = serverCatalog.waterfallEnabledServers(config.servers);
+  return top ? top.id : 'goldmine';
+}
 
 /**
  * Middleware: Authenticate Owner Admin Requests via `X-Admin-Key` header or `?key=` query
@@ -42,15 +48,12 @@ router.get('/health', (req, res) => {
     brand: 'LOL Embed',
     service: 'lol-embed-backend',
     runtime: 'node',
-    version: '2.0.0',
+    version: '3.0.0',
     metaImage: '/meta-image.gif',
     timestamp: new Date().toISOString(),
     servers: config.servers.map((s) => s.id),
+    goldmineApiBase: config.goldmine.apiBase,
     proxyPoolCount: config.externalProxyPool.length,
-    multitrack: {
-      enabled: config.multitrack.enabled,
-      maxConcurrentJobs: config.multitrack.maxJobs
-    },
     circuitBreaker: circuitBreaker.status()
   });
 });
@@ -140,7 +143,7 @@ router.get('/catalog', async (req, res) => {
 
 /**
  * POST /api/handshake
- * Generates short-lived session token (like VidStuck's /backend/meow)
+ * Generates a short-lived, HMAC-signed session token
  */
 router.post('/handshake', express.json(), (req, res) => {
   const { type = 'movie', id = '', season = 1, episode = 1 } = req.body || {};
@@ -269,20 +272,23 @@ router.get('/subtitles/:type/:tmdbId', async (req, res) => {
 /**
  * GET /api/resolve/:type/:tmdbId
  * Full unified resolver endpoint:
- * Input: TMDB ID (+ season & episode for TV, + optional server & audio track)
- * Output: Metadata, External IDs, Stream URL (proxied M3U8/MP4), Audio Tracks, Qualities, Subtitles, Skip Segments
+ * Input: TMDB ID (+ season & episode for TV, + optional server, source & audio track)
+ * Output: Metadata, External IDs, Stream URL (direct MKV/MP4 or proxied M3U8),
+ *         playback engine hint, Audio Tracks (dub languages), Qualities,
+ *         Sources (providers), Subtitles, Skip Segments
  */
 router.get('/resolve/:type/:tmdbId', async (req, res) => {
   try {
     const { type, tmdbId } = req.params;
     const season = parseInt(req.query.season || '1', 10);
     const episode = parseInt(req.query.episode || '1', 10);
-    const server = String(req.query.server || 'andromeda').toLowerCase();
+    const server = String(req.query.server || '').toLowerCase() || defaultServerId();
     const audio = String(req.query.audio || '');
-    // Multi-source servers (centaurus) accept `?source=` to pin one source;
-    // pinned requests do not fall through to the other servers.
+    // Multi-source servers (goldmine) accept `?source=` to pin one provider
+    // (`vidlink`, `dahmermovies`, `4khdhub`, …); pinned requests do not fall
+    // through to other servers.
     const requestedSource = String(req.query.source || '').toLowerCase();
-    const onlySource = /^[a-z]{3,24}$/.test(requestedSource) ? requestedSource : '';
+    const onlySource = /^[a-z0-9]{3,24}$/.test(requestedSource) ? requestedSource : '';
 
     const callerDomain = telemetry.extractDomain(req);
     if (telemetry.isDomainBlocked(callerDomain)) {
@@ -308,23 +314,25 @@ router.get('/resolve/:type/:tmdbId', async (req, res) => {
       const firstFailed = attempts.find((a) => a.server === server) || attempts[0];
       const reasonMap = {
         circuit_open: 'Server paused (too many recent failures).',
-        meow_403: 'Upstream rejected the session token (Origin/Referer or session expired).',
-        meow_404: 'Upstream endpoint not found (VidStuck domain may have changed).',
-        meow_5xx: 'Upstream 5xx while issuing the session token.',
-        meow_no_token: 'Upstream returned no session token.',
-        servers_403: 'Upstream refused the server lookup (stale token).',
-        servers_404: 'Upstream has no record for this server.',
-        servers_5xx: 'Upstream 5xx on the server lookup.',
-        servers_no_link: 'Upstream has no stream link for this title on this server.',
+        goldmine_unreachable: 'The TMDB-Embed-API instance could not be reached (is the Render service awake?).',
+        goldmine_timeout: 'The TMDB-Embed-API took too long to answer (cold start or slow providers).',
+        goldmine_http_error: 'The TMDB-Embed-API answered with an HTTP error.',
+        goldmine_bad_response: 'The TMDB-Embed-API answered with an unexpected payload.',
+        goldmine_no_streams: 'No provider on the TMDB-Embed-API has this title right now.',
+        goldmine_source_empty: 'The pinned source (provider) returned no playable streams for this title.',
+        goldmine_source_unknown: 'Unknown provider id — check /api/providers on the TMDB-Embed-API.',
+        goldmine_source_disabled: 'That provider is disabled on the TMDB-Embed-API instance.',
+        goldmine_exception: 'Unhandled error contacting the TMDB-Embed-API.',
+        goldmine_no_title: 'Title metadata could not be resolved (TMDB unreachable?), so upstreams were not queried.',
+        unknown_server: 'The requested server id has no resolver.',
         upstream_timeout: 'Timed out talking to the upstream provider.',
         upstream_exception: 'Unhandled error contacting the upstream provider.',
-        no_title: 'Title metadata could not be resolved (TMDB unreachable?), so upstreams were not queried.',
-        centaurus_no_source: 'Centaurus (HiCine) found nothing for this title.',
+        no_title: 'Title metadata could not be resolved (TMDB unreachable?), so upstreams were not queried.'
       };
       const humanReason = firstFailed
         ? reasonMap[firstFailed.reason] || firstFailed.reason
         : 'No working server in the waterfall.';
-      const humanDiag = firstFailed && firstFailed.diag ? firstFailed.diag.message : null;
+      const humanDiag = firstFailed && firstFailed.diag ? firstFailed.diag.message || firstFailed.diag : null;
       telemetry.recordResolveOutcome(req, metadata, false, {
         server: firstFailed ? firstFailed.server : server,
         reason: firstFailed ? firstFailed.reason : (streamData && streamData.reason) || 'no_stream',
@@ -361,20 +369,23 @@ router.get('/resolve/:type/:tmdbId', async (req, res) => {
 });
 
 /**
- * GET /api/admin/centaurus/diagnose/:type/:tmdbId
- * Runs the Centaurus source (HiCine) and reports what it produced — including
- * per-step diag strings (search hit, quality rows, unroll/probe outcome).
- * Answers "is Centaurus working for this title?" with data instead of logs.
+ * GET /api/admin/goldmine/diagnose/:type/:tmdbId
+ * Runs the Goldmine source (TMDB-Embed-API) and reports what it produced —
+ * per-provider stream counts, timings, qualities and dub languages. Answers
+ * "is the TMDB-Embed-API working for this title?" with data instead of logs.
  * Protected by the admin key like the other /api/admin routes.
  */
-router.get('/admin/centaurus/diagnose/:type/:tmdbId', requireAdminAuth, async (req, res) => {
+router.get('/admin/goldmine/diagnose/:type/:tmdbId', requireAdminAuth, async (req, res) => {
   try {
     const { type, tmdbId } = req.params;
     const season = parseInt(req.query.season || '1', 10);
     const episode = parseInt(req.query.episode || '1', 10);
     const metadata = await resolveTmdbMetadata(type, tmdbId, season, episode);
     if (!metadata) return res.status(404).json({ ok: false, error: 'Metadata not found' });
-    const report = await diagnoseCentaurus(metadata);
+    const report = await goldmine.diagnoseGoldmine(metadata, {
+      apiBase: config.goldmine.apiBase,
+      timeoutMs: config.goldmine.timeoutMs
+    });
     return res.json(report);
   } catch (err) {
     return res.status(500).json({ ok: false, error: err.message });
@@ -382,20 +393,8 @@ router.get('/admin/centaurus/diagnose/:type/:tmdbId', requireAdminAuth, async (r
 });
 
 /**
- * GET /api/multitrack/master.m3u8
- * Lazily remuxes a signed, allowlisted direct media URL to fMP4 HLS audio renditions.
- */
-router.get('/multitrack/master.m3u8', (req, res) => serveMasterPlaylist(req, res));
-
-/**
- * GET /api/multitrack/file/:jobId/:filename
- * Serves generated playlists/segments only when their per-resource HMAC is valid.
- */
-router.get('/multitrack/file/:jobId/:filename', (req, res) => serveGeneratedFile(req, res));
-
-/**
  * GET /api/proxy
- * M3U8 Manifest Rewriter & TS/MP4/MPD Segment Stream Proxy with CORS & Range support
+ * M3U8 Manifest Rewriter & MKV/MP4/TS Segment Stream Proxy with CORS & Range support
  */
 router.get('/proxy', (req, res, next) => {
   telemetry.recordDomainActivity(req, 'proxy');
@@ -429,7 +428,7 @@ router.get('/admin/stats', requireAdminAuth, (req, res) => {
     stats: telemetry.getStatsSnapshot(Number.isFinite(limit) ? limit : 25),
     catalog: config.servers.map((s) => ({ id: s.id, name: s.name, badge: s.badge, priority: s.priority, enabled: s.enabled !== false })),
     servers: snapshot.servers,
-    runtime: { startedAt: telemetry.startedAt, version: '2.0.0' }
+    runtime: { startedAt: telemetry.startedAt, version: '3.0.0' }
   });
 });
 
@@ -443,7 +442,7 @@ router.post('/admin/stats/reset', requireAdminAuth, (req, res) => {
 
 /**
  * POST /api/admin/probe
- * Actively probes all 5 upstream stream providers to detect stale or dead domains
+ * Actively probes the Goldmine upstream (TMDB-Embed-API health + providers)
  */
 router.post('/admin/probe', requireAdminAuth, async (req, res) => {
   try {
@@ -460,7 +459,7 @@ router.post('/admin/probe', requireAdminAuth, async (req, res) => {
 
 /**
  * POST /api/admin/upstreams
- * Hot-swaps upstream provider base URLs, AES keys, proxy pools, and server priority/enabled state
+ * Hot-swaps the Goldmine API base URL, proxy pools, and server priority/enabled state
  */
 router.post('/admin/upstreams', requireAdminAuth, express.json(), (req, res) => {
   telemetry.updateUpstreamsAndServers(req.body || {});
@@ -525,41 +524,6 @@ router.delete('/admin/overrides/:key', requireAdminAuth, (req, res) => {
     ok: true,
     snapshot: telemetry.getDashboardSnapshot()
   });
-});
-
-/**
- * GET /api/debug/andromeda/:type/:tmdbId
- * Owner-only diagnostic: walks the same Andromeda resolution path as /api/resolve
- * and returns structured failure details
- * instead of a generic 502. Hit this on the live worker to know whether the
- * upstream is dead, the AES key rotated, the catalog is missing this title, etc.
- */
-router.get('/debug/andromeda/:type/:tmdbId', requireAdminAuth, async (req, res) => {
-  const { type, tmdbId } = req.params;
-  const season = parseInt(req.query.season || '1', 10);
-  const episode = parseInt(req.query.episode || '1', 10);
-  try {
-    const metadata = await resolveTmdbMetadata(type, tmdbId, season, episode);
-    const result = await resolveAndromedaServer(metadata, 'andromeda', '');
-    return res.json({
-      ok: !!(result && result.streamUrl),
-      metadata: {
-        title: metadata.title,
-        releaseYear: metadata.releaseYear,
-        unresolvedTmdb: !!metadata.unresolvedTmdb,
-        externalIds: metadata.externalIds
-      },
-      upstream: {
-        castletvBase: config.upstreams.castletvBase,
-        netmirrorBase: config.upstreams.netmirrorBase,
-        vidstuckBase: config.upstreams.vidstuckBase,
-        tmdbKeySet: !!config.tmdbApiKey
-      },
-      result
-    });
-  } catch (err) {
-    return res.status(500).json({ ok: false, error: err.message });
-  }
 });
 
 module.exports = router;
