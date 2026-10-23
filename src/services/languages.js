@@ -23,50 +23,83 @@ const LANGUAGE_NAME_TO_CODE = {
   telugu: 'te', tel: 'te',
   malayalam: 'ml', mal: 'ml',
   kannada: 'kn', kan: 'kn',
-  bengali: 'bn', ben: 'bn', beng: 'bn',
+  bengali: 'bn', ben: 'bn', beng: 'bn', bangla: 'bn',
   marathi: 'mr', mar: 'mr',
   punjabi: 'pa', pan: 'pa',
   urdu: 'ur', urd: 'ur',
+  gujarati: 'gu', guj: 'gu',
+  odia: 'or', oriya: 'or', ori: 'or', odi: 'or', ory: 'or',
+  assamese: 'as', asm: 'as',
+  nepali: 'ne', nep: 'ne',
+  sinhala: 'si', sinhalese: 'si', sin: 'si',
+  bhojpuri: 'bho',
   english: 'en', eng: 'en',
   korean: 'ko', kor: 'ko',
   japanese: 'ja', jpn: 'ja',
-  chinese: 'zh', zho: 'zh', chi: 'zh', mandarin: 'zh', cantonese: 'zh',
-  spanish: 'es', spa: 'es',
-  french: 'fr', fra: 'fr', fre: 'fr',
-  german: 'de', deu: 'de', ger: 'de',
-  italian: 'it', ita: 'it',
-  portuguese: 'pt', por: 'pt',
+  chinese: 'zh', zho: 'zh', chi: 'zh', cmn: 'zh', yue: 'zh', mandarin: 'zh', cantonese: 'zh',
+  spanish: 'es', spa: 'es', espanol: 'es', castellano: 'es', latino: 'es',
+  french: 'fr', fra: 'fr', fre: 'fr', francais: 'fr',
+  german: 'de', deu: 'de', ger: 'de', deutsch: 'de',
+  italian: 'it', ita: 'it', italiano: 'it',
+  portuguese: 'pt', por: 'pt', portugues: 'pt', pb: 'pt', pob: 'pt', ptbr: 'pt',
   russian: 'ru', rus: 'ru',
+  ukrainian: 'uk', ukr: 'uk',
+  polish: 'pl', pol: 'pl',
+  dutch: 'nl', nld: 'nl', dut: 'nl',
+  swedish: 'sv', swe: 'sv',
+  norwegian: 'no', nor: 'no', nob: 'no', nno: 'no',
+  danish: 'da', dan: 'da',
+  finnish: 'fi', fin: 'fi',
+  czech: 'cs', ces: 'cs', cze: 'cs',
+  slovak: 'sk', slk: 'sk', slo: 'sk',
+  hungarian: 'hu', hun: 'hu',
+  romanian: 'ro', ron: 'ro', rum: 'ro',
+  bulgarian: 'bg', bul: 'bg',
+  serbian: 'sr', srp: 'sr',
+  croatian: 'hr', hrv: 'hr',
+  slovenian: 'sl', slv: 'sl',
+  greek: 'el', ell: 'el', gre: 'el',
+  hebrew: 'he', heb: 'he',
   thai: 'th', tha: 'th',
   indonesian: 'id', ind: 'id',
+  malay: 'ms', msa: 'ms', may: 'ms',
+  filipino: 'tl', tagalog: 'tl', fil: 'tl', tgl: 'tl',
   turkish: 'tr', tur: 'tr',
   arabic: 'ar', ara: 'ar',
   vietnamese: 'vi', vie: 'vi',
-  persian: 'fa', fas: 'fa', farsi: 'fa',
-  gujarati: 'gu', guj: 'gu',
-  bhojpuri: 'bho',
-  malay: 'ms', msa: 'ms', may: 'ms'
+  persian: 'fa', fas: 'fa', per: 'fa', farsi: 'fa',
+  catalan: 'ca', cat: 'ca'
 };
 
 /** ISO 639-2/3 -> ISO 639-1 for the languages the player menu normalizes. */
 const ISO639_TO_ISO639_1 = {
   hin: 'hi', tam: 'ta', tel: 'te', mal: 'ml', kan: 'kn', ben: 'bn', mar: 'mr',
-  pan: 'pa', urd: 'ur', eng: 'en', kor: 'ko', jpn: 'ja', zho: 'zh', chi: 'zh',
+  pan: 'pa', urd: 'ur', guj: 'gu', ori: 'or', asm: 'as', nep: 'ne', sin: 'si',
+  eng: 'en', kor: 'ko', jpn: 'ja', zho: 'zh', chi: 'zh', cmn: 'zh', yue: 'zh',
   spa: 'es', fra: 'fr', fre: 'fr', deu: 'de', ger: 'de', ita: 'it', por: 'pt',
   rus: 'ru', tha: 'th', ind: 'id', tur: 'tr', ara: 'ar', vie: 'vi', fas: 'fa',
-  per: 'fa', guj: 'gu', msa: 'ms', may: 'ms', nld: 'nl', dut: 'nl', pol: 'pl',
-  ukr: 'uk', heb: 'he', ces: 'cs', cze: 'cs', ell: 'el', gre: 'el', hun: 'hu',
-  ron: 'ro', rum: 'ro', bul: 'bg', srp: 'sr', hrv: 'hr', slk: 'sk', slo: 'sk'
+  per: 'fa', msa: 'ms', may: 'ms', fil: 'tl', tgl: 'tl', nld: 'nl', dut: 'nl',
+  pol: 'pl', ukr: 'uk', heb: 'he', ces: 'cs', cze: 'cs', ell: 'el', gre: 'el',
+  hun: 'hu', ron: 'ro', rum: 'ro', bul: 'bg', srp: 'sr', hrv: 'hr', slk: 'sk',
+  slo: 'sk', slv: 'sl', swe: 'sv', nor: 'no', nob: 'no', nno: 'no', dan: 'da',
+  fin: 'fi', cat: 'ca', glg: 'gl', eus: 'eu', baq: 'eu', lit: 'lt', lav: 'lv',
+  est: 'et', mkd: 'mk', mac: 'mk', sqi: 'sq', alb: 'sq', aze: 'az', kaz: 'kk',
+  uzb: 'uz', kat: 'ka', geo: 'ka', hye: 'hy', arm: 'hy', amh: 'am', swa: 'sw',
+  afr: 'af', isl: 'is', ice: 'is', lat: 'la'
 };
 
 /** ISO 639-1 -> ISO 639-2/B (Matroska files tag tracks with three letters). */
 const CODE2_TO_CODE3 = {
   en: 'eng', hi: 'hin', ta: 'tam', te: 'tel', ml: 'mal', kn: 'kan', bn: 'ben',
-  mr: 'mar', pa: 'pan', ur: 'urd', ja: 'jpn', ko: 'kor', zh: 'zho', es: 'spa',
-  fr: 'fra', de: 'deu', it: 'ita', pt: 'por', ru: 'rus', ar: 'ara', th: 'tha',
-  id: 'ind', tr: 'tur', fa: 'fas', vi: 'vie', gu: 'guj', ms: 'msa', nl: 'nld',
-  pl: 'pol', uk: 'ukr', he: 'heb', cs: 'ces', el: 'ell', hu: 'hun', ro: 'ron',
-  bg: 'bul', sr: 'srp', hr: 'hrv', sk: 'slk'
+  mr: 'mar', pa: 'pan', ur: 'urd', gu: 'guj', or: 'ori', as: 'asm', ne: 'nep',
+  si: 'sin', ja: 'jpn', ko: 'kor', zh: 'zho', es: 'spa', fr: 'fra', de: 'deu',
+  it: 'ita', pt: 'por', ru: 'rus', ar: 'ara', th: 'tha', id: 'ind', tr: 'tur',
+  fa: 'fas', vi: 'vie', ms: 'msa', tl: 'tgl', nl: 'nld', pl: 'pol', uk: 'ukr',
+  he: 'heb', cs: 'ces', el: 'ell', hu: 'hun', ro: 'ron', bg: 'bul', sr: 'srp',
+  hr: 'hrv', sk: 'slk', sl: 'slv', sv: 'swe', no: 'nor', da: 'dan', fi: 'fin',
+  ca: 'cat', gl: 'glg', eu: 'eus', lt: 'lit', lv: 'lav', et: 'est', mk: 'mkd',
+  sq: 'sqi', az: 'aze', kk: 'kaz', uz: 'uzb', ka: 'kat', hy: 'hye', am: 'amh',
+  sw: 'swa', af: 'afr', is: 'isl', la: 'lat'
 };
 
 /**
@@ -75,7 +108,7 @@ const CODE2_TO_CODE3 = {
  */
 function normalizeLanguageCode(value) {
   const raw = String(value || '').trim().toLowerCase().replace(/_/g, '-');
-  if (!raw || /^(und|unknown|undefined|zxx|mis|none)$/i.test(raw)) return 'und';
+  if (!raw || /^(und|unknown|undefined|zxx|mis|none|mul)$/i.test(raw)) return 'und';
   const word = raw.split(/[\s,;.]/, 1)[0];
   const base = word.split('-', 1)[0];
   if (!base) return 'und';
@@ -115,7 +148,8 @@ function threeLetterCode(code) {
 /**
  * Language aliases used to sniff dub languages out of free text (release
  * titles, filenames, provider labels). Longest aliases are matched first so
- * "Malayalam" wins over "Malay".
+ * "Malayalam" wins over "Malay". Short ambiguous English words are intentionally
+ * omitted here so movie titles never false-match.
  */
 const LANGUAGE_ALIASES = [
   { code: 'en', label: 'English', aliases: ['English', 'Eng'] },
@@ -127,23 +161,47 @@ const LANGUAGE_ALIASES = [
   { code: 'kn', label: 'Kannada', aliases: ['Kannada', 'Kan'] },
   { code: 'ja', label: 'Japanese', aliases: ['Japanese', 'Jpn'] },
   { code: 'ko', label: 'Korean', aliases: ['Korean', 'Kor'] },
-  { code: 'zh', label: 'Chinese', aliases: ['Chinese', 'Mandarin'] },
-  { code: 'es', label: 'Spanish', aliases: ['Spanish'] },
-  { code: 'fr', label: 'French', aliases: ['French'] },
+  { code: 'zh', label: 'Chinese', aliases: ['Chinese', 'Mandarin', 'Cantonese'] },
+  { code: 'es', label: 'Spanish', aliases: ['Spanish', 'Espanol', 'Castellano'] },
+  { code: 'fr', label: 'French', aliases: ['French', 'Francais'] },
   { code: 'ar', label: 'Arabic', aliases: ['Arabic'] },
   { code: 'ur', label: 'Urdu', aliases: ['Urdu'] },
   { code: 'mr', label: 'Marathi', aliases: ['Marathi'] },
   { code: 'pa', label: 'Punjabi', aliases: ['Punjabi'] },
-  { code: 'pt', label: 'Portuguese', aliases: ['Portuguese'] },
+  { code: 'gu', label: 'Gujarati', aliases: ['Gujarati'] },
+  { code: 'or', label: 'Odia', aliases: ['Odia', 'Oriya'] },
+  { code: 'as', label: 'Assamese', aliases: ['Assamese'] },
+  { code: 'ne', label: 'Nepali', aliases: ['Nepali'] },
+  { code: 'si', label: 'Sinhala', aliases: ['Sinhala', 'Sinhalese'] },
+  { code: 'bho', label: 'Bhojpuri', aliases: ['Bhojpuri'] },
+  { code: 'pt', label: 'Portuguese', aliases: ['Portuguese', 'Portugues'] },
   { code: 'ru', label: 'Russian', aliases: ['Russian'] },
-  { code: 'de', label: 'German', aliases: ['German'] },
-  { code: 'it', label: 'Italian', aliases: ['Italian'] },
+  { code: 'uk', label: 'Ukrainian', aliases: ['Ukrainian'] },
+  { code: 'pl', label: 'Polish', aliases: ['Polish'] },
+  { code: 'nl', label: 'Dutch', aliases: ['Dutch'] },
+  { code: 'de', label: 'German', aliases: ['German', 'Deutsch'] },
+  { code: 'it', label: 'Italian', aliases: ['Italian', 'Italiano'] },
   { code: 'id', label: 'Indonesian', aliases: ['Indonesian'] },
+  { code: 'ms', label: 'Malay', aliases: ['Malay'] },
+  { code: 'tl', label: 'Filipino', aliases: ['Filipino', 'Tagalog'] },
   { code: 'tr', label: 'Turkish', aliases: ['Turkish'] },
   { code: 'th', label: 'Thai', aliases: ['Thai'] },
   { code: 'fa', label: 'Persian', aliases: ['Persian', 'Farsi'] },
-  { code: 'gu', label: 'Gujarati', aliases: ['Gujarati'] },
-  { code: 'vi', label: 'Vietnamese', aliases: ['Vietnamese'] }
+  { code: 'vi', label: 'Vietnamese', aliases: ['Vietnamese'] },
+  { code: 'he', label: 'Hebrew', aliases: ['Hebrew'] },
+  { code: 'el', label: 'Greek', aliases: ['Greek'] },
+  { code: 'cs', label: 'Czech', aliases: ['Czech'] },
+  { code: 'sk', label: 'Slovak', aliases: ['Slovak'] },
+  { code: 'hu', label: 'Hungarian', aliases: ['Hungarian'] },
+  { code: 'ro', label: 'Romanian', aliases: ['Romanian'] },
+  { code: 'bg', label: 'Bulgarian', aliases: ['Bulgarian'] },
+  { code: 'sr', label: 'Serbian', aliases: ['Serbian'] },
+  { code: 'hr', label: 'Croatian', aliases: ['Croatian'] },
+  { code: 'sv', label: 'Swedish', aliases: ['Swedish'] },
+  { code: 'no', label: 'Norwegian', aliases: ['Norwegian'] },
+  { code: 'da', label: 'Danish', aliases: ['Danish'] },
+  { code: 'fi', label: 'Finnish', aliases: ['Finnish'] },
+  { code: 'ca', label: 'Catalan', aliases: ['Catalan'] }
 ];
 
 /**

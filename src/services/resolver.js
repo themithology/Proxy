@@ -45,10 +45,17 @@ async function resolveGoldmineServerNode(metadata, options = {}) {
       onlySource,
       preferredAudio,
       proxyStreams: config.goldmine.proxyStreams,
-      // Streams whose host requires Referer/Origin get every nested URL
+      // Streams whose host requires Referer/Origin/Cookie/UA get every nested URL
       // rewritten through the proxy ('full'); open hosts only get their
       // manifests/keys rewritten so segments stream straight from the CDN.
-      proxyUrl: (url, referer) => buildProxyStreamUrl(url, referer || '', '', referer ? { mode: 'full' } : {})
+      proxyUrl: (url, referer, meta = {}) => {
+        const needsFull = !!(referer || (meta && (meta.origin || meta.cookie || meta.userAgent)));
+        return buildProxyStreamUrl(url, referer || '', (meta && meta.origin) || '', {
+          ...(needsFull ? { mode: 'full' } : {}),
+          ...((meta && meta.cookie) ? { cookie: meta.cookie } : {}),
+          ...((meta && meta.userAgent) ? { userAgent: meta.userAgent } : {})
+        });
+      }
     });
     if (resolved && resolved.streamUrl) {
       circuitBreaker.recordSuccess(providerKey);
