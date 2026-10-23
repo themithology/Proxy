@@ -394,7 +394,7 @@
               <div class="param"><code>t</code><span>Start the video at a position — seconds (<code>t=754</code>), <code>1h2m3s</code> or <code>12:34</code>. Also accepted as <code>start</code>. Applies once, to the link that was opened.</span></div>
               <div class="param"><code>sub</code><span>Default subtitle language (<code>en</code>, <code>es</code>, <code>ar</code>, …), matched against the available tracks</span></div>
               <div class="param"><code>lang</code><span>Preferred audio language when the title has several dubs (<code>hi</code>, <code>en</code>, <code>ta</code>, …)</span></div>
-              <div class="param"><code>server</code><span>Default server for the player — one of the ids listed under <a href="#status">Status</a> (<span class="js-server-ids"><code>andromeda</code>, <code>centaurus</code></span>). Unknown ids fall back to the primary server.</span></div>
+              <div class="param"><code>server</code><span>Default server for the player — one of the ids listed under <a href="#status">Status</a> (<span class="js-server-ids"><code>goldmine</code></span>). Unknown ids fall back to the primary server.</span></div>
               <div class="param"><code>autoskip</code><span><code>1</code> skips intros and recaps automatically (credits keep the manual <em>Next Episode</em> button); <code>0</code> turns it off. The viewer's choice is remembered.</span></div>
               <div class="param"><code>color</code><span>Accent color as a hex code (<code>16A085</code>, <code>#e50914</code>) or a name: <code>netflix</code>, <code>red</code>, <code>yellow</code>, <code>blue</code>, <code>purple</code>, <code>green</code>, <code>pink</code>, <code>orange</code>. Default is monochrome.</span></div>
               <div class="param"><code>branding</code><span>Text shown as the player branding on the connect screen<span class="default">default: LOL Embed</span></span></div>
@@ -428,7 +428,7 @@
               <div class="param"><code>t</code><span>Start position — seconds, <code>1h2m3s</code> or <code>12:34</code> (also <code>start</code>). One-shot: it does not carry over to the next episode.</span></div>
               <div class="param"><code>sub</code><span>Default subtitle language (e.g. <code>en</code>, <code>es</code>, <code>fr</code>)</span></div>
               <div class="param"><code>lang</code><span>Preferred audio language for multi-audio titles</span></div>
-              <div class="param"><code>server</code><span>Default server (<span class="js-server-ids"><code>andromeda</code>, <code>centaurus</code></span>)</span></div>
+              <div class="param"><code>server</code><span>Default server (<span class="js-server-ids"><code>goldmine</code></span>)</span></div>
               <div class="param"><code>autoskip</code><span><code>1</code> auto-skips intro / recap / preview segments. Credits always show a manual <em>Next Episode</em> button; the next episode plays after an 8-second countdown when the episode ends.</span></div>
               <div class="param"><code>color</code>, <code>branding</code>, <code>back</code>, <code>origin</code><span>Same as for movies (see above)</span></div>
             </div>
@@ -549,7 +549,7 @@
                   <tr><td><code>lang</code></td><td>language code</td><td>Preferred audio language for titles with several dubs (<code>hi</code>, <code>en</code>, <code>ta</code>). Also remembered per title.</td></tr>
                   <tr><td><code>t</code> / <code>start</code></td><td>seconds · <code>1h2m3s</code> · <code>12:34</code></td><td>Start position. Beats the saved resume position for the link that was opened; not re-applied when the viewer changes episode.</td></tr>
                   <tr><td><code>autoskip</code></td><td><code>1</code> / <code>0</code></td><td>Automatically skip intro, recap and preview segments. Credits are never auto-skipped (the <em>Next Episode</em> button is shown instead). Persists for the viewer.</td></tr>
-                  <tr><td><code>server</code></td><td>server id</td><td>Server to try first (<span class="js-server-ids"><code>andromeda</code>, <code>centaurus</code></span>). When it fails the player falls through to the next one automatically.</td></tr>
+                  <tr><td><code>server</code></td><td>server id</td><td>Server to try first (<span class="js-server-ids"><code>goldmine</code></span>). When it fails the player falls through to the next one automatically.</td></tr>
                   <tr><td><code>origin</code></td><td>origin URL</td><td>Only accept postMessage commands from, and deliver events to, this origin. Use it for watch-party or sync integrations.</td></tr>
                 </tbody>
               </table>
@@ -867,7 +867,7 @@ socket.onmessage = async ({ data }) =&gt; {
   var apiBase = (cfg.apiBaseUrl || '').replace(/\/+$/, '');
   var servers = Array.isArray(cfg.servers) && cfg.servers.length
     ? cfg.servers
-    : [{ id: 'andromeda', name: 'Fiber Optic Speedrun', badge: 'Multi-Audio • Primary' }, { id: 'centaurus', name: 'Gigachad Node', badge: 'Adaptive • Multi-Quality' }];
+    : [{ id: 'goldmine', name: 'Goldmine MKV', badge: 'Multi-Audio Dubs • MKV' }];
 
   function $(sel, root) { return (root || document).querySelector(sel); }
   function $$(sel, root) { return Array.prototype.slice.call((root || document).querySelectorAll(sel)); }

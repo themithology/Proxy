@@ -2846,3 +2846,107 @@ button {
     transition-duration: 0.01ms !important;
   }
 }
+
+/* ---------------------------------------------------------------------------
+   Movi engine mount + one-click dub language chips (Goldmine / TMDB-Embed-API)
+   --------------------------------------------------------------------------- */
+
+/* The <movi-player> element replaces the native <video> while a Goldmine
+   MKV/multi-audio file is attached. It sits exactly over the video area and
+   below every HUD layer (which are positioned later in the DOM). */
+.movi-mount {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  background: #000;
+  pointer-events: none;
+}
+
+.movi-mount movi-player {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+.player-root.movi-mode .video-element {
+  visibility: hidden;
+}
+
+/* Dub-language chips row — above the timeline, below the skip button row. */
+.lang-chips-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 0 4px 8px;
+  min-width: 0;
+}
+
+.lang-chips-title {
+  flex: 0 0 auto;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: rgba(255, 255, 255, 0.55);
+}
+
+.lang-chips {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  overflow-x: auto;
+  scrollbar-width: none;
+  padding: 2px 0;
+}
+
+.lang-chips::-webkit-scrollbar {
+  display: none;
+}
+
+.lang-chip {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 7px 14px;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  background: rgba(18, 18, 21, 0.72);
+  color: rgba(255, 255, 255, 0.86);
+  font-size: 12.5px;
+  font-weight: 600;
+  line-height: 1;
+  cursor: pointer;
+  white-space: nowrap;
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  transition: background 0.18s ease, border-color 0.18s ease, color 0.18s ease, transform 0.12s ease;
+}
+
+.lang-chip:hover {
+  background: rgba(40, 40, 46, 0.86);
+  border-color: rgba(255, 255, 255, 0.26);
+}
+
+.lang-chip:active {
+  transform: scale(0.96);
+}
+
+.lang-chip.active {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: var(--accent-contrast);
+}
+
+.lang-chip-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: currentColor;
+  opacity: 0.65;
+}
+
+.lang-chip.active .lang-chip-dot {
+  opacity: 1;
+}

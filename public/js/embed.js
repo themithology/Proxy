@@ -61,6 +61,15 @@
         if (quality) quality.url = absolutizeApiUrl(quality.url);
       });
     }
+    // Goldmine labels its sources per URL (`sourceLabels`): remap the keys so
+    // they keep matching the absolutized streamUrl/backupUrls entries.
+    if (stream.sourceLabels && typeof stream.sourceLabels === 'object') {
+      const remapped = {};
+      Object.keys(stream.sourceLabels).forEach((key) => {
+        remapped[absolutizeApiUrl(key)] = stream.sourceLabels[key];
+      });
+      stream.sourceLabels = remapped;
+    }
   }
 
   // --- Small helpers ---
@@ -166,7 +175,15 @@
 
   // --- DOM Elements ---
   const playerRoot = document.getElementById('player-root');
-  const video = document.getElementById('video-element');
+  const nativeVideo = document.getElementById('video-element');
+  // The element playback currently runs on: the native <video>, or the
+  // movi-player element (WebCodecs/FFmpeg-WASM) while a Goldmine MKV /
+  // multi-audio file is attached. EVERY media read/write in this file goes
+  // through `video`, so swapping this reference moves the whole HUD with it.
+  let video = nativeVideo;
+  const moviMount = document.getElementById('movi-mount');
+  const langChipsRow = document.getElementById('lang-chips-row');
+  const langChips = document.getElementById('lang-chips');
   const loadingOverlay = document.getElementById('loading-overlay');
   const loadingStatusText = document.getElementById('loading-status-text');
   const loadingStatusDetail = document.getElementById('loading-status-detail');
@@ -316,7 +333,12 @@
     tmdbId: '94605',
     season: 1,
     episode: 1,
-    server: 'andromeda',
+    server: 'goldmine',
+    // `?source=` pins one TMDB-Embed-API provider (manual source selection).
+    pinnedSource: '',
+    // movi-player engine state (Goldmine MKV / multi-audio playback).
+    moviEl: null,
+    moviScriptPromise: null,
     branding: 'LOL Embed',
     media: null,
     stream: null,
@@ -330,7 +352,7 @@
     serverInfo: {},
     // A specific source the viewer picked before the server finished resolving.
     pendingSourceUrl: null,
-    activeAudioId: 'en-dub',
+    activeAudioId: '',
     activeSubtitleId: 'off',
     preferredSubtitleLang: '',
     // `?t=` / `?start=` offset; consumed by the first stream that attaches so
@@ -413,6 +435,13 @@
     if (params.get('server')) {
       const rawServer = params.get('server').toLowerCase();
       state.server = rawServer;
+    }
+    // `?source=` pins one Goldmine provider (TMDB-Embed-API source id such as
+    // `vidlink` or `dahmermovies`). The backend validates the slug; an invalid
+    // value is ignored here already.
+    if (params.get('source')) {
+      const rawSource = params.get('source').toLowerCase();
+      if (/^[a-z0-9]{3,24}$/.test(rawSource)) state.pinnedSource = rawSource;
     }
     if (params.get('branding')) state.branding = params.get('branding');
     if (params.get('lang')) {
@@ -762,7 +791,7 @@
     loadingProgressFill.style.width = `${Math.max(0, Math.min(100, pct))}%`;
   }
 
-  // "Centaurus / Source 02" once we know which source of which server is
+  // "Goldmine / Source 02" once we know which source of which server is
   // being attached (`sourceIndex` is 0-based; negative hides the line).
   function setConnectSource(serverId, sourceIndex) {
     if (!(sourceIndex >= 0)) {
@@ -1043,7 +1072,9 @@
     const rememberedAudioId = readShowPrefs().audioId;
     if (rememberedAudioId) state.activeAudioId = String(rememberedAudioId);
     return apiUrl(
-      `/api/resolve/${state.type}/${encodeURIComponent(state.tmdbId)}?season=${state.season}&episode=${state.episode}&server=${encodeURIComponent(serverId)}&audio=${encodeURIComponent(state.activeAudioId)}&parent=${encodeURIComponent(parentDomain)}`
+      `/api/resolve/${state.type}/${encodeURIComponent(state.tmdbId)}?season=${state.season}&episode=${state.episode}&server=${encodeURIComponent(serverId)}&audio=${encodeURIComponent(state.activeAudioId)}&parent=${encodeURIComponent(parentDomain)}${
+        state.pinnedSource ? `&source=${encodeURIComponent(state.pinnedSource)}` : ''
+      }`
     );
   }
 
@@ -1106,6 +1137,22 @@
       state.segments = normalizeSegments(data && data.segments);
       state.autoSkipped = new Set();
       state.subtitles = Array.isArray(data && data.subtitles) ? data.subtitles : [];
+      // Goldmine payloads can carry subtitles from the providers themselves
+      // (already wrapped in the backend proxy): merge them into the regular
+      // subtitle list so the popover and the overlay renderer pick them up.
+      if (data && data.stream && Array.isArray(data.stream.embeddedSubtitles)) {
+        const seenSubUrls = new Set(state.subtitles.map((sub) => sub && sub.url).filter(Boolean));
+        data.stream.embeddedSubtitles.forEach((sub) => {
+          if (!sub || !sub.url || seenSubUrls.has(sub.url)) return;
+          seenSubUrls.add(sub.url);
+          state.subtitles.push({
+            id: sub.id || `gm-sub-${state.subtitles.length}`,
+            lang: sub.lang || 'und',
+            label: sub.label || 'Embedded',
+            url: absolutizeApiUrl(sub.url)
+          });
+        });
+      }
       state.servers = ((data && data.servers) || [])
         .filter((s) => s && s.id && s.enabled !== false && (s.listed !== false || s.active))
         // The API already sorts by priority; sorting again keeps the UI correct
@@ -1182,6 +1229,7 @@
       }
 
       renderAudioPopover();
+      renderLangChips();
       renderServersPopover();
       updateSettingsSummaryValues();
       // The waterfall may have answered from another server than requested.
@@ -1195,7 +1243,7 @@
       state.pendingSourceUrl = null;
       setConnectSource(state.server, sources.indexOf(targetStreamUrl));
       setConnectProgress(72, false);
-      await attachStreamToVideo(targetStreamUrl, savedTime);
+      await attachStreamToVideo(targetStreamUrl, savedTime, loadToken);
 
       // Apply the subtitle preference: a track the viewer already had on, the
       // language remembered for this title, a `?sub=` language, or nothing.
@@ -1224,6 +1272,8 @@
       // previous stream's sources as if they were.
       state.stream = null;
       state.attachedStreamUrl = null;
+      state.audioTracks = [];
+      renderLangChips();
       renderServersPopover();
       const detail = apiData
         ? [apiData.serverExplanation, apiData.explanation && apiData.requestedServer ? `${apiData.explanation} (${apiData.requestedServer})` : apiData.explanation]
@@ -1351,7 +1401,10 @@
   }
 
   // --- Attach Stream via HLS.js / Dash.js / Native Video ---
-  async function attachStreamToVideo(streamUrl, resumeTime = 0) {
+  async function attachStreamToVideo(streamUrl, resumeTime = 0, loadToken = 0) {
+    // Leaving movi mode (the next source is HLS/DASH/native): tear the custom
+    // element down so the native <video> is the active media element again.
+    if (video !== nativeVideo) detachMoviPlayer();
     video.onerror = null;
     video.onloadedmetadata = null;
     const sourceChanged = state.attachedStreamUrl !== streamUrl;
@@ -1423,6 +1476,31 @@
     };
 
     const isDeclaredPrimaryUrl = streamUrl === state.stream._primaryStreamUrl;
+
+    // --- Movi engine (Goldmine MKV / multi-audio files) ----------------------
+    // Progressive containers the browser cannot decode (MKV/HEVC/AV1) and
+    // files with several muxed dubs play through the bundled movi-player
+    // element instead of the native <video>. Streaming sources (HLS/DASH —
+    // even from Goldmine) stay on the regular paths below.
+    const looksStreaming = /\.m3u8(?:[?#]|$)/i.test(streamUrl) || /\.mpd(?:[?#]|$)/i.test(streamUrl);
+    if (state.stream.engine === 'movi' && !looksStreaming) {
+      let moviReady = !!(window.customElements && customElements.get('movi-player'));
+      if (!moviReady) {
+        try {
+          await ensureMoviPlayer();
+          moviReady = true;
+        } catch (_) {
+          moviReady = false; // script blocked/offline: try the native <video>
+        }
+      }
+      // A newer load (episode/source switch) may have superseded the download.
+      if (loadToken && loadToken !== state.loadToken) return;
+      if (moviReady) {
+        attachMoviStream(streamUrl, targetStartTime, applyStartTime, tryNextBackupStream);
+        return;
+      }
+    }
+
     if ((/\.mpd(?:[?#]|$)/i.test(streamUrl) || (state.stream.format === 'dash' && isDeclaredPrimaryUrl)) && window.dashjs) {
       const player = window.dashjs.MediaPlayer().create();
       state.dashInstance = player;
@@ -1524,18 +1602,261 @@
       applyStartTime();
       video.play().catch((error) => {
         if (error && error.name === 'NotSupportedError') {
+          if (retryWithMoviIfPossible(streamUrl, targetStartTime, applyStartTime, tryNextBackupStream)) return;
           if (tryNextBackupStream(video.currentTime || targetStartTime || 0)) return;
           handleFatalStreamError();
         }
       });
     };
     video.onerror = () => {
-      // Direct CDN <video src> failed (hotlink/ISP block) — iterate the resolved
-      // backup URLs before giving up on the whole server.
+      // Direct CDN <video src> failed (hotlink/ISP block, or a container the
+      // browser cannot demux such as MKV) — give movi-player a shot, then
+      // iterate the resolved backup URLs before giving up on the whole server.
+      if (retryWithMoviIfPossible(streamUrl, targetStartTime, applyStartTime, tryNextBackupStream)) return;
       if (tryNextBackupStream(video.currentTime || targetStartTime || 0)) return;
       handleFatalStreamError();
     };
     video.load();
+  }
+
+  // --- Movi-player integration (Goldmine MKV / multi-audio engine) -----------
+  // movi-player is a canvas-based WebCodecs/FFmpeg-WASM custom element that
+  // mirrors the HTMLMediaElement API and event set. While one is attached the
+  // module-scoped `video` reference points at it, so the entire HUD (timeline,
+  // volume, hotkeys, skip segments, host events) keeps driving playback with
+  // no engine-specific branches. The 12 MB bundle is fetched lazily — only
+  // when a stream actually declares `engine: "movi"`.
+
+  function ensureMoviPlayer() {
+    if (window.customElements && customElements.get('movi-player')) return Promise.resolve(true);
+    if (!state.moviScriptPromise) {
+      state.moviScriptPromise = new Promise((resolve, reject) => {
+        const script = document.createElement('script');
+        script.src = '/vendor/movi/element.js';
+        script.async = true;
+        script.onload = () => resolve(true);
+        script.onerror = () => {
+          state.moviScriptPromise = null; // allow a retry on the next attach
+          reject(new Error('movi-player failed to load'));
+        };
+        document.head.appendChild(script);
+      });
+    }
+    return state.moviScriptPromise;
+  }
+
+  function detachMoviPlayer() {
+    const el = state.moviEl;
+    state.moviEl = null;
+    video = nativeVideo;
+    if (el) {
+      if (Array.isArray(el._lolHandlers)) {
+        el._lolHandlers.forEach(([type, fn]) => el.removeEventListener(type, fn));
+      }
+      try { el.pause(); } catch (_) {}
+      try {
+        if (typeof el.dispose === 'function') el.dispose();
+      } catch (_) {}
+      if (el.parentNode) el.parentNode.removeChild(el);
+    }
+    moviMount.classList.add('hidden');
+    playerRoot.classList.remove('movi-mode');
+  }
+
+  /** A native attach that failed on a progressive file (MKV the browser cannot
+   *  demux) gets one movi-player attempt before the backup ladder runs. */
+  function retryWithMoviIfPossible(streamUrl, targetStartTime, applyStartTime, tryNextBackupStream) {
+    if (video === state.moviEl) return false; // movi itself already failed
+    if (!(window.customElements && customElements.get('movi-player'))) return false;
+    if (/\.m3u8(?:[?#]|$)/i.test(streamUrl) || /\.mpd(?:[?#]|$)/i.test(streamUrl)) return false;
+    attachMoviStream(streamUrl, targetStartTime, applyStartTime, tryNextBackupStream);
+    return true;
+  }
+
+  function attachMoviStream(streamUrl, targetStartTime, applyStartTime, tryNextBackupStream) {
+    let el = moviMount.querySelector('movi-player');
+    if (!el) {
+      el = document.createElement('movi-player');
+      // Headless + no internal hotkeys: the embed HUD is the only UI and the
+      // only keyboard handler.
+      el.setAttribute('nohotkeys', '');
+      moviMount.appendChild(el);
+      // Replay the embed's media listeners on the custom element — movi
+      // re-emits the full HTMLMediaElement event set (play/pause/timeupdate/…).
+      mediaListenerRegistry.forEach(({ type, handler, opts }) => el.addEventListener(type, handler, opts));
+    }
+    if (Array.isArray(el._lolHandlers)) {
+      el._lolHandlers.forEach(([type, fn]) => el.removeEventListener(type, fn));
+    }
+
+    // Swap the active media element BEFORE anything reads or writes `video`.
+    state.moviEl = el;
+    video = el;
+    moviMount.classList.remove('hidden');
+    playerRoot.classList.add('movi-mode');
+
+    // Carry the viewer's settings over from the native element/state.
+    try {
+      el.volume = nativeVideo.volume;
+      el.muted = nativeVideo.muted;
+      el.playbackRate = state.playbackSpeed || 1;
+    } catch (_) {}
+    applyMediaTransforms();
+
+    const stream = state.stream || {};
+    // Browser-safe custom headers only — Referer/UA-gated URLs already arrive
+    // wrapped in the backend proxy, which applies those server-side.
+    if (stream.moviHeaders && typeof stream.moviHeaders === 'object' && Object.keys(stream.moviHeaders).length > 0) {
+      el.setAttribute('headers', JSON.stringify(stream.moviHeaders));
+    } else {
+      el.removeAttribute('headers');
+    }
+    const poster = state.media && (state.media.poster || state.media.backdrop);
+    if (poster) el.setAttribute('poster', poster);
+    else el.removeAttribute('poster');
+
+    const failOver = () => {
+      if (tryNextBackupStream((video && video.currentTime) || targetStartTime || 0)) return;
+      handleFatalStreamError();
+    };
+    const onError = () => failOver();
+    const onLoadedMetadata = () => {
+      hideLoading();
+      applyStartTime();
+      syncMoviAudioTracks();
+      // The wanted dub may be muxed inside this very file: switch to it
+      // in-place instead of reloading anything.
+      const wanted = state.audioTracks.find((t) => t && t.id === state.activeAudioId);
+      if (wanted && wanted.inFile) selectMoviAudioLang(wanted.moviLang || wanted.lang);
+      el.play().catch((error) => {
+        if (error && error.name === 'NotSupportedError') failOver();
+      });
+    };
+    el.addEventListener('error', onError);
+    el.addEventListener('loadedmetadata', onLoadedMetadata);
+    el._lolHandlers = [['error', onError], ['loadedmetadata', onLoadedMetadata]];
+
+    el.setAttribute('src', streamUrl);
+  }
+
+  /** movi-player demuxes the real file: merge the audio tracks it reports
+   *  with the payload's hint rows — a "Multi-Audio (dubs detected on load)"
+   *  placeholder becomes the actual dub list, one click per language. */
+  function syncMoviAudioTracks() {
+    const el = state.moviEl;
+    if (!el || typeof el.getAudioLangs !== 'function' || !state.stream) return;
+    let moviTracks = [];
+    try {
+      moviTracks = el.getAudioLangs() || [];
+    } catch (_) {
+      return;
+    }
+    if (!Array.isArray(moviTracks) || moviTracks.length === 0) return;
+
+    const currentUrl = state.stream.streamUrl;
+    const inFileRows = moviTracks.map((track, index) => {
+      const lang = normalizeMoviLang(track && track.lang) || 'und';
+      const existing = state.audioTracks.find(
+        (row) => row && row.streamUrl === currentUrl && String(row.lang || '').toLowerCase() === lang
+      );
+      if (existing) {
+        return { ...existing, inFile: true, moviLang: track.lang, default: existing.default || !!track.active };
+      }
+      const label = (track && track.label) || langChipLabel(lang, index);
+      return {
+        id: `goldmine-${lang === 'und' ? `track-${index}` : lang}`,
+        lang,
+        label,
+        type: 'dub',
+        streamUrl: currentUrl,
+        rawUrl: state.stream.rawUrl || currentUrl,
+        inFile: true,
+        moviLang: track.lang,
+        default: !!track.active
+      };
+    });
+    // Per-language rows that live in OTHER files survive the merge — picking
+    // one of those loads its file and keeps the playhead.
+    const otherFileRows = state.audioTracks.filter(
+      (row) =>
+        row && row.streamUrl && row.streamUrl !== currentUrl &&
+        !inFileRows.some((merged) => merged.lang === String(row.lang || '').toLowerCase())
+    );
+    state.audioTracks = [...inFileRows, ...otherFileRows];
+
+    const active =
+      state.audioTracks.find((row) => row.id === state.activeAudioId) ||
+      state.audioTracks.find((row) => row.default) ||
+      state.audioTracks[0];
+    if (active) state.activeAudioId = active.id;
+    renderAudioPopover();
+    renderLangChips();
+    updateSettingsSummaryValues();
+  }
+
+  // movi/ffmpeg report ISO-639-2 codes ('eng'); the payload rows and the rest
+  // of the player use ISO-639-1 ('en'). Normalize so in-file tracks merge with
+  // the payload's up-front language rows instead of duplicating them.
+  const MOVI_LANG_FIX = {
+    eng: 'en', hin: 'hi', tam: 'ta', tel: 'te', mal: 'ml', kan: 'kn', ben: 'bn',
+    mar: 'mr', pan: 'pa', urd: 'ur', ara: 'ar', spa: 'es', fra: 'fr', fre: 'fr',
+    deu: 'de', ger: 'de', ita: 'it', por: 'pt', rus: 'ru', jpn: 'ja', kor: 'ko',
+    zho: 'zh', chi: 'zh', tha: 'th', ind: 'id', tur: 'tr', vie: 'vi'
+  };
+  const LANG_CHIP_LABELS = {
+    en: 'English', hi: 'Hindi', ta: 'Tamil', te: 'Telugu', ml: 'Malayalam',
+    kn: 'Kannada', bn: 'Bengali', mr: 'Marathi', pa: 'Punjabi', ur: 'Urdu',
+    ar: 'Arabic', es: 'Spanish', fr: 'French', de: 'German', it: 'Italian',
+    pt: 'Portuguese', ru: 'Russian', ja: 'Japanese', ko: 'Korean', zh: 'Chinese',
+    th: 'Thai', id: 'Indonesian', tr: 'Turkish', vi: 'Vietnamese'
+  };
+  function normalizeMoviLang(lang) {
+    const raw = String(lang || '').toLowerCase().trim();
+    return MOVI_LANG_FIX[raw] || raw;
+  }
+  function langChipLabel(lang, index) {
+    const code = normalizeMoviLang(lang);
+    if (!code || code === 'und') return `Audio ${index + 1}`;
+    return LANG_CHIP_LABELS[code] || code.charAt(0).toUpperCase() + code.slice(1);
+  }
+
+  function selectMoviAudioLang(moviLang) {
+    const el = state.moviEl;
+    if (!el || typeof el.selectAudioLang !== 'function' || !moviLang) return false;
+    try {
+      el.selectAudioLang(moviLang);
+      return true;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  // --- One-click dub language chips ------------------------------------------
+  // The resolve payload knows every dub language up front (audioTracks /
+  // languages): each becomes one chip, and one click plays that language —
+  // either switching the muxed track inside the running file or loading the
+  // file that carries it (selectAudioTrack handles both).
+  function renderLangChips() {
+    if (!langChips || !langChipsRow) return;
+    const rows = (state.audioTracks || []).filter((t) => t && t.id);
+    const show = rows.length > 1;
+    langChipsRow.classList.toggle('hidden', !show);
+    if (!show) {
+      langChips.innerHTML = '';
+      return;
+    }
+    langChips.innerHTML = '';
+    rows.forEach((track) => {
+      const chip = document.createElement('button');
+      chip.type = 'button';
+      const isActive = track.id === state.activeAudioId;
+      chip.className = 'lang-chip' + (isActive ? ' active' : '');
+      chip.setAttribute('aria-pressed', isActive ? 'true' : 'false');
+      chip.title = track.inFile ? `Play the ${track.label} audio track` : `Load the ${track.label} source`;
+      chip.innerHTML = `<span class="lang-chip-dot" aria-hidden="true"></span><span>${escapeHtml(track.label || track.lang || 'Audio')}</span>`;
+      chip.addEventListener('click', () => selectAudioTrack(track));
+      langChips.appendChild(chip);
+    });
   }
 
   // --- Automatic Server Failover on Fatal Stream Error ---
@@ -1610,9 +1931,9 @@
     const hlsTracks = state.hlsInstance.audioTracks;
 
     // The payload may expose a single row for a manifest that actually carries
-    // several audio renditions (e.g. NetMirror's "Original Audio (Multi-Track
-    // HLS)"). hls.js is the source of truth once the manifest is parsed: add a
-    // row per rendition so the menu can switch them.
+    // several audio renditions (multi-track HLS masters do this). hls.js is the
+    // source of truth once the manifest is parsed: add a row per rendition so
+    // the menu can switch them.
     const distinctStreams = new Set(state.audioTracks.map((t) => t && t.streamUrl).filter(Boolean));
     if (hlsTracks.length > state.audioTracks.length && distinctStreams.size <= 1) {
       hlsTracks.forEach((hlsTrack, index) => {
@@ -1687,14 +2008,24 @@
   function selectAudioTrack(track, options = {}) {
     state.activeAudioId = track.id;
     renderAudioPopover();
+    renderLangChips();
     updateSettingsSummaryValues();
     if (options.remember !== false && track.lang) writeShowPrefs({ audio: String(track.lang).toLowerCase(), audioId: track.id });
 
     let switched = false;
     let switchHint = '';
 
+    // 0. In-file dub (movi engine): the track is muxed inside the running
+    // file — switch it in place, no reload and no playhead move.
+    if (
+      track.inFile && state.moviEl && video === state.moviEl &&
+      (!track.streamUrl || !state.stream || track.streamUrl === state.stream.streamUrl)
+    ) {
+      switched = selectMoviAudioLang(track.moviLang || track.lang);
+      if (!switched) switchHint = ' — this file could not switch tracks';
+    }
     // 1. If the selected audio track has its own distinct streamUrl (e.g. separate Sub vs Dub HLS/MP4 stream), switch stream preserving current time
-    if (track.streamUrl && state.stream && track.streamUrl !== state.stream.streamUrl) {
+    else if (track.streamUrl && state.stream && track.streamUrl !== state.stream.streamUrl) {
       state.stream.streamUrl = track.streamUrl;
       attachStreamToVideo(track.streamUrl, video.currentTime || 0);
       switched = true;
@@ -2238,7 +2569,11 @@
         const list = document.createElement('div');
         list.className = 'server-sources';
         info.sources.slice(0, 8).forEach((url, index) => {
-          const label = `Source ${index + 1}`;
+          // Goldmine labels its sources with quality/language descriptors
+          // ("1080p · Multi-Audio · MKV"); anything else falls back to the
+          // plain slot number.
+          const backendLabel = state.stream && state.stream.sourceLabels ? state.stream.sourceLabels[url] : '';
+          const label = backendLabel || `Source ${index + 1}`;
           const isPlayingSource = isActive && url === playingUrl;
           const sourceFailed = isActive && !isPlayingSource && triedUrls.has(url);
           const row = document.createElement('button');
@@ -3077,7 +3412,17 @@
     state.rafId = null;
   }
 
-  video.addEventListener('play', () => {
+  // Media element event wiring. Every listener is registered through
+  // onMediaEvent() so the exact same set can be replayed when a movi-player
+  // element replaces the native <video> as the active media element (the
+  // Goldmine MKV engine mirrors the HTMLMediaElement event set).
+  const mediaListenerRegistry = [];
+  function onMediaEvent(el, type, handler, opts) {
+    el.addEventListener(type, handler, opts);
+    mediaListenerRegistry.push({ type, handler, opts });
+  }
+
+  onMediaEvent(video, 'play', () => {
     setPlayingUI(true);
     playerRoot.classList.remove('is-ended');
     state.hasPlaybackStarted = true;
@@ -3087,7 +3432,7 @@
     emitStateChange();
   });
 
-  video.addEventListener('playing', () => {
+  onMediaEvent(video, 'playing', () => {
     state.progressLocked = false;
     hostBuffering = false;
     hideBuffering();
@@ -3097,7 +3442,7 @@
     emitStateChange();
   });
 
-  video.addEventListener('pause', () => {
+  onMediaEvent(video, 'pause', () => {
     endLongPressBoost();
     setPlayingUI(false);
     stopRenderLoop();
@@ -3114,56 +3459,56 @@
 
   // Buffering is its own state for the host: a stalled guest must never look
   // like a deliberate pause.
-  video.addEventListener('waiting', () => {
+  onMediaEvent(video, 'waiting', () => {
     hostBuffering = true;
     showBuffering();
     emitHostEvent('waiting');
     emitStateChange();
   });
-  video.addEventListener('stalled', () => {
+  onMediaEvent(video, 'stalled', () => {
     if (video.paused) return;
     hostBuffering = true;
     emitStateChange();
   });
-  video.addEventListener('seeking', () => {
+  onMediaEvent(video, 'seeking', () => {
     if (state.hasPlaybackStarted) showBuffering();
     emitHostEvent('seeking');
     emitStateChange();
   });
-  video.addEventListener('seeked', () => {
+  onMediaEvent(video, 'seeked', () => {
     hideBuffering();
     updateTimelineAndSkipState();
     emitHostEvent('seeked');
     emitStateChange();
   });
-  video.addEventListener('canplay', () => {
+  onMediaEvent(video, 'canplay', () => {
     hostBuffering = false;
     hideBuffering();
     emitStateChange();
   });
-  video.addEventListener('volumechange', () => {
+  onMediaEvent(video, 'volumechange', () => {
     emitHostEvent('volumechange');
   });
 
-  video.addEventListener('timeupdate', () => {
+  onMediaEvent(video, 'timeupdate', () => {
     if (!state.rafId) updateTimelineAndSkipState();
     emitHostEvent('timeupdate');
   });
 
-  video.addEventListener('loadedmetadata', () => {
+  onMediaEvent(video, 'loadedmetadata', () => {
     state.progressLocked = false;
     renderSegmentedTimeline();
     updateTimelineAndSkipState();
     emitHostEvent('loadedmetadata');
   });
 
-  video.addEventListener('durationchange', () => {
+  onMediaEvent(video, 'durationchange', () => {
     renderSegmentedTimeline();
     updateTimelineAndSkipState();
     if (hasRealDuration()) emitHostEvent('durationchange');
   });
 
-  video.addEventListener('ratechange', () => {
+  onMediaEvent(video, 'ratechange', () => {
     // A hold-to-fast-forward 2× is temporary: it must not become the setting.
     if (!state.longPressBoost && video.playbackRate > 0 && video.playbackRate !== state.playbackSpeed) {
       state.playbackSpeed = video.playbackRate;
@@ -3172,7 +3517,7 @@
     emitHostEvent('ratechange', { boost: !!state.longPressBoost });
   });
 
-  video.addEventListener('ended', () => {
+  onMediaEvent(video, 'ended', () => {
     stopRenderLoop();
     setPlayingUI(false);
     hidePausedInfo();
@@ -3196,8 +3541,8 @@
     }
   });
 
-  video.addEventListener('enterpictureinpicture', updateSettingsSummaryValues);
-  video.addEventListener('leavepictureinpicture', updateSettingsSummaryValues);
+  onMediaEvent(video, 'enterpictureinpicture', updateSettingsSummaryValues);
+  onMediaEvent(video, 'leavepictureinpicture', updateSettingsSummaryValues);
 
   // Volume & Mute (persisted across loads)
   function persistVolume() {
@@ -3219,7 +3564,7 @@
     persistVolume();
   });
 
-  video.addEventListener('volumechange', updateVolumeUI);
+  onMediaEvent(video, 'volumechange', updateVolumeUI);
 
   function updateVolumeUI() {
     const muted = video.muted || video.volume === 0;

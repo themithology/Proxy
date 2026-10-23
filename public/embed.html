@@ -15,6 +15,11 @@
     <!-- HTML5 Video Element -->
     <video id="video-element" class="video-element" playsinline referrerpolicy="no-referrer" controlslist="nodownload"></video>
 
+    <!-- movi-player mount (Goldmine MKV / multi-audio engine). embed.js creates
+         the <movi-player> element lazily, only when a stream declares
+         `engine: "movi"`, and loads /vendor/movi/element.js on demand. -->
+    <div id="movi-mount" class="movi-mount hidden" aria-hidden="true"></div>
+
     <!-- Custom Rendered Subtitle Overlay (Supports RTL, Style, Delay & Uploaded .srt/.vtt) -->
     <div id="custom-subtitle-overlay" class="custom-subtitle-overlay" aria-live="off">
       <span id="custom-subtitle-text" class="custom-subtitle-text"></span>
@@ -204,6 +209,12 @@
 
       <!-- Bottom Area: Info + Skip Intro + Segmented Timeline + Control Bar -->
       <div class="bottom-section">
+        <!-- Simplified dub-language picker: one chip per language, known
+             up-front from the resolve payload. One click plays that dub. -->
+        <div id="lang-chips-row" class="lang-chips-row hidden">
+          <span class="lang-chips-title">Audio</span>
+          <div id="lang-chips" class="lang-chips" role="group" aria-label="Dub languages"></div>
+        </div>
         <div class="above-timeline-row">
           <!-- Bottom-Left Media Metadata -->
           <div class="media-meta-block">

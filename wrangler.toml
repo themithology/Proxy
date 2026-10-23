@@ -29,10 +29,15 @@ new_sqlite_classes = ["StatsStore"]
 # Key for /reze and /api/admin/* — change it before deploying.
 ADMIN_SECRET = "admin123"
 TMDB_API_KEY = "47a1a7df542d3d483227f758a7317dff"
-PROXY_SECRET = "vidstuck-edge-hmac-secret-key-2026-9f8e7d6c5b4a"
-CASTLETV_BASE_URL = "https://api.hlowb.com"
-NETMIRROR_BASE_URL = "https://net27.cc"
-HICINE_API_BASE = "https://api.hicine.sbs"
+PROXY_SECRET = "lol-embed-edge-hmac-secret-key-2026-9f8e7d6c5b4a"
+# Goldmine — the owner-hosted TMDB-Embed-API instance
+# (https://github.com/themithology/TMDB-Embed-API). It aggregates every stream
+# provider (Showbox/FebBox, 4KHDHub, VidLink, DahmerMovies, …) behind one JSON
+# API; the Worker resolves MKV/multi-audio sources from it. Set
+# FEBBOX_COOKIES on the Render instance to enable its biggest multi-dub source.
+GOLDMINE_API_BASE = "https://rdp-running-campion.onrender.com"
+# Aggregate endpoint fan-out + Render cold starts are slow; keep this generous.
+GOLDMINE_TIMEOUT_MS = "30000"
 # Skip Intro / Recap / Credits providers. TheIntroDB (TMDB-keyed) and IntroDB
 # (IMDb-keyed) work without keys; THEINTRODB_API_KEY only raises the quota.
 THEINTRODB_URL = "https://api.theintrodb.org/v3"
@@ -68,6 +73,5 @@ TMDB_API_KEY = "47a1a7df542d3d483227f758a7317dff"
 PROXY_SECRET = "preview-proxy-secret-not-production"
 API_BASE_URL = ""
 ADS_ENABLED = "false"
-CASTLETV_BASE_URL = "https://api.hlowb.com"
-NETMIRROR_BASE_URL = "https://net27.cc"
-HICINE_API_BASE = "https://api.hicine.sbs"
+GOLDMINE_API_BASE = "https://rdp-running-campion.onrender.com"
+GOLDMINE_TIMEOUT_MS = "30000"

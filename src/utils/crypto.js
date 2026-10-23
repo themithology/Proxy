@@ -72,7 +72,7 @@ function createSignedProxyUrl(targetUrl, options = {}) {
 }
 
 /**
- * Generates a short-lived signed session handshake token (like VidStuck's /backend/meow).
+ * Generates a short-lived, HMAC-signed session handshake token.
  */
 function generateHandshakeToken(payload = {}) {
   const exp = Math.floor(Date.now() / 1000) + (config.tokenTtlSeconds || 14400);

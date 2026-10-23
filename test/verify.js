@@ -1,12 +1,12 @@
-// This suite is hermetic: every upstream (TMDB, CastleTV, NetMirror, HiCine)
-// is mocked locally, so the waterfall never touches the internet.
+// This suite is hermetic: every upstream (TMDB, the Goldmine TMDB-Embed-API,
+// skip-segment providers, subtitle sources) is mocked locally, so neither the
+// Node backend nor the Cloudflare Worker ever touches the internet here.
 
 const http = require('http');
 const fs = require('fs');
 const path = require('path');
 const zlib = require('zlib');
 const assert = require('assert');
-const crypto = require('crypto');
 const config = require('../src/config');
 const { app } = require('../src/server');
 const {
@@ -16,50 +16,63 @@ const {
   verifyHandshakeToken
 } = require('../src/utils/crypto');
 const { srtToVtt } = require('../src/utils/srtToVtt');
-const { cache } = require('../src/utils/cache');
 const { rewriteM3u8Manifest } = require('../src/services/proxy');
-const {
-  parseHicineLinks,
-  parseHicineAudioHints,
-  isHubcloudGeneratorUrl,
-  unrollHubcloudUrl,
-  extractWrappedMediaTargets,
-  normalizePlayableUrl,
-  scorePlayableUrl,
-  probePlayableMediaUrl,
-  resolveHicineServer,
-  resolveStreamForServer,
-  resolveAndromedaServer,
-  resolveCastletv,
-  resolveNetmirror,
-  buildCastleKey,
-  decryptCastleAes,
-  mapLanguageNameToCode,
-  containerFormatForUrl,
-} = require('../src/services/resolver');
-const {
-  parseProbeJson,
-  mapAudioStreams,
-  initializeMultitrack,
-  isAllowedSourceUrl,
-  sourceCacheKey,
-  buildFfmpegArgs,
-  buildMasterPlaylist,
-  rewriteGeneratedPlaylist,
-  createMultiTrackPayload,
-  createSignedMasterUrl,
-  prepareMultiTrackStream,
-  verifySignedMaster,
-  verifySignedAsset
-} = require('../src/services/multitrack');
-
-const identity = require('../src/services/identity');
+const { applyPreferredAudio } = require('../src/services/resolver');
+const goldmineSvc = require('../src/services/goldmine');
+const languagesSvc = require('../src/services/languages');
 
 
-function encryptCastleAes(plaintext, key) {
-  const cipher = crypto.createCipheriv('aes-128-cbc', key, key);
-  cipher.setAutoPadding(true);
-  return Buffer.concat([cipher.update(Buffer.from(plaintext, 'utf8')), cipher.final()]).toString('base64');
+/** Provider-shaped TMDB-Embed-API fixture streams (mirrors the real provider
+ *  response shapes: name/title/url/quality/provider/headers?/subtitles?). */
+function goldmineFixtureStreams(cdnOrigin) {
+  return [
+    {
+      // Showbox/Dahmer-style: multi-audio MKV, languages named in the title,
+      // plus an external subtitle file.
+      name: 'Arcane S01E01 - Multi Audio',
+      title: 'Arcane.S01E01.1080p.Multi.Audio.English.Hindi.Tamil.MKV',
+      url: `${cdnOrigin}/cdn/files/arcane-multi.mkv`,
+      quality: '1080',
+      provider: 'mockbox',
+      subtitles: [{ url: `${cdnOrigin}/cdn/files/arcane-eng.vtt`, lang: 'English', id: 'sub-en' }]
+    },
+    {
+      // Per-language file from the same provider (Hindi-only 720p dub).
+      name: 'Arcane S01E01 - Hindi',
+      title: 'Arcane.S01E01.720p.Hindi.DUB.MKV',
+      url: `${cdnOrigin}/cdn/files/arcane-hin.mkv`,
+      quality: '720',
+      provider: 'mockbox'
+    },
+    {
+      // 4khdhub-style: language info only in the release filename tags.
+      name: '4KHDHub - FSL Server1080p',
+      title: 'Arcane.S01E01.1080p.WEB-DL.HIN.TAM.DUB.x264',
+      url: `${cdnOrigin}/cdn/files/arcane-mp4.mp4`,
+      quality: '1080',
+      provider: '4khdhub',
+      headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)' }
+    },
+    {
+      // Vidlink-style: Referer-gated direct file, no language info at all.
+      name: 'Vidlink - 1080p',
+      title: 'Vidlink - 1080p',
+      url: `${cdnOrigin}/cdn/files/arcane-multi.mkv`,
+      quality: '1080',
+      provider: 'vidlink',
+      headers: { Referer: 'https://vidlink.pro' }
+    },
+    {
+      // External header-gated CDN (never fetched by the suite — used for the
+      // proxy-wrapping + header-splitting assertions).
+      name: 'External CDN copy',
+      title: 'Arcane.S01E01.1080p.MKV',
+      url: 'https://cdn.external.example/files/arcane-ext.mkv',
+      quality: '1080',
+      provider: 'mockbox',
+      headers: { Referer: 'https://gate.example', 'X-Api-Key': 'secret-key' }
+    }
+  ];
 }
 
 function httpRequest(baseUrl, path, options = {}) {
@@ -127,12 +140,13 @@ async function verifyPayloadLinksOneByOne(label, payload, requestLink) {
  * Create a local upstream simulation server that speaks the exact wire protocols of:
  * - TMDB v3 API (/tv/:id, /tv/:id/season/:s, /movie/:id)
  * - IntroDB (/intro?imdb_id=...)
- * - OpenSubtitles REST API (/search/...) + Gzipped .srt.gz download (/download/sub.srt.gz)
- * - HiCine (/api/search/:q, /api/links, /go)
+ * - OpenSubtitles Stremio v3 addon + .srt.gz / .zip subtitle downloads
+ * - TMDB-Embed-API (/goldmine/api/streams/...) + its fixture file CDN
  */
 function startUpstreamMockServer() {
   return new Promise((resolve) => {
-    const mockSrv = http.createServer((req, res) => {
+    let goldmineHits = 0;
+    const mockSrv = http.createServer(async (req, res) => {
       const u = new URL(req.url, `http://${req.headers.host}`);
       const mockOrigin = `http://${req.headers.host}`;
 
@@ -377,129 +391,102 @@ function startUpstreamMockServer() {
         return res.end(Buffer.concat([lh, nameBuf, data, ch, nameBuf, eocd]));
       }
 
-      // 8b. HubCloud generator landing pages (Centaurus unroller fixtures).
-      //     Mirrors the live chain: gpdl2 302 → dl.php?link=<direct>, plus
-      //     countdown pages that hide the CDN URL in JS / nested wrappers.
-      if (u.pathname === '/hubcloud/gen-redirect') {
-        res.writeHead(302, {
-          Location: `/hubcloud/dl.php?link=${encodeURIComponent(`${mockOrigin}/cdn/hls/fight%20club.mkv`)}`
-        });
-        return res.end();
-      }
-
-      if (u.pathname === '/hubcloud/dl.php') {
-        const target = u.searchParams.get('link') || '';
-        res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
-        return res.end(
-          `<html><head><title>HubCloud — Link Generator</title></head><body>` +
-            `<h1>Generating Download Link</h1>` +
-            `<a id="download" href="${target}">Download Here</a>` +
-            `</body></html>`
-        );
-      }
-
-      if (u.pathname === '/hubcloud/countdown-js') {
-        // The real CDN link lives inside obfuscated inline JS (`\/` escapes),
-        // hidden behind a 3.5s setTimeout that only toggles the anchor href.
-        res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
-        return res.end(
-          `<html><body><h1>Generating Download Link</h1>` +
-            `<a id="download" href="${mockOrigin}/hubcloud/countdown-js">Download Here</a>` +
-            `<script>setTimeout(function(){document.getElementById('download').href=` +
-            `"https:\\/\\/pub-1a2b.r2.dev\\/movies\\/Fight-Club-1999.mkv";},3500);</script>` +
-            `</body></html>`
-        );
-      }
-
-      if (u.pathname === '/hubcloud/drive-page') {
-        // Page 1 of the two-hop flow: <a id="download"> → another generator wrapper
-        const nested = `/hubcloud/dl.php?link=${encodeURIComponent(`${mockOrigin}/cdn/hls/arcane-s1e1.mp4`)}`;
-        res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
-        return res.end(
-          `<html><body><a id="download" href="${nested}">Download</a></body></html>`
-        );
-      }
-
-      if (u.pathname === '/hubcloud/pixeldrain-page') {
-        res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
-        return res.end(
-          '<html><body><a href="https://pixeldrain.com/u/AbCdEf123">Download</a></body></html>'
-        );
-      }
-
-      if (u.pathname === '/hubcloud/mirror-test') {
-        res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
-        return res.end(
-          '<html><body>' +
-            '<a href="https://dead-copy.r2.dev/dead.mkv">First mirror</a>' +
-            '<a href="https://good-copy.r2.dev/good.mkv">Second mirror</a>' +
-            '</body></html>'
-        );
-      }
-
-      if (u.pathname === '/hubcloud/no-links') {
-        // Countdown page that only links to itself → unroll must give up cleanly
-        res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
-        return res.end(
-          `<html><body><h1>Generating Download Link</h1>` +
-            `<a id="download" href="${mockOrigin}/hubcloud/no-links">Download Here</a>` +
-            `</body></html>`
-        );
-      }
-
-      if (u.pathname === '/hubcloud/challenge') {
-        // Cloudflare managed-challenge interstitial (what datacenter fetchers
-        // see on gpdl2.hubcloud.ist) — must be detected and treated as failed.
-        // Served with 200 on purpose so the marker-based detection runs.
-        res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
-        return res.end(
-          '<html><head><title>Just a moment...</title></head><body>' +
-            '<h1>Performing security verification</h1>' +
-            '<div id="challenge-platform"></div><div class="cf-turnstile"></div>' +
-            'Verification successful. Waiting for gpdl2.hubcloud.ist to respond' +
-            '</body></html>'
-        );
-      }
-
-      // 8c. HiCine end-to-end: /go answers with a HubCloud dl.php wrapper
-      //     (the exact live failure mode) instead of a media file.
-      if (u.pathname === '/api/links') {
+      // --- TMDB-Embed-API (the Goldmine upstream) ---------------------------
+      // GET /goldmine/api/health | /api/providers | /api/streams/{...}
+      // Stream files are served from the "localhost" spelling of this host on
+      // purpose: the API base is 127.0.0.1, so the resolver sees CDN host !=
+      // API host and wraps every file in the signed proxy — exactly like the
+      // real deployment (enableProxy=false -> direct header-gated file URLs).
+      // Special tmdb ids exercise the failure modes:
+      //   555001 -> zero streams          555002 -> HTTP 500
+      //   555003 -> malformed JSON        555004 -> slow (timeout)
+      //   555005 -> provider disabled (503, single-provider route only)
+      //   /goldmine-down/* -> everything answers HTTP 500
+      goldmineHits += 1;
+      if (u.pathname === '/goldmine/api/health' || u.pathname === '/goldmine/api/providers') {
+        goldmineHits -= 1; // only stream fetches count for the cache test
         res.writeHead(200, { 'Content-Type': 'application/json' });
-        return res.end(
-          JSON.stringify({
-            title: 'Fight Club (1999)',
-            tokens: { ten: { ts: '1700000000', sig: 'deadbeefcafe' } }
-          })
-        );
+        if (u.pathname.endsWith('/health')) {
+          return res.end(JSON.stringify({ ok: true, service: 'tmdb-embed-api', mock: true }));
+        }
+        return res.end(JSON.stringify({
+          success: true,
+          providers: [
+            { id: 'mockbox', name: 'MockBox', enabled: true },
+            { id: '4khdhub', name: '4KHDHub', enabled: true },
+            { id: 'vidlink', name: 'VidLink', enabled: true }
+          ]
+        }));
       }
-
-      if (u.pathname === '/go') {
-        const vcloudParam = u.searchParams.get('vcloud') || '';
-        const mediaPath = vcloudParam.includes('dune2160p')
-          ? '/cdn/4k/hicine-dune-2160p-4k.mkv'
-          : '/cdn/hls/fight%20club.mkv';
-        res.writeHead(302, {
-          Location: `${mockOrigin}/hubcloud/dl.php?link=${encodeURIComponent(`${mockOrigin}${mediaPath}`)}`
+      if (u.pathname === '/goldmine-down/api/health') {
+        res.writeHead(500, { 'Content-Type': 'application/json' });
+        return res.end(JSON.stringify({ ok: false }));
+      }
+      const goldmineMatch = u.pathname.match(
+        /^\/goldmine(-down)?\/api\/streams\/(?:(mockbox|4khdhub|vidlink|nosuch)\/)?(movie|series)\/([^/]+)$/
+      );
+      if (goldmineMatch) {
+        const [, down, provider, type, tmdbId] = goldmineMatch;
+        const json = (status, body) => {
+          res.writeHead(status, { 'Content-Type': 'application/json' });
+          res.end(typeof body === 'string' ? body : JSON.stringify(body));
+        };
+        if (down) return json(500, 'upstream down');
+        if (provider === 'nosuch') return json(404, { success: false, error: 'PROVIDER_NOT_FOUND' });
+        if (provider && tmdbId === '555005') return json(503, { success: false, error: 'PROVIDER_DISABLED' });
+        if (tmdbId === '555002') return json(500, 'boom');
+        if (tmdbId === '555003') return json(200, '{not json');
+        if (tmdbId === '555004') {
+          await new Promise((wait) => setTimeout(wait, 3000));
+          return json(200, { success: true, tmdbId, count: 0, streams: [] });
+        }
+        const cdnOrigin = `http://localhost:${u.port || 80}`;
+        const all = goldmineFixtureStreams(cdnOrigin);
+        const streams = tmdbId === '555001' ? [] : all.filter((s) => !provider || s.provider === provider);
+        return json(200, {
+          success: true,
+          tmdbId,
+          imdbId: type === 'series' ? 'tt11126994' : 'tt15239678',
+          count: streams.length,
+          providerTimings: { mock: 5 },
+          streams
         });
-        return res.end();
       }
 
-      if (u.pathname.startsWith('/hicine/api/search/')) {
-        const searchTitle = decodeURIComponent(u.pathname.split('/').pop() || '');
-        const isRrr = /\brrr\b/i.test(searchTitle);
-        const isFailMarker = /cascade-test-fail-all/i.test(searchTitle);
-        const title = isFailMarker ? 'cascade-test-fail-all' : isRrr ? 'RRR' : 'Fight Club';
-        const releaseYear = isFailMarker ? 2024 : isRrr ? 2022 : 1999;
-        const links = isFailMarker
-          ? `720p : ${mockOrigin}/hicine/w?vcloud=https://vcloud.fit/cascadefail720`
-          : isRrr
-            ? `RRR (2022) Hindi+Telugu Dual Audio 720p : ${mockOrigin}/hicine/w?vcloud=https://vcloud.fit/rrr720`
-            : `720p : ${mockOrigin}/hicine/w?vcloud=https://vcloud.fit/fightclub720`;
-        res.writeHead(200, { 'Content-Type': 'application/json' });
-        return res.end(JSON.stringify([{ title, releaseYear, contentType: 'movies', links }]));
+      // Tiny binary "media files" for the proxy/Range tests + one real VTT.
+      if (u.pathname.startsWith('/cdn/files/')) {
+        goldmineHits -= 1;
+        const name = u.pathname.replace('/cdn/files/', '');
+        if (name === 'arcane-eng.vtt') {
+          const vtt = 'WEBVTT\n\n00:00:01.000 --> 00:00:04.000\nWelcome to Piltover and Zaun.\n';
+          res.writeHead(200, { 'Content-Type': 'text/vtt; charset=utf-8', 'Access-Control-Allow-Origin': '*' });
+          return res.end(vtt);
+        }
+        if (!['arcane-multi.mkv', 'arcane-hin.mkv', 'arcane-mp4.mp4'].includes(name)) {
+          res.statusCode = 404;
+          return res.end('no such fixture');
+        }
+        const body = Buffer.alloc(64 * 1024, 7);
+        const headers = {
+          'Content-Type': name.endsWith('.mp4') ? 'video/mp4' : 'video/x-matroska',
+          'Accept-Ranges': 'bytes',
+          'Access-Control-Allow-Origin': '*'
+        };
+        const range = /^bytes=(\d*)-(\d*)$/.exec(req.headers.range || '');
+        if (range && (range[1] || range[2])) {
+          const start = range[1] ? parseInt(range[1], 10) : Math.max(0, body.length - parseInt(range[2], 10));
+          const end = range[1] && range[2] ? Math.min(parseInt(range[2], 10), body.length - 1) : body.length - 1;
+          res.writeHead(206, {
+            ...headers,
+            'Content-Range': `bytes ${start}-${end}/${body.length}`,
+            'Content-Length': String(end - start + 1)
+          });
+          return res.end(body.subarray(start, end + 1));
+        }
+        res.writeHead(200, { ...headers, 'Content-Length': String(body.length) });
+        return res.end(body);
       }
 
-      // 8. Upstream HLS Playlist for Proxy Rewriter verification
       if (u.pathname.startsWith('/cdn/hls/')) {
         res.writeHead(200, { 'Content-Type': 'application/vnd.apple.mpegurl' });
         return res.end(
@@ -522,244 +509,6 @@ function startUpstreamMockServer() {
         );
       }
 
-      // 8b. Deliberately-down upstream mocks: used to prove tier cascading
-      // without encoding failure markers into the (identity-validated) title.
-      if (u.pathname.startsWith('/castletv-down')) {
-        res.writeHead(503, { 'Content-Type': 'text/plain' });
-        return res.end('castle down');
-      }
-
-      // 9. CastleTV Mock Upstream (/castletv/...)
-      if (u.pathname === '/castletv/v0.1/system/getSecurityKey/1') {
-        res.writeHead(200, { 'Content-Type': 'application/json' });
-        return res.end(JSON.stringify({ code: 200, data: 'MTIzNDU2Nzg5MA==' }));
-      }
-
-      if (u.pathname === '/castletv/film-api/v1.1.0/movie/searchByKeyword') {
-        const keyword = (u.searchParams.get('keyword') || '').toLowerCase();
-        const mockKey = buildCastleKey('MTIzNDU2Nzg5MA==');
-        if (keyword.includes('fail-castle') || keyword.includes('cascade-test-fail-all')) {
-          res.writeHead(200, { 'Content-Type': 'text/plain' });
-          return res.end(encryptCastleAes(JSON.stringify({ code: 200, data: { rows: [] } }), mockKey));
-        }
-        // Title-collision scenario (the real CastleTV catalog): the 2023 Indian
-        // "Fight Club" (with a Hindi dub) outranks the 1999 film. Identity
-        // validation must pick the 1999 film and never the 2023 one.
-        if (keyword.includes('fight club')) {
-          const collisionCipher = encryptCastleAes(
-            JSON.stringify({
-              code: 200,
-              data: {
-                rows: [
-                  {
-                    id: 'castle-fc-2023',
-                    title: 'Fight Club',
-                    name: 'Fight Club',
-                    publishTime: Date.UTC(2023, 9, 1),
-                    movieType: 2,
-                    movieTypeName: 'Movies',
-                    languages: ['Tamil', 'Hindi', 'Telugu'],
-                    tags: ['Action']
-                  },
-                  {
-                    id: 'castle-fc-1999',
-                    title: 'Fight Club',
-                    name: 'Fight Club',
-                    publishTime: Date.UTC(1999, 9, 15),
-                    movieType: 2,
-                    movieTypeName: 'Movies',
-                    languages: ['English'],
-                    tags: ['Drama', 'Thriller']
-                  },
-                  {
-                    id: 'castle-fc-members',
-                    title: 'Fight Club - Members Only',
-                    name: 'Fight Club - Members Only',
-                    publishTime: Date.UTC(2006, 4, 1),
-                    movieType: 2,
-                    movieTypeName: 'Movies',
-                    languages: ['Hindi'],
-                    tags: ['Action', 'Drama']
-                  }
-                ]
-              }
-            }),
-            mockKey
-          );
-          res.writeHead(200, { 'Content-Type': 'text/plain' });
-          return res.end(collisionCipher);
-        }
-        const cipher = encryptCastleAes(
-          JSON.stringify({
-            code: 200,
-            data: {
-              rows: [
-                {
-                  id: 'castle-m-101',
-                  title: 'Dune: Part Two',
-                  name: 'Dune: Part Two'
-                }
-              ]
-            }
-          }),
-          mockKey
-        );
-        res.writeHead(200, { 'Content-Type': 'text/plain' });
-        return res.end(cipher);
-      }
-
-      if (u.pathname === '/castletv/film-api/v1.9.9/movie') {
-        const mockKey = buildCastleKey('MTIzNDU2Nzg5MA==');
-        const requestedMovieId = u.searchParams.get('movieId');
-        if (requestedMovieId === 'castle-fc-1999') {
-          res.writeHead(200, { 'Content-Type': 'text/plain' });
-          return res.end(
-            encryptCastleAes(
-              JSON.stringify({
-                code: 200,
-                data: {
-                  title: 'Fight Club',
-                  episodes: [
-                    {
-                      id: 'castle-fc-1999-ep1',
-                      number: 1,
-                      tracks: [{ languageId: 'en', languageName: 'English', existIndividualVideo: false }]
-                    }
-                  ]
-                }
-              }),
-              mockKey
-            )
-          );
-        }
-        if (requestedMovieId === 'castle-fc-2023') {
-          res.writeHead(200, { 'Content-Type': 'text/plain' });
-          return res.end(
-            encryptCastleAes(
-              JSON.stringify({
-                code: 200,
-                data: {
-                  title: 'Fight Club',
-                  episodes: [
-                    {
-                      id: 'castle-fc-2023-ep1',
-                      number: 1,
-                      tracks: [
-                        { languageId: 'hi', languageName: 'Hindi', existIndividualVideo: true },
-                        { languageId: 'ta', languageName: 'Tamil', existIndividualVideo: true }
-                      ]
-                    }
-                  ]
-                }
-              }),
-              mockKey
-            )
-          );
-        }
-        const cipher = encryptCastleAes(
-          JSON.stringify({
-            code: 200,
-            data: {
-              episodes: [
-                {
-                  id: 'castle-ep-1',
-                  number: 1,
-                  tracks: [
-                    { languageId: 'en', languageName: 'English' },
-                    { languageId: 'hi', languageName: 'Hindi' },
-                    { languageId: 'ta', languageName: 'Tamil' },
-                    { languageId: 'te', languageName: 'Telugu' }
-                  ]
-                }
-              ]
-            }
-          }),
-          mockKey
-        );
-        res.writeHead(200, { 'Content-Type': 'text/plain' });
-        return res.end(cipher);
-      }
-
-      if (u.pathname === '/castletv/film-api/v2.0.1/movie/getVideo2') {
-        let rawBody = '';
-        req.on('data', (c) => { rawBody += c; });
-        req.on('end', () => {
-          let bodyObj = {};
-          try { bodyObj = JSON.parse(rawBody); } catch {}
-          const lang = bodyObj.languageId || 'en';
-          const mockKey = buildCastleKey('MTIzNDU2Nzg5MA==');
-          const cipher = encryptCastleAes(
-            JSON.stringify({
-              code: 200,
-              data: {
-                videoUrl: `${mockOrigin}/cdn/hls/castle-${lang}.m3u8`
-              }
-            }),
-            mockKey
-          );
-          res.writeHead(200, { 'Content-Type': 'text/plain' });
-          res.end(cipher);
-        });
-        return;
-      }
-
-      // 11. NetMirror Mock Upstream (/netmirror/...)      // 11. NetMirror Mock Upstream (/netmirror/...)
-      if (u.pathname === '/checknewtv.php') {
-        const tokenHash = Buffer.from(mockOrigin).toString('base64');
-        res.writeHead(200, { 'Content-Type': 'application/json' });
-        return res.end(JSON.stringify({ token_hash: tokenHash, var: '1.0' }));
-      }
-
-      if (u.pathname === '/newtv/search.php') {
-        const query = u.searchParams.get('s') || '';
-        if (query.includes('fail-netmirror') || query.includes('cascade-test-fail-all')) {
-          res.writeHead(200, { 'Content-Type': 'application/json' });
-          return res.end(JSON.stringify({ searchResult: [], img_referer: 'https://net77.cc' }));
-        }
-        res.writeHead(200, { 'Content-Type': 'application/json' });
-        return res.end(
-          JSON.stringify({
-            searchResult: [{ id: 'nm-live-999', t: query }],
-            img_referer: 'https://net77.cc'
-          })
-        );
-      }
-
-      if (u.pathname === '/newtv/player.php') {
-        res.writeHead(200, { 'Content-Type': 'application/json' });
-        return res.end(
-          JSON.stringify({
-            status: 'ok',
-            video_link: `${mockOrigin}/cdn/hls/netmirror-master.m3u8`,
-            referer: 'https://net77.cc'
-          })
-        );
-      }
-
-      if (u.pathname.startsWith('/netmirror/api/embed-tmdb/')) {
-        const pathParts = u.pathname.split('/');
-        const tmdbParam = pathParts[pathParts.length - 1];
-        if (tmdbParam.includes('fail-netmirror') || tmdbParam.includes('cascade-test-fail-all')) {
-          res.writeHead(200, { 'Content-Type': 'application/json' });
-          return res.end(JSON.stringify({ ok: false }));
-        }
-        res.writeHead(200, { 'Content-Type': 'application/json' });
-        return res.end(
-          JSON.stringify({
-            ok: true,
-            streams: [
-              {
-                resolution: 1080,
-                url: `${mockOrigin}/cdn/hls/netmirror-embed.m3u8`
-              }
-            ],
-            // NetMirror hands out alternates for its rate-limiting CDN.
-            fallbackHls: `${mockOrigin}/cdn/hls/netmirror-fallback.m3u8`,
-            direct: `${mockOrigin}/cdn/mp4/netmirror-direct.mp4`
-          })
-        );
-      }
-
       res.writeHead(404);
       res.end('Not found');
     });
@@ -768,7 +517,10 @@ function startUpstreamMockServer() {
       const addr = mockSrv.address();
       resolve({
         server: mockSrv,
-        url: `http://127.0.0.1:${addr.port}`
+        url: `http://127.0.0.1:${addr.port}`,
+        get goldmineHits() {
+          return goldmineHits;
+        }
       });
     });
   });
@@ -782,14 +534,14 @@ async function runTests() {
   // 1. Cryptographic Unit Tests (AES-256-CBC + HMAC-SHA256 + Handshake Token)
   console.log('[1/13] Testing HMAC proxy signing & handshake tokens...');
   const exp = Math.floor(Date.now() / 1000) + 3600;
-  const sig = signProxyParams('https://cdn.example.com/hls/master.m3u8', 'https://vidstuck.xyz/', exp);
+  const sig = signProxyParams('https://cdn.example.com/hls/master.m3u8', 'https://gate.example/', exp);
   assert.strictEqual(
-    verifyProxySignature('https://cdn.example.com/hls/master.m3u8', 'https://vidstuck.xyz/', exp, sig),
+    verifyProxySignature('https://cdn.example.com/hls/master.m3u8', 'https://gate.example/', exp, sig),
     true,
     'Valid HMAC proxy signature must verify'
   );
   assert.strictEqual(
-    verifyProxySignature('https://evil.example.com/hls/master.m3u8', 'https://vidstuck.xyz/', exp, sig),
+    verifyProxySignature('https://evil.example.com/hls/master.m3u8', 'https://gate.example/', exp, sig),
     false,
     'Tampered URL must fail HMAC verification'
   );
@@ -799,266 +551,64 @@ async function runTests() {
   assert.ok(hsPayload && hsPayload.id === '94605', 'Handshake token must verify');
   console.log('  ✔ Passed cryptographic verification.');
 
-  // 2. HiCine Multi-Quality Link Parser Unit Tests
-  console.log('[2/13] Testing HiCine Multi-Quality Link Parser...');
-  const sampleHicineSeason1 = [
-    'Episode 1 : ',
-    '480p : https://frosty-snowflake-407a.renker2364.workers.dev/?vcloud=https://vcloud.fit/ep1_480, https://pixeldrain.dev/u/AbCdEf123',
-    '720p : https://frosty-snowflake-407a.renker2364.workers.dev/?vcloud=https://vcloud.fit/ep1_720',
-    '1080p : https://frosty-snowflake-407a.renker2364.workers.dev/?vcloud=https://vcloud.fit/ep1_1080',
-    'Episode 2 : ',
-    '1080p : https://frosty-snowflake-407a.renker2364.workers.dev/?vcloud=https://vcloud.fit/ep2_1080'
-  ].join('\n');
-  const parsedEp1 = parseHicineLinks(sampleHicineSeason1, true, 1);
-  assert.ok(parsedEp1.length === 4, 'HiCine parser must isolate Episode 1 links only');
-  assert.ok(
-    parsedEp1.some((l) => l.type === 'pixeldrain' && l.url === 'https://pixeldrain.dev/api/file/AbCdEf123?download'),
-    'HiCine parser must convert pixeldrain.dev /u/ links to downloadable API URLs'
-  );
-  const pixelApiEntry = parseHicineLinks('2160p : https://pixeldrain.com/api/file/Ab_C-123')[0];
-  assert.ok(pixelApiEntry && pixelApiEntry.url === 'https://pixeldrain.dev/api/file/Ab_C-123?download', 'Pixeldrain .com API URLs and URL-safe IDs must normalize');
-  assert.ok(
-    parsedEp1.some(
-      (link) => link.type === 'vcloud_worker' &&
-        link.url.includes('vcloud=https://vcloud.fit/ep1_480')
-    ),
-    'HiCine parser must preserve vCloud worker links as a separate resolvable source type'
-  );
-  const hintedVcloudLink = parseHicineLinks(
-    'RRR Hindi+Telugu Dual Audio : https://frosty-snowflake.workers.dev/?vcloud=https://vcloud.fit/rrr'
-  )[0];
-  assert.ok(hintedVcloudLink && hintedVcloudLink.type === 'vcloud_worker');
-  assert.deepStrictEqual(
-    hintedVcloudLink.audioHints.languages.map((language) => language.code),
-    ['hi', 'te'],
-    'Filename language hints must flow through vCloud candidate parsing, not just Pixeldrain'
-  );
-  const urlOnlyLanguageWords = parseHicineLinks(
-    '720p : https://english.workers.dev/?vcloud=https://vcloud.fit/eng/rrr'
-  )[0];
-  assert.deepStrictEqual(
-    urlOnlyLanguageWords.audioHints.languages,
-    [],
-    'CDN host names and token paths must not be mistaken for filename language hints'
-  );
+  // 2. Language helpers + Goldmine stream normalization unit tests
+  console.log('[2/13] Testing language helpers & Goldmine stream normalization...');
+  assert.strictEqual(languagesSvc.normalizeLanguageCode('en-dub'), 'en');
+  assert.strictEqual(languagesSvc.normalizeLanguageCode('HIN'), 'hi');
+  assert.strictEqual(languagesSvc.normalizeLanguageCode('unknown'), 'und');
+  assert.strictEqual(languagesSvc.mapLanguageNameToCode('Telugu'), 'te');
+  assert.strictEqual(languagesSvc.languageLabelForCode('ta'), 'Tamil');
+  assert.strictEqual(languagesSvc.threeLetterCode('hi'), 'hin');
 
-  const dualAudioHints = parseHicineAudioHints(
-    'RRR (2022) Hindi+Telugu [DD 5.1] 2160p 4K WEB-DL'
-  );
-  assert.deepStrictEqual(
-    dualAudioHints.languages.map((language) => language.code),
-    ['hi', 'te'],
-    'HiCine filename hints must preserve Hindi+Telugu order as ISO language codes'
-  );
-  assert.strictEqual(dualAudioHints.multi, true, 'Two detected languages imply a multi-audio release');
-  const originalEnglishHints = parseHicineAudioHints('1080p ORG. Audio Eng WEB-DL');
-  assert.deepStrictEqual(
-    originalEnglishHints.languages.map((language) => language.code),
-    ['en'],
-    'HiCine Eng token must map to English'
-  );
-  assert.strictEqual(originalEnglishHints.original, true, 'ORG. Audio is an original-audio hint');
-  const bengaliDualHints = parseHicineAudioHints('Original Audio Beng Dual Audio WEB-DL');
-  assert.deepStrictEqual(
-    bengaliDualHints.languages.map((language) => language.code),
-    ['bn'],
-    'HiCine Beng alias must map to Bengali'
-  );
-  assert.strictEqual(bengaliDualHints.original, true, 'Original Audio must be detected as an original-track hint');
-  assert.strictEqual(bengaliDualHints.multi, true, 'Dual Audio text must be retained as a multi-audio hint');
+  const hints = languagesSvc.parseAudioLanguageHints('RRR (2022) Hindi+Telugu [DD 5.1] 2160p Multi Audio WEB-DL');
+  assert.deepStrictEqual(hints.languages.map((l) => l.code), ['hi', 'te']);
+  assert.strictEqual(hints.multi, true);
+  const orgHints = languagesSvc.parseAudioLanguageHints('1080p ORG. Audio Eng WEB-DL');
+  assert.deepStrictEqual(orgHints.languages.map((l) => l.code), ['en']);
+  assert.strictEqual(orgHints.original, true);
+  const cdnNoise = languagesSvc.parseAudioLanguageHints('720p : https://english.workers.dev/?vcloud=https://vcloud.fit/eng/rrr');
+  assert.deepStrictEqual(cdnNoise.languages, [], 'CDN host names and token paths must not be mistaken for language hints');
 
-  const probeFixture = parseProbeJson({
-    streams: [
-      { index: 0, codec_type: 'video', codec_name: 'mjpeg', disposition: { attached_pic: 1 } },
-      { index: 1, codec_type: 'video', codec_name: 'hevc', disposition: { attached_pic: 0 } },
-      {
-        index: 2,
-        codec_type: 'audio',
-        codec_name: 'eac3',
-        channels: 6,
-        channel_layout: '5.1',
-        tags: { language: 'hin', title: 'Hindi 5.1' },
-        disposition: { default: 1 }
-      },
-      {
-        index: 3,
-        codec_type: 'audio',
-        codec_name: 'aac',
-        channels: 2,
-        tags: { language: 'und' },
-        disposition: { default: 0 }
-      }
-    ]
-  });
-  assert.deepStrictEqual(
-    probeFixture.videoStreams.map((stream) => stream.index),
-    [1],
-    'Attached cover art must not be mistaken for the video stream'
-  );
-  const mappedProbeTracks = mapAudioStreams(probeFixture.streams, dualAudioHints.languages);
-  assert.deepStrictEqual(
-    mappedProbeTracks.map((track) => track.lang),
-    ['hi', 'te'],
-    'ffprobe ISO-639-2 language tags and filename fallbacks must map to ISO-639-1'
-  );
-  const packagingArgs = buildFfmpegArgs(
-    'https://pub-abc.r2.dev/movies/RRR.mkv',
-    probeFixture,
-    mappedProbeTracks,
-    '/tmp/proxy-multitrack-test'
-  );
-  const outputMaps = packagingArgs.reduce((maps, argument, index) => {
-    if (argument === '-map') maps.push(packagingArgs[index + 1]);
-    return maps;
-  }, []);
-  assert.deepStrictEqual(outputMaps, ['0:1', '0:2', '0:3']);
-  assert.strictEqual(
-    isAllowedSourceUrl('https://pub-abc.r2.dev/movies/RRR.mkv?token=rotating'),
-    true,
-    'Public HTTPS media from an allowlisted R2 CDN must be eligible for remuxing'
-  );
-  assert.strictEqual(isAllowedSourceUrl('http://pub-abc.r2.dev/movies/RRR.mkv'), false);
-  assert.strictEqual(isAllowedSourceUrl('https://r2.dev.attacker.example/RRR.mkv'), false);
-  assert.strictEqual(isAllowedSourceUrl('https://pub-abc.r2.dev/movies/master.m3u8'), false);
+  // Stream normalization: language hints come from name + title + filename
+  // (some providers put the language in `name`, others only in the release
+  // filename tags).
+  const norm = goldmineSvc.normalizeGoldmineStream({
+    name: 'Provider Tamil | 1080p',
+    title: 'Movie.2023.720p.WEB-DL.HIN.DUB.x264',
+    url: 'https://cdn.example/files/movie.mkv',
+    quality: '1080',
+    provider: 'mockbox'
+  }, 0);
+  assert.ok(norm, 'a valid stream row must normalize');
+  assert.ok(norm.languages.some((l) => l.code === 'ta'), 'the language in `name` must be parsed');
+  assert.ok(norm.languages.some((l) => l.code === 'hi'), 'the filename tag HIN must be parsed');
+  assert.strictEqual(norm.container, 'mkv');
+  assert.strictEqual(norm.height, 1080, 'the quality field wins over a contradicting filename');
+  assert.strictEqual(goldmineSvc.normalizeGoldmineStream({ name: 'x', title: 'x', url: 'ftp://bad', quality: '', provider: 'p' }, 0), null, 'non-HTTP rows are dropped');
 
-  assert.strictEqual(
-    await prepareMultiTrackStream(
-      'https://castle-cdn.example/movies/RRR.mkv',
-      dualAudioHints.languages,
-      { enabled: true, trustSource: true, probe: async () => probeFixture }
-    ).then((payload) => (payload ? payload.audioTracks.length : null)),
-    2,
-    'Provider-resolved sources must be remuxable even when their CDN host is not allowlisted'
-  );
-  assert.strictEqual(
-    await prepareMultiTrackStream(
-      'https://castle-cdn.example/movies/RRR.mkv',
-      dualAudioHints.languages,
-      { enabled: true, probe: async () => probeFixture }
-    ),
-    null,
-    'Without trustSource the host allowlist must still reject unknown CDNs'
-  );
+  // Container + engine mapping: the MKV family rides movi, streaming stays native.
+  assert.strictEqual(goldmineSvc.containerForStream('https://x.example/a.mkv', ''), 'mkv');
+  assert.strictEqual(goldmineSvc.containerForStream('https://x.example/master.m3u8', ''), 'hls');
+  assert.strictEqual(goldmineSvc.containerForStream('https://x.example/f.mp4', ''), 'mp4');
+  assert.strictEqual(goldmineSvc.containerForStream('https://api.example/ts-proxy?url=https%3A%2F%2Fc%2Fx.mkv', ''), 'mkv', 'proxy-rewritten URLs keep their container');
+  assert.strictEqual(goldmineSvc.qualityToHeight('1080'), 1080);
+  assert.strictEqual(goldmineSvc.heightToLabel(720), '720p');
 
-  const multiTrackPayload = createMultiTrackPayload(
-    'https://pub-abc.r2.dev/movies/RRR.mkv?token=rotating',
-    probeFixture,
-    dualAudioHints.languages
-  );
-  assert.ok(multiTrackPayload, 'Two ffprobe audio streams must create an HLS payload');
-  assert.strictEqual(multiTrackPayload.format, 'hls');
-  assert.strictEqual(multiTrackPayload.audioTracks.length, 2);
-  assert.ok(multiTrackPayload.audioTracks.every((track) => track.streamUrl === multiTrackPayload.streamUrl));
-  assert.strictEqual(
-    sourceCacheKey('https://pub-abc.r2.dev/movies/RRR.mkv?token=old'),
-    sourceCacheKey('https://pub-abc.r2.dev/movies/RRR.mkv?token=new'),
-    'Rotating auth tokens must not duplicate cached packages'
-  );
-  assert.notStrictEqual(
-    sourceCacheKey('https://download.googleusercontent.com/get?id=file-one&token=x'),
-    sourceCacheKey('https://download.googleusercontent.com/get?id=file-two&token=x'),
-    'Stable query parameters that identify another media object must remain in the cache key'
-  );
-  const masterParams = new URL(multiTrackPayload.streamUrl, 'https://proxy.example.test').searchParams;
-  assert.strictEqual(
-    verifySignedMaster(
-      masterParams.get('url'),
-      masterParams.get('lang'),
-      masterParams.get('exp'),
-      masterParams.get('sig')
-    ),
-    true,
-    'Multi-track master URL must be protected by the existing HMAC signature'
-  );
-  const generatedMaster = buildMasterPlaylist(mappedProbeTracks);
-  assert.ok(generatedMaster.includes('LANGUAGE="hi"'));
-  assert.ok(generatedMaster.includes('URI="track_1.m3u8"'));
-  const rewrittenMaster = rewriteGeneratedPlaylist(
-    generatedMaster,
-    'a'.repeat(64),
-    masterParams.get('exp')
-  );
-  assert.ok(
-    rewrittenMaster.includes(`/api/multitrack/file/${'a'.repeat(64)}/track_0.m3u8?`) &&
-      rewrittenMaster.includes(`/api/multitrack/file/${'a'.repeat(64)}/track_1.m3u8?`),
-    'Master and rendition playlist paths must be rewritten to signed asset URLs'
-  );
-  const rewrittenMediaPlaylist = rewriteGeneratedPlaylist(
-    '#EXTM3U\n#EXT-X-MAP:URI="init_2.mp4"\n#EXTINF:6,\nvariant_2_00001.m4s',
-    'a'.repeat(64),
-    masterParams.get('exp')
-  );
-  const signedSegmentUrl = new URL(
-    rewrittenMediaPlaylist.split('\n').at(-1),
-    'https://proxy.example.test'
-  );
-  assert.ok(signedSegmentUrl.pathname.includes('/api/multitrack/file/'));
-  assert.strictEqual(
-    verifySignedAsset(
-      'a'.repeat(64),
-      'variant_2_00001.m4s',
-      signedSegmentUrl.searchParams.get('exp'),
-      signedSegmentUrl.searchParams.get('sig')
-    ),
-    true,
-    'Every generated HLS segment reference must be independently signed'
-  );
-  const assetUrl = new URL(
-    require('../src/services/multitrack').createSignedAssetUrl(
-      'a'.repeat(64),
-      'variant_0_00001.m4s',
-      masterParams.get('exp')
-    ),
-    'https://proxy.example.test'
-  );
-  assert.strictEqual(
-    verifySignedAsset(
-      'a'.repeat(64),
-      'variant_0_00001.m4s',
-      assetUrl.searchParams.get('exp'),
-      assetUrl.searchParams.get('sig')
-    ),
-    true,
-    'Generated media segments must have their own HMAC signature'
-  );
-  const savedMultitrackConfig = {
-    enabled: config.multitrack.enabled,
-    requested: config.multitrack.requested,
-    ffmpegPath: config.multitrack.ffmpegPath,
-    ffprobePath: config.multitrack.ffprobePath
-  };
-  config.multitrack.requested = true;
-  config.multitrack.ffmpegPath = 'missing-ffmpeg-for-multitrack-test';
-  config.multitrack.ffprobePath = 'missing-ffprobe-for-multitrack-test';
-  assert.strictEqual(initializeMultitrack(), false, 'Missing ffmpeg binaries must disable remuxing at startup');
-  assert.strictEqual(
-    await prepareMultiTrackStream(
-      'https://pub-abc.r2.dev/movies/RRR.mkv',
-      dualAudioHints.languages
-    ),
-    null,
-    'Multi-track resolution must gracefully fall back when ffmpeg is unavailable'
-  );
-  Object.assign(config.multitrack, savedMultitrackConfig);
-  initializeMultitrack();
+  // Header split: forbidden browser headers stay server-side (the proxy applies
+  // them), browser-safe custom headers ride in movi-player's `headers` attr.
+  const split = goldmineSvc.splitHeaders({ Referer: 'https://r.example', 'X-Api-Key': 'k1', 'User-Agent': 'UA' });
+  assert.deepStrictEqual(split.browserSafe, { 'X-Api-Key': 'k1' });
+  assert.strictEqual(split.serverSide.Referer, 'https://r.example');
+  assert.ok('User-Agent' in split.serverSide, 'User-Agent is a forbidden browser header');
 
-  const singleTrackResult = await prepareMultiTrackStream(
-    'https://pub-abc.r2.dev/movies/RRR.mkv',
-    dualAudioHints.languages,
-    {
-      enabled: true,
-      probe: async () => ({
-        streams: [
-          { index: 0, codec_type: 'video', codec_name: 'h264' },
-          { index: 1, codec_type: 'audio', codec_name: 'aac', tags: { language: 'eng' } }
-        ]
-      })
-    }
-  );
-  assert.strictEqual(singleTrackResult, null, 'Single audio stream must remain progressive');
-  console.log('  ✔ Passed HiCine language parsing and multi-track payload tests.');
+  // Scoring: a multi-audio named-language 1080p MKV beats a plain 720p file.
+  const multi = goldmineSvc.normalizeGoldmineStream({ name: 'Multi Audio', title: 'Show.1080p.Multi.Audio.English.Hindi.Tamil.MKV', url: 'https://c.example/a.mkv', quality: '1080', provider: 'p1' }, 0);
+  const single = goldmineSvc.normalizeGoldmineStream({ name: 'x', title: 'Show.720p.MKV', url: 'https://c.example/b.mkv', quality: '720', provider: 'p1' }, 1);
+  assert.ok(goldmineSvc.scoreGoldmineStream(multi) > goldmineSvc.scoreGoldmineStream(single));
+  const label = goldmineSvc.sourceLabelFor(multi);
+  assert.ok(label.includes('1080p') && label.includes('MKV') && label.includes('English'), `source label must describe quality+container+languages, got "${label}"`);
+  console.log('  ✔ Passed language helper & Goldmine normalization tests.');
 
-  // 3. SRT -> WebVTT Converter Unit Test
   console.log('[3/13] Testing SubRip (.srt) to WebVTT (.vtt) Converter...');
   const sampleSrt = `1\r\n00:00:02,500 --> 00:00:05,800\r\nWelcome to Piltover.\r\n\r\n2\r\n00:00:06,100 --> 00:00:09,450\r\nThe City of Progress.\r\n`;
   const convertedVtt = srtToVtt(sampleSrt);
@@ -1084,7 +634,7 @@ async function runTests() {
   const rewritten = rewriteM3u8Manifest(
     sampleMasterM3u8,
     'https://cdn.upstream.xyz/streams/94605/master.m3u8',
-    'https://vidstuck.xyz/'
+    'https://gate.example/'
   );
   assert.ok(
     rewritten.includes('/api/proxy?url=https%3A%2F%2Fcdn.upstream.xyz%2Fstreams%2F94605%2F1080p%2Findex.m3u8'),
@@ -1101,6 +651,9 @@ async function runTests() {
   console.log('  ✔ Passed M3U8 manifest rewriting.');
 
   // Start Mock Upstream Server & Application HTTP Server for End-to-End Integration Tests
+  // 4b. Mock upstream wiring: TMDB metadata, skip segments, subtitles and the
+  // Goldmine TMDB-Embed-API all answer from the local mock server — nothing
+  // reaches the internet.
   const mockUpstream = await startUpstreamMockServer();
   config.tmdbBaseUrl = `${mockUpstream.url}/tmdb`;
   config.upstreams.introDbUrl = `${mockUpstream.url}/introdb`;
@@ -1108,302 +661,9 @@ async function runTests() {
   config.upstreams.theIntroDbApiKey = '';
   config.upstreams.openSubtitlesStremioUrl = `${mockUpstream.url}/stremio`;
   config.upstreams.subdlDownloadUrl = `${mockUpstream.url}/subdl-dl`;
-  config.upstreams.vidstuckBase = `${mockUpstream.url}/vidstuck`;
-  // Andromeda's live tiers: point CastleTV + NetMirror at the mock so the
-  // end-to-end suites resolve without touching real upstreams.
-  config.upstreams.castletvBase = `${mockUpstream.url}/castletv`;
-  config.upstreams.castletvHosts = [`${mockUpstream.url}/castletv`];
-  config.upstreams.netmirrorBase = `${mockUpstream.url}/netmirror`;
-  config.upstreams.netmirrorWebMirrors = [`${mockUpstream.url}/netmirror`];
-  // Centaurus (HiCine) is the waterfall's second tier: it must resolve from the
-  // mock too, otherwise a failed Andromeda request has nowhere to fall back to.
-  config.upstreams.hicineApiBase = `${mockUpstream.url}/hicine`;
-
-  // 4b. HubCloud generator unroller (Centaurus "All upstream servers failed" fix)
-  console.log('[4b/12] Testing HubCloud generator unroller (Centaurus)...');
-  assert.strictEqual(
-    isHubcloudGeneratorUrl('https://gpdl2.hubcloud.ist/?id=abc::def'),
-    true,
-    'gpdl2.hubcloud.ist generator must be detected'
-  );
-  assert.strictEqual(
-    isHubcloudGeneratorUrl('https://gamerxyt.com/dl.php?link=x'),
-    true,
-    'gamerxyt.com dl.php wrapper must be detected'
-  );
-  assert.strictEqual(
-    isHubcloudGeneratorUrl('https://hubcdn.sbs/file'),
-    true,
-    'hubcdn.* generator must be detected'
-  );
-  assert.strictEqual(
-    isHubcloudGeneratorUrl('https://gpdl.hubcloud.cfd/x'),
-    true,
-    'gpdl.* hubcloud generator must be detected'
-  );
-  assert.strictEqual(
-    isHubcloudGeneratorUrl('https://pub-abc.r2.dev/file.mkv'),
-    false,
-    'direct R2 file must NOT be treated as a generator'
-  );
-  assert.strictEqual(
-    isHubcloudGeneratorUrl('https://pixeldrain.com/u/abc'),
-    false,
-    'pixeldrain must NOT be treated as a generator'
-  );
-  assert.strictEqual(
-    isHubcloudGeneratorUrl('https://video-downloads.googleusercontent.com/x'),
-    false,
-    'Google video CDN must NOT be treated as a generator'
-  );
-  assert.strictEqual(isHubcloudGeneratorUrl('not-a-url'), false, 'garbage input must be rejected');
-
-  // (a) 302 → dl.php?link=<direct>: percent-encoding inside the target
-  //     (e.g. `%20`) must survive exactly one decode — never be double-decoded.
-  const viaRedirect = await unrollHubcloudUrl(`${mockUpstream.url}/hubcloud/gen-redirect`);
-  assert.strictEqual(
-    viaRedirect,
-    `${mockUpstream.url}/cdn/hls/fight%20club.mkv`,
-    'generator 302 → dl.php?link= must yield the direct URL with %20 intact'
-  );
-
-  // (b) countdown page hiding the CDN URL inside obfuscated inline JS
-  const viaJs = await unrollHubcloudUrl(`${mockUpstream.url}/hubcloud/countdown-js`, {
-    fetchImpl: async () => new Response('video bytes', { status: 206, headers: { 'Content-Type': 'video/mp4' } })
-  });
-  assert.strictEqual(
-    viaJs,
-    'https://pub-1a2b.r2.dev/movies/Fight-Club-1999.mkv',
-    'URL hidden in JS string escapes (\\/) must be extracted'
-  );
-  const testedMirrors = [];
-  const mirrorFallback = await unrollHubcloudUrl(`${mockUpstream.url}/hubcloud/mirror-test`, {
-    fetchImpl: async (url) => {
-      testedMirrors.push(url);
-      return url.includes('dead-copy')
-        ? new Response('not found', { status: 404, headers: { 'Content-Type': 'text/html' } })
-        : new Response('media bytes', { status: 206, headers: { 'Content-Type': 'video/mp4' } });
-    }
-  });
-  assert.strictEqual(mirrorFallback, 'https://good-copy.r2.dev/good.mkv', 'HubCloud mirror selection must skip the failed top candidate');
-  assert.strictEqual(testedMirrors.length, 2, 'All mirror candidates should be Range-probed concurrently');
-
-  // (c) two-hop flow: drive page → <a id="download"> → dl.php?link= → direct
-  const viaDrive = await unrollHubcloudUrl(`${mockUpstream.url}/hubcloud/drive-page`);
-  assert.strictEqual(
-    viaDrive,
-    `${mockUpstream.url}/cdn/hls/arcane-s1e1.mp4`,
-    'nested <a id="download"> wrapper must be followed one hop'
-  );
-
-  // (d) pixeldrain /u/ share page → direct /api/file/ endpoint, including the
-  // downloadable query parameter. Inject the probe to keep this offline test deterministic.
-  let pixelProbeRange = '';
-  const viaPixel = await unrollHubcloudUrl(`${mockUpstream.url}/hubcloud/pixeldrain-page`, {
-    fetchImpl: async (_url, init) => {
-      pixelProbeRange = init.headers.Range;
-      return new Response('media bytes', {
-        status: 206,
-        headers: { 'Content-Type': 'video/mp4', 'Content-Range': 'bytes 0-10/100' }
-      });
-    }
-  });
-  assert.strictEqual(
-    viaPixel,
-    'https://pixeldrain.com/api/file/AbCdEf123?download',
-    'pixeldrain.com share links must be normalized to a direct download URL'
-  );
-  assert.strictEqual(pixelProbeRange, 'bytes=0-1023', 'Resolved URLs must receive a bounded Range preflight');
-  assert.strictEqual(
-    normalizePlayableUrl('https://pixeldrain.dev/u/AbCdEf123'),
-    'https://pixeldrain.dev/api/file/AbCdEf123?download',
-    'pixeldrain.dev share URLs must normalize like pixeldrain.com'
-  );
-  assert.ok(scorePlayableUrl('https://pixeldrain.dev/api/file/AbCdEf123?download') >= 0);
-
-  // Nested ?link= chains and base64 pages.dev/?u= links must unwrap without
-  // mistaking their HTML wrappers for terminal media URLs.
-  const nestedDirect = `${mockUpstream.url}/cdn/hls/nested-link.mkv`;
-  const nestedLink = `${mockUpstream.url}/hubcloud/dl.php?link=${encodeURIComponent(
-    `${mockUpstream.url}/hubcloud/dl.php?link=${encodeURIComponent(nestedDirect)}`
-  )}`;
-  assert.strictEqual(await unrollHubcloudUrl(nestedLink), nestedDirect, 'Nested ?link= wrappers must unwrap recursively');
-  const pagesTarget = `${mockUpstream.url}/cdn/hls/pages-dev-wrapper.mkv`;
-  const pagesUrl = `https://stream-wrapper.pages.dev/?u=${Buffer.from(pagesTarget, 'utf8').toString('base64url')}`;
-  assert.deepStrictEqual(extractWrappedMediaTargets(pagesUrl), [pagesTarget]);
-  const pagesLink = `${mockUpstream.url}/hubcloud/dl.php?link=${encodeURIComponent(pagesUrl)}`;
-  assert.strictEqual(await unrollHubcloudUrl(pagesLink), pagesTarget, 'base64 pages.dev/?u= targets must unwrap');
-
-  // Range preflight accepts media bytes and rejects an HTTP-200 JSON hotlink response.
-  const rangeProbeOptions = {
-    deadline: Date.now() + 1000,
-    fetchImpl: async (_url, init) => {
-      assert.strictEqual(init.headers.Range, 'bytes=0-1023');
-      return new Response('video bytes', { status: 206, headers: { 'Content-Type': 'video/mp4' } });
-    }
-  };
-  assert.strictEqual(await probePlayableMediaUrl('https://cdn.example.org/movie.mkv', rangeProbeOptions), true);
-  assert.strictEqual(
-    await probePlayableMediaUrl('https://cdn.example.org/hotlink', {
-      deadline: Date.now() + 1000,
-      fetchImpl: async () => new Response('{"success":false,"value":"hotlink_detected"}', {
-        status: 200,
-        headers: { 'Content-Type': 'application/json' }
-      })
-    }),
-    false,
-    'Range preflight must reject 200 JSON/hotlink responses'
-  );
-
-  // A legacy 4K redirector chain answers with a JavaScript landing page and no
-  // Content-Type. It used to pass the "not HTML, not JSON" check, which made
-  // The old 4K tier returned that page as a "verified 4K" stream. Only positive
-  // media evidence may pass now.
-  assert.strictEqual(
-    await probePlayableMediaUrl('https://d33f51dyacx7bd.cloudfront.net/?aydfd=1015073', {
-      deadline: Date.now() + 1000,
-      fetchImpl: async () => new Response('(function(){var t=document.createElement("script");})();', { status: 206 })
-    }),
-    false,
-    'Range preflight must reject a JavaScript landing page served without a Content-Type'
-  );
-  assert.strictEqual(
-    await probePlayableMediaUrl('https://cdn.example.org/guard.js', {
-      deadline: Date.now() + 1000,
-      fetchImpl: async () => new Response('var go=1;', { status: 200, headers: { 'Content-Type': 'application/javascript' } })
-    }),
-    false,
-    'Range preflight must reject JavaScript content types'
-  );
-  assert.strictEqual(
-    await probePlayableMediaUrl('https://cdn.example.org/real.mkv', {
-      deadline: Date.now() + 1000,
-      fetchImpl: async () => new Response(Buffer.concat([Buffer.from([0x1a, 0x45, 0xdf, 0xa3]), Buffer.alloc(512)]), { status: 206 })
-    }),
-    true,
-    'Range preflight must accept a Matroska header even without a Content-Type'
-  );
-  assert.strictEqual(
-    await probePlayableMediaUrl('https://cdn.example.org/master.m3u8', {
-      deadline: Date.now() + 1000,
-      fetchImpl: async () => new Response('#EXTM3U\n#EXT-X-VERSION:3\n', { status: 200, headers: { 'Content-Type': 'text/plain' } })
-    }),
-    true,
-    'Range preflight must accept an HLS playlist body served as text/plain'
-  );
-  // A CDN host alone is not a "playable" score: a bare host with only a query
-  // string must rank below real file candidates (gate-page regression).
-  assert.ok(
-    scorePlayableUrl('https://pub-abc.r2.dev/movies/RRR.mkv') >
-      scorePlayableUrl('https://d33f51dyacx7bd.cloudfront.net/?aydfd=1015073'),
-    'Object paths on CDN hosts must outrank bare-host gate pages'
-  );
-
-  // (e) countdown page with no reachable target → null (caller keeps old URL)
-  const noLinks = await unrollHubcloudUrl(`${mockUpstream.url}/hubcloud/no-links`);
-  assert.strictEqual(
-    noLinks,
-    null,
-    'unreachable generator must return null instead of a broken URL'
-  );
-
-  // (f) Cloudflare managed-challenge interstitial → detected, treated as failure
-  const challenged = await unrollHubcloudUrl(`${mockUpstream.url}/hubcloud/challenge`);
-  assert.strictEqual(
-    challenged,
-    null,
-    'CF challenge page must be detected and never parsed for links'
-  );
-
-  // (g) End-to-end Centaurus resolve: HiCine /go hands back a HubCloud
-  //     dl.php wrapper (the live Fight Club failure mode) — the resolver must
-  //     return the unrolled direct file, never the generator HTML.
-  const prevHicineBase = config.upstreams.hicineApiBase;
-  config.upstreams.hicineApiBase = `${mockUpstream.url}/hicine`;
-  let hicineE2e = null;
-  try {
-    hicineE2e = await resolveHicineServer({
-      title: 'Fight Club',
-      releaseYear: 1999,
-      type: 'movie',
-      season: 1,
-      episode: 1
-    });
-  } finally {
-    config.upstreams.hicineApiBase = prevHicineBase;
-  }
-  assert.ok(hicineE2e, 'Centaurus must resolve the mocked HiCine title');
-  assert.strictEqual(hicineE2e.server, 'centaurus', 'server must be centaurus');
-  assert.strictEqual(
-    hicineE2e.rawUrl,
-    `${mockUpstream.url}/cdn/hls/fight%20club.mkv`,
-    'stream rawUrl must be the unrolled direct file, not the generator page'
-  );
-  assert.strictEqual(
-    hicineE2e.streamUrl,
-    `${mockUpstream.url}/cdn/hls/fight%20club.mkv`,
-    'streamUrl must point at the direct file'
-  );
-  // The container label is load-bearing: an mp4/hls label on an MKV file was
-  // exactly what hid the audio-switch path from the player and the remux tier.
-  assert.strictEqual(
-    hicineE2e.format,
-    'mkv',
-    'a direct .mkv file must report MKV, never mp4 or hls'
-  );
-  assert.strictEqual(
-    containerFormatForUrl('https://cdn.example/9f8a7b6c5d'),
-    'mp4',
-    'extension-less CDN files stay progressive mp4'
-  );
-  assert.strictEqual(containerFormatForUrl('https://cdn.example/master.m3u8?token=1'), 'hls');
-  assert.strictEqual(containerFormatForUrl('https://cdn.example/manifest.mpd'), 'dash');
-  assert.strictEqual(hicineE2e.audioTracks.length, 1, 'Progressive MKV must not invent switchable audio rows');
-  assert.ok(
-    !/English|Dual Audio/.test(hicineE2e.audioTracks[0].label),
-    'HiCine audio label must not guess English when the filename has no English hint'
-  );
-  assert.ok(
-    hicineE2e.audioTracks[0].label.includes('Default Audio'),
-    'Unknown HiCine track must be labeled as the default progressive audio'
-  );
-  assert.ok(
-    Array.isArray(hicineE2e.qualities) && hicineE2e.qualities.length > 0,
-    'qualities must be present'
-  );
-  for (const q of hicineE2e.qualities) {
-    assert.ok(
-      !/hubcloud|gamerxyt|gpdl/i.test(q.url),
-      'no quality URL may point at a HubCloud generator'
-    );
-  }
-
-  config.upstreams.hicineApiBase = `${mockUpstream.url}/hicine`;
-  let hintedHicineE2e = null;
-  try {
-    hintedHicineE2e = await resolveHicineServer({
-      title: 'RRR',
-      releaseYear: 2022,
-      type: 'movie',
-      season: 1,
-      episode: 1
-    });
-  } finally {
-    config.upstreams.hicineApiBase = prevHicineBase;
-  }
-  assert.ok(hintedHicineE2e, 'Centaurus must resolve the separate vCloud Hindi+Telugu fixture');
-  assert.strictEqual(hintedHicineE2e.audioTracks.length, 1);
-  assert.strictEqual(
-    hintedHicineE2e.audioTracks[0].lang,
-    'und',
-    'Progressive dual-audio hints must not claim which language the default track uses'
-  );
-  assert.strictEqual(
-    hintedHicineE2e.audioTracks[0].label,
-    'Hindi + Telugu — plays default track',
-    'Progressive vCloud playback must show one honest row for filename-only dual-audio hints'
-  );
-  console.log('  ✔ Passed HubCloud generator unroller tests.');
+  config.goldmine.apiBase = `${mockUpstream.url}/goldmine`;
+  config.goldmine.timeoutMs = 4000;
+  config.goldmine.proxyStreams = true;
 
   const server = await new Promise((resolve) => {
     const s = app.listen(0, '127.0.0.1', () => resolve(s));
@@ -1412,50 +672,26 @@ async function runTests() {
   const baseUrl = `http://127.0.0.1:${port}`;
 
   try {
+    // 5. Health, servers list & handshake endpoints
     // 5. Health & Handshake Endpoints
-    console.log('[5/13] Testing /api/health & /api/handshake...');
+    console.log('[5/13] Testing /api/health, /api/servers & /api/handshake...');
     const health = await httpRequest(baseUrl, '/api/health');
     assert.strictEqual(health.status, 200);
     assert.strictEqual(health.json.ok, true);
     assert.strictEqual(health.json.brand, 'LOL Embed');
     assert.strictEqual(health.json.service, 'lol-embed-backend');
-    assert.ok(Array.isArray(health.json.servers) && health.json.servers.length >= 2);
-    const unsignedMultiTrack = await httpRequest(
+    assert.deepStrictEqual(health.json.servers, ['goldmine'], 'the catalog is MKV-only now');
+
+    const serversList = await httpRequest(baseUrl, '/api/servers');
+    assert.strictEqual(serversList.status, 200);
+    assert.deepStrictEqual(serversList.json.servers.map((s) => s.id), ['goldmine']);
+
+    // The legacy ffmpeg remux endpoints are gone with the movi-player engine.
+    const goneMultiTrack = await httpRequest(
       baseUrl,
       '/api/multitrack/master.m3u8?url=https%3A%2F%2Fpub-abc.r2.dev%2Fmovies%2FRRR.mkv'
     );
-    assert.strictEqual(unsignedMultiTrack.status, 403, 'Multi-track master endpoint must reject unsigned URLs');
-    // A signed master for an unknown CDN host must still be rejected unless the
-    // signature itself carries the resolver's trust decision.
-    const strictMasterQuery = createSignedMasterUrl('https://castle-cdn.example/movies/RRR.mkv', ['hi'])
-      .split('?')[1];
-    const strictMaster = await httpRequest(baseUrl, `/api/multitrack/master.m3u8?${strictMasterQuery}`);
-    assert.strictEqual(
-      strictMaster.status,
-      403,
-      'Unknown source hosts must stay rejected without the signed trust flag'
-    );
-    const trustedMasterQuery = createSignedMasterUrl(
-      'https://castle-cdn.example/movies/RRR.mkv',
-      ['hi'],
-      { allowUnknownHost: true }
-    ).split('?')[1];
-    const trustedMaster = await httpRequest(baseUrl, `/api/multitrack/master.m3u8?${trustedMasterQuery}`);
-    assert.notStrictEqual(
-      trustedMaster.status,
-      403,
-      'Provider-trusted signed masters must clear the host gate (503 when ffmpeg is missing)'
-    );
-
-    const unsignedMultiTrackAsset = await httpRequest(
-      baseUrl,
-      `/api/multitrack/file/${'a'.repeat(64)}/track_0.m3u8`
-    );
-    assert.strictEqual(
-      unsignedMultiTrackAsset.status,
-      403,
-      'Generated multi-track assets must reject unsigned requests'
-    );
+    assert.strictEqual(goneMultiTrack.status, 404, 'multi-track remux routes must be removed');
 
     const hs = await httpRequest(baseUrl, '/api/handshake', {
       method: 'POST',
@@ -1464,7 +700,7 @@ async function runTests() {
     });
     assert.strictEqual(hs.status, 200);
     assert.strictEqual(hs.json.ok, true);
-    console.log('  ✔ Passed /api/health & /api/handshake.');
+    console.log('  ✔ Passed /api/health, /api/servers & /api/handshake.');
 
     // 6. TMDB-ID Metadata & Real IntroDB Skip Segments Resolution
     console.log('[6/13] Testing TMDB ID -> External IDs (IMDb/TVDB) & IntroDB Skip Intro Segments...');
@@ -1551,42 +787,76 @@ async function runTests() {
     );
     console.log('  ✔ Passed TMDB -> IMDb/TVDB bridging & TheIntroDB/IntroDB/AniSkip segments.');
 
-    // 7. Full Production Stream Resolution + OpenSubtitles .srt.gz Decompression + M3U8 Proxy
-    console.log('[7/13] Testing /api/resolve/movie/693134, OpenSubtitles .srt.gz -> .vtt, & /api/proxy...');
-    const resolveRes = await httpRequest(
-      baseUrl,
-      '/api/resolve/movie/693134?server=andromeda'
-    );
+    // 7. Full production stream resolution through the mocked TMDB-Embed-API:
+    //    MKV payload, dub languages up front, labeled sources for manual
+    //    switching, subtitles and the CORS+Range stream proxy movi needs.
+    console.log('[7/13] Testing /api/resolve/movie/693134 (Goldmine MKV), subtitles & /api/proxy...');
+    const resolveRes = await httpRequest(baseUrl, '/api/resolve/movie/693134');
     assert.strictEqual(resolveRes.status, 200);
     assert.strictEqual(resolveRes.json.ok, true);
-    assert.strictEqual(resolveRes.json.stream.server, 'andromeda');
-    assert.ok(resolveRes.json.stream.streamUrl.startsWith('/api/proxy?url='));
+    const stream = resolveRes.json.stream;
+    assert.strictEqual(stream.server, 'goldmine');
+    assert.strictEqual(stream.engine, 'movi', 'progressive MKV must ride the movi-player engine');
+    assert.strictEqual(stream.format, 'mkv');
+    assert.ok(stream.streamUrl.startsWith('/api/proxy?url='), 'direct files must be wrapped in the signed proxy');
+    assert.ok(decodeURIComponent(stream.streamUrl).includes('arcane-multi.mkv'), 'the multi-audio MKV must win the source scoring');
     assert.ok(
-      !resolveRes.json.stream.rawUrl.includes('Sintel') &&
-        !resolveRes.json.stream.rawUrl.includes('BigBuckBunny'),
+      !JSON.stringify(stream).includes('Sintel') && !JSON.stringify(stream).includes('BigBuckBunny'),
       'Zero test/demo videos allowed in stream output'
     );
-    assert.ok(resolveRes.json.stream.audioTracks.length >= 4, 'Multi-language audio tracks must be returned');
-    const upstreamDefaultTracks = resolveRes.json.stream.audioTracks.filter((track) => track.default);
-    assert.strictEqual(upstreamDefaultTracks.length, 1, 'the stream payload must map exactly one default audio track');
+
+    // Dub languages up front: one row per language, flagged for in-file switching.
+    assert.deepStrictEqual(
+      stream.audioTracks.map((t) => [t.id, t.lang, t.inFile]),
+      [['goldmine-en', 'en', true], ['goldmine-hi', 'hi', true], ['goldmine-ta', 'ta', true]]
+    );
+    assert.strictEqual(stream.audioTracks.filter((t) => t.default).length, 1, 'exactly one default audio track');
+    assert.strictEqual(stream.audioTracks.find((t) => t.default).lang, 'en');
+    assert.deepStrictEqual(
+      stream.languages.map((l) => [l.code, l.count]),
+      [['hi', 3], ['ta', 2], ['en', 1]],
+      'the payload must report every dub language with its source count up front'
+    );
+
+    // Manual source switching: every distinct playable URL carries a label.
+    assert.strictEqual(stream.backupUrls.length, 3, 'hin file + mp4 + external cdn copy are the alternates');
+    const labelValues = Object.values(stream.sourceLabels || {});
+    assert.strictEqual(labelValues.length, 4);
+    assert.ok(labelValues.some((l) => /1080p/.test(l) && /MKV/i.test(l) && /English/.test(l)));
+    assert.ok(labelValues.some((l) => /Hindi/i.test(l)), 'the per-language file keeps its language in the label');
+
+    // Qualities only offer real variants (same provider, different height) —
+    // same-height mirrors are backup sources, not quality options.
+    assert.deepStrictEqual(stream.qualities.map((q) => q.label), ['1080p']);
+
+    // Provider-supplied subtitles ride along, wrapped in the proxy.
+    assert.ok(Array.isArray(stream.embeddedSubtitles) && stream.embeddedSubtitles.length === 1);
+    assert.strictEqual(stream.embeddedSubtitles[0].lang, 'en');
+    assert.ok(stream.embeddedSubtitles[0].url.startsWith('/api/proxy?url='));
+
+    // The stream proxy serves the MKV with CORS + Range support (the movi
+    // engine demuxes over HTTP Range requests).
+    const rangeRes = await httpRequest(baseUrl, stream.streamUrl, { headers: { Range: 'bytes=0-1023' } });
+    assert.strictEqual(rangeRes.status, 206, 'the proxy must answer Range requests with 206');
+    assert.match(rangeRes.headers['content-range'] || '', /^bytes 0-1023\//);
+    assert.strictEqual(rangeRes.headers['access-control-allow-origin'], '*');
+    assert.match(rangeRes.headers['content-type'] || '', /video\/x-matroska/);
+
+    // Audio preference: the cached payload is shared, each caller's default flips.
+    const taRes = await httpRequest(baseUrl, '/api/resolve/movie/693134?audio=ta');
+    assert.strictEqual(taRes.status, 200);
+    assert.strictEqual(taRes.json.stream.activeAudioTrack.lang, 'ta');
     assert.ok(
-      /^[a-z]{2}$/.test(upstreamDefaultTracks[0].lang),
-      'the default track must carry an ISO language code'
+      taRes.json.stream.audioTracks.every((t) => t.default === (t.lang === 'ta')),
+      'Cached resolver responses must still apply each caller\u2019s audio preference'
     );
-    assert.ok(
-      resolveRes.json.stream.audioTracks.some((track) => track.lang === 'hi' && /Hindi/.test(track.label)),
-      'Hindi audio metadata must survive Node resolution'
+    const enAgainRes = await httpRequest(baseUrl, '/api/resolve/movie/693134');
+    assert.strictEqual(
+      enAgainRes.json.stream.activeAudioTrack.lang,
+      'en',
+      'the canonical cached default must not be poisoned by one caller'
     );
-    const preferredAudioRes = await httpRequest(
-      baseUrl,
-      '/api/resolve/movie/693134?server=andromeda&audio=hi'
-    );
-    assert.strictEqual(preferredAudioRes.status, 200);
-    assert.strictEqual(preferredAudioRes.json.stream.activeAudioTrack.lang, 'hi');
-    assert.ok(
-      preferredAudioRes.json.stream.audioTracks.every((track) => track.default === (track.lang === 'hi')),
-      'Cached resolver responses must still apply each caller’s audio preference'
-    );
+
     // Subtitles come from OpenSubtitles' Stremio v3 addon (keyless), merged
     // to one plain track per language with English first and as the default.
     const subs = resolveRes.json.subtitles;
@@ -1622,15 +892,20 @@ async function runTests() {
     const relayRes = await httpRequest(baseUrl, `/api/subtitles/proxy?url=${encodeURIComponent('https://evil.example/x.srt')}`);
     assert.strictEqual(relayRes.status, 403, 'subtitle proxy must refuse non-subtitle hosts');
 
-    // Test /api/proxy rewriting the upstream M3U8 playlist
-    const m3u8ProxyRes = await httpRequest(baseUrl, resolveRes.json.stream.streamUrl);
+
+    // HLS playlists through the proxy: nested variant URIs are rewritten
+    // (the signature only guards against tampering when one is present).
+    const m3u8ProxyRes = await httpRequest(
+      baseUrl,
+      `/api/proxy?url=${encodeURIComponent(`${mockUpstream.url}/cdn/hls/master.m3u8`)}`
+    );
     assert.strictEqual(m3u8ProxyRes.status, 200);
     assert.ok(
       m3u8ProxyRes.body.includes('/api/proxy?url='),
       'Proxied M3U8 playlist must rewrite variant URLs through /api/proxy'
     );
 
-    console.log('  ✔ Passed end-to-end stream resolution, .srt.gz -> .vtt, and M3U8 proxy.');
+    console.log('  ✔ Passed Goldmine MKV resolution, subtitle pipelines & stream proxy.');
 
     // 8. Backend-only public surface: service metadata + social image, no web UI.
     // 8. Node API public surface: service metadata + social image, JSON-only.
@@ -1657,24 +932,30 @@ async function runTests() {
     }
     console.log('  ✔ Passed backend-only root, metadata image, and JSON-only Node surface checks.');
 
-    // 9. Owner Admin Panel (/admin, Domain Telemetry, Source Replacer, Domain Blocking, Custom Overrides)
-    console.log('[9/13] Testing JSON Admin API, Domain Telemetry, Source Replacement & Firewall...');
+    // 9. Owner Admin Panel (telemetry, Goldmine hot-swap, probes, diagnostic,
+    //    domain firewall, custom overrides)
+    console.log('[9/13] Testing JSON Admin API, Domain Telemetry, Goldmine Hot-Swap & Firewall...');
 
     // Simulate API requests from an external client domain (there is no embed page).
     await httpRequest(baseUrl, '/api/resolve/tv/94605?season=1&episode=1&parent=https://partner-cinema.to', {
       headers: { Referer: 'https://partner-cinema.to/' }
     });
 
-    // Verify unauthorized request to /api/admin/overview is rejected
+    // Unauthorized admin access is rejected.
     const unauthAdmin = await httpRequest(baseUrl, '/api/admin/overview');
     assert.strictEqual(unauthAdmin.status, 401, 'Admin API must reject requests without X-Admin-Key');
 
-    // Verify authorized /api/admin/overview includes partner-cinema.to telemetry
     const adminHeaders = { 'X-Admin-Key': 'admin123', 'Content-Type': 'application/json' };
     const overview = await httpRequest(baseUrl, '/api/admin/overview', { headers: adminHeaders });
     assert.strictEqual(overview.status, 200);
     assert.strictEqual(overview.json.ok, true);
-    // Dashboard feed on the Node backend (same contract as the Worker's /api/admin/stats).
+    assert.ok(overview.json.stats && overview.json.stats.totals, 'overview must embed the stats block too');
+    assert.ok(
+      overview.json.domains.some((d) => d.domain === 'partner-cinema.to' && d.resolves >= 1),
+      'Admin API must track external API client domain stats'
+    );
+
+    // Dashboard feed (same contract as the Worker's /api/admin/stats).
     assert.strictEqual((await httpRequest(baseUrl, '/api/admin/stats')).status, 401);
     const nodeStats = await httpRequest(baseUrl, '/api/admin/stats?limit=5', { headers: adminHeaders });
     assert.strictEqual(nodeStats.status, 200);
@@ -1685,18 +966,16 @@ async function runTests() {
       'the embedding site must be attributed from ?parent=/Referer'
     );
     assert.ok(nodeStats.json.stats.topTitles.some((t) => t.tmdbId === '94605' && t.label.startsWith('Arcane')));
-    assert.ok(nodeStats.json.stats.servers.some((srv) => srv.id === 'andromeda' && srv.ok >= 1), 'server attempts must feed the dashboard');
-    assert.deepStrictEqual(nodeStats.json.catalog.map((c) => c.id), ['andromeda', 'centaurus']);
-    assert.ok(overview.json.stats && overview.json.stats.totals, 'overview must embed the stats block too');
+    assert.ok(
+      nodeStats.json.stats.servers.some((srv) => srv.id === 'goldmine' && srv.ok >= 1),
+      'server attempts must feed the dashboard'
+    );
+    assert.deepStrictEqual(nodeStats.json.catalog.map((c) => c.id), ['goldmine']);
     const nodeServers = await httpRequest(baseUrl, '/api/servers');
     assert.strictEqual(nodeServers.status, 200);
-    assert.deepStrictEqual(nodeServers.json.servers.map((s) => [s.id, s.name]), [['andromeda', 'Fiber Optic Speedrun'], ['centaurus', 'Gigachad Node']]);
-    assert.ok(
-      overview.json.domains.some((d) => d.domain === 'partner-cinema.to' && d.resolves >= 1),
-      'Admin API must track external API client domain stats'
-    );
+    assert.deepStrictEqual(nodeServers.json.servers.map((s) => [s.id, s.name]), [['goldmine', 'Goldmine MKV']]);
 
-    // Test Blocking & Unblocking a domain
+    // Blocking & unblocking a domain.
     const blockRes = await httpRequest(baseUrl, '/api/admin/domains/block', {
       method: 'POST',
       headers: adminHeaders,
@@ -1705,46 +984,66 @@ async function runTests() {
     assert.strictEqual(blockRes.status, 200);
     const blockedCheck = await httpRequest(
       baseUrl,
-      '/api/resolve/tv/94605?season=1&episode=1&parent=https://leecher-site.org'
+      '/api/resolve/tv/94605?season=1&episode=2&parent=https://leecher-site.org'
     );
     assert.strictEqual(blockedCheck.status, 403, 'Blocked domain must receive HTTP 403 Forbidden');
+    await httpRequest(baseUrl, '/api/admin/domains/block', {
+      method: 'POST',
+      headers: adminHeaders,
+      body: JSON.stringify({ domain: 'leecher-site.org', blocked: false })
+    });
 
-    // Test Live Upstream Source Replacement
-    const savedServers = config.servers.map((s) => ({ ...s }));
-    const savedHicineBase = config.upstreams.hicineApiBase;
+    // Live Goldmine hot-swap: the TMDB-Embed-API base URL and the server
+    // priority/enabled state are admin-editable at runtime.
+    const savedGoldmineBase = config.goldmine.apiBase;
+    const savedGoldmineRow = config.servers.find((s) => s.id === 'goldmine');
+    const savedGoldminePriority = savedGoldmineRow ? savedGoldmineRow.priority : null;
     try {
       const replaceRes = await httpRequest(baseUrl, '/api/admin/upstreams', {
         method: 'POST',
         headers: adminHeaders,
         body: JSON.stringify({
-          upstreams: { hicineApiBase: 'https://api-new.hicine.sbs' },
-          // Swap the two live servers so the promotion cannot be a no-op tie.
-          servers: [
-            { id: 'centaurus', priority: 1, enabled: true },
-            { id: 'andromeda', priority: 2, enabled: true }
-          ]
+          upstreams: { goldmineBase: `${mockUpstream.url}/goldmine` },
+          servers: [{ id: 'goldmine', priority: 5, enabled: true }]
         })
       });
       assert.strictEqual(replaceRes.status, 200);
-      assert.strictEqual(replaceRes.json.snapshot.upstreams.hicineApiBase, 'https://api-new.hicine.sbs');
-
-      // Re-prioritising a server must reach the player immediately: /api/info
-      // feeds the same array the servers modal renders.
-      const infoAfterPromotion = await httpRequest(baseUrl, '/api/info/tv/94605');
-      assert.strictEqual(infoAfterPromotion.status, 200);
-      const orderAfterPromotion = infoAfterPromotion.json.servers.map((s) => s.id);
-      assert.ok(
-        orderAfterPromotion.indexOf('centaurus') < orderAfterPromotion.indexOf('andromeda'),
-        'a promoted server must move ahead of lower-priority servers in the player list'
+      assert.strictEqual(
+        replaceRes.json.snapshot.upstreams.goldmineBase,
+        `${mockUpstream.url}/goldmine`,
+        'the hot-swapped Goldmine base must show up in the snapshot'
+      );
+      const infoAfter = await httpRequest(baseUrl, '/api/info/tv/94605');
+      assert.strictEqual(infoAfter.status, 200);
+      assert.deepStrictEqual(
+        infoAfter.json.servers.map((s) => s.id),
+        ['goldmine'],
+        'a re-prioritised catalog must reach the player list immediately'
       );
     } finally {
-      config.servers = savedServers;
-      // The rebrand above is a live config write; put the mock base back so the
-      // later suites (and the waterfall) do not reach for the real upstream.
-      config.upstreams.hicineApiBase = savedHicineBase;
+      config.goldmine.apiBase = savedGoldmineBase;
+      if (savedGoldmineRow && savedGoldminePriority !== null) savedGoldmineRow.priority = savedGoldminePriority;
     }
 
-    // Test Custom TMDB Stream Override
+    // Live health probes hit the Goldmine API's own health endpoints.
+    const probeRes = await httpRequest(baseUrl, '/api/admin/probe', { method: 'POST', headers: adminHeaders });
+    assert.strictEqual(probeRes.status, 200);
+    assert.ok(Array.isArray(probeRes.json.probeResults) && probeRes.json.probeResults.length >= 2);
+    assert.ok(probeRes.json.probeResults.every((r) => r.serverId === 'goldmine'), 'probes target the Goldmine API');
+    assert.ok(probeRes.json.probeResults.some((r) => r.ok === true), 'the mocked Goldmine API must probe healthy');
+
+    // Owner diagnostic: per-provider report for one title (admin-key protected).
+    const diagRes = await httpRequest(baseUrl, '/api/admin/goldmine/diagnose/tv/94605?season=1&episode=1', {
+      headers: adminHeaders
+    });
+    assert.strictEqual(diagRes.status, 200);
+    assert.strictEqual(diagRes.json.ok, true);
+    assert.ok(diagRes.json.streamCount >= 4, 'diagnose must count the fixture streams');
+    assert.deepStrictEqual(diagRes.json.providers.map((p) => p.id).sort(), ['4khdhub', 'mockbox', 'vidlink']);
+    assert.ok(diagRes.json.languages.some((l) => l.code === 'hi' && l.count >= 2));
+    assert.strictEqual((await httpRequest(baseUrl, '/api/admin/goldmine/diagnose/tv/94605')).status, 401);
+
+    // Custom TMDB stream override (+ the proxied M3U8 rewrite through it).
     const overrideRes = await httpRequest(baseUrl, '/api/admin/overrides', {
       method: 'POST',
       headers: adminHeaders,
@@ -1760,7 +1059,15 @@ async function runTests() {
     assert.strictEqual(resolvedOverride.status, 200);
     assert.strictEqual(resolvedOverride.json.stream.server, 'custom');
     assert.ok(resolvedOverride.json.stream.rawUrl.includes('custom-override.m3u8'));
-    console.log('  ✔ Passed JSON Admin API, Domain Telemetry, Firewall & Live Source Replacement.');
+    const overrideStream = await httpRequest(baseUrl, resolvedOverride.json.stream.streamUrl);
+    assert.strictEqual(overrideStream.status, 200);
+    assert.ok(overrideStream.body.includes('/api/proxy?url='), 'override playlists are rewritten through the proxy too');
+    const deleteOverride = await httpRequest(baseUrl, '/api/admin/overrides/movie:999999:1:1', {
+      method: 'DELETE',
+      headers: adminHeaders
+    });
+    assert.strictEqual(deleteOverride.status, 200);
+    console.log('  ✔ Passed JSON Admin API, telemetry, Goldmine hot-swap, probes & firewall.');
 
     // 10. Worker player page: /embed serves the player, player assets load,
     // the API base URL is configurable for a separate API Worker, `/` stays
@@ -1889,7 +1196,7 @@ async function runTests() {
     );
     assert.match(playerJsRes.headers.get('content-type') || '', /javascript/i);
     const playerJsBody = await playerJsRes.text();
-    assert.match(playerJsBody, /server: 'andromeda'/, 'the served player bundle must carry the priority-1 default server');
+    assert.match(playerJsBody, /server: 'goldmine'/, 'the served player bundle must carry the priority-1 default server');
     const vendorJsRes = await callWorker('http://player.test/vendor/hls.min.js');
     assert.strictEqual(vendorJsRes.status, 200);
     assert.match(
@@ -1997,470 +1304,277 @@ async function runTests() {
     assert.ok(crossOriginSub.body.startsWith('WEBVTT'), 'Absolutized subtitle URL must return WebVTT');
     console.log('  ✔ Passed Worker player page, asset, API-base, and root-behavior checks.');
 
-    // 11. Server Andromeda Multi-Tier Architecture & Waterfall Failover
-    // Priority 1: CastleTV (South Indian, Asian, Hollywood dubs)
-    // Priority 2: NetMirror (Official OTT platform mirrors)
-    // Waterfall Failover: When both tiers miss, cleanly hand off to Server 2 (Centaurus)
-    console.log('[11/13] Testing Server Andromeda Multi-Tier Architecture & Waterfall Failover...');
+    // 11. Goldmine source resolution end-to-end: the shared TMDB-Embed-API
+    //     service, failure reasons, ?source= pinning, resolver caching and the
+    //     honest error contract of /api/resolve.
+    console.log('[11/13] Testing Goldmine service failures, ?source= pinning & resolver caching...');
 
-    // 11a. CastleTV Unit & Sub-resolver: Security key handshake, AES-128-CBC encryption, multi-audio tracks
-    const castleKey = buildCastleKey('MTIzNDU2Nzg5MA==');
-    assert.strictEqual(castleKey.length, 16, 'Castle key must be 16 bytes (AES-128)');
-    const testPlain = JSON.stringify({ test: 'castle-crypto-verify' });
-    const testEnc = encryptCastleAes(testPlain, castleKey);
-    const testDec = decryptCastleAes(testEnc, castleKey);
-    assert.strictEqual(testDec, testPlain, 'Castle AES encryption and decryption must roundtrip');
+    const goldmineApiBase = `${mockUpstream.url}/goldmine`;
 
-    const origCastleBase = config.upstreams.castletvBase;
-    const origNetmirrorBase = config.upstreams.netmirrorBase;
-    const origVidstuckBase = config.upstreams.vidstuckBase;
+    // Happy path through the shared service (the same code both runtimes use).
+    const okFetch = await goldmineSvc.fetchGoldmineStreams({
+      apiBase: goldmineApiBase, type: 'tv', tmdbId: 94605, season: 1, episode: 1, timeoutMs: 4000
+    });
+    assert.strictEqual(okFetch.ok, true);
+    assert.strictEqual(okFetch.json.count, 5);
+    assert.ok(
+      okFetch.url.includes('/api/streams/series/94605') && okFetch.url.includes('season=1') && okFetch.url.includes('episode=1'),
+      'series fetches must carry season/episode'
+    );
 
-    try {
-      config.upstreams.castletvBase = `${mockUpstream.url}/castletv`;
-      config.upstreams.netmirrorBase = `${mockUpstream.url}/netmirror`;
-      // Clear the VidStuck metadata fallback so the pure two-tier cascade is exercised
-      config.upstreams.vidstuckBase = '';
+    // Failure reasons map 1:1 onto the API's error contract.
+    const emptyFetch = await goldmineSvc.fetchGoldmineStreams({ apiBase: goldmineApiBase, type: 'movie', tmdbId: '555001', timeoutMs: 4000 });
+    assert.strictEqual(emptyFetch.ok, true, 'an empty stream list is a valid answer, not an HTTP error');
+    const emptyResolved = await goldmineSvc.resolveGoldmineServer({ type: 'movie', tmdbId: '555001' }, { apiBase: goldmineApiBase, timeoutMs: 4000 });
+    assert.strictEqual(emptyResolved.reason, 'goldmine_no_streams');
+    const httpErr = await goldmineSvc.fetchGoldmineStreams({ apiBase: goldmineApiBase, type: 'movie', tmdbId: '555002', timeoutMs: 4000 });
+    assert.strictEqual(httpErr.reason, 'goldmine_http_error');
+    const badJson = await goldmineSvc.fetchGoldmineStreams({ apiBase: goldmineApiBase, type: 'movie', tmdbId: '555003', timeoutMs: 4000 });
+    assert.strictEqual(badJson.reason, 'goldmine_bad_response');
+    const unknownProvider = await goldmineSvc.fetchGoldmineStreams({ apiBase: goldmineApiBase, type: 'movie', tmdbId: '693134', provider: 'nosuch', timeoutMs: 4000 });
+    assert.strictEqual(unknownProvider.reason, 'goldmine_source_unknown');
+    const disabledProvider = await goldmineSvc.resolveGoldmineServer(
+      { type: 'movie', tmdbId: '555005' },
+      { apiBase: goldmineApiBase, onlySource: 'mockbox', timeoutMs: 4000 }
+    );
+    assert.strictEqual(disabledProvider.reason, 'goldmine_source_disabled');
+    const unreachable = await goldmineSvc.fetchGoldmineStreams({ apiBase: 'http://127.0.0.1:1/goldmine', type: 'movie', tmdbId: '693134', timeoutMs: 2500 });
+    assert.strictEqual(unreachable.reason, 'goldmine_unreachable');
+    const slow = await goldmineSvc.fetchGoldmineStreams({ apiBase: goldmineApiBase, type: 'movie', tmdbId: '555004', timeoutMs: 1200 });
+    assert.strictEqual(slow.reason, 'goldmine_timeout', 'a cold-starting instance must time out, not hang the waterfall');
 
-      // Test Direct CastleTV Resolver
-      const castleRes = await resolveCastletv(
-        { title: 'Dune: Part Two', releaseYear: 2024, type: 'movie' },
-        'hi'
-      );
-      assert.ok(castleRes, 'CastleTV resolver must succeed for mocked title');
-      assert.strictEqual(castleRes.server, 'andromeda');
-      assert.strictEqual(castleRes.sourceName, 'CastleTV');
-      assert.strictEqual(castleRes.format, 'hls');
-      assert.ok(castleRes.streamUrl.startsWith('/api/proxy?url='));
-      assert.strictEqual(castleRes.audioTracks.length, 4, 'CastleTV must yield 4 discrete audio tracks');
-      const hiCastleTrack = castleRes.audioTracks.find((t) => t.lang === 'hi');
-      assert.ok(hiCastleTrack, 'Hindi track must be present in CastleTV tracks');
-      assert.strictEqual(hiCastleTrack.default, true, 'Preferred audio "hi" must be marked default');
-      // Regression (reported bug): the mock returns only `videoUrl`, never a
-      // `data.videos` array, which used to collapse the player's quality menu to
-      // a lone "Auto". Every resolution rung must be merged into a real ladder.
-      assert.ok(
-        castleRes.qualities.length >= 3,
-        'CastleTV must expose Auto plus the merged 1080p/720p rungs'
-      );
-      const castleHeights = castleRes.qualities.map((q) => q.height);
-      assert.ok(
-        castleHeights.includes(1080) && castleHeights.includes(720),
-        'the merged CastleTV ladder must include 1080p and 720p'
-      );
-      assert.strictEqual(
-        new Set(castleRes.audioTracks.map((t) => t.streamUrl)).size,
-        castleRes.audioTracks.length,
-        'every CastleTV language must keep its own proxied stream URL for re-attach switching'
-      );
+    // Source pinning: onlySource filters to one provider.
+    const pinned = await goldmineSvc.resolveGoldmineServer(
+      { type: 'tv', tmdbId: 94605, season: 1, episode: 1 },
+      { apiBase: goldmineApiBase, onlySource: 'vidlink', timeoutMs: 4000 }
+    );
+    assert.ok(pinned.streamUrl, 'the pinned provider must resolve');
+    assert.strictEqual(pinned.audioTracks.length, 1, 'vidlink carries no language hints -> one honest row');
+    assert.strictEqual(pinned.audioTracks[0].lang, 'und');
+    assert.strictEqual(pinned.referer, 'https://vidlink.pro', 'the referer of the pinned source must survive');
+    const pinnedEmpty = await goldmineSvc.resolveGoldmineServer(
+      { type: 'movie', tmdbId: '555001' },
+      { apiBase: goldmineApiBase, onlySource: 'mockbox', timeoutMs: 4000 }
+    );
+    assert.strictEqual(pinnedEmpty.reason, 'goldmine_source_empty');
 
-      // Identity engine unit checks (title canonicalization + year/type gates)
-      const fcMeta = { title: 'Fight Club', originalTitle: 'Fight Club', releaseYear: 1999, type: 'movie' };
-      assert.strictEqual(identity.normalizeTitleKey('Fight Club (1999) [Hindi Dub]'), 'fight club');
-      assert.strictEqual(
-        identity.scoreIdentityCandidate({ title: 'Fight Club', year: 2023 }, fcMeta).accepted,
-        false,
-        'a same-name different-year film must be rejected'
-      );
-      assert.strictEqual(
-        identity.scoreIdentityCandidate({ title: 'Female Fight Club', year: 1999 }, fcMeta).accepted,
-        false,
-        'substring neighbours must never be accepted'
-      );
-      assert.strictEqual(
-        identity.pickIdentityMatch([{ title: 'Fight Club', year: 2023 }], fcMeta).winner,
-        null,
-        'no identity proof must yield no winner'
-      );
+    // Proxy wrapping: the runtime callback gets (url, referer) per source.
+    const wrappedCalls = [];
+    const wrapped = await goldmineSvc.resolveGoldmineServer(
+      { type: 'tv', tmdbId: 94605, season: 1, episode: 1 },
+      {
+        apiBase: goldmineApiBase,
+        timeoutMs: 4000,
+        proxyUrl: (targetUrl, referer) => {
+          wrappedCalls.push({ targetUrl, referer });
+          return `WRAPPED(${referer || 'none'})${targetUrl}`;
+        }
+      }
+    );
+    assert.ok(wrapped.streamUrl.startsWith('WRAPPED(none)'), 'no-header sources are wrapped without a referer');
+    const extBackup = wrapped.backupUrls.find((u) => u.includes('cdn.external.example'));
+    assert.ok(
+      extBackup && extBackup.startsWith('WRAPPED(https://gate.example)'),
+      'Referer-gated sources must hand their referer to the proxy'
+    );
+    assert.ok(wrappedCalls.length >= 4, 'every external source URL goes through the proxy builder');
 
-      // Year handling: providers publish release-ish years that can drift by a
-      // year or two (CastleTV lists Spirited Away as 2003), so a +/-2 window is
-      // accepted; collisions a decade apart are still rejected.
-      const yearMeta = { title: 'Spirited Away', releaseYear: 2001, type: 'movie' };
-      const yearRow = (year) => ({ title: 'Spirited Away', year, movieType: 2, movieTypeName: 'Movies' });
-      assert.ok(
-        identity.pickIdentityMatch([yearRow(2003)], yearMeta).winner,
-        'a 2-year publish drift must still match the film'
-      );
-      assert.strictEqual(
-        identity.pickIdentityMatch([yearRow(2004)], yearMeta).winner,
-        null,
-        'a 3-year drift is beyond the tolerance and must be rejected'
-      );
-      assert.strictEqual(
-        identity.pickIdentityMatch([yearRow(2003), yearRow(2001)], yearMeta).winner.year,
-        2001,
-        'the exact-year candidate must outrank the drifted one'
-      );
+    // Resolver caching: the second identical call must not hit the upstream.
+    const hitsBefore = mockUpstream.goldmineHits;
+    const first = await httpRequest(baseUrl, '/api/resolve/tv/94605?season=2&episode=3');
+    assert.strictEqual(first.status, 200);
+    const hitsAfterFirst = mockUpstream.goldmineHits;
+    assert.ok(hitsAfterFirst > hitsBefore, 'the first resolve must query the TMDB-Embed-API');
+    const second = await httpRequest(baseUrl, '/api/resolve/tv/94605?season=2&episode=3');
+    assert.strictEqual(second.status, 200);
+    assert.strictEqual(mockUpstream.goldmineHits, hitsAfterFirst, 'the cached payload must replay without an upstream call');
+    assert.deepStrictEqual(
+      second.json.stream.audioTracks.map((t) => t.id),
+      first.json.stream.audioTracks.map((t) => t.id)
+    );
 
-      // Anime movies are tagged as "anime" by CastleTV; that classification is
-      // orthogonal to movie/series, so anime films must still match a movie
-      // request while anime *series* must not.
-      assert.ok(
-        identity.pickIdentityMatch(
-          [{ title: 'Spirited Away', year: 2001, movieType: 5, movieTypeName: 'Anime', isSeries: null }],
-          { title: 'Spirited Away', releaseYear: 2001, type: 'movie' }
-        ).winner,
-        'an anime film must be able to match a movie request'
-      );
-      assert.strictEqual(
-        identity.pickIdentityMatch(
-          [
-            {
-              title: 'Spirited Away',
-              year: 2001,
-              movieType: 5,
-              movieTypeName: 'Anime',
-              seasonDescription: 'Season 1',
-              lastEpisodeCount: 12,
-              isSeries: true
-            }
-          ],
-          { title: 'Spirited Away', releaseYear: 2001, type: 'movie' }
-        ).winner,
-        null,
-        'an anime series must not match a movie request'
-      );
+    // A pinned ?source= is its own cache entry and never falls through.
+    const pinnedRes = await httpRequest(baseUrl, '/api/resolve/tv/94605?season=2&episode=4&source=vidlink');
+    assert.strictEqual(pinnedRes.status, 200);
+    assert.strictEqual(pinnedRes.json.stream.audioTracks.length, 1);
+    assert.ok(mockUpstream.goldmineHits > hitsAfterFirst, 'a pinned source is a separate cache key');
 
-      const fcMetadata = {
-        tmdbId: 550,
-        title: 'Fight Club',
-        originalTitle: 'Fight Club',
-        releaseYear: 1999,
-        type: 'movie',
-        genres: ['Drama', 'Thriller'],
-        externalIds: { imdb_id: 'tt0137523' }
-      };
-      // The implicit waterfall resolves through the normal tiers only.
-      const defaultWaterfall = await resolveStreamForServer(fcMetadata, 'andromeda', 'hi');
-      assert.strictEqual(defaultWaterfall.server, 'andromeda', 'default waterfall must resolve Andromeda');
+    // An invalid ?source= slug is ignored -> the full aggregate answers.
+    const badSourceRes = await httpRequest(baseUrl, `/api/resolve/tv/94605?season=2&episode=5&source=${encodeURIComponent('EVIL!!')}`);
+    assert.strictEqual(badSourceRes.status, 200);
+    assert.strictEqual(badSourceRes.json.stream.audioTracks.length, 3);
 
-      // 11c. NetMirror Dynamic Sub-resolver: Discovery checknewtv.php & rotating referer tracker
-      config.upstreams.netmirrorDiscoveryUrls = [mockUpstream.url];
-      config.upstreams.netmirrorBase = ''; // clear static netmirror base to enforce dynamic discovery
+    // A stale/unknown ?server= id falls back to the catalog, never 404s.
+    const legacyServerRes = await httpRequest(baseUrl, '/api/resolve/movie/693134?server=centaurus');
+    assert.strictEqual(legacyServerRes.status, 200);
+    assert.strictEqual(legacyServerRes.json.stream.server, 'goldmine');
 
-      const nmRes = await resolveNetmirror(
-        { tmdbId: '693134', title: 'Dune: Part Two', type: 'movie' },
-        'en'
-      );
-      assert.ok(nmRes, 'NetMirror resolver must succeed via dynamic discovery');
-      assert.strictEqual(nmRes.server, 'andromeda');
-      assert.ok(nmRes.sourceName.startsWith('NetMirror'));
-      assert.strictEqual(nmRes.format, 'hls');
-      assert.ok(nmRes.streamUrl.startsWith('/api/proxy?url='));
-      assert.ok(nmRes.referer.includes('net77.cc'), 'Referer must dynamically adapt to active mirror (net77.cc)');
-      assert.ok(nmRes.audioTracks.length >= 1);
+    // Empty upstream answer -> honest 502 naming the goldmine reason.
+    const emptyRes = await httpRequest(baseUrl, '/api/resolve/movie/555001');
+    assert.strictEqual(emptyRes.status, 502);
+    assert.strictEqual(emptyRes.json.failedReason, 'goldmine_no_streams');
+    assert.match(emptyRes.json.explanation || '', /No provider on the TMDB-Embed-API/);
 
-      // NetMirror web-mirror rotation: the NewTV API base and the first mirror
-      // are dead, so the resolver must rotate to the next /api/embed-tmdb host.
-      config.upstreams.netmirrorBase = '';
-      config.upstreams.netmirrorDiscoveryUrls = [];
-      config.upstreams.netmirrorWebMirrors = ['http://127.0.0.1:1', `${mockUpstream.url}/netmirror`];
-      const nmRotated = await resolveNetmirror(
-        // "fail-netmirror" makes the mocked NewTV search return no results, so
-        // the resolver must fall through to the /api/embed-tmdb mirror pool.
-        { tmdbId: '693134', title: 'fail-netmirror Dune: Part Two', type: 'movie' },
-        'hi'
-      );
-      assert.ok(nmRotated, 'NetMirror must rotate to a working web mirror');
-      assert.ok(nmRotated.streamUrl.startsWith('/api/proxy?url='));
-      assert.ok(
-        nmRotated.rawUrl.includes('netmirror-embed.m3u8'),
-        'rotated mirror must serve the embed-tmdb payload'
-      );
-      assert.ok(
-        (nmRotated.backupUrls || []).some((url) => String(url).includes('netmirror-fallback.m3u8')),
-        'NetMirror fallbackHls must be exposed as a backup URL'
-      );
-      assert.ok(
-        (nmRotated.backupUrls || []).some((url) => String(url).includes('netmirror-direct.mp4')),
-        'NetMirror direct link must be exposed as a backup URL'
-      );
-      config.upstreams.netmirrorWebMirrors = [`${mockUpstream.url}/netmirror`];
+    // applyPreferredAudio flips exactly one default on a clone.
+    const prefBase = {
+      streamUrl: 'u1',
+      audioTracks: [
+        { id: 'a', lang: 'en', streamUrl: 'u1', default: true },
+        { id: 'b', lang: 'ta', streamUrl: 'u1', default: false }
+      ]
+    };
+    const prefApplied = applyPreferredAudio(prefBase, 'ta');
+    assert.strictEqual(prefApplied.activeAudioTrack.id, 'b');
+    assert.deepStrictEqual(prefApplied.audioTracks.map((t) => t.default), [false, true]);
+    console.log('  ✔ Passed Goldmine service, pinning, caching & failure-reason tests.');
 
-      // Restore static netmirrorBase as fallback
-      config.upstreams.netmirrorBase = `${mockUpstream.url}/netmirror`;
-
-      // 11d. Andromeda Multi-Tier Internal Cascading (Priority 1: Castle -> Priority 2: NetMirror)
-      // Tier 1: When CastleTV succeeds, Andromeda returns CastleTV
-      const andromedaTier1 = await resolveAndromedaServer({
-        title: 'Dune: Part Two',
-        releaseYear: 2024,
-        tmdbId: '693134',
-        type: 'movie'
-      });
-      assert.ok(andromedaTier1 && andromedaTier1.streamUrl, 'Andromeda must resolve Tier 1');
-      assert.strictEqual(andromedaTier1.sourceName, 'CastleTV', 'Priority 1 must be CastleTV');
-
-      // Tier 2: When CastleTV fails, Andromeda cascades to NetMirror
-      config.upstreams.castletvBase = `${mockUpstream.url}/castletv-down`;
-      const andromedaTier2 = await resolveAndromedaServer({
-        title: 'Dune: Part Two',
-        releaseYear: 2024,
-        tmdbId: '693134',
-        type: 'movie'
-      });
-      assert.ok(andromedaTier2 && andromedaTier2.streamUrl, 'Andromeda must resolve Tier 2 when Tier 1 misses');
-      assert.ok(andromedaTier2.sourceName.startsWith('NetMirror'), 'Priority 2 must be NetMirror');
-
-      // Restore the healthy tiers for the remaining Andromeda assertions.
-      config.upstreams.castletvBase = `${mockUpstream.url}/castletv`;
-
-      // Exhaustion: when every tier fails, Andromeda returns a clean failure
-      const andromedaExhausted = await resolveAndromedaServer({
-        title: 'cascade-test-fail-all',
-        releaseYear: 2024,
-        tmdbId: 'cascade-test-fail-all',
-        type: 'movie'
-      });
-      assert.strictEqual(andromedaExhausted.ok, false);
-      assert.strictEqual(andromedaExhausted.reason, 'andromeda_all_sources_exhausted');
-
-      // 11e. Waterfall failover. The title carries CastleTV's fail marker and the
-      // tmdbId carries NetMirror's, so every Andromeda tier misses. The waterfall
-      // must advance to the next live server (Centaurus) and report honestly;
-      // the order itself comes from the shared catalog.
-      const waterfallFailoverRes = await resolveStreamForServer(
-        {
-          tmdbId: 'cascade-test-fail-all',
-          title: 'cascade-test-fail-all',
-          releaseYear: 2024,
-          type: 'movie',
-          season: 1,
-          episode: 1
-        },
-        'andromeda',
-        'en'
-      );
-      assert.strictEqual(waterfallFailoverRes.requestedServer, 'andromeda', 'Client requested server must be preserved');
-      assert.strictEqual(
-        waterfallFailoverRes.server,
-        'centaurus',
-        'Waterfall must fall back to Server 2 (Centaurus)'
-      );
-      assert.ok(
-        (waterfallFailoverRes.serverAttempts || []).some(
-          (a) => a.server === 'andromeda' && a.reason === 'andromeda_all_sources_exhausted'
-        ),
-        'serverAttempts must document Andromeda exhaustion'
-      );
-      const failoverOrder = require('../src/services/serverCatalog')
-        .waterfallEnabledServers(config.servers)
-        .map((s) => s.id);
-      assert.deepStrictEqual(
-        failoverOrder,
-        ['andromeda', 'centaurus'],
-        'waterfall order must follow the live catalog (andromeda -> centaurus)'
-      );
-
-      // 11f. Cloudflare Worker: Multi-Tier Andromeda Resolution, Debug Telemetry & Waterfall Failover
-      const workerEnv = {
-        CASTLETV_BASE_URL: `${mockUpstream.url}/castletv`,
-        NETMIRROR_BASE_URL: `${mockUpstream.url}/netmirror`,
-        NETMIRROR_WEB_MIRRORS: `${mockUpstream.url}/netmirror`,
-        HICINE_API_BASE: `${mockUpstream.url}/hicine`,
-        VIDSTUCK_BASE_URL: '',
-        TMDB_BASE_URL: `${mockUpstream.url}/tmdb`,
-        THEINTRODB_URL: `${mockUpstream.url}/theintrodb/v3`,
-        INTRODB_URL: `${mockUpstream.url}/introdb`,
-        OPENSUBTITLES_STREMIO_URL: `${mockUpstream.url}/stremio`
-      };
-
-      // Worker resolves Andromeda directly with CastleTV
-      const cfAndromedaRes = await callWorker(
-        'http://player.test/api/resolve/movie/693134?server=andromeda&audio=hi',
-        workerEnv
-      );
-      assert.strictEqual(cfAndromedaRes.status, 200);
-      const cfAndromedaJson = await cfAndromedaRes.json();
-      assert.strictEqual(cfAndromedaJson.ok, true);
-      assert.strictEqual(cfAndromedaJson.stream.server, 'andromeda');
-      assert.strictEqual(cfAndromedaJson.stream.sourceName, 'CastleTV');
-      assert.ok(cfAndromedaJson.stream.audioTracks.length >= 4);
-      assert.strictEqual(cfAndromedaJson.stream.activeAudioTrack.lang, 'hi');
-
-      // Worker /api/debug/andromeda/:type/:tmdbId inspects Andromeda upstreams
-      const cfDebugRes = await callWorker(
-        'http://player.test/api/debug/andromeda/movie/693134',
-        workerEnv
-      );
-      assert.strictEqual(cfDebugRes.status, 200);
-      const cfDebugJson = await cfDebugRes.json();
-      assert.strictEqual(cfDebugJson.ok, true);
-      assert.strictEqual(cfDebugJson.upstream.castletvBase, `${mockUpstream.url}/castletv`);
-      assert.strictEqual(cfDebugJson.upstream.netmirrorBase, `${mockUpstream.url}/netmirror`);
-      assert.strictEqual(cfDebugJson.result.sourceName, 'CastleTV');
-
-      // Worker Waterfall: When Andromeda tiers fail, worker automatically falls back to Server 2 (Centaurus)
-      const cfWaterfallRes = await callWorker(
-        'http://player.test/api/resolve/movie/cascade-test-fail-all?server=andromeda',
-        workerEnv
-      );
-      assert.strictEqual(cfWaterfallRes.status, 200);
-      const cfWaterfallJson = await cfWaterfallRes.json();
-      assert.strictEqual(cfWaterfallJson.ok, true);
-      assert.strictEqual(cfWaterfallJson.stream.requestedServer, 'andromeda');
-      assert.strictEqual(
-        cfWaterfallJson.stream.server,
-        'centaurus',
-        'Worker waterfall must fall back to Server 2 (Centaurus)'
-      );
-      assert.ok(cfWaterfallJson.stream.rawUrl, 'the fallback stream must carry a playable URL');
-
-    } finally {
-      config.upstreams.castletvBase = origCastleBase;
-      config.upstreams.netmirrorBase = origNetmirrorBase;
-      config.upstreams.vidstuckBase = origVidstuckBase;
-    }
-    console.log('  ✔ Passed CastleTV, NetMirror & Server 2 Centaurus failover waterfall tests.');
-
-    // 13. Server catalog: a rebrand / re-prioritisation must reach BOTH backends
-    // and the player's server modal, with no stale names, slots, or order.
+    // 12. Shared catalog parity: Node config, the Worker's SERVERS, the player
+    //     bundle defaults and the live API payloads must all agree — and the
+    //     Worker's resolve must run the same shared goldmine service.
     console.log('[12/13] Testing shared server catalog, worker servers array & player defaults...');
     {
       const catalog = require('../src/services/serverCatalog');
-      const expected = [
-        ['andromeda', 'Fiber Optic Speedrun', 'Multi-Audio • Primary', 1],
-        ['centaurus', 'Gigachad Node', 'Adaptive • Multi-Quality', 2]
-      ];
+      const expected = [['goldmine', 'Goldmine MKV', 'Multi-Audio Dubs \u2022 MKV', 1]];
 
-      // 13a. The Node backend serves the catalog order verbatim.
+      // 12a. The Node backend serves the catalog order verbatim.
       assert.deepStrictEqual(
         config.servers.filter((s) => s.listed !== false).map((s) => [s.id, s.name, s.badge, s.priority]),
         expected,
         'Node config must expose the catalog names/badges/priorities in order'
       );
+      assert.deepStrictEqual(catalog.WATERFALL_PRIORITY, ['goldmine']);
       assert.deepStrictEqual(
-        catalog.WATERFALL_PRIORITY,
-        expected.map((e) => e[0]),
-        'waterfall order must always follow the catalog priorities'
+        catalog.nodeServerList().map((s) => s.id),
+        catalog.workerServerList().map((s) => s.id),
+        'both runtimes must derive the same server list from the shared catalog'
       );
 
-      // 13b. A runtime re-prioritisation must reorder the player's server array:
-      // sortByPriority is applied to the live list, not to a frozen constant.
-      const promoted = catalog.allServers().map((s) => ({ ...s }));
-      promoted.find((s) => s.id === 'centaurus').priority = 0;
-      assert.deepStrictEqual(
-        catalog.buildServerPayload(promoted, null).map((s) => s.id)[0],
-        'centaurus',
-        'a promoted server must lead the player-facing array'
-      );
-
-      // 13c. The API payload the player renders: priority order, one active row,
-      // opt-in/removed servers never listed.
-      const payload = catalog.buildServerPayload(catalog.workerServerList(), 'centaurus');
-      assert.deepStrictEqual(
-        payload.map((s) => s.id),
-        expected.map((e) => e[0]),
-        'player payload must list servers in priority order'
-      );
-      assert.deepStrictEqual(
-        payload.find((s) => s.id === 'centaurus').active,
-        true,
-        'the server that answered must be flagged active'
-      );
+      // 12b. The API payload the player renders: one active row, honest order.
+      const payload = catalog.buildServerPayload(catalog.workerServerList(), 'goldmine');
+      assert.deepStrictEqual(payload.map((s) => s.id), ['goldmine']);
+      assert.strictEqual(payload[0].active, true);
+      assert.strictEqual(payload.filter((s) => s.active).length, 1, 'exactly one server may ever be active');
       assert.strictEqual(
-        payload.filter((s) => s.active).length,
-        1,
-        'exactly one server may ever be active'
+        catalog.resolveServerId(catalog.workerServerList(), 'centaurus'),
+        'goldmine',
+        'unknown/legacy ids must fall back to the catalog top'
       );
-      assert.ok(!payload.some((s) => s.id === 'strings'), 'the removed Strings slot must not be listed');
+      assert.strictEqual(catalog.resolveServerId(catalog.workerServerList(), ''), 'goldmine');
 
-      // 13d. The player must default to priority 1 and order rows defensively.
+      // 12c. The player bundle: default server, defensive sorting and the
+      // movi engine + language-chip wiring.
       const embedJs = fs.readFileSync(path.join(__dirname, '..', 'public', 'js', 'embed.js'), 'utf8');
-      assert.match(embedJs, /server: 'andromeda'/, 'player default server must be the priority-1 server');
-      assert.ok(!/server: '(atlas|ursa)'/.test(embedJs), 'player must not default to a removed server');
+      assert.match(embedJs, /server: 'goldmine'/, 'player default server must be the priority-1 server');
+      assert.ok(!/server: '(andromeda|centaurus|atlas|ursa)'/.test(embedJs), 'player must not default to a removed server');
       assert.ok(
         /\.sort\(\(a, b\) => \(Number\(a\.priority\) \|\| 999\)/.test(embedJs),
         'player must re-sort the API server array by priority before rendering'
       );
-      const embedHtml = fs.readFileSync(path.join(__dirname, '..', 'public', 'embed.html'), 'utf8');
-      assert.ok(!/Connecting to Atlas/.test(embedHtml), 'player page must not greet viewers with a removed server name');
+      for (const marker of ['ensureMoviPlayer', 'attachMoviStream', 'detachMoviPlayer', 'syncMoviAudioTracks', 'renderLangChips', 'selectMoviAudioLang']) {
+        assert.ok(embedJs.includes(marker), `player must keep the movi integration (${marker})`);
+      }
+      const embedHtmlFile = fs.readFileSync(path.join(__dirname, '..', 'public', 'embed.html'), 'utf8');
+      assert.ok(embedHtmlFile.includes('id="movi-mount"'), 'embed page must carry the movi-player mount');
+      assert.ok(embedHtmlFile.includes('id="lang-chips"'), 'embed page must carry the dub-language chips');
+      assert.ok(!/andromeda|centaurus|Connecting to Atlas/i.test(embedHtmlFile), 'player page must not reference removed servers');
 
-      // 13e. Cloudflare Worker (the deployment that serves /embed) reports the
+      // 12d. Cloudflare Worker (the deployment that serves /embed) reports the
       // same list through /api/health, /api/info and the resolve payload.
       const catalogWorkerEnv = {
-        CASTLETV_BASE_URL: `${mockUpstream.url}/castletv`,
-        NETMIRROR_BASE_URL: `${mockUpstream.url}/netmirror`,
-        NETMIRROR_WEB_MIRRORS: `${mockUpstream.url}/netmirror`,
-        VIDSTUCK_BASE_URL: '',
+        GOLDMINE_API_BASE: `${mockUpstream.url}/goldmine`,
         TMDB_BASE_URL: `${mockUpstream.url}/tmdb`,
         THEINTRODB_URL: `${mockUpstream.url}/theintrodb/v3`,
         INTRODB_URL: `${mockUpstream.url}/introdb`,
-        OPENSUBTITLES_STREMIO_URL: `${mockUpstream.url}/stremio`
+        OPENSUBTITLES_STREMIO_URL: `${mockUpstream.url}/stremio`,
+        SUBDL_DOWNLOAD_URL: `${mockUpstream.url}/subdl-dl`
       };
 
       const healthRes = await callWorker('http://player.test/api/health');
       assert.strictEqual(healthRes.status, 200);
-      const healthJson = await healthRes.json();
-      assert.deepStrictEqual(
-        healthJson.servers.slice(0, expected.length),
-        expected.map((e) => e[0]),
-        'worker /api/health must list the catalog ids in priority order first'
-      );
+      assert.deepStrictEqual((await healthRes.json()).servers, ['goldmine']);
 
-      const infoRes = await callWorker('http://player.test/api/info/tv/94605', catalogWorkerEnv);
-      assert.strictEqual(infoRes.status, 200);
-      const infoJson = await infoRes.json();
+      const workerInfoRes = await callWorker('http://player.test/api/info/tv/94605', catalogWorkerEnv);
+      assert.strictEqual(workerInfoRes.status, 200);
+      const workerInfoJson = await workerInfoRes.json();
       assert.deepStrictEqual(
-        infoJson.servers.map((s) => [s.id, s.name, s.priority]),
-        expected.map((e) => [e[0], e[1], e[3]]),
-        'worker /api/info must expose the rebranded server objects'
+        workerInfoJson.servers.map((s) => [s.id, s.name, s.priority]),
+        [['goldmine', 'Goldmine MKV', 1]],
+        'worker /api/info must expose the catalog server objects'
       );
-      // The Worker (which serves the player) must resolve the exact same skip
-      // segments and artwork as the Node backend through the shared helpers.
-      assertArcaneSegments(infoJson.segments, 'Worker /api/info');
-      assertArcaneArtwork(infoJson.metadata, 'Worker /api/info');
-      const workerMovieSegmentsRes = await callWorker(
-        'http://player.test/api/segments/movie/693134',
-        catalogWorkerEnv
-      );
+      // The Worker must resolve the exact same skip segments and artwork as
+      // the Node backend through the shared helpers.
+      assertArcaneSegments(workerInfoJson.segments, 'Worker /api/info');
+      assertArcaneArtwork(workerInfoJson.metadata, 'Worker /api/info');
+      const workerMovieSegmentsRes = await callWorker('http://player.test/api/segments/movie/693134', catalogWorkerEnv);
       assert.strictEqual(workerMovieSegmentsRes.status, 200);
-      const workerMovieSegmentsJson = await workerMovieSegmentsRes.json();
       assert.deepStrictEqual(
-        workerMovieSegmentsJson.segments.map((s) => [s.type, s.label, s.start, s.end, s.source]),
+        (await workerMovieSegmentsRes.json()).segments.map((s) => [s.type, s.label, s.start, s.end, s.source]),
         [['outro', 'Skip Credits', 9600, 10020, 'introdb']],
         'worker movie credits must resolve through IntroDB with is_movie=true'
       );
 
-      const resolveRes = await callWorker(
-        'http://player.test/api/resolve/movie/693134?server=andromeda',
-        catalogWorkerEnv
+      // 12e. The worker waterfall: the same shared goldmine service, the same
+      // payload shape the player consumes.
+      const workerResolveRes = await callWorker('http://player.test/api/resolve/movie/693134?server=goldmine', catalogWorkerEnv);
+      assert.strictEqual(workerResolveRes.status, 200);
+      const workerResolveJson = await workerResolveRes.json();
+      assert.strictEqual(workerResolveJson.ok, true);
+      assert.strictEqual(workerResolveJson.stream.server, 'goldmine');
+      assert.strictEqual(workerResolveJson.stream.engine, 'movi', 'the worker must flag MKV streams for the movi engine');
+      assert.ok(workerResolveJson.stream.streamUrl.startsWith('/api/proxy?url='));
+      assert.deepStrictEqual(workerResolveJson.stream.audioTracks.map((t) => t.lang), ['en', 'hi', 'ta']);
+      assert.deepStrictEqual(workerResolveJson.servers.map((s) => s.id), ['goldmine']);
+      assert.strictEqual(workerResolveJson.servers.find((s) => s.active).id, workerResolveJson.stream.server);
+
+      // ?source= pinning works on the worker too (separate cache entry).
+      const workerPinnedRes = await callWorker('http://player.test/api/resolve/tv/94605?season=3&episode=1&source=vidlink', catalogWorkerEnv);
+      assert.strictEqual(workerPinnedRes.status, 200);
+      assert.strictEqual((await workerPinnedRes.json()).stream.audioTracks.length, 1);
+
+      // Worker failure path: honest goldmine reason in the explanation.
+      const workerEmptyRes = await callWorker('http://player.test/api/resolve/movie/555001', catalogWorkerEnv);
+      assert.strictEqual(workerEmptyRes.status, 502);
+      assert.match((await workerEmptyRes.json()).explanation || '', /No provider on the TMDB-Embed-API/);
+
+      // 12f. Worker admin: live probes + the Goldmine diagnostic route.
+      const workerProbeRes = await workerFetch(
+        new Request('http://player.test/api/admin/probe', { method: 'POST', headers: { 'X-Admin-Key': 'admin123' } }),
+        { ASSETS: mockAssets, ...catalogWorkerEnv },
+        { waitUntil() {} }
       );
-      assert.strictEqual(resolveRes.status, 200);
-      const resolveJson = await resolveRes.json();
-      assert.strictEqual(resolveJson.ok, true);
-      assert.deepStrictEqual(
-        resolveJson.servers.map((s) => s.id),
-        expected.map((e) => e[0]),
-        'the worker payload rendered by the player must be the catalog list'
+      assert.strictEqual(workerProbeRes.status, 200);
+      const workerProbeJson = await workerProbeRes.json();
+      assert.ok(workerProbeJson.probeResults.length >= 2);
+      assert.ok(workerProbeJson.probeResults.every((r) => r.serverId === 'goldmine'));
+      assert.ok(workerProbeJson.probeResults.some((r) => r.ok === true));
+
+      const workerDiagRes = await callWorker(
+        'http://player.test/api/admin/goldmine/diagnose/tv/94605?season=1&episode=1',
+        catalogWorkerEnv,
+        { 'X-Admin-Key': 'admin123' }
       );
-      assert.deepStrictEqual(
-        resolveJson.servers.map((s) => s.name),
-        expected.map((e) => e[1]),
-        'the player must receive the rebranded names, not the legacy ones'
-      );
+      assert.strictEqual(workerDiagRes.status, 200);
+      const workerDiagJson = await workerDiagRes.json();
+      assert.strictEqual(workerDiagJson.ok, true);
+      assert.deepStrictEqual(workerDiagJson.providers.map((p) => p.id).sort(), ['4khdhub', 'mockbox', 'vidlink']);
       assert.strictEqual(
-        resolveJson.servers.find((s) => s.active).id,
-        resolveJson.stream.server,
-        'the active flag must match the server that produced the stream'
-      );
-      assert.ok(
-        !JSON.stringify(resolveJson.servers).includes('Strings'),
-        'worker payload must not leak removed servers'
+        (await callWorker('http://player.test/api/admin/goldmine/diagnose/tv/94605')).status,
+        401,
+        'the diagnostic route must be admin-keyed'
       );
 
-      // 13e-2. Worker subtitles: same sources, merge and proxy as the Node API.
+      // 12g. Worker subtitles: same sources, merge and proxy as the Node API.
       assert.deepStrictEqual(
-        resolveJson.subtitles.map((t) => [t.lang, t.label, t.default]),
-        [['en', 'English', true], ['ar', 'العربية', false], ['pt', 'Português (BR)', false]],
+        workerResolveJson.subtitles.map((t) => [t.lang, t.label, t.default]),
+        [['en', 'English', true], ['ar', '\u0627\u0644\u0639\u0631\u0628\u064a\u0629', false], ['pt', 'Portugu\u00eas (BR)', false]],
         'worker must resolve subtitles through the Stremio v3 addon'
       );
-      const workerSubRes = await callWorker(`http://player.test${resolveJson.subtitles[0].url}`, catalogWorkerEnv);
+      const workerSubRes = await callWorker(`http://player.test${workerResolveJson.subtitles[0].url}`, catalogWorkerEnv);
       assert.strictEqual(workerSubRes.status, 200);
       const workerVtt = await workerSubRes.text();
       assert.ok(workerVtt.startsWith('WEBVTT') && workerVtt.includes('Welcome to Piltover and Zaun.'), 'worker subtitle proxy must return WebVTT');
       assert.strictEqual(workerSubRes.headers.get('access-control-allow-origin'), '*');
-      const workerVipRes = await callWorker(`http://player.test${resolveJson.subtitles[2].url}`, catalogWorkerEnv);
+      const workerVipRes = await callWorker(`http://player.test${workerResolveJson.subtitles[2].url}`, catalogWorkerEnv);
       assert.strictEqual(workerVipRes.status, 502, 'worker must reject VIP placeholder subtitles');
       const workerRelayRes = await callWorker(
         `http://player.test/api/subtitles/proxy?url=${encodeURIComponent('https://evil.example/x.srt')}`,
@@ -2469,18 +1583,21 @@ async function runTests() {
       assert.strictEqual(workerRelayRes.status, 403, 'worker subtitle proxy must not be an open relay');
       const workerZipRes = await callWorker(
         `http://player.test/api/subtitles/proxy?url=${encodeURIComponent(`${mockUpstream.url}/subdl-dl/subtitle/ru.zip`)}&lang=ru`,
-        { ...catalogWorkerEnv, SUBDL_DOWNLOAD_URL: `${mockUpstream.url}/subdl-dl` }
+        catalogWorkerEnv
       );
       assert.strictEqual(workerZipRes.status, 200);
-      assert.ok((await workerZipRes.text()).includes('Привет'), 'worker must unpack zip + decode windows-1251');
+      assert.ok((await workerZipRes.text()).includes('\u041f\u0440\u0438\u0432\u0435\u0442'), 'worker must unpack zip + decode windows-1251');
 
-      // 13f. The worker must build its server list from the same shared catalog.
+      // 12h. The worker must build its server list + Goldmine resolver from the
+      // shared modules, and the legacy resolvers must stay deleted.
       const workerSrc = fs.readFileSync(path.join(__dirname, '..', 'cloudflare-worker', 'worker.js'), 'utf8');
+      assert.ok(/serverCatalog\.workerServerList\(\)/.test(workerSrc), 'worker must build its server list from the shared catalog');
+      assert.ok(workerSrc.includes("from '../src/services/goldmine.js'"), 'worker must import the shared goldmine service');
+      assert.ok(workerSrc.includes("from '../src/services/languages.js'"), 'worker must import the shared language helpers');
       assert.ok(
-        /serverCatalog\.workerServerList\(\)/.test(workerSrc),
-        'worker must build its server list from the shared catalog'
+        !/resolveHicineUpstream|resolveCastletvUpstream|resolveNetmirrorUpstream|resolveAndromedaUpstream|unrollHubcloudUrl/.test(workerSrc),
+        'the legacy resolvers must stay deleted from the worker'
       );
-      assert.ok(!/srvId === 'strings'/.test(workerSrc), "the dead Strings waterfall branch must be gone");
     }
     console.log('  ✔ Passed shared server catalog, worker servers array & player default tests.');
 
@@ -2491,11 +1608,7 @@ async function runTests() {
       const callWorkerWith = (target, env = {}, init = {}) =>
         workerFetch(new Request(target, init), { ASSETS: mockAssets, ...env }, { waitUntil() {} });
       const statsEnv = {
-        CASTLETV_BASE_URL: `${mockUpstream.url}/castletv`,
-        NETMIRROR_BASE_URL: `${mockUpstream.url}/netmirror`,
-        NETMIRROR_WEB_MIRRORS: `${mockUpstream.url}/netmirror`,
-        HICINE_API_BASE: `${mockUpstream.url}/hicine`,
-        VIDSTUCK_BASE_URL: '',
+        GOLDMINE_API_BASE: `${mockUpstream.url}/goldmine`,
         TMDB_BASE_URL: `${mockUpstream.url}/tmdb`,
         THEINTRODB_URL: `${mockUpstream.url}/theintrodb/v3`,
         INTRODB_URL: `${mockUpstream.url}/introdb`,
@@ -2503,10 +1616,7 @@ async function runTests() {
       };
       const allDownEnv = {
         ...statsEnv,
-        CASTLETV_BASE_URL: `${mockUpstream.url}/castletv-down`,
-        NETMIRROR_BASE_URL: `${mockUpstream.url}/castletv-down`,
-        NETMIRROR_WEB_MIRRORS: `${mockUpstream.url}/castletv-down`,
-        HICINE_API_BASE: `${mockUpstream.url}/castletv-down`
+        GOLDMINE_API_BASE: `${mockUpstream.url}/goldmine-down`
       };
 
       // 13g. /docs (+ /documentation, trailing slash) serve public/docs.html with the runtime config injected.
@@ -2520,8 +1630,12 @@ async function runTests() {
         assert.ok(docsHtml.includes('LOL_EMBED_PLAYER_COMMAND') && docsHtml.includes('LOL_EMBED_PLAYER_EVENT'), 'docs must cover the postMessage API');
         assert.ok(!docsHtml.includes('<!--LOL_EMBED_CONFIG-->'), 'docs config placeholder must be replaced');
         assert.ok(docsHtml.includes('"apiBaseUrl":"https://api.player.test"'), 'docs must receive the normalized API base');
-        assert.ok(docsHtml.includes('"servers":[{"id":"andromeda"'), 'docs must receive the player-visible server catalog');
-        for (const provider of ['CastleTV', 'HiCine', 'NetMirror', 'hlowb', 'net27', 'hicine.sbs', 'vcloud']) {
+        assert.ok(docsHtml.includes('"servers":[{"id":"goldmine"'), 'docs must receive the player-visible server catalog');
+        for (const provider of [
+          'CastleTV', 'HiCine', 'NetMirror', 'hlowb', 'net27', 'hicine.sbs', 'vcloud',
+          'TMDB-Embed-API', 'onrender', 'rdp-running-campion', 'Showbox', 'Vidlink', 'vidlink',
+          'DahmerMovies', '4KHDHub', '4khdhub', 'VixSrc'
+        ]) {
           assert.ok(!docsHtml.includes(provider), `docs must not leak the upstream provider ${provider}`);
         }
       }
@@ -2563,20 +1677,20 @@ async function runTests() {
       const serversRes = await callWorker('http://player.test/api/servers');
       assert.strictEqual(serversRes.status, 200);
       const serversJson = await serversRes.json();
-      assert.deepStrictEqual(serversJson.servers.map((s) => s.id), ['andromeda', 'centaurus']);
+      assert.deepStrictEqual(serversJson.servers.map((s) => s.id), ['goldmine']);
       assert.ok(serversJson.servers.every((s) => s.name && s.badge && Object.keys(s).length === 4), 'server list must be id/name/badge/priority only');
 
       // 13j. Usage statistics (in-isolate fallback when no STATS Durable Object is bound).
       assert.strictEqual((await callWorker('http://player.test/api/admin/stats')).status, 401, 'stats need the admin key');
       const embedHit = await callWorker('http://player.test/embed/tv/94605/1/1', statsEnv, { Referer: 'https://fan-site.example/watch/arcane', 'CF-IPCountry': 'IN' });
       assert.strictEqual(embedHit.status, 200);
-      const okResolve = await callWorker('http://player.test/api/resolve/movie/693134?server=andromeda&parent=https://fan-site.example', statsEnv, { 'CF-IPCountry': 'IN' });
+      const okResolve = await callWorker('http://player.test/api/resolve/movie/693134?server=goldmine&parent=https://fan-site.example', statsEnv, { 'CF-IPCountry': 'IN' });
       assert.strictEqual(okResolve.status, 200);
       const failT0 = Date.now();
-      const failResolve = await callWorker('http://player.test/api/resolve/movie/550?server=andromeda&parent=https://fan-site.example', allDownEnv, { 'CF-IPCountry': 'PK' });
+      const failResolve = await callWorker('http://player.test/api/resolve/movie/550?server=goldmine&parent=https://fan-site.example', allDownEnv, { 'CF-IPCountry': 'PK' });
       assert.strictEqual(failResolve.status, 502, 'all-down upstreams must produce a failed resolve');
       assert.ok(Date.now() - failT0 < 8000, 'down upstreams must fail fast');
-      await callWorker(`http://player.test/api/proxy?url=${encodeURIComponent(`${mockUpstream.url}/castletv-down`)}`, statsEnv, { Referer: 'http://player.test/embed/tv/94605/1/1' });
+      await callWorker(`http://player.test/api/proxy?url=${encodeURIComponent(`${mockUpstream.url}/cdn/hls/master.m3u8`)}`, statsEnv, { Referer: 'http://player.test/embed/tv/94605/1/1' });
 
       const statsRes = await callWorker('http://player.test/api/admin/stats?limit=10', statsEnv, adminKey);
       assert.strictEqual(statsRes.status, 200);
@@ -2598,10 +1712,10 @@ async function runTests() {
       assert.ok(statsJson.stats.countries.some((c) => c.code === 'IN') && statsJson.stats.countries.some((c) => c.code === 'PK'), 'viewer countries must be counted from CF-IPCountry');
       const latestError = statsJson.stats.errors[0];
       assert.ok(latestError && latestError.reason && latestError.title.startsWith('Fight Club') && latestError.domain === 'fan-site.example' && latestError.country === 'PK', `recent failures: ${JSON.stringify(latestError)}`);
-      const andromedaStats = statsJson.stats.servers.find((srv) => srv.id === 'andromeda');
-      assert.ok(andromedaStats && andromedaStats.ok >= 1 && andromedaStats.fails >= 1 && andromedaStats.successRate !== null, `server health: ${JSON.stringify(andromedaStats)}`);
+      const goldmineStats = statsJson.stats.servers.find((srv) => srv.id === 'goldmine');
+      assert.ok(goldmineStats && goldmineStats.ok >= 1 && goldmineStats.fails >= 1 && goldmineStats.successRate !== null, `server health: ${JSON.stringify(goldmineStats)}`);
       assert.ok(statsJson.stats.days.length >= 1 && statsJson.stats.days[statsJson.stats.days.length - 1].fails >= 1);
-      assert.deepStrictEqual(statsJson.catalog.map((c) => c.id), ['andromeda', 'centaurus'], 'dashboard feed must carry the live catalog for server names');
+      assert.deepStrictEqual(statsJson.catalog.map((c) => c.id), ['goldmine'], 'dashboard feed must carry the live catalog for server names');
       const overviewRes = await callWorker('http://player.test/api/admin/overview', statsEnv, adminKey);
       assert.ok((await overviewRes.json()).stats.totals.requests >= 3, 'legacy overview must include the stats block');
 
@@ -2611,7 +1725,7 @@ async function runTests() {
       });
       assert.strictEqual(blockRes.status, 200);
       assert.deepStrictEqual((await blockRes.json()).blockedDomains, ['leech.example']);
-      const blockedResolve = await callWorker('http://player.test/api/resolve/movie/693134?server=andromeda&parent=https://www.leech.example', statsEnv);
+      const blockedResolve = await callWorker('http://player.test/api/resolve/movie/693134?server=goldmine&parent=https://www.leech.example', statsEnv);
       assert.strictEqual(blockedResolve.status, 403, 'blocked sites must not resolve streams');
       const blockedEmbed = await callWorker('http://player.test/embed/movie/693134', statsEnv, { Referer: 'https://leech.example/watch' });
       assert.strictEqual(blockedEmbed.status, 403, 'blocked sites must not get the player page');
@@ -2622,7 +1736,7 @@ async function runTests() {
         method: 'POST', headers: { ...adminKey, 'Content-Type': 'application/json' }, body: JSON.stringify({ domain: 'leech.example', blocked: false })
       });
       assert.deepStrictEqual((await unblockRes.json()).blockedDomains, []);
-      assert.strictEqual((await callWorker('http://player.test/api/resolve/movie/693134?server=andromeda&parent=https://leech.example', statsEnv)).status, 200);
+      assert.strictEqual((await callWorker('http://player.test/api/resolve/movie/693134?server=goldmine&parent=https://leech.example', statsEnv)).status, 200);
       const blockedSiteRow = (await (await callWorker('http://player.test/api/admin/stats', statsEnv, adminKey)).json()).stats.domains.find((d) => d.domain === 'leech.example');
       assert.ok(blockedSiteRow && blockedSiteRow.blocked === false);
 
@@ -2660,9 +1774,9 @@ async function runTests() {
         const doPost = (store, path, body) => store.fetch(new Request(`https://stats.internal${path}`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) }));
         const rec = await doPost(store1, '/record', [
           { kind: 'embed', domain: 'watch.example', country: 'IN', type: 'tv', tmdbId: 94605 },
-          { kind: 'resolve', domain: 'watch.example', country: 'IN', type: 'tv', tmdbId: 94605, title: 'Arcane', year: 2021, season: 1, episode: 1, server: 'andromeda' },
-          { kind: 'resolve_error', domain: 'other.example', country: 'US', type: 'movie', tmdbId: 1, title: 'Nope', server: 'centaurus', reason: 'servers_no_link' },
-          { kind: 'server_attempt', server: 'andromeda', ok: true, latencyMs: 210 },
+          { kind: 'resolve', domain: 'watch.example', country: 'IN', type: 'tv', tmdbId: 94605, title: 'Arcane', year: 2021, season: 1, episode: 1, server: 'goldmine' },
+          { kind: 'resolve_error', domain: 'other.example', country: 'US', type: 'movie', tmdbId: 1, title: 'Nope', server: 'goldmine', reason: 'goldmine_no_streams' },
+          { kind: 'server_attempt', server: 'goldmine', ok: true, latencyMs: 210 },
           { kind: 'proxy', domain: '' }
         ]);
         assert.strictEqual(rec.status, 200);
@@ -2727,7 +1841,7 @@ async function runTests() {
         assert.strictEqual(doStats.stats.persistent, true, 'with the binding the dashboard must report durable storage');
         assert.ok(doStats.stats.domains.some((d) => d.domain === 'durable.example' && d.embeds === 1), 'embed events must reach the Durable Object');
         assert.ok(!doStats.stats.domains.some((d) => d.domain === 'fan-site.example'), 'the durable snapshot must not mix in the in-isolate fallback counters');
-        const doBlocked = await workerFetch(new Request('http://player.test/api/resolve/movie/693134?server=andromeda&parent=https://other.example'), { ASSETS: mockAssets, ...doEnv }, doCtx);
+        const doBlocked = await workerFetch(new Request('http://player.test/api/resolve/movie/693134?server=goldmine&parent=https://other.example'), { ASSETS: mockAssets, ...doEnv }, doCtx);
         assert.strictEqual(doBlocked.status, 403, 'the block-list persisted in the object must gate resolves');
         db.close();
       } else {
