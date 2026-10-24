@@ -346,16 +346,44 @@ MKV in the browser** possible:
   duplicates.
 - **HLS stays native:** aggregated HLS sources still play through hls.js with
   rendition switching and manifest-discovered audio rows.
-- **Quality:** the quality menu lists real heights (1080p/720p/480p) from the
-  deduplicated ladder; a progressive file keeps exactly one row at its native
-  resolution.
+- **Quality:** HLS menus are rebuilt from the actual levels hls.js discovers,
+  with exact level indexes and an Auto/ABR row. Progressive files retain the
+  real resolver-supplied alternatives rather than stale HLS choices.
 - **Subtitles:** embedded MKV tracks (SRT/ASS/VTT/PGS/DVB) are selectable
   through the engine; the external `/api/subtitles` tracks layer on top as
   usual.
 
 Codec/device combinations (HEVC/AV1 profiles, HDR/Dolby Vision, AC-3/E-AC-3)
-may still not play in every browser — the WASM engine software-decodes a lot,
-but nothing is transcoded server-side to conceal the limits.
+may still not play in every browser. The default Worker path does not conceal
+those limits with a server transcode; a suitable Node host can opt in below.
+
+### Optional Node MKV→HLS fallback
+
+Cloudflare Workers cannot spawn ffmpeg. `scripts/dev-worker.mjs` therefore
+exposes `/api/mkv-hls` **only when `MKV_HLS_ENABLED=true` is set on that Node
+process**. Do not set this in `wrangler.toml` and expect Cloudflare to convert
+media: an ordinary Worker page advertises `mkvHlsEnabled=false` and retains its
+normal direct/movi/backup behavior.
+
+After native playback and the direct movi retry fail, the player sends the
+original same-origin `/api/proxy` source to the Node route. ffprobe discovers
+the actual streams; ffmpeg then writes H.264/AAC HLS with:
+
+- genuine video variants no higher than the source (1080p/720p/480p for a
+  1080p source, 720p/480p for a 720p source, and no cosmetic upscaling);
+- the source's real audio streams as selectable HLS renditions (up to eight);
+- an event/VOD playlist with all segments retained for seeking after the
+  conversion completes.
+
+The first segment takes time, long conversions can buffer on a small CPU, and
+a new conversion starts at the beginning rather than applying an old MKV
+resume timestamp. Seeking past the converted portion must wait for ffmpeg.
+Temporary output is deleted when a session expires or the host stops.
+`MKV_HLS_MAX_SESSIONS`
+(default `1`) bounds concurrent encodes; `MKV_HLS_DIR` overrides the temporary
+output directory. `npm test` includes a fully local, real ffmpeg integration
+test covering variant ladders, dual audio, codecs, segments and source-host
+validation.
 
 ## Live provider test in GitHub Codespaces
 

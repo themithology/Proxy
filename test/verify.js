@@ -1237,9 +1237,31 @@ async function runTests() {
       assert.ok(embedHtml.includes(assetRef), `embed page must reference ${assetRef}`);
     }
     assert.ok(embedHtml.includes('window.__LOL_EMBED_CONFIG__'), 'Worker must inject the player config');
-    assert.ok(
-      embedHtml.includes(JSON.stringify({ apiBaseUrl: baseUrl })),
-      'Injected config must carry the normalized API Worker URL'
+    const readInjectedConfig = (html) => {
+      const match = html.match(/window\.__LOL_EMBED_CONFIG__=(.*?);<\/script>/);
+      assert.ok(match, 'Injected config script must be present');
+      return JSON.parse(match[1]);
+    };
+    const injectedConfig = readInjectedConfig(embedHtml);
+    assert.strictEqual(injectedConfig.apiBaseUrl, baseUrl, 'Injected config must carry the normalized API Worker URL');
+    assert.strictEqual(injectedConfig.mkvHlsEnabled, false, 'ordinary Workers must not advertise host-only ffmpeg');
+    const workerOnlyFlagHtml = await (await callWorker(
+      'http://player.test/embed?type=movie&tmdb=693134',
+      { MKV_HLS_ENABLED: 'true', ADS_ENABLED: 'false' }
+    )).text();
+    assert.strictEqual(
+      readInjectedConfig(workerOnlyFlagHtml).mkvHlsEnabled,
+      false,
+      'the public flag alone must not advertise ffmpeg on a Worker'
+    );
+    const nodeEmbedHtml = await (await callWorker(
+      'http://player.test/embed?type=movie&tmdb=693134',
+      { MKV_HLS_ENABLED: 'true', MKV_HLS_NODE_HOST: 'true', ADS_ENABLED: 'false' }
+    )).text();
+    assert.strictEqual(
+      readInjectedConfig(nodeEmbedHtml).mkvHlsEnabled,
+      true,
+      'an explicitly configured Node host may advertise MKV to HLS'
     );
     assert.ok(!embedHtml.includes('<!--LOL_EMBED_CONFIG-->'), 'Config placeholder must be replaced');
     assert.ok(!/vidstuck/i.test(embedHtml), 'Player page must be rebranded to LOL Embed');
@@ -1317,8 +1339,9 @@ async function runTests() {
     const embedDefaultRes = await callWorker('http://player.test/embed?type=movie&tmdb=693134');
     assert.strictEqual(embedDefaultRes.status, 200);
     const embedDefaultHtml = await embedDefaultRes.text();
-    assert.ok(
-      embedDefaultHtml.includes(JSON.stringify({ apiBaseUrl: '' })),
+    assert.strictEqual(
+      readInjectedConfig(embedDefaultHtml).apiBaseUrl,
+      '',
       'Unset API_BASE_URL must inject an empty same-origin base'
     );
 

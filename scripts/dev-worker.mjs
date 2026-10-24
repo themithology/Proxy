@@ -6,12 +6,19 @@ import http from 'http';
 import fs from 'fs';
 import path from 'path';
 import { Readable } from 'stream';
+import { createRequire } from 'module';
 import workerModule from '../cloudflare-worker/worker.js';
 
+const require = createRequire(import.meta.url);
+const { createMkvHlsHandler } = require('../src/services/mkvHls.js');
 const PORT = parseInt(process.env.PLAYER_PORT || '8787', 10);
 const HOST = process.env.HOST || '0.0.0.0';
 const PUBLIC_BASE_URL = String(process.env.PUBLIC_BASE_URL || '').replace(/\/+$/, '');
 const PUBLIC_DIR = path.resolve('public');
+const mkvHls = createMkvHlsHandler({
+  enabled: process.env.MKV_HLS_ENABLED === 'true',
+  port: PORT
+});
 const ASSET_TYPES = {
   '.html': 'text/html; charset=utf-8',
   '.css': 'text/css; charset=utf-8',
@@ -40,6 +47,10 @@ const mockAssets = {
 
 const server = http.createServer(async (req, res) => {
   try {
+    // Node-only ffmpeg fallback. This route never reaches the Worker and is
+    // advertised by the player only when MKV_HLS_ENABLED=true on this host.
+    if (await mkvHls.handle(req, res)) return;
+
     // Codespaces and other preview proxies terminate HTTPS in front of this
     // Node process. Preserve that public origin so rewritten HLS playlists do
     // not emit browser-blocked http:// URLs.
@@ -64,7 +75,13 @@ const server = http.createServer(async (req, res) => {
     });
     const webRes = await workerModule.fetch(
       webReq,
-      { ASSETS: mockAssets, ...process.env },
+      {
+        ASSETS: mockAssets,
+        ...process.env,
+        // Internal runtime proof, not a Cloudflare setting: the page may
+        // advertise ffmpeg only when this Node harness actually mounts it.
+        MKV_HLS_NODE_HOST: 'true'
+      },
       { waitUntil() {} }
     );
     res.statusCode = webRes.status;
@@ -94,4 +111,20 @@ const server = http.createServer(async (req, res) => {
 
 server.listen(PORT, HOST, () => {
   console.log(`[LOL Embed Player] Listening on http://${HOST}:${PORT}`);
+  if (process.env.MKV_HLS_ENABLED === 'true') {
+    console.log('[LOL Embed Player] Optional MKV to HLS fallback is enabled');
+  }
 });
+
+let shuttingDown = false;
+function shutdown() {
+  if (shuttingDown) return;
+  shuttingDown = true;
+  server.close();
+  // Do not leave multi-GB transcode directories or orphan encoders behind
+  // when a Codespace process is restarted.
+  mkvHls.close().then(() => process.exit(0), () => process.exit(0));
+  setTimeout(() => process.exit(0), 4000).unref();
+}
+process.once('SIGTERM', shutdown);
+process.once('SIGINT', shutdown);

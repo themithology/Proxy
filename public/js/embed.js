@@ -33,6 +33,9 @@
     return '';
   }
   const API_BASE = resolveApiBaseUrl();
+  const MKV_HLS_ENABLED = !!(
+    window.__LOL_EMBED_CONFIG__ && window.__LOL_EMBED_CONFIG__.mkvHlsEnabled === true
+  );
 
   // Prefix an API path (e.g. `/api/resolve/...`) with the configured base.
   function apiUrl(path) {
@@ -1688,6 +1691,7 @@
         /\.m3u8(?:$|[?#&])/i.test(streamUrl) ||
         /\.m3u8(?:$|[?#&])/i.test(innerUrl) ||
         /\/playlist\b|\/master\b/i.test(innerPath) ||
+        /\/api\/mkv-hls(?:\/|$)/i.test(innerPath) ||
         (isPrimary && stream.format === 'hls'));
 
     const moviHeaders = meta
@@ -1740,6 +1744,32 @@
     }
     if (state._triedDirectUrls && state._triedDirectUrls.has(rawTarget)) return null;
     return rawTarget;
+  }
+
+  /**
+   * Node-host-only last resort for a progressive source that movi could not
+   * play. Always send ffmpeg back through the original same-origin /api/proxy
+   * URL: a direct movi retry may have changed streamUrl, but the raw provider
+   * URL alone can lack the headers/cookies that made the source reachable.
+   */
+  function mkvHlsFallbackUrlFor(streamUrl, candidateInfo) {
+    if (!MKV_HLS_ENABLED || !candidateInfo || !candidateInfo.useMovi) return null;
+    if (/\/api\/mkv-hls(?:[/?]|$)/i.test(String(streamUrl || ''))) return null;
+
+    const stream = state.stream || {};
+    const metas = stream.sourceMeta && typeof stream.sourceMeta === 'object' ? stream.sourceMeta : {};
+    const matchingProxy = Object.keys(metas).find((candidate) =>
+      /\/api\/proxy\?/.test(candidate) && sameStreamReference(candidate, streamUrl)
+    );
+    const primary = stream._primaryStreamUrl || '';
+    const sourceUrl = matchingProxy ||
+      (/\/api\/proxy\?/.test(primary) && sameStreamReference(primary, streamUrl) ? primary : '') ||
+      (/\/api\/proxy\?/.test(String(streamUrl || '')) ? streamUrl : '');
+    if (!sourceUrl) return null;
+
+    const fallbackUrl = apiUrl(`/api/mkv-hls?src=${encodeURIComponent(sourceUrl)}`);
+    if (state._triedStreamUrls && state._triedStreamUrls.has(fallbackUrl)) return null;
+    return fallbackUrl;
   }
 
   /**
@@ -1859,7 +1889,13 @@
     const saved = readProgress(state.type, state.tmdbId, state.season, state.episode);
     let savedProgress = saved ? saved.time : 0;
     if (saved && isNearEnd(saved.time, saved.duration)) savedProgress = 0;
-    const targetStartTime = resumeTime > 0 ? resumeTime : (startParam > 0 ? startParam : savedProgress);
+    // A new ffmpeg session encodes from the MKV's beginning. Applying an old
+    // progressive timestamp here could seek into HLS segments that do not
+    // exist yet; seek normally once the corresponding converted range exists.
+    const isGeneratedMkvHls = /\/api\/mkv-hls(?:[/?]|$)/i.test(streamUrl);
+    const targetStartTime = isGeneratedMkvHls
+      ? 0
+      : (resumeTime > 0 ? resumeTime : (startParam > 0 ? startParam : savedProgress));
 
     // Re-checked against the real duration once it is known: a stale "resume"
     // position past the end would otherwise start the file on its last frame.
@@ -2029,9 +2065,14 @@
     if (window.Hls && window.Hls.isSupported() && candidateInfo.isHls) {
       const attachHlsUrl = (activeHlsUrl) => {
         state.activeHlsUrl = activeHlsUrl;
+        const isTranscodedHls = /\/api\/mkv-hls(?:[/?]|$)/i.test(activeHlsUrl);
         const hls = new window.Hls({
           enableWorker: true,
-          lowLatencyMode: false
+          lowLatencyMode: false,
+          // The conversion route redirects only after ffprobe and the first
+          // real segment for every rendition exist. Normal provider HLS keeps
+          // the library's shorter default timeout.
+          ...(isTranscodedHls ? { manifestLoadingTimeOut: 120000 } : {})
         });
         state.hlsInstance = hls;
         let networkRecoveries = 0;
@@ -2084,6 +2125,15 @@
         hls.on(window.Hls.Events.ERROR, (_, errData) => {
           if (attachToken !== state.attachToken || !errData) return;
           if (errData.fatal) {
+            if (PLAYER_DEBUG) {
+              console.error('[LOL Embed] HLS fatal error', {
+                type: errData.type,
+                details: errData.details,
+                error: errData.error || null,
+                response: errData.response || null,
+                url: activeHlsUrl
+              });
+            }
             const types = window.Hls.ErrorTypes || {};
             const details = window.Hls.ErrorDetails || {};
             const isManifestFailure =
@@ -2369,6 +2419,13 @@
         return;
       }
       const resumeAt = (video && video.currentTime) || targetStartTime || 0;
+      const mkvHlsUrl = mkvHlsFallbackUrlFor(streamUrl, candidateInfo);
+      if (mkvHlsUrl) {
+        showLoading('Converting this source to HLS');
+        showToast('Converting the MKV with ffmpeg; the first segment can take a moment…', 5000);
+        attachStreamToVideo(mkvHlsUrl, resumeAt, state.loadToken);
+        return;
+      }
       if (tryNextBackupStream(resumeAt)) return;
       handleFatalStreamError();
     };

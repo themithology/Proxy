@@ -2329,7 +2329,12 @@ export default {
       if (!assetRes.ok) {
         return jsonResponse({ ok: false, error: 'Player page is unavailable' }, assetRes.status);
       }
-      let html = injectPageConfig(await assetRes.text(), { apiBaseUrl: normalizeApiBaseUrl(env.API_BASE_URL) });
+      let html = injectPageConfig(await assetRes.text(), {
+        apiBaseUrl: normalizeApiBaseUrl(env.API_BASE_URL),
+        // ffmpeg exists only on an explicitly configured Node host. A real
+        // Cloudflare Worker leaves this false and keeps the normal fallback.
+        mkvHlsEnabled: env.MKV_HLS_ENABLED === 'true' && env.MKV_HLS_NODE_HOST === 'true'
+      });
       // ADS_ENABLED is the global switch; ad-free domains are scoped exceptions.
       if (!adsEnabled(env) || await isCallerAdFree(request, url, env)) html = stripAdBlock(html);
       const headers = new Headers({

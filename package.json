@@ -6,7 +6,7 @@
   "scripts": {
     "start": "node src/server.js",
     "dev": "node src/server.js",
-    "test": "node test/verify.js",
+    "test": "node test/verify.js && node test/mkv-hls.js",
     "dev:player": "node scripts/dev-player-mock.mjs"
   },
   "repository": {
@@ -22,6 +22,8 @@
   ],
   "license": "MIT",
   "dependencies": {
+    "@ffmpeg-installer/ffmpeg": "^1.1.0",
+    "@ffprobe-installer/ffprobe": "^1.4.1",
     "cheerio": "^1.0.0",
     "compression": "^1.7.5",
     "cors": "^2.8.5",
@@ -29,8 +31,5 @@
     "dotenv": "^16.4.7",
     "express": "^4.21.2",
     "helmet": "^8.0.0"
-  },
-  "devDependencies": {
-    "@ffmpeg-installer/ffmpeg": "^1.1.0"
   }
 }
