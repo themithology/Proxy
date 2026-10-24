@@ -50,6 +50,7 @@ The start script installs ffmpeg/ffprobe if needed and enables conversion. `MKV_
 - Every source audio stream (up to eight) becomes an HLS audio rendition. The existing audio menu reads these real renditions; the quality menu reads the generated video levels.
 - Compatible H.264/AAC streams are remuxed rather than re-encoded. The source-quality remux runs independently from the lower-rung encode, so its full VOD playlist is not held back by that encode. Incompatible codecs still require full encoding.
 - Playback never waits for a complete remux or a fixed buffer target. The first usable segments start playback while the source-quality remux continues toward a complete VOD in background. A browser-safe info handshake supplies ffprobe's real full duration for the timeline and intro/outro markers while media is still growing. The lower encode does not block startup.
+- Scrubbing beyond the current seekable range requests an on-demand HLS window at that source timestamp. The seek waits only for its first usable segments, then continues converting in background. Absolute source offsets keep the timeline, subtitles, skip markers and saved progress aligned.
 - The converter reads through the same-origin `/api/proxy` URL, preserving provider request headers. It does not accept an arbitrary third-party proxy URL.
 
 To change the upstream provider list, stop the existing upstream process before restarting it:
@@ -66,7 +67,7 @@ bash .devcontainer/start.sh
 
 A successful test means checking all of these in the browser, not merely seeing a process or mocked test pass:
 
-1. A real provider source starts playback and can seek. With native HLS, confirm the original provider duration is visible immediately; do not mistake a short, still-growing generated playlist for a successful fast path.
+1. A real provider source starts playback and can seek. Drag beyond the generated playlist's current end and confirm playback resumes at the requested timestamp. With native HLS, confirm the original provider duration is visible immediately; do not mistake a short, still-growing generated playlist for a successful fast path.
 2. The audio menu is populated from the loaded file/manifest and switching audio changes the audible track without reloading the whole source.
 3. Quality rows correspond to real alternate files or HLS variants; selecting each generated rung changes the actual HLS level.
 4. For HLS, the player rebuilds its quality menu from the levels hls.js actually discovers. `#EXT-X-STREAM-INF` indicates quality variants and `#EXT-X-MEDIA:TYPE=AUDIO` indicates audio renditions. If the menu contains only Auto plus one rung, inspect the original playlist: a media playlist containing only `#EXTINF` segments cannot provide a quality/audio ladder that the source does not have.

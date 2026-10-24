@@ -39,6 +39,13 @@ function segmentUris(playlist) {
   return playlist.split(/\r?\n/).map((line) => line.trim()).filter((line) => line && !line.startsWith('#'));
 }
 
+function playlistDuration(playlist) {
+  return playlist.split(/\r?\n/).reduce((total, line) => {
+    const match = line.match(/^#EXTINF:([0-9.]+)/);
+    return total + (match ? Number(match[1]) : 0);
+  }, 0);
+}
+
 async function runMkvHlsTest() {
   assert.deepStrictEqual(buildMkvHlsLadder(1080).map((rung) => rung.height), [1080, 720, 480]);
   assert.deepStrictEqual(buildMkvHlsLadder(720).map((rung) => rung.height), [720, 480]);
@@ -250,6 +257,44 @@ async function runMkvHlsTest() {
     assert.match(videoInfo, /Video: h264/);
     assert.match(videoInfo, /1280x720/);
     assert.match(audioInfo, /Audio: aac/);
+
+    // Scrubbing beyond the generated playlist creates a real on-demand HLS
+    // window at that source timestamp. It must not restart the movie at 0 or
+    // wait for the sequential original conversion to reach the target.
+    const seekResponse = await fetch(`${conversionUrl}&info=1&seek=4`, {
+      signal: AbortSignal.timeout(60000)
+    });
+    assert.strictEqual(seekResponse.status, 200);
+    const seekInfo = await seekResponse.json();
+    assert.strictEqual(seekInfo.sourceOffset, 4);
+    assert.strictEqual(seekInfo.sourceDuration, advertisedSourceDuration);
+    assert.notStrictEqual(seekInfo.masterUrl, masterPath, 'a seek window needs its own offset HLS session');
+    const seekMasterUrl = `http://127.0.0.1:${port}${seekInfo.masterUrl}`;
+    const seekMaster = await (await fetch(seekMasterUrl)).text();
+    const seekVariants = videoPlaylistUris(seekMaster);
+    assert.strictEqual(seekVariants.length, 2, 'seek windows must preserve genuine quality variants');
+    assert.strictEqual(parseHlsAudioTracks(seekMaster).length, 2, 'seek windows must preserve every audio rendition');
+
+    const seekSessionId = seekInfo.masterUrl.match(/\/([a-f0-9]{32})\//)[1];
+    const seekSession = handler._sessions.get(seekSessionId);
+    assert(seekSession, 'seek session should be registered');
+    assert.strictEqual(seekSession.probe, session.probe, 'seek should reuse the already fetched source metadata');
+    const seekDeadline = Date.now() + 30000;
+    while (seekSession.status !== 'done' && Date.now() < seekDeadline) {
+      assert.notStrictEqual(seekSession.status, 'failed', `seek ffmpeg failed: ${seekSession.log}`);
+      await new Promise((resolve) => setTimeout(resolve, 100));
+    }
+    assert.strictEqual(seekSession.status, 'done');
+    const seekPlaylist = await (await fetch(new URL(seekVariants[0], seekMasterUrl))).text();
+    const seekDuration = playlistDuration(seekPlaylist);
+    assert(seekDuration > 1 && seekDuration < 2.6,
+      `4s seek in a 6s source should produce its remaining ~2s, got ${seekDuration}s`);
+    assert(seekPlaylist.includes('#EXT-X-ENDLIST'));
+
+    const repeatedSeek = await (await fetch(`${conversionUrl}&info=1&seek=4`)).json();
+    assert.strictEqual(repeatedSeek.masterUrl, seekInfo.masterUrl, 'identical seeks should reuse their HLS window');
+    const invalidSeek = await fetch(`${conversionUrl}&info=1&seek=not-a-number`);
+    assert.strictEqual(invalidSeek.status, 400);
 
     // MP4 is also converter input only; it must never require a raw browser
     // playback fallback to produce a valid HLS master and media playlist.

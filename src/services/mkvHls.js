@@ -257,7 +257,8 @@ function createMkvHlsHandler(options = {}) {
   async function startSession(session) {
     await fs.promises.mkdir(session.dir, { recursive: true });
     if (session.status === 'closed') throw new Error('Conversion session closed');
-    const probe = await probeStreams(session.inputUrl, session);
+    const probe = session.probe || await probeStreams(session.inputUrl, session);
+    session.probe = probe;
     if (session.status === 'closed') throw new Error('Conversion session closed');
     const streams = Array.isArray(probe.streams) ? probe.streams : [];
     const videoStream = streams.find((stream) =>
@@ -270,6 +271,9 @@ function createMkvHlsHandler(options = {}) {
     session.sourceHeight = Number(videoStream.height) || 0;
     session.sourceBandwidth = Number(videoStream.bit_rate) || 0;
     session.sourceDuration = Number(probe.format && probe.format.duration) || Number(videoStream.duration) || 0;
+    session.sourceOffset = session.sourceDuration > 0
+      ? Math.min(session.requestedOffset, Math.max(0, session.sourceDuration - 1))
+      : session.requestedOffset;
     session.audioTracks = sourceAudio.map((stream, index) => ({
       lang: safeToken(stream.tags && stream.tags.language),
       label: displayTrackLabel(stream, index)
@@ -290,12 +294,17 @@ function createMkvHlsHandler(options = {}) {
           '-reconnect_delay_max', '5'
         );
       }
+      // Input seeking lets a scrub jump directly to a remote keyframe instead
+      // of waiting for the sequential conversion to reach that timestamp.
+      // Seek windows re-encode below, so ffmpeg's accurate input seek discards
+      // frames before the requested point and the new HLS timeline starts at 0.
+      if (session.sourceOffset > 0) args.push('-ss', session.sourceOffset.toFixed(3));
       args.push('-i', session.inputUrl);
       return args;
     };
     const addAudioArgs = (args) => {
       sourceAudio.forEach((stream, index) => {
-        if (stream.codec_name === 'aac') {
+        if (stream.codec_name === 'aac' && session.sourceOffset <= 0) {
           args.push(`-c:a:${index}`, 'copy');
         } else {
           args.push(
@@ -372,6 +381,7 @@ function createMkvHlsHandler(options = {}) {
     };
 
     const canRemuxTop =
+      session.sourceOffset <= 0 &&
       videoStream.codec_name === 'h264' &&
       videoStream.pix_fmt === 'yuv420p' &&
       Number(ladder[0] && ladder[0].height) === (Number(videoStream.height) || 0);
@@ -440,6 +450,7 @@ function createMkvHlsHandler(options = {}) {
 
     console.log(
       `[mkv-hls] ${session.id}: ${canRemuxTop ? 'remux-first ' : ''}` +
+      `${session.sourceOffset > 0 ? `seek=${session.sourceOffset.toFixed(3)}s ` : ''}` +
       `${ladder.map((rung) => rung.height ? `${rung.height}p` : 'source').join('/')}` +
       ` with ${sourceAudio.length} audio track(s)`
     );
@@ -496,13 +507,22 @@ function createMkvHlsHandler(options = {}) {
     return `${lines.join('\n')}\n`;
   }
 
-  async function ensureSession(publicSource, inputUrl) {
-    const id = crypto.createHash('sha256').update(conversionIdentity(publicSource)).digest('hex').slice(0, 32);
+  async function ensureSession(publicSource, inputUrl, requestedOffset = 0) {
+    const sourceKey = conversionIdentity(publicSource);
+    const offset = Math.round(Math.max(0, Number(requestedOffset) || 0) * 1000) / 1000;
+    const identity = offset > 0 ? `${sourceKey}\nseek=${offset.toFixed(3)}` : sourceKey;
+    const id = crypto.createHash('sha256').update(identity).digest('hex').slice(0, 32);
     const existing = sessions.get(id);
     if (existing && existing.status !== 'failed' && existing.status !== 'closed') {
       existing.lastAccess = Date.now();
       return existing;
     }
+    // The initial session has already probed the same source before the player
+    // can scrub. Reuse that immutable metadata instead of downloading/probing
+    // the remote file again on every seek.
+    const probeDonor = [...sessions.values()].find((candidate) =>
+      candidate.sourceKey === sourceKey && candidate.probe
+    );
     if (existing) await stopSession(existing);
     await makeRoom();
     const session = {
@@ -510,6 +530,11 @@ function createMkvHlsHandler(options = {}) {
       dir: path.join(rootDir, id),
       publicSource,
       inputUrl,
+      sourceKey,
+      requestedOffset: offset,
+      sourceOffset: 0,
+      sourceDuration: 0,
+      probe: probeDonor ? probeDonor.probe : null,
       status: 'starting',
       ready: false,
       log: '',
@@ -676,15 +701,22 @@ function createMkvHlsHandler(options = {}) {
     if (url.pathname === ROUTE) {
       let publicSource;
       let inputUrl;
+      let requestedOffset = 0;
       try {
         publicSource = url.searchParams.get('src') || '';
         inputUrl = localInputForSource(req, publicSource);
+        if (url.searchParams.has('seek')) {
+          requestedOffset = Number(url.searchParams.get('seek'));
+          if (!Number.isFinite(requestedOffset) || requestedOffset < 0 || requestedOffset > 604800) {
+            throw new Error('Invalid HLS seek offset');
+          }
+        }
       } catch (error) {
         sendJson(res, 400, { ok: false, error: error.message });
         return true;
       }
       try {
-        const session = await ensureSession(publicSource, inputUrl);
+        const session = await ensureSession(publicSource, inputUrl, requestedOffset);
         await awaitReady(session);
         session.lastAccess = Date.now();
         const masterUrl = `${ROUTE}/${session.id}/master.m3u8`;
@@ -692,14 +724,16 @@ function createMkvHlsHandler(options = {}) {
           sendJson(res, 200, {
             ok: true,
             masterUrl,
-            sourceDuration: session.sourceDuration > 0 ? session.sourceDuration : null
+            sourceDuration: session.sourceDuration > 0 ? session.sourceDuration : null,
+            sourceOffset: session.sourceOffset
           });
           return true;
         }
         send(res, 302, null, {
           Location: masterUrl,
           'Cache-Control': 'no-store',
-          'Access-Control-Expose-Headers': 'Location, X-Lol-Source-Duration',
+          'Access-Control-Expose-Headers': 'Location, X-Lol-Source-Duration, X-Lol-Source-Offset',
+          'X-Lol-Source-Offset': String(session.sourceOffset),
           ...(session.sourceDuration > 0
             ? { 'X-Lol-Source-Duration': String(session.sourceDuration) }
             : {})

@@ -390,9 +390,12 @@ Playback never waits for a complete remux or a fixed buffer target. The first
 usable segments start playback while the source-quality remux continues toward
 a complete VOD in background. A browser-safe info handshake supplies ffprobe's
 real full duration for the timeline and intro/outro markers while media grows.
-The lower encode does not block startup. Seeking past a still-growing playlist's
-converted portion must wait for ffmpeg. Temporary output is deleted when a
-session expires or the host stops.
+The lower encode does not block startup. Scrubbing outside the current
+seekable range requests an on-demand HLS window at that source timestamp. Its
+first usable segments start playback while conversion continues from there;
+the player maps the window's relative media time back to absolute source time
+for the timeline, subtitles, skip markers and saved progress. Temporary output
+is deleted when a session expires or the host stops.
 `MKV_HLS_MAX_SESSIONS`
 (default `2`) bounds concurrent sessions, and renewed signed URLs for the same
 canonical source share one conversion. `MKV_HLS_DIR` overrides the temporary

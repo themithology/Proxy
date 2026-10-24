@@ -500,6 +500,13 @@
     // ffprobe's real source duration for generated HLS. The media playlist
     // can still be growing while the timeline and skip markers use this value.
     generatedSourceDuration: 0,
+    // On-demand seek windows start their media timestamps at zero. Keep the
+    // original source offset separately so every UI/subtitle/progress timestamp
+    // remains absolute to the movie rather than to the current HLS window.
+    generatedSourceOffset: 0,
+    generatedConversionUrl: '',
+    generatedSeekToken: 0,
+    pendingSeekTime: null,
     pendingAudioSelection: null,
     dashInstance: null,
     activeSkipSegment: null,
@@ -728,7 +735,7 @@
       buffering: playback === 'buffering',
       seeking: !!video.seeking,
       ended: !!video.ended,
-      currentTime: video.currentTime || 0,
+      currentTime: getPlaybackTime(),
       // `duration` keeps its historical meaning (real duration, else the TMDB
       // runtime); `mediaDuration` is only ever the real one — use it for cut
       // detection.
@@ -782,6 +789,15 @@
     return !!(details && details.live === false);
   }
 
+  function getPlaybackOffset() {
+    return isGeneratedHlsPlayback() ? Math.max(0, Number(state.generatedSourceOffset) || 0) : 0;
+  }
+
+  function getPlaybackTime() {
+    if (Number.isFinite(state.pendingSeekTime)) return state.pendingSeekTime;
+    return Math.max(0, (video.currentTime || 0) + getPlaybackOffset());
+  }
+
   // ffprobe duration is authoritative for generated HLS even while its media
   // playlist is growing. If a remote file does not advertise that duration,
   // never replace the known full title runtime with the partial playlist's
@@ -789,11 +805,12 @@
   function getEffectiveDuration() {
     if (state.generatedSourceDuration > 0) return state.generatedSourceDuration;
     const metadataDuration = Number(state.media && state.media.durationSec) || 0;
-    if (isGeneratedHlsPlayback() && metadataDuration > 0 && !generatedHlsHasCompleted()) {
+    const generated = isGeneratedHlsPlayback();
+    if (generated && metadataDuration > 0 && !generatedHlsHasCompleted()) {
       return metadataDuration;
     }
     if (video.duration && isFinite(video.duration) && video.duration > 0) {
-      return video.duration;
+      return video.duration + (generated ? getPlaybackOffset() : 0);
     }
     return metadataDuration;
   }
@@ -828,7 +845,7 @@
     if (state.progressLocked) return;
     const now = Date.now();
     if (!force && now - state.lastProgressSaveAt < 3000) return;
-    const current = video.currentTime || 0;
+    const current = getPlaybackTime();
     if (current <= 2) return;
     state.lastProgressSaveAt = now;
     const duration = hasRealDuration() ? getEffectiveDuration() : 0;
@@ -1305,7 +1322,7 @@
 
   // --- Load Media Bundle from Backend ---
   async function loadMediaBundle(preserveTime = false) {
-    const savedTime = preserveTime ? video.currentTime : 0;
+    const savedTime = preserveTime ? getPlaybackTime() : 0;
     const loadToken = ++state.loadToken;
     const requestedServer = state.server;
     if (!preserveTime) {
@@ -1324,6 +1341,10 @@
     // not let the outgoing source's duration leak into the incoming title.
     state.attachedStreamUrl = null;
     state.generatedSourceDuration = 0;
+    state.generatedSourceOffset = 0;
+    state.generatedConversionUrl = '';
+    state.pendingSeekTime = null;
+    state.generatedSeekToken += 1;
     emitHostEvent('loadstart', { server: requestedServer });
     // First open: the upstream resolve can take seconds, while the TMDB
     // metadata is one cached call away. Fetch it in parallel so the connect
@@ -1871,8 +1892,9 @@
   }
 
   // --- Attach Stream via Movi (MKV/multi-audio) / HLS.js / Dash.js / Native Video ---
-  async function attachStreamToVideo(streamUrl, resumeTime = 0, loadToken = 0) {
+  async function attachStreamToVideo(streamUrl, resumeTime = 0, loadToken = 0, options = {}) {
     const attachToken = ++state.attachToken;
+    if (!options.preservePendingSeek) state.pendingSeekTime = null;
     state.activeSourceLive = false;
     state.allStreamsFailed = false;
     clearMoviWatchdog();
@@ -1884,7 +1906,11 @@
 
     const sourceChanged = state.attachedStreamUrl !== streamUrl;
     state.attachedStreamUrl = streamUrl;
-    if (!/\/api\/mkv-hls(?:[/?]|$)/i.test(streamUrl)) state.generatedSourceDuration = 0;
+    if (!/\/api\/mkv-hls(?:[/?]|$)/i.test(streamUrl)) {
+      state.generatedSourceDuration = 0;
+      state.generatedSourceOffset = 0;
+      state.generatedConversionUrl = '';
+    }
     hostBuffering = false;
     if (sourceChanged) emitHostEvent('sourcechange');
     if (state.hlsInstance) {
@@ -1902,12 +1928,11 @@
     const saved = readProgress(state.type, state.tmdbId, state.season, state.episode);
     let savedProgress = saved ? saved.time : 0;
     if (saved && isNearEnd(saved.time, saved.duration)) savedProgress = 0;
-    // A new ffmpeg session encodes from the MKV's beginning. Applying an old
-    // progressive timestamp here could seek into HLS segments that do not
-    // exist yet; seek normally once the corresponding converted range exists.
+    // Generated seek windows use timestamps relative to their own HLS start.
+    // The player translates them back to absolute source time everywhere else.
     const isGeneratedMkvHls = /\/api\/mkv-hls(?:[/?]|$)/i.test(streamUrl);
     const targetStartTime = isGeneratedMkvHls
-      ? 0
+      ? Math.max(0, Number(options.generatedStartTime) || 0)
       : (resumeTime > 0 ? resumeTime : (startParam > 0 ? startParam : savedProgress));
 
     // Re-checked against the real duration once it is known: a stale "resume"
@@ -1915,14 +1940,16 @@
     const applyStartTime = () => {
       let t = targetStartTime;
       if (hasRealDuration() && isNearEnd(t, getEffectiveDuration())) t = 0;
-      if (t > 2) {
+      if (t > 0 && (isGeneratedMkvHls || t > 2)) {
         try {
           video.currentTime = t;
         } catch (_) {}
-        if (resumeTime <= 0 && startParam <= 0) {
+        if (!isGeneratedMkvHls && resumeTime <= 0 && startParam <= 0) {
           showToast(`Resuming from ${formatTime(t)}`, 2200);
         }
       }
+      state.pendingSeekTime = null;
+      updateTimelineAndSkipState();
       // The `?t=` offset is a one-shot: later attaches resume from progress.
       if (startParam > 0) state.startAt = 0;
     };
@@ -2013,30 +2040,43 @@
       showLoading('Preparing HLS stream');
       setConnectProgress(86, false);
       state.generatedSourceDuration = 0;
+      state.generatedSourceOffset = 0;
+      state.generatedConversionUrl = mkvHlsUrl;
+      const requestedSourceTime = Math.max(0, targetStartTime || 0);
+      let generatedStartTime = 0;
       let generatedUrl = mkvHlsUrl;
       try {
         // A same-origin JSON handshake works in Brave as well as desktop
         // browsers (unlike manually inspected redirect headers). It returns
-        // the session master and ffprobe's real full-source duration.
-        const infoUrl = `${mkvHlsUrl}${mkvHlsUrl.includes('?') ? '&' : '?'}info=1`;
-        const response = await fetch(infoUrl, { cache: 'no-store' });
+        // the session master, full-source duration and optional seek offset.
+        const infoUrl = new URL(mkvHlsUrl, window.location.href);
+        infoUrl.searchParams.set('info', '1');
+        if (requestedSourceTime > 0) {
+          infoUrl.searchParams.set('seek', String(Math.floor(requestedSourceTime / 2) * 2));
+        }
+        const response = await fetch(infoUrl.href, { cache: 'no-store' });
         if (attachToken !== state.attachToken) return;
         if (response.ok) {
           const info = await response.json();
           if (attachToken !== state.attachToken) return;
-          if (info && info.masterUrl) generatedUrl = new URL(info.masterUrl, mkvHlsUrl).href;
+          if (info && info.masterUrl) generatedUrl = new URL(info.masterUrl, infoUrl.href).href;
           const sourceDuration = Number(info && info.sourceDuration);
           if (Number.isFinite(sourceDuration) && sourceDuration > 0) {
             state.generatedSourceDuration = sourceDuration;
             renderSegmentedTimeline();
             timeDurationEl.textContent = formatTime(sourceDuration);
           }
+          const sourceOffset = Number(info && info.sourceOffset);
+          if (Number.isFinite(sourceOffset) && sourceOffset >= 0) {
+            state.generatedSourceOffset = sourceOffset;
+            generatedStartTime = Math.max(0, requestedSourceTime - sourceOffset);
+          }
         }
       } catch (_) {
         // Keep the original conversion URL as a compatibility fallback.
       }
       if (attachToken !== state.attachToken) return;
-      attachStreamToVideo(generatedUrl, 0, loadToken || state.loadToken);
+      attachStreamToVideo(generatedUrl, 0, loadToken || state.loadToken, { generatedStartTime });
       return;
     }
 
@@ -2062,7 +2102,7 @@
           if (!event || (!event.fatal && !event.error && !event.event)) return;
           try { player.reset(); } catch (_) {}
           state.dashInstance = null;
-          if (tryNextBackupStream(video.currentTime || targetStartTime || 0)) return;
+          if (tryNextBackupStream(getPlaybackTime() || targetStartTime || 0)) return;
           handleFatalStreamError();
         });
       }
@@ -2072,7 +2112,7 @@
           try { state.dashInstance.reset(); } catch (_) {}
         }
         state.dashInstance = null;
-        if (tryNextBackupStream(video.currentTime || targetStartTime || 0)) return;
+        if (tryNextBackupStream(getPlaybackTime() || targetStartTime || 0)) return;
         handleFatalStreamError();
       };
       return;
@@ -2093,7 +2133,7 @@
           backBufferLength: 15,
           // The conversion route redirects after the first usable segments,
           // not after an arbitrary amount of media has been generated.
-          ...(isTranscodedHls ? { manifestLoadingTimeOut: 120000 } : {})
+          ...(isTranscodedHls ? { manifestLoadingTimeOut: 120000, startPosition: targetStartTime } : {})
         });
         state.hlsInstance = hls;
         let networkRecoveries = 0;
@@ -2119,15 +2159,19 @@
           applyStartTime();
           applyRememberedQuality();
 
-          video.play().catch((error) => {
-            if (attachToken !== state.attachToken) return;
-            // Autoplay denial is recoverable, but an unsupported HLS decode can use the next quality/mirror.
-            if (error && error.name === 'NotSupportedError') {
-              if (!tryNextBackupStream(video.currentTime || targetStartTime || 0)) {
-                handleFatalStreamError();
+          if (options.autoplay === false) {
+            video.pause();
+          } else {
+            video.play().catch((error) => {
+              if (attachToken !== state.attachToken) return;
+              // Autoplay denial is recoverable, but an unsupported HLS decode can use the next quality/mirror.
+              if (error && error.name === 'NotSupportedError') {
+                if (!tryNextBackupStream(getPlaybackTime() || targetStartTime || 0)) {
+                  handleFatalStreamError();
+                }
               }
-            }
-          });
+            });
+          }
         });
 
         if (window.Hls.Events.AUDIO_TRACKS_UPDATED) {
@@ -2185,7 +2229,7 @@
                 return;
               }
             }
-            if (tryNextBackupStream(video.currentTime || 0)) return;
+            if (tryNextBackupStream(getPlaybackTime() || 0)) return;
             handleFatalStreamError();
           }
         });
@@ -2202,14 +2246,18 @@
         hideLoading();
         syncNativeAudioTracks();
         applyStartTime();
-        video.play().catch((error) => {
-          if (attachToken !== state.attachToken) return;
-          if (error && error.name === 'NotSupportedError') {
-            if (retryWithMoviIfPossible(activeSrcUrl, targetStartTime, applyStartTime, tryNextBackupStream, attachToken, candidateInfo)) return;
-            if (tryNextBackupStream(video.currentTime || targetStartTime || 0)) return;
-            handleFatalStreamError();
-          }
-        });
+        if (options.autoplay === false) {
+          video.pause();
+        } else {
+          video.play().catch((error) => {
+            if (attachToken !== state.attachToken) return;
+            if (error && error.name === 'NotSupportedError') {
+              if (retryWithMoviIfPossible(activeSrcUrl, targetStartTime, applyStartTime, tryNextBackupStream, attachToken, candidateInfo)) return;
+              if (tryNextBackupStream(getPlaybackTime() || targetStartTime || 0)) return;
+              handleFatalStreamError();
+            }
+          });
+        }
       };
       video.onerror = () => {
         if (attachToken !== state.attachToken) return;
@@ -2227,7 +2275,7 @@
                 return;
               }
             }
-            if (tryNextBackupStream(video.currentTime || targetStartTime || 0)) return;
+            if (tryNextBackupStream(getPlaybackTime() || targetStartTime || 0)) return;
             handleFatalStreamError();
           });
           return;
@@ -2238,7 +2286,7 @@
         if (!isKnownMp4 || mediaErrCode === 3) {
           if (retryWithMoviIfPossible(activeSrcUrl, targetStartTime, applyStartTime, tryNextBackupStream, attachToken, candidateInfo)) return;
         }
-        if (tryNextBackupStream(video.currentTime || targetStartTime || 0)) return;
+        if (tryNextBackupStream(getPlaybackTime() || targetStartTime || 0)) return;
         handleFatalStreamError();
       };
       video.load();
@@ -2423,7 +2471,7 @@
         );
         return;
       }
-      const resumeAt = (video && video.currentTime) || targetStartTime || 0;
+      const resumeAt = getPlaybackTime() || targetStartTime || 0;
       if (tryNextBackupStream(resumeAt)) return;
       handleFatalStreamError();
     };
@@ -3188,7 +3236,7 @@
     }
     // 1. If the selected audio track has its own distinct streamUrl (e.g. separate Hindi/English dub file), switch stream preserving current time
     else if (!hlsRenditionSwitch && track.streamUrl && state.stream && !sameStreamUrl) {
-      const resumeAt = (video && video.currentTime) || 0;
+      const resumeAt = getPlaybackTime();
       state.pendingAudioSelection = {
         id: track.id,
         lang: track.lang,
@@ -3446,7 +3494,7 @@
       if (customSubtitleText.textContent) customSubtitleText.textContent = '';
       return;
     }
-    const effectiveTime = (video.currentTime || 0) - state.subtitleDelaySec;
+    const effectiveTime = getPlaybackTime() - state.subtitleDelaySec;
     const cue = state.parsedCues.find((c) => effectiveTime >= c.start && effectiveTime <= c.end);
     const next = cue ? cue.text : '';
     if (customSubtitleText.textContent !== next) customSubtitleText.textContent = next;
@@ -3722,7 +3770,7 @@
         closeAllPopovers();
         return;
       }
-      const resumeAt = (video && video.currentTime) || 0;
+      const resumeAt = getPlaybackTime();
       const wasInErrorOrLoading =
         playerRoot.classList.contains('is-loading') || loadingOverlay.classList.contains('is-error');
       state._triedStreamUrls = new Set();
@@ -3901,7 +3949,7 @@
     switchAutoskip.classList.toggle('on', state.autoSkip);
     const autoskipRow = switchAutoskip.closest('.settings-row-btn');
     if (autoskipRow) autoskipRow.setAttribute('aria-checked', String(state.autoSkip));
-    valShare.textContent = formatTime(video.currentTime || 0);
+    valShare.textContent = formatTime(getPlaybackTime());
   }
 
   /** Embed URL that opens this title at the current position (`?t=`). */
@@ -3909,7 +3957,7 @@
     const url = new URL(window.location.href);
     url.searchParams.delete('start');
     url.searchParams.delete('origin');
-    url.searchParams.set('t', String(Math.max(0, Math.floor(video.currentTime || 0))));
+    url.searchParams.set('t', String(Math.max(0, Math.floor(getPlaybackTime()))));
     url.hash = '';
     return url.toString();
   }
@@ -3938,7 +3986,7 @@
   }
 
   async function shareCurrentTime() {
-    const time = Math.max(0, Math.floor(video.currentTime || 0));
+    const time = Math.max(0, Math.floor(getPlaybackTime()));
     const url = buildShareUrl();
     const copied = await copyText(url);
     showToast(copied ? `Link copied · starts at ${formatTime(time)}` : 'Could not copy the link', 2600);
@@ -4050,7 +4098,7 @@
         ? -1
         : (levelIdx !== -1 ? levelIdx : Math.min(Math.max(idx - 1, 0), state.hlsInstance.levels.length - 1));
     } else if (!options.hlsOnly && q.url && state.stream && q.url !== state.stream.streamUrl) {
-      const resumeAt = (video && video.currentTime) || 0;
+      const resumeAt = getPlaybackTime();
       state.stream.streamUrl = q.url;
       prepareAudioRowsForSourceSwitch(q.url);
       attachStreamToVideo(q.url, resumeAt, state.loadToken);
@@ -4248,7 +4296,8 @@
   }
 
   function updateTimelineAndSkipState() {
-    const current = video.currentTime || 0;
+    const current = getPlaybackTime();
+    const mediaCurrent = video.currentTime || 0;
     const total = getEffectiveDuration();
     const pct = total > 0 ? clamp((current / total) * 100, 0, 100) : 0;
 
@@ -4269,12 +4318,13 @@
 
     if (total > 0 && video.buffered && video.buffered.length > 0) {
       // Use the buffered range that contains the playhead, not just the last one.
-      let bufEnd = 0;
+      let mediaBufEnd = 0;
       for (let i = 0; i < video.buffered.length; i++) {
-        if (video.buffered.start(i) <= current + 0.5 && video.buffered.end(i) >= bufEnd) {
-          bufEnd = video.buffered.end(i);
+        if (video.buffered.start(i) <= mediaCurrent + 0.5 && video.buffered.end(i) >= mediaBufEnd) {
+          mediaBufEnd = video.buffered.end(i);
         }
       }
+      const bufEnd = mediaBufEnd + getPlaybackOffset();
       timelineBuffered.style.width = `${clamp((bufEnd / total) * 100, 0, 100)}%`;
     }
 
@@ -4317,6 +4367,94 @@
     saveProgress();
   }
 
+  function generatedLocalSeekTime(target) {
+    const relative = target - getPlaybackOffset();
+    if (relative < 0) return null;
+    const ranges = video.seekable;
+    if (ranges && ranges.length > 0) {
+      for (let index = 0; index < ranges.length; index += 1) {
+        const start = ranges.start(index);
+        const end = ranges.end(index);
+        if (relative >= start - 0.35 && relative <= end + 0.35) {
+          return clamp(relative, start, end);
+        }
+      }
+    }
+    if (generatedHlsHasCompleted() && Number.isFinite(video.duration) && relative <= video.duration + 0.35) {
+      return clamp(relative, 0, video.duration);
+    }
+    return null;
+  }
+
+  // Seek in the original source timeline. Existing HLS ranges are used
+  // directly; an ungenerated range gets its own short-start conversion window
+  // instead of being clamped to the current live edge.
+  async function seekTo(seconds) {
+    const total = getEffectiveDuration();
+    const numeric = Number(seconds);
+    const target = clamp(Number.isFinite(numeric) ? numeric : 0, 0, total > 0 ? total : Infinity);
+    const seekToken = ++state.generatedSeekToken;
+
+    if (!isGeneratedHlsPlayback() || !state.generatedConversionUrl) {
+      state.pendingSeekTime = null;
+      video.currentTime = target;
+      updateTimelineAndSkipState();
+      return true;
+    }
+
+    const localTime = generatedLocalSeekTime(target);
+    if (localTime !== null) {
+      state.pendingSeekTime = null;
+      video.currentTime = localTime;
+      updateTimelineAndSkipState();
+      return true;
+    }
+
+    const conversionUrl = state.generatedConversionUrl;
+    const requestAttachToken = state.attachToken;
+    const requestLoadToken = state.loadToken;
+    const autoplay = !video.paused;
+    const isStale = () => seekToken !== state.generatedSeekToken ||
+      requestAttachToken !== state.attachToken || requestLoadToken !== state.loadToken;
+    state.pendingSeekTime = target;
+    updateTimelineAndSkipState();
+    showBuffering();
+
+    try {
+      const infoUrl = new URL(conversionUrl, window.location.href);
+      infoUrl.searchParams.set('info', '1');
+      infoUrl.searchParams.set('seek', String(Math.floor(target / 2) * 2));
+      const response = await fetch(infoUrl.href, { cache: 'no-store' });
+      const info = await response.json();
+      if (isStale()) return false;
+      if (!response.ok || !info || !info.masterUrl) {
+        throw new Error((info && (info.detail || info.error)) || `Seek failed (HTTP ${response.status})`);
+      }
+      const sourceOffset = Number(info.sourceOffset);
+      if (!Number.isFinite(sourceOffset) || sourceOffset < 0) throw new Error('Seek returned an invalid source offset');
+      const sourceDuration = Number(info.sourceDuration);
+      if (Number.isFinite(sourceDuration) && sourceDuration > 0) {
+        state.generatedSourceDuration = sourceDuration;
+      }
+      state.generatedSourceOffset = sourceOffset;
+      const masterUrl = new URL(info.masterUrl, infoUrl.href).href;
+      await attachStreamToVideo(masterUrl, 0, requestLoadToken, {
+        generatedStartTime: Math.max(0, target - sourceOffset),
+        preservePendingSeek: true,
+        autoplay
+      });
+      return true;
+    } catch (error) {
+      if (isStale()) return false;
+      state.pendingSeekTime = null;
+      hideBuffering();
+      updateTimelineAndSkipState();
+      showToast('That part could not be loaded — try seeking again', 2600);
+      if (PLAYER_DEBUG) console.error('[LOL Embed] HLS seek failed', error);
+      return false;
+    }
+  }
+
   function skipActiveSegment(options = {}) {
     const seg = state.activeSkipSegment;
     if (!seg) return false;
@@ -4328,7 +4466,7 @@
     const end = segmentEndSeconds(seg);
     // Never seek past the file; an open-ended credits segment lands just before the end.
     const targetSec = total > 0 ? Math.min(end, Math.max(0, total - 1)) : Number.isFinite(end) ? end : seg.start;
-    video.currentTime = targetSec;
+    seekTo(targetSec);
     clearActiveSkip();
     updateTimelineAndSkipState();
     showToast(options.auto ? `Auto-skipped ${seg.type} · ${formatTime(targetSec)}` : `Skipped to ${formatTime(targetSec)}`, 1800);
@@ -4367,11 +4505,12 @@
     timelineProgress.style.width = `${ratio * 100}%`;
     timelineThumb.style.left = `${ratio * 100}%`;
     timeCurrentEl.textContent = formatTime(seconds);
-    // Live-seek while dragging, throttled so the decoder is not thrashed.
-    if (!state.scrubSeekTimer) {
+    // Native streams can live-seek while dragging. Generated HLS previews the
+    // timestamp and seeks on release so one drag cannot spawn many encodes.
+    if (!isGeneratedHlsPlayback() && !state.scrubSeekTimer) {
       state.scrubSeekTimer = setTimeout(() => {
         state.scrubSeekTimer = null;
-        if (state.isDraggingTimeline) video.currentTime = state.scrubSeconds;
+        if (state.isDraggingTimeline) seekTo(state.scrubSeconds);
       }, 160);
     }
   }
@@ -4385,8 +4524,7 @@
       clearTimeout(state.scrubSeekTimer);
       state.scrubSeekTimer = null;
     }
-    video.currentTime = state.scrubSeconds;
-    updateTimelineAndSkipState();
+    seekTo(state.scrubSeconds);
   }
 
   timelineSlider.addEventListener('pointerdown', (e) => {
@@ -4419,8 +4557,8 @@
   timelineSlider.addEventListener('keydown', (e) => {
     if (e.key === 'ArrowLeft') { e.preventDefault(); seekBy(-5); }
     else if (e.key === 'ArrowRight') { e.preventDefault(); seekBy(5); }
-    else if (e.key === 'Home') { e.preventDefault(); video.currentTime = 0; }
-    else if (e.key === 'End' && hasRealDuration()) { e.preventDefault(); video.currentTime = Math.max(0, getEffectiveDuration() - 1); }
+    else if (e.key === 'Home') { e.preventDefault(); seekTo(0); }
+    else if (e.key === 'End' && hasRealDuration()) { e.preventDefault(); seekTo(Math.max(0, getEffectiveDuration() - 1)); }
   });
 
   // --- Playback Controls ---
@@ -4439,9 +4577,8 @@
   function seekBy(deltaSec) {
     const total = getEffectiveDuration();
     const max = total > 0 ? total : Infinity;
-    const target = clamp((video.currentTime || 0) + deltaSec, 0, max);
-    video.currentTime = target;
-    updateTimelineAndSkipState();
+    const target = clamp(getPlaybackTime() + deltaSec, 0, max);
+    seekTo(target);
 
     const feedbackEl = deltaSec < 0 ? seekFeedbackLeft : seekFeedbackRight;
     feedbackEl.textContent = `${deltaSec < 0 ? '-' : '+'}${Math.abs(deltaSec)}s`;
@@ -5245,8 +5382,7 @@
       goToNextEpisode();
     } else if (/^[0-9]$/.test(key) && hasRealDuration()) {
       e.preventDefault();
-      video.currentTime = (parseInt(key, 10) / 10) * getEffectiveDuration();
-      updateTimelineAndSkipState();
+      seekTo((parseInt(key, 10) / 10) * getEffectiveDuration());
     } else if (key === 'Escape') {
       closeAllPopovers();
       closeAllModals();
@@ -5296,9 +5432,7 @@
       case 'seek': {
         const t = num(msg.time !== undefined ? msg.time : msg.seconds);
         if (t === null) return { ok: false, error: 'seek needs a numeric `time` (seconds)' };
-        const total = getEffectiveDuration();
-        video.currentTime = clamp(t, 0, total > 0 ? total : Infinity);
-        updateTimelineAndSkipState();
+        seekTo(t);
         return { ok: true };
       }
       case 'seekBy': {
@@ -5432,7 +5566,7 @@
           type: state.type,
           season: state.season,
           episode: state.episode,
-          currentTime: video.currentTime || 0,
+          currentTime: getPlaybackTime(),
           duration: getEffectiveDuration()
         }]
       }, event.source || null, replyOrigin);
