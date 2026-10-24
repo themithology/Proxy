@@ -217,8 +217,17 @@ function containerForStream(url, title) {
   return 'unknown';
 }
 
-/** Progressive containers the movi engine takes over from the native <video>. */
-const MOVI_CONTAINERS = new Set(['mkv', 'mp4', 'webm', 'avi', 'mov', 'ts', 'unknown']);
+/**
+ * Progressive containers the movi engine takes over from the native <video>.
+ *
+ * MP4 is deliberately absent: every browser demuxes progressive MP4 itself
+ * (hardware decode, native HTTP Range/seek handling, no 12 MB WASM bundle to
+ * download first), and the player still escalates to movi automatically when
+ * the native element rejects a file (HEVC / 10-bit MP4 → `MEDIA_ERR_SRC_NOT_SUPPORTED`).
+ * Sending ordinary H.264 MP4 through the WASM demuxer is what made plain
+ * "720p · MP4" sources die a few seconds into playback on mobile.
+ */
+const MOVI_CONTAINERS = new Set(['mkv', 'webm', 'avi', 'mov', 'ts', 'unknown']);
 
 /**
  * Normalize one TMDB-Embed-API stream object.
@@ -448,7 +457,9 @@ function buildGoldminePayload(normalized, options = {}) {
     const sameHostAsApi = hostOf(stream.url) === apiHost;
     let playable = stream.url;
     if (!sameHostAsApi && proxyStreams && typeof proxyUrl === 'function') {
-      playable = proxyUrl(stream.url, proxyMeta.referer, proxyMeta) || stream.url;
+      // The container rides along so the runtime can build an engine-appropriate
+      // proxy URL (progressive files are demuxed over HTTP Range, playlists not).
+      playable = proxyUrl(stream.url, proxyMeta.referer, { ...proxyMeta, container: stream.container }) || stream.url;
     }
     playableCache.set(stream.url, playable);
     if (!sourceMeta[playable]) {

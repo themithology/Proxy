@@ -453,6 +453,49 @@ function startUpstreamMockServer() {
         });
       }
 
+      // Hotlink-gated mirror: 403 whenever a Referer is sent (a wrong Referer is
+      // the classic instant-403) and a normal ranged file without one.
+      if (u.pathname === '/cdn/gated/file.mp4') {
+        if (req.headers.referer || req.headers.origin) {
+          res.writeHead(403, { 'Content-Type': 'text/html; charset=utf-8' });
+          return res.end('<html><body>hotlink denied</body></html>');
+        }
+        const body = Buffer.alloc(4096, 5);
+        const range = /^bytes=(\d*)-(\d*)$/.exec(req.headers.range || '');
+        if (range && (range[1] || range[2])) {
+          const start = range[1] ? parseInt(range[1], 10) : 0;
+          const end = range[1] && range[2] ? Math.min(parseInt(range[2], 10), body.length - 1) : body.length - 1;
+          res.writeHead(206, {
+            'Content-Type': 'video/mp4',
+            'Accept-Ranges': 'bytes',
+            'Content-Range': `bytes ${start}-${end}/${body.length}`,
+            'Content-Length': String(end - start + 1)
+          });
+          return res.end(body.subarray(start, end + 1));
+        }
+        res.writeHead(200, { 'Content-Type': 'video/mp4', 'Accept-Ranges': 'bytes', 'Content-Length': String(body.length) });
+        return res.end(body);
+      }
+
+      // Same-origin-only mirror: rejects a missing OR foreign Referer; only its
+      // own origin passes (the third rung of the proxy retry ladder).
+      if (u.pathname === '/cdn/selfref/file.mp4') {
+        const ownOrigin = `http://127.0.0.1:${req.socket.localPort}`;
+        if (req.headers.referer !== `${ownOrigin}/`) {
+          res.writeHead(403, { 'Content-Type': 'text/html; charset=utf-8' });
+          return res.end('<html><body>bad referer</body></html>');
+        }
+        const body = Buffer.alloc(1024, 3);
+        res.writeHead(200, { 'Content-Type': 'video/mp4', 'Accept-Ranges': 'bytes', 'Content-Length': String(body.length) });
+        return res.end(body);
+      }
+
+      // A 200 that is really an HTML gate page (never a stream).
+      if (u.pathname === '/cdn/html/file.mp4') {
+        res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
+        return res.end('<html><body>Sign in to continue</body></html>');
+      }
+
       // Tiny binary "media files" for the proxy/Range tests + one real VTT.
       if (u.pathname.startsWith('/cdn/files/')) {
         goldmineHits -= 1;
@@ -591,6 +634,10 @@ async function runTests() {
   assert.strictEqual(goldmineSvc.containerForStream('https://x.example/master.m3u8', ''), 'hls');
   assert.strictEqual(goldmineSvc.containerForStream('https://x.example/f.mp4', ''), 'mp4');
   assert.strictEqual(goldmineSvc.containerForStream('https://api.example/ts-proxy?url=https%3A%2F%2Fc%2Fx.mkv', ''), 'mkv', 'proxy-rewritten URLs keep their container');
+  // MP4 is native-first (browser decode + native Range); movi only takes over
+  // when the native element rejects the file (HEVC/10-bit MP4).
+  assert.strictEqual(goldmineSvc.MOVI_CONTAINERS.has('mp4'), false, 'MP4 must not be routed through the WASM demuxer by default');
+  assert.strictEqual(goldmineSvc.MOVI_CONTAINERS.has('mkv'), true);
   assert.strictEqual(goldmineSvc.qualityToHeight('1080'), 1080);
   assert.strictEqual(goldmineSvc.heightToLabel(720), '720p');
 
@@ -841,6 +888,37 @@ async function runTests() {
     assert.match(rangeRes.headers['content-range'] || '', /^bytes 0-1023\//);
     assert.strictEqual(rangeRes.headers['access-control-allow-origin'], '*');
     assert.match(rangeRes.headers['content-type'] || '', /video\/x-matroska/);
+
+    // Proxy resilience: a mirror that rejects the Referer it was given is
+    // retried without the hotlink headers instead of failing the source, and a
+    // 200 HTML gate page never reaches the player as if it were a stream.
+    const gatedProxy = await httpRequest(
+      baseUrl,
+      `/api/proxy?url=${encodeURIComponent(`${mockUpstream.url}/cdn/gated/file.mp4`)}&referer=${encodeURIComponent('https://wrong.example/watch')}`,
+      { headers: { Range: 'bytes=0-15' } }
+    );
+    assert.strictEqual(gatedProxy.status, 206, 'a hotlink-403 mirror must be re-fetched without the Referer');
+    assert.strictEqual(gatedProxy.headers['x-proxy-relaxed'], 'hotlink');
+    assert.strictEqual(gatedProxy.headers['x-upstream-status'], '206');
+    const selfRefProxy = await httpRequest(
+      baseUrl,
+      `/api/proxy?url=${encodeURIComponent(`${mockUpstream.url}/cdn/selfref/file.mp4`)}&referer=${encodeURIComponent('https://wrong.example/watch')}`
+    );
+    assert.strictEqual(selfRefProxy.status, 200, 'a same-origin-only mirror must be retried with its own Referer');
+    assert.strictEqual(selfRefProxy.headers['x-proxy-relaxed'], 'same-origin-referer');
+    const gateHtml = await httpRequest(
+      baseUrl,
+      `/api/proxy?url=${encodeURIComponent(`${mockUpstream.url}/cdn/html/file.mp4`)}`
+    );
+    assert.strictEqual(gateHtml.status, 502, 'an HTML gate page is not a stream');
+    assert.match(gateHtml.json && gateHtml.json.error ? gateHtml.json.error : '', /non-media/i);
+
+    // MP4 rides the native <video> (hardware decode, native Range) — movi is only
+    // the automatic fallback when the browser rejects the file.
+    const mp4Meta = Object.entries(stream.sourceMeta || {}).find(([key]) => key.includes('arcane-mp4.mp4'));
+    assert.ok(mp4Meta, 'the MP4 fixture must have per-URL metadata');
+    assert.strictEqual(mp4Meta[1].engine, 'native', 'progressive MP4 must not be forced through the WASM demuxer');
+    assert.strictEqual(stream.engine, 'movi', 'the MKV primary still rides movi');
 
     // Audio preference: the cached payload is shared, each caller's default flips.
     const taRes = await httpRequest(baseUrl, '/api/resolve/movie/693134?audio=ta');
@@ -1413,6 +1491,17 @@ async function runTests() {
     assert.deepStrictEqual(
       second.json.stream.audioTracks.map((t) => t.id),
       first.json.stream.audioTracks.map((t) => t.id)
+    );
+
+    // `?fresh=1` (the player's Retry) must bypass that cache: provider URLs are
+    // signed and short-lived, so replaying them makes every retry fail the same way.
+    const freshRes = await httpRequest(baseUrl, '/api/resolve/tv/94605?season=2&episode=3&fresh=1');
+    assert.strictEqual(freshRes.status, 200);
+    assert.ok(mockUpstream.goldmineHits > hitsAfterFirst, 'fresh=1 must query the TMDB-Embed-API again');
+    assert.deepStrictEqual(
+      freshRes.json.stream.audioTracks.map((t) => t.id),
+      first.json.stream.audioTracks.map((t) => t.id),
+      'a fresh resolve must return the same shape'
     );
 
     // A pinned ?source= is its own cache entry and never falls through.
@@ -2092,6 +2181,34 @@ async function runTests() {
       );
       assert.strictEqual(preflightRes.status, 204);
       assert.match(preflightRes.headers.get('access-control-allow-headers') || '', /X-Client-Token/i);
+
+      // 14c-2. Worker proxy resilience: the hotlink-403 retry and the non-media guard.
+      const workerGated = await workerFetch(
+        new Request(
+          `http://player.test/api/proxy?url=${encodeURIComponent(`${mockUpstream.url}/cdn/gated/file.mp4`)}&referer=${encodeURIComponent('https://wrong.example/watch')}`,
+          { headers: { Range: 'bytes=0-15' } }
+        ),
+        {}
+      );
+      assert.strictEqual(workerGated.status, 206, 'worker proxy must retry a hotlink-403 without Referer/Origin');
+      assert.strictEqual(workerGated.headers.get('x-proxy-relaxed'), 'hotlink');
+      assert.strictEqual(workerGated.headers.get('x-upstream-status'), '206');
+      assert.match(workerGated.headers.get('content-type') || '', /video\/mp4/);
+      const workerGateHtml = await workerFetch(
+        new Request(`http://player.test/api/proxy?url=${encodeURIComponent(`${mockUpstream.url}/cdn/html/file.mp4`)}`),
+        {}
+      );
+      assert.strictEqual(workerGateHtml.status, 502, 'worker proxy must not pass an HTML gate page through as a stream');
+      assert.match((await workerGateHtml.json()).error || '', /non-media/i);
+
+      // The worker resolve cache is bypassed by `?fresh=1` (player Retry).
+      const workerResolveFirst = await workerFetch(
+        new Request('http://player.test/api/resolve/movie/693134?server=goldmine&fresh=1'),
+        { GOLDMINE_API_BASE: `${mockUpstream.url}/goldmine` },
+        { waitUntil() {} }
+      );
+      assert.strictEqual(workerResolveFirst.status, 200);
+      assert.ok((await workerResolveFirst.json()).stream.streamUrl, 'fresh worker resolves must still answer with a stream');
 
       // 14d. Real FFmpeg WASM Demuxer (`public/vendor/movi/element.js`) over Worker `/api/proxy`
       //      streaming a multi-audio + multi-subtitle Matroska container via HTTP Range requests.

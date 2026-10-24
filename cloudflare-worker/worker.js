@@ -1300,13 +1300,18 @@ async function withTimeout(promise, ms, fallback = null) {
   }
 }
 
-async function resolveStreamWaterfall(metadata, requestedServer, preferredAudio, env, source = '') {
+async function resolveStreamWaterfall(metadata, requestedServer, preferredAudio, env, source = '', options = {}) {
   const validServer = serverCatalog.resolveServerId(SERVERS, requestedServer);
   const onlySource = String(source || '').toLowerCase();
+  // `fresh=1` (the player sends it on Retry and on a manual server pick) skips
+  // the edge cache read. Provider URLs are short-lived signed links: replaying
+  // a 15-minute-old payload turns "Retry" into "fail again instantly", which is
+  // exactly what a dead source looks like from the outside.
+  const fresh = !!(options && options.fresh);
   const cacheKey = `cf:resolve:v5:${metadata.type}:${metadata.tmdbId}:s${metadata.season}:e${metadata.episode}:${validServer}${
     onlySource ? `:${onlySource}` : ''
   }`;
-  const cached = await edgeCacheGet(cacheKey);
+  const cached = fresh ? null : await edgeCacheGet(cacheKey);
   if (cached) {
     // Rebuild the displayed server list from the live catalog: the stream payload
     // is cached for 15 minutes, but a rebrand/re-prioritisation must show up in
@@ -1475,6 +1480,83 @@ function rewriteManifest(m3u8, baseUrl, workerProxyBase, referer, origin, mode, 
     .join('\n');
 }
 
+/**
+ * Upstream statuses that mean "this exact request shape is not welcome here"
+ * rather than "this file does not exist": hotlink filters reject a Referer they
+ * do not expect, picky CDNs reject HEAD, and some hosts answer 416 to the first
+ * probe of a file they will happily stream afterwards.
+ */
+const PROXY_RETRY_STATUSES = new Set([
+  400, 401, 403, 404, 405, 406, 410, 412, 415, 416, 429, 451, 500, 502, 503, 504
+]);
+
+/**
+ * Fetch the upstream stream, relaxing request details one at a time when a CDN
+ * rejects the first attempt. Order matters: the exact request the player asked
+ * for always goes first, then hotlink headers are dropped (a wrong Referer is
+ * the single most common cause of an instant 403), then the Range (a few hosts
+ * only serve whole files), then both, and finally HEAD is retried as GET.
+ *
+ * Returns `{ resp, relaxed, method }` — `resp` is the last attempt, `relaxed`
+ * names the shape that finally worked (`''` when the first attempt did).
+ */
+async function fetchUpstreamWithFallbacks(targetUrl, baseHeaders, method, { hasReferer = false, hasRange = false } = {}) {
+  // A CDN that rejects the provider's Referer often accepts its own: try that
+  // before giving up on the source entirely.
+  let selfOrigin = '';
+  try {
+    selfOrigin = new URL(targetUrl).origin;
+  } catch {}
+  const canSelfRefer = /^https?:\/\//i.test(selfOrigin);
+
+  const variants = [{ relax: [], method }];
+  if (hasReferer) variants.push({ relax: ['hotlink'], method });
+  if (hasReferer && canSelfRefer) variants.push({ relax: ['same-origin-referer'], method });
+  if (hasRange) variants.push({ relax: ['range'], method });
+  if (hasReferer && hasRange) variants.push({ relax: ['hotlink', 'range'], method });
+  if (method === 'HEAD') variants.push({ relax: [], method: 'GET' });
+
+  let last = null;
+  for (const variant of variants) {
+    const headers = new Headers(baseHeaders);
+    if (variant.relax.includes('hotlink')) {
+      headers.delete('Referer');
+      headers.delete('Origin');
+    }
+    if (variant.relax.includes('same-origin-referer')) {
+      headers.set('Referer', `${selfOrigin}/`);
+      headers.set('Origin', selfOrigin);
+    }
+    if (variant.relax.includes('range')) headers.delete('Range');
+
+    let resp = null;
+    try {
+      resp = await fetch(targetUrl, {
+        method: variant.method,
+        headers,
+        redirect: 'follow'
+      });
+    } catch (err) {
+      // Network-level failure: try the next shape, remembering nothing.
+      continue;
+    }
+
+    if (resp.ok || resp.status === 206) {
+      return { resp, relaxed: variant.relax.join('+'), method: variant.method };
+    }
+    // Nobody wants this body; release it before the next attempt.
+    try {
+      if (resp.body) await resp.body.cancel();
+    } catch {}
+    last = resp;
+    if (!PROXY_RETRY_STATUSES.has(resp.status)) break;
+  }
+  return { resp: last, relaxed: null, method };
+}
+
+/** Bodies that are never a playable stream (hotlink gates, error pages, JSON). */
+const NON_MEDIA_CONTENT_TYPE = /^(?:text\/html|text\/plain|text\/xml|application\/(?:json|xml|xhtml\+xml))/i;
+
 async function handleProxyRequest(request, url) {
   const targetUrl = url.searchParams.get('url');
   const referer = url.searchParams.get('referer') || '';
@@ -1542,11 +1624,23 @@ async function handleProxyRequest(request, url) {
     }
   });
 
-  const upstreamResp = await fetch(upstreamUrl.toString(), {
-    method: request.method === 'HEAD' ? 'HEAD' : 'GET',
-    headers: upstreamHeaders,
-    redirect: 'follow'
-  });
+  const requestedMethod = request.method === 'HEAD' ? 'HEAD' : 'GET';
+  const { resp: upstreamResp, relaxed } = await fetchUpstreamWithFallbacks(
+    upstreamUrl.toString(),
+    upstreamHeaders,
+    requestedMethod,
+    {
+      hasReferer: !!(referer || origin),
+      hasRange: !!(range && requestedMethod === 'GET')
+    }
+  );
+
+  if (!upstreamResp) {
+    return jsonResponse(
+      { ok: false, error: 'Upstream stream host could not be reached', target: parsed.hostname },
+      502
+    );
+  }
 
   const contentType = (upstreamResp.headers.get('content-type') || '').toLowerCase();
   const finalUrl = upstreamResp.url || upstreamUrl.toString();
@@ -1589,8 +1683,29 @@ async function handleProxyRequest(request, url) {
     );
   }
 
+  // A 200 that answers with an HTML/JSON body is a hotlink gate or an error
+  // page — passing it through turns into a silent "source failed to decode" in
+  // the player. Say what actually happened instead.
+  if (upstreamResp.ok && NON_MEDIA_CONTENT_TYPE.test(contentType)) {
+    try {
+      if (upstreamResp.body) await upstreamResp.body.cancel();
+    } catch {}
+    return jsonResponse(
+      {
+        ok: false,
+        error: 'Upstream answered with a non-media body instead of the stream',
+        upstreamStatus: upstreamResp.status,
+        upstreamType: contentType,
+        target: parsed.hostname
+      },
+      502
+    );
+  }
+
   const respHeaders = new Headers(corsHeaders());
   respHeaders.set('Accept-Ranges', 'bytes');
+  respHeaders.set('X-Upstream-Status', String(upstreamResp.status));
+  if (relaxed) respHeaders.set('X-Proxy-Relaxed', relaxed);
   const resolvedMime =
     !contentType || contentType.includes('octet-stream')
       ? inferMediaContentType(parsed.pathname, finalUrl)
@@ -1604,7 +1719,9 @@ async function handleProxyRequest(request, url) {
   const cd = upstreamResp.headers.get('content-disposition');
   if (cd) respHeaders.set('Content-Disposition', cd);
 
-  return new Response(upstreamResp.body, {
+  // A HEAD answer must stay body-less even when it was retried as a GET.
+  const body = requestedMethod === 'HEAD' ? null : upstreamResp.body;
+  return new Response(body, {
     status: upstreamResp.status,
     headers: respHeaders
   });
@@ -1879,6 +1996,10 @@ export default {
         const normalizedType = rawType.toLowerCase() === 'movie' ? 'movie' : 'tv';
         const trimmedId = String(tmdbId || '').trim();
         const isNumericTmdb = /^\d+$/.test(trimmedId);
+        // `?fresh=1` (or `?nocache=1`) forces a live re-resolve so a retry never
+        // replays expired provider URLs from the 15-minute edge cache.
+        const freshParam = String(url.searchParams.get('fresh') || url.searchParams.get('nocache') || '').toLowerCase();
+        const fresh = freshParam === '1' || freshParam === 'true' || freshParam === 'yes';
 
         const buildCustomStream = (customOv) => ({
           server: 'custom',
@@ -1915,7 +2036,7 @@ export default {
           const metadataPromise = resolveTmdbMetadata(rawType, trimmedId, season, episode, env);
           const streamPromise = customOv
             ? Promise.resolve(buildCustomStream(customOv))
-            : resolveStreamWaterfall(stubMeta, server, audio, env, source);
+            : resolveStreamWaterfall(stubMeta, server, audio, env, source, { fresh });
           const subtitlesPromise = metadataPromise.then((m) => resolveSubtitles(m, env)).catch(() => []);
           const segmentsPromise = metadataPromise.then((m) => resolveSkipSegments(m, env)).catch(() => []);
 
@@ -1936,7 +2057,7 @@ export default {
           const segmentsPromise = resolveSkipSegments(metadata, env).catch(() => []);
           streamData = customOv
             ? buildCustomStream(customOv)
-            : await resolveStreamWaterfall(metadata, server, audio, env, source);
+            : await resolveStreamWaterfall(metadata, server, audio, env, source, { fresh });
           [subtitles, segments] = await Promise.all([
             withTimeout(subtitlesPromise, 2500, []),
             withTimeout(segmentsPromise, 2500, [])

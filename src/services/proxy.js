@@ -176,6 +176,87 @@ function rewriteM3u8Manifest(m3u8Content, baseManifestUrl, refererOrOpts = '') {
 }
 
 /**
+ * Upstream statuses that mean "this request shape is not welcome" rather than
+ * "this file does not exist": hotlink filters reject an unexpected Referer,
+ * picky CDNs reject HEAD, a few hosts answer 416 to the first range probe.
+ */
+const PROXY_RETRY_STATUSES = new Set([
+  400, 401, 403, 404, 405, 406, 410, 412, 415, 416, 429, 451, 500, 502, 503, 504
+]);
+
+/**
+ * Fetch the upstream stream, relaxing request details one at a time when the
+ * CDN rejects the first attempt: the exact request first, then without the
+ * hotlink headers (a wrong Referer is the most common instant 403), then
+ * without the Range, then both, then HEAD retried as GET.
+ *
+ * Returns `{ resp, relaxed }`; a network-level failure leaves `resp` null.
+ */
+async function fetchUpstreamWithFallbacks(targetUrl, headers, method, { hasReferer = false, hasRange = false } = {}) {
+  // A CDN that rejects the provider's Referer often accepts its own: try that
+  // before giving up on the source entirely.
+  let selfOrigin = '';
+  try {
+    selfOrigin = new URL(targetUrl).origin;
+  } catch {}
+  const canSelfRefer = /^https?:\/\//i.test(selfOrigin);
+
+  const variants = [{ relax: [], method }];
+  if (hasReferer) variants.push({ relax: ['hotlink'], method });
+  if (hasReferer && canSelfRefer) variants.push({ relax: ['same-origin-referer'], method });
+  if (hasRange) variants.push({ relax: ['range'], method });
+  if (hasReferer && hasRange) variants.push({ relax: ['hotlink', 'range'], method });
+  if (method === 'HEAD') variants.push({ relax: [], method: 'GET' });
+
+  let last = null;
+  for (const variant of variants) {
+    const attemptHeaders = { ...headers };
+    if (variant.relax.includes('hotlink')) {
+      delete attemptHeaders.Referer;
+      delete attemptHeaders.Origin;
+    }
+    if (variant.relax.includes('same-origin-referer')) {
+      attemptHeaders.Referer = `${selfOrigin}/`;
+      attemptHeaders.Origin = selfOrigin;
+    }
+    if (variant.relax.includes('range')) delete attemptHeaders.Range;
+
+    // The timeout only guards the CONNECT/headers phase: `AbortSignal.timeout`
+    // would otherwise keep ticking and kill the streaming body 15 seconds into
+    // playback (which looks exactly like "it played for a moment, then died").
+    const controller = new AbortController();
+    const connectTimer = setTimeout(() => controller.abort(), 15000);
+    let resp = null;
+    try {
+      resp = await fetch(targetUrl, {
+        method: variant.method,
+        headers: attemptHeaders,
+        redirect: 'follow',
+        signal: controller.signal
+      });
+    } catch {
+      clearTimeout(connectTimer);
+      continue;
+    }
+    clearTimeout(connectTimer);
+
+    if (resp.ok || resp.status === 206) return { resp, relaxed: variant.relax.join('+') };
+    // Release the rejected body before retrying.
+    try {
+      if (resp.body) await resp.body.cancel();
+    } catch {
+      try { resp.body?.destroy?.(); } catch {}
+    }
+    last = resp;
+    if (!PROXY_RETRY_STATUSES.has(resp.status)) break;
+  }
+  return { resp: last, relaxed: null };
+}
+
+/** Bodies that are never a playable stream (hotlink gates, error pages, JSON). */
+const NON_MEDIA_CONTENT_TYPE = /^(?:text\/html|text\/plain|text\/xml|application\/(?:json|xml|xhtml\+xml))/i;
+
+/**
  * Express route handler for /api/proxy
  */
 async function handleStreamProxy(req, res) {
@@ -277,12 +358,25 @@ async function handleStreamProxy(req, res) {
   }
 
   try {
-    const upstreamRes = await fetch(upstreamUrl, {
-      method: req.method === 'HEAD' ? 'HEAD' : 'GET',
-      headers: upstreamHeaders,
-      redirect: 'follow',
-      signal: AbortSignal.timeout(15000)
-    });
+    const requestedMethod = req.method === 'HEAD' ? 'HEAD' : 'GET';
+    const { resp: upstreamRes, relaxed } = await fetchUpstreamWithFallbacks(
+      upstreamUrl,
+      upstreamHeaders,
+      requestedMethod,
+      {
+        hasReferer: !!(referer || origin),
+        hasRange: !!(req.headers.range && requestedMethod === 'GET')
+      }
+    );
+
+    if (!upstreamRes) {
+      return res.status(502).json({
+        error: 'Upstream stream host could not be reached',
+        target: parsedUrl.hostname
+      });
+    }
+    if (relaxed) res.setHeader('X-Proxy-Relaxed', relaxed);
+    res.setHeader('X-Upstream-Status', String(upstreamRes.status));
 
     if (!upstreamRes.ok && upstreamRes.status !== 206) {
       return res.status(upstreamRes.status).json({
@@ -316,6 +410,23 @@ async function handleStreamProxy(req, res) {
       }
     }
 
+    // A 200 that answers with an HTML/JSON body is a hotlink gate or an error
+    // page; passing it through only shows up later as a mysterious decode
+    // failure in the player.
+    if (upstreamRes.ok && NON_MEDIA_CONTENT_TYPE.test(contentType)) {
+      try {
+        if (upstreamRes.body) await upstreamRes.body.cancel();
+      } catch {
+        try { upstreamRes.body?.destroy?.(); } catch {}
+      }
+      return res.status(502).json({
+        error: 'Upstream answered with a non-media body instead of the stream',
+        upstreamStatus: upstreamRes.status,
+        upstreamType: contentType,
+        target: parsedUrl.hostname
+      });
+    }
+
     // Forward streaming headers for MP4 / MKV / TS / fMP4 / DASH MPD
     res.status(upstreamRes.status);
     res.setHeader(
@@ -335,7 +446,8 @@ async function handleStreamProxy(req, res) {
     const contentDisposition = upstreamRes.headers.get('content-disposition');
     if (contentDisposition) res.setHeader('Content-Disposition', contentDisposition);
 
-    if (req.method === 'HEAD' || !upstreamRes.body) {
+    // A HEAD answer stays body-less even when it was retried as a GET.
+    if (requestedMethod === 'HEAD' || !upstreamRes.body) {
       return res.end();
     }
 

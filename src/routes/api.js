@@ -289,6 +289,11 @@ router.get('/resolve/:type/:tmdbId', async (req, res) => {
     // through to other servers.
     const requestedSource = String(req.query.source || '').toLowerCase();
     const onlySource = /^[a-z0-9]{3,24}$/.test(requestedSource) ? requestedSource : '';
+    // `?fresh=1` / `?nocache=1` re-resolves live instead of replaying the cached
+    // payload (the player sends it on Retry — provider URLs expire quickly).
+    const freshParam = String(req.query.fresh || req.query.nocache || '').toLowerCase();
+    const fresh = freshParam === '1' || freshParam === 'true' || freshParam === 'yes';
+    const streamOptions = { ...(onlySource ? { onlySource } : {}), fresh };
 
     const callerDomain = telemetry.extractDomain(req);
     if (telemetry.isDomainBlocked(callerDomain)) {
@@ -316,7 +321,7 @@ router.get('/resolve/:type/:tmdbId', async (req, res) => {
     if (isNumericTmdb) {
       const stubMeta = { type: normalizedType, tmdbId: trimmedId, season, episode };
       const metadataPromise = resolveTmdbMetadata(type, trimmedId, season, episode);
-      const streamPromise = resolveStreamForServer(stubMeta, server, audio, onlySource ? { onlySource } : {});
+      const streamPromise = resolveStreamForServer(stubMeta, server, audio, streamOptions);
       const subtitlesPromise = metadataPromise.then((m) => resolveSubtitles(m)).catch(() => []);
       const segmentsPromise = metadataPromise.then((m) => resolveSkipSegments(m)).catch(() => ({ segments: [] }));
 
@@ -329,7 +334,7 @@ router.get('/resolve/:type/:tmdbId', async (req, res) => {
       metadata = await resolveTmdbMetadata(type, trimmedId, season, episode);
       const subtitlesPromise = resolveSubtitles(metadata).catch(() => []);
       const segmentsPromise = resolveSkipSegments(metadata).catch(() => ({ segments: [] }));
-      streamData = await resolveStreamForServer(metadata, server, audio, onlySource ? { onlySource } : {});
+      streamData = await resolveStreamForServer(metadata, server, audio, streamOptions);
       [subtitles, segmentsData] = await Promise.all([
         withSoftTimeout(subtitlesPromise, 2500, []),
         withSoftTimeout(segmentsPromise, 2500, { segments: [] })
