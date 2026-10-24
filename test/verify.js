@@ -2729,6 +2729,12 @@ async function runTests() {
         'green is-playing badge must only appear once media playback is genuinely live'
       );
     }
+
+    // Direct-provider, extensionless-MKV, HLS-rendition and audio-source
+    // regressions.  These use their own hermetic fetch fixtures and never
+    // contact the public providers.
+    await require('./audio-regressions')();
+    console.log('  ✔ Passed direct-provider and multi-audio regression fixtures.');
     console.log('  ✔ Passed MKV WASM demuxing, fast two-wave fan-out, proxy headers & multi-audio source shifting.');
 
     console.log('\n==========================================================');

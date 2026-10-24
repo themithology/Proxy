@@ -486,6 +486,10 @@
     mirror: false,
     playbackSpeed: 1,
     hlsInstance: null,
+    // Logical source whose manifest is currently attached.  This differs from
+    // activeHlsUrl when a proxy-to-direct fallback is used.
+    activeHlsUrl: null,
+    pendingAudioSelection: null,
     dashInstance: null,
     activeSkipSegment: null,
     isDraggingTimeline: false,
@@ -1428,8 +1432,8 @@
         }
         // A remembered track that lives in its own file (sub vs dub streams)
         // must actually be the file that plays, as when it is picked from the menu.
-        if (rememberedTrack && rememberedTrack.streamUrl && state.stream.streamUrl && rememberedTrack.streamUrl !== state.stream.streamUrl) {
-          state.stream.streamUrl = rememberedTrack.streamUrl;
+        if (rememberedTrack && rememberedTrack.streamUrl && state.stream.streamUrl && !sameStreamReference(rememberedTrack.streamUrl, state.stream.streamUrl)) {
+          applyAudioTrackSourceMetadata(rememberedTrack);
         }
       }
 
@@ -1612,10 +1616,48 @@
     }
   }
 
+  function canonicalStreamReference(value) {
+    const raw = String(value || '');
+    if (!raw) return '';
+    const unwrapped = unwrapProxiedTargetUrl(raw);
+    try { return new URL(unwrapped, window.location.href).href; } catch (_) { return unwrapped; }
+  }
+
+  function sameStreamReference(a, b) {
+    const left = canonicalStreamReference(a);
+    const right = canonicalStreamReference(b);
+    return !!left && !!right && left === right;
+  }
+
+  function currentLogicalStreamUrl() {
+    return (state.attachedStreamUrl || (state.stream && state.stream.streamUrl) || '');
+  }
+
+  function sourceMetaForUrl(url) {
+    const metas = state.stream && state.stream.sourceMeta;
+    if (!metas || typeof metas !== 'object') return null;
+    if (metas[url]) return metas[url];
+    const key = Object.keys(metas).find((candidate) => sameStreamReference(candidate, url));
+    return key ? metas[key] : null;
+  }
+
+  function applyAudioTrackSourceMetadata(track) {
+    if (!state.stream || !track || !track.streamUrl) return null;
+    const meta = sourceMetaForUrl(track.streamUrl);
+    state.stream.streamUrl = track.streamUrl;
+    if (track.rawUrl) state.stream.rawUrl = track.rawUrl;
+    if (!meta) return null;
+    state.stream.format = meta.format || meta.container || state.stream.format;
+    state.stream.engine = meta.engine === 'movi' ? 'movi' : undefined;
+    state.stream.progressiveFormat = meta.engine === 'movi' ? meta.container : undefined;
+    state.stream.moviHeaders = meta.moviHeaders;
+    state.stream.embeddedSubtitles = meta.subtitles;
+    return meta;
+  }
+
   function classifyCandidateStream(streamUrl, isPrimary) {
     const stream = state.stream || {};
-    const meta =
-      stream.sourceMeta && typeof stream.sourceMeta === 'object' ? stream.sourceMeta[streamUrl] || null : null;
+    const meta = sourceMetaForUrl(streamUrl);
     const innerUrl = unwrapProxiedTargetUrl(streamUrl);
     let innerPath = '';
     try {
@@ -1753,15 +1795,22 @@
       normalizeMoviLang(readShowPrefs().audio || '') ||
       state.preferredAudioLang ||
       '';
+    const belongsToNext = (row) => row && (!row.streamUrl || sameStreamReference(row.streamUrl, nextUrl));
+    const nextRows = baseRows.filter(belongsToNext);
+    const pending = state.pendingAudioSelection;
 
     // Remove stale muxed-only rows discovered from a previous MKV while keeping
     // the full cross-source dub catalog ready for the newly attached source.
+    // Prefer a row belonging to the new URL; a same-language row from the old
+    // provider must not make the new HLS instance select a rendition by accident.
     state.audioTracks = baseRows;
     const match =
-      (wantedLang && wantedLang !== 'und' && state.audioTracks.find((r) => normalizeMoviLang(r.lang) === wantedLang)) ||
-      state.audioTracks.find((r) => r.streamUrl === nextUrl && r.default) ||
-      state.audioTracks.find((r) => r.streamUrl === nextUrl) ||
-      state.audioTracks.find((r) => r.default) ||
+      (pending && nextRows.find((row) => row.id === pending.id)) ||
+      (pending && Number.isInteger(pending.audioIndex) && nextRows.find((row) => row.audioIndex === pending.audioIndex)) ||
+      (wantedLang && wantedLang !== 'und' && nextRows.find((row) => normalizeMoviLang(row.lang) === wantedLang)) ||
+      nextRows.find((row) => row.default) ||
+      nextRows[0] ||
+      state.audioTracks.find((row) => row.default) ||
       state.audioTracks[0];
     if (match) state.activeAudioId = match.id;
     renderAudioPopover();
@@ -1789,6 +1838,7 @@
       state.hlsInstance.destroy();
       state.hlsInstance = null;
     }
+    state.activeHlsUrl = null;
     if (state.dashInstance) {
       try { state.dashInstance.reset(); } catch (_) {}
       state.dashInstance = null;
@@ -1868,6 +1918,7 @@
 
     const isDeclaredPrimaryUrl = streamUrl === state.stream._primaryStreamUrl;
     const candidateInfo = classifyCandidateStream(streamUrl, isDeclaredPrimaryUrl);
+    if (candidateInfo.meta && candidateInfo.meta.rawUrl) state.stream.rawUrl = candidateInfo.meta.rawUrl;
 
     if (Array.isArray(candidateInfo.sourceSubtitles) && candidateInfo.sourceSubtitles.length > 0) {
       const seenSubUrls = new Set(state.subtitles.map((s) => s && s.url).filter(Boolean));
@@ -1958,6 +2009,7 @@
 
     if (window.Hls && window.Hls.isSupported() && candidateInfo.isHls) {
       const attachHlsUrl = (activeHlsUrl) => {
+        state.activeHlsUrl = activeHlsUrl;
         const hls = new window.Hls({
           enableWorker: true,
           lowLatencyMode: false
@@ -1974,7 +2026,7 @@
           hideLoading();
 
           // Merge any real HLS multi-audio tracks discovered in the manifest
-          if (hls.audioTracks && hls.audioTracks.length > 1) {
+          if (hls.audioTracks && hls.audioTracks.length > 0) {
             syncHlsAudioTracks();
           }
 
@@ -1991,6 +2043,13 @@
             }
           });
         });
+
+        if (window.Hls.Events.AUDIO_TRACKS_UPDATED) {
+          hls.on(window.Hls.Events.AUDIO_TRACKS_UPDATED, () => {
+            if (attachToken !== state.attachToken) return;
+            syncHlsAudioTracks();
+          });
+        }
 
         hls.on(window.Hls.Events.ERROR, (_, errData) => {
           if (attachToken !== state.attachToken || !errData) return;
@@ -2416,13 +2475,15 @@
 
     if (!Array.isArray(rawTracks) || rawTracks.length === 0) return;
 
-    const currentUrl = state.stream.streamUrl;
+    const currentUrl = currentLogicalStreamUrl();
+    const currentMeta = sourceMetaForUrl(currentUrl);
+    const currentRawUrl = (currentMeta && currentMeta.rawUrl) || state.stream.rawUrl || currentUrl;
 
     // Single untagged audio stream inside a language-specific dub file (e.g. a
     // dedicated Hindi dub file whose audio stream lacks an ISO tag): keep the
     // payload's known language row instead of overwriting it with "Audio 1".
     if (rawTracks.length === 1 && rawTracks[0].lang === 'und') {
-      const sameUrlRows = state.audioTracks.filter((row) => row && row.streamUrl === currentUrl);
+      const sameUrlRows = state.audioTracks.filter((row) => row && sameStreamReference(row.streamUrl, currentUrl));
       if (sameUrlRows.length === 1) {
         sameUrlRows[0].inFile = true;
         if (Number.isInteger(rawTracks[0].trackId)) {
@@ -2444,13 +2505,19 @@
 
     const inFileRows = rawTracks.map((track, index) => {
       const lang = track.lang || 'und';
+      // FFmpeg/movi sometimes exposes an explicitly Original track as just
+      // "Audio 3" with LANGUAGE=und.  A generic demuxer label must not erase
+      // the resolver's Original row; a meaningful non-Original label still
+      // remains eligible for normal language inference above.
+      const genericRawLabel = !track.rawLabel || /^(?:audio|track)[\s#-]*\d+$/i.test(track.rawLabel);
       const existing = state.audioTracks.find(
         (row) =>
           row &&
           !matchedExistingIds.has(row.id) &&
-          row.streamUrl === currentUrl &&
-          normalizeMoviLang(row.lang) === lang &&
-          lang !== 'und'
+          sameStreamReference(row.streamUrl, currentUrl) &&
+          ((lang !== 'und' && normalizeMoviLang(row.lang) === lang) ||
+            (lang === 'und' && /original/i.test(String(row.label || '')) &&
+              (genericRawLabel || /original/i.test(track.rawLabel))))
       );
 
       const baseLabel = lang !== 'und' ? langChipLabel(lang, index) : '';
@@ -2487,7 +2554,7 @@
         label: displayLabel,
         type: 'dub',
         streamUrl: currentUrl,
-        rawUrl: state.stream.rawUrl || currentUrl,
+        rawUrl: currentRawUrl,
         inFile: true,
         moviLang: track.rawLang || lang,
         moviTrackId: track.trackId,
@@ -2501,7 +2568,7 @@
       (row) =>
         row &&
         row.streamUrl &&
-        row.streamUrl !== currentUrl &&
+        !sameStreamReference(row.streamUrl, currentUrl) &&
         !inFileRows.some((merged) => merged.lang !== 'und' && merged.lang === normalizeMoviLang(row.lang))
     );
     state.audioTracks = [...inFileRows, ...otherFileRows];
@@ -2521,6 +2588,7 @@
       state.audioTracks.find((row) => row.default) ||
       state.audioTracks[0];
     if (active) state.activeAudioId = active.id;
+    state.pendingAudioSelection = null;
     renderAudioPopover();
     renderLangChips();
     updateSettingsSummaryValues();
@@ -2616,7 +2684,7 @@
   function syncNativeAudioTracks() {
     const list = nativeVideo && nativeVideo.audioTracks;
     if (!list || !(list.length > 1)) return;
-    const currentUrl = state.stream ? state.stream.streamUrl : '';
+    const currentUrl = currentLogicalStreamUrl();
     const nativeRows = [];
     for (let i = 0; i < list.length; i++) {
       const nt = list[i];
@@ -2636,7 +2704,7 @@
     }
     if (nativeRows.length > 1) {
       const otherFileRows = state.audioTracks.filter(
-        (row) => row && row.streamUrl && row.streamUrl !== currentUrl
+        (row) => row && row.streamUrl && !sameStreamReference(row.streamUrl, currentUrl)
       );
       state.audioTracks = [...nativeRows, ...otherFileRows];
       const active =
@@ -2806,87 +2874,103 @@
     if (Number.isInteger(track.audioIndex) && track.audioIndex >= 0 && track.audioIndex < hlsTracks.length) {
       return track.audioIndex;
     }
-    const lang = String(track.lang || '').toLowerCase();
-    const usableLang = lang && lang !== 'und' && lang !== 'default';
-    if (usableLang) {
+    const lang = normalizeMoviLang(track.lang || '');
+    if (lang && lang !== 'und') {
       const langIdx = hlsTracks.findIndex((t) => {
-        const hlsLang = String((t && t.lang) || '').toLowerCase();
-        return hlsLang === lang || hlsLang.startsWith(lang);
+        const hlsLang = normalizeMoviLang((t && (t.lang || t.language)) || '');
+        return hlsLang === lang || (hlsLang !== 'und' && hlsLang.startsWith(lang));
       });
       if (langIdx !== -1) return langIdx;
     }
     const label = String(track.label || '').toLowerCase().trim();
     if (label) {
       const labelIdx = hlsTracks.findIndex((t) => {
-        const name = String((t && t.name) || '').toLowerCase();
+        const name = String((t && (t.name || t.label)) || '').toLowerCase().trim();
         return name && (name === label || name.includes(label) || label.includes(name));
       });
       if (labelIdx !== -1) return labelIdx;
+    }
+    if (track.hlsGroupId) {
+      const groupIdx = hlsTracks.findIndex((t) => t && t.groupId === track.hlsGroupId);
+      if (groupIdx !== -1) return groupIdx;
     }
     return -1;
   }
 
   function syncHlsAudioTracks() {
-    if (!state.hlsInstance || !state.hlsInstance.audioTracks) return;
+    if (!state.hlsInstance || !Array.isArray(state.hlsInstance.audioTracks)) return;
     const hlsTracks = state.hlsInstance.audioTracks;
+    if (hlsTracks.length === 0) return;
 
-    // The payload may expose a single row for a manifest that actually carries
-    // several audio renditions (multi-track HLS masters do this). hls.js is the
-    // source of truth once the manifest is parsed: add a row per rendition so
-    // the menu and language chips can switch them.
-    const distinctStreams = new Set(state.audioTracks.map((t) => t && t.streamUrl).filter(Boolean));
-    if (hlsTracks.length > state.audioTracks.length && distinctStreams.size <= 1) {
-      hlsTracks.forEach((hlsTrack, index) => {
-        const rawLang = String((hlsTrack && hlsTrack.lang) || '').toLowerCase();
-        const normFromCode = normalizeMoviLang(rawLang);
-        const hlsLang =
-          normFromCode !== 'und'
-            ? normFromCode
-            : inferLangFromTrackLabel((hlsTrack && hlsTrack.name) || '');
-        const already = state.audioTracks.find(
-          (t) =>
-            t.audioIndex === index ||
-            (hlsLang !== 'und' && normalizeMoviLang(t.lang) === hlsLang && t.audioIndex == null)
-        );
-        if (already) {
-          already.audioIndex = index;
-          if (hlsTrack && hlsTrack.default) already.default = true;
-          return;
-        }
-        const label =
-          (hlsLang !== 'und' ? langChipLabel(hlsLang, index) : '') ||
-          (hlsTrack && hlsTrack.name) ||
-          `Audio ${index + 1}`;
-        state.audioTracks.push({
-          id: `hls-${index}`,
-          lang: hlsLang,
-          label,
-          type: 'dub',
-          streamUrl: state.stream ? state.stream.streamUrl : '',
-          audioIndex: index,
-          default: !!(hlsTrack && hlsTrack.default)
-        });
+    const currentUrl = currentLogicalStreamUrl();
+    const currentMeta = sourceMetaForUrl(currentUrl);
+    const currentRawUrl = (currentMeta && currentMeta.rawUrl) || (state.stream && state.stream.rawUrl) || currentUrl;
+    const previousRows = Array.isArray(state.audioTracks) ? state.audioTracks : [];
+    const currentRows = previousRows.filter((row) => row && (!row.streamUrl || sameStreamReference(row.streamUrl, currentUrl)));
+    const otherFileRows = previousRows.filter((row) => row && row.streamUrl && !sameStreamReference(row.streamUrl, currentUrl));
+    const usedIds = new Set();
+    const usedRows = new Set();
+    const pending = state.pendingAudioSelection;
+
+    // hls.js is authoritative for the attached manifest.  Merge by rendition
+    // index first, then language/name, but ONLY against rows for this source.
+    // Rows for another provider remain available as separate-file choices.
+    const mergedRows = hlsTracks.map((hlsTrack, index) => {
+      const rawLang = String((hlsTrack && (hlsTrack.lang || hlsTrack.language)) || '').toLowerCase();
+      const normFromCode = normalizeMoviLang(rawLang);
+      const hlsLang = normFromCode !== 'und'
+        ? normFromCode
+        : inferLangFromTrackLabel((hlsTrack && (hlsTrack.name || hlsTrack.label)) || '');
+      const existing = currentRows.find((row) => {
+        if (usedRows.has(row)) return false;
+        if (Number.isInteger(row.audioIndex) && row.audioIndex === index) return true;
+        if (hlsLang !== 'und' && normalizeMoviLang(row.lang) === hlsLang && !Number.isInteger(row.audioIndex)) return true;
+        const rowLabel = String(row.label || '').toLowerCase().trim();
+        const hlsLabel = String((hlsTrack && (hlsTrack.name || hlsTrack.label)) || '').toLowerCase().trim();
+        return rowLabel && hlsLabel && (rowLabel === hlsLabel || rowLabel.includes(hlsLabel) || hlsLabel.includes(rowLabel));
       });
-      renderAudioPopover();
-      renderLangChips();
-      updateSettingsSummaryValues();
-    }
-
-    // Learn the rendition order for EVERY row once, so later switches do not
-    // depend on fuzzy name matching.
-    state.audioTracks.forEach((t) => {
-      if (!Number.isInteger(t.audioIndex)) {
-        const idx = resolveHlsAudioIndex(t, hlsTracks);
-        if (idx !== -1) t.audioIndex = idx;
-      }
+      if (existing) usedRows.add(existing);
+      let id = existing && existing.id ? existing.id : `hls-${index}`;
+      if (usedIds.has(id)) id = `${id}-${index + 1}`;
+      usedIds.add(id);
+      const label = (hlsLang !== 'und' ? langChipLabel(hlsLang, index) : '') ||
+        (hlsTrack && (hlsTrack.name || hlsTrack.label)) || (existing && existing.label) || `Audio ${index + 1}`;
+      return {
+        ...(existing || {}),
+        id,
+        lang: hlsLang !== 'und' ? hlsLang : (existing && existing.lang) || 'und',
+        label,
+        type: 'dub',
+        streamUrl: currentUrl,
+        rawUrl: (existing && existing.rawUrl) || currentRawUrl,
+        inFile: false,
+        audioIndex: index,
+        hlsGroupId: (hlsTrack && hlsTrack.groupId) || (existing && existing.hlsGroupId) || '',
+        hlsUrl: (hlsTrack && (hlsTrack.url || hlsTrack.uri)) || (existing && existing.hlsUrl) || '',
+        default: hlsTrack && typeof hlsTrack.default === 'boolean' ? !!hlsTrack.default : !!(existing && existing.default)
+      };
     });
 
-    const selectedObj = state.audioTracks.find((a) => a.id === state.activeAudioId);
-    if (!selectedObj) return;
-    const matchIdx = resolveHlsAudioIndex(selectedObj, hlsTracks);
-    if (matchIdx !== -1) {
-      state.hlsInstance.audioTrack = matchIdx;
+    state.audioTracks = [...mergedRows, ...otherFileRows];
+    const activeBefore = previousRows.find((row) => row && row.id === state.activeAudioId);
+    const pendingRow = pending && mergedRows.find((row) =>
+      (pending.id && row.id === pending.id) ||
+      (Number.isInteger(pending.audioIndex) && row.audioIndex === pending.audioIndex) ||
+      (pending.lang && normalizeMoviLang(row.lang) === normalizeMoviLang(pending.lang))
+    );
+    const active = pendingRow ||
+      (activeBefore && mergedRows.find((row) => row.id === activeBefore.id)) ||
+      (activeBefore && mergedRows.find((row) => normalizeMoviLang(row.lang) === normalizeMoviLang(activeBefore.lang))) ||
+      mergedRows.find((row) => row.default) || mergedRows[0];
+    if (active) {
+      state.activeAudioId = active.id;
+      const matchIdx = resolveHlsAudioIndex(active, hlsTracks);
+      if (matchIdx !== -1) state.hlsInstance.audioTrack = matchIdx;
     }
+    if (pending) state.pendingAudioSelection = null;
+    renderAudioPopover();
+    renderLangChips();
+    updateSettingsSummaryValues();
   }
 
   // --- Render Audio Popover ---
@@ -2934,7 +3018,15 @@
 
     let switched = false;
     let switchHint = '';
-    const sameStreamUrl = !track.streamUrl || !state.stream || track.streamUrl === state.stream.streamUrl;
+    const currentUrl = currentLogicalStreamUrl();
+    const sameStreamUrl = !track.streamUrl || !state.stream || sameStreamReference(track.streamUrl, currentUrl);
+    const hlsRenditionSwitch = !!(
+      state.hlsInstance &&
+      sameStreamUrl &&
+      Array.isArray(state.hlsInstance.audioTracks) &&
+      state.hlsInstance.audioTracks.length > 0 &&
+      (Number.isInteger(track.audioIndex) || track.inFile === false)
+    );
 
     // 0. In-file dub (movi engine): the track is muxed inside the running
     // file — switch it in place via pickAudioTrack(id), no reload and no playhead jump.
@@ -2943,9 +3035,14 @@
       if (!switched) switchHint = ' — this file could not switch tracks';
     }
     // 1. If the selected audio track has its own distinct streamUrl (e.g. separate Hindi/English dub file), switch stream preserving current time
-    else if (track.streamUrl && state.stream && track.streamUrl !== state.stream.streamUrl) {
+    else if (!hlsRenditionSwitch && track.streamUrl && state.stream && !sameStreamUrl) {
       const resumeAt = (video && video.currentTime) || 0;
-      state.stream.streamUrl = track.streamUrl;
+      state.pendingAudioSelection = {
+        id: track.id,
+        lang: track.lang,
+        ...(Number.isInteger(track.audioIndex) ? { audioIndex: track.audioIndex } : {})
+      };
+      applyAudioTrackSourceMetadata(track);
       prepareAudioRowsForSourceSwitch(track.streamUrl);
       if (state.audioTracks.some((r) => r.id === track.id)) {
         state.activeAudioId = track.id;
@@ -2956,7 +3053,7 @@
       switched = true;
     }
     // 2. If HLS instance has multiple embedded audio renditions, switch natively
-    else if (state.hlsInstance && state.hlsInstance.audioTracks && state.hlsInstance.audioTracks.length > 1) {
+    else if (state.hlsInstance && sameStreamUrl && Array.isArray(state.hlsInstance.audioTracks) && state.hlsInstance.audioTracks.length > 0) {
       const idx = resolveHlsAudioIndex(track, state.hlsInstance.audioTracks);
       if (idx !== -1) {
         track.audioIndex = idx;
@@ -2967,7 +3064,7 @@
       }
     }
     // 3. Native HTMLMediaElement.audioTracks (Safari / iOS / Chromium)
-    else if (nativeVideo && video === nativeVideo && nativeVideo.audioTracks && nativeVideo.audioTracks.length > 1) {
+    else if (nativeVideo && video === nativeVideo && sameStreamUrl && nativeVideo.audioTracks && nativeVideo.audioTracks.length > 1) {
       let targetIdx = Number.isInteger(track.nativeAudioIndex) ? track.nativeAudioIndex : -1;
       if (targetIdx < 0 && normLang && normLang !== 'und') {
         for (let i = 0; i < nativeVideo.audioTracks.length; i++) {

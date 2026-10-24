@@ -235,8 +235,12 @@ function parseAudioLanguageHints(text) {
       languages.push({ code: language.code, label: language.label });
     }
   }
-  const explicitMulti = /\b(?:dual[\s._-]*audio|multi(?:ple)?[\s._-]*(?:audio|language|lang|track|dub))\b/i.test(value);
-  const original = /\b(?:org\.?|original)[\s._-]*(?:audio|track)\b/i.test(value);
+  // Release groups use all of these forms: `Dual Audio`, `MULTI`, `Multi-
+  // Audio`, `2 Audio`, and `Hin+Tam+Tel`.  The old expression only accepted
+  // the long "multi audio" spelling, so a perfectly good multi-dub release
+  // could be scored as a single-audio file.
+  const explicitMulti = /\b(?:dual(?:[\s._-]*audio)?|multi(?:ple)?(?:[\s._-]*(?:audio|language|lang|track|dub))?|\d+[\s._-]*(?:audio|tracks?))\b/i.test(value);
+  const original = /\b(?:org\.?|original)(?:[\s._-]*(?:audio|track|version|language))?\b/i.test(value);
   return { languages, multi: explicitMulti || languages.length > 1, original };
 }
 

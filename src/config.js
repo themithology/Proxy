@@ -77,7 +77,22 @@ const config = {
     // CastleTV and VixSrc gate on headers a browser cannot send). URLs the
     // TMDB-Embed-API already proxied itself (its own /ts-proxy host, when
     // `enableProxy` is on there) always pass through untouched.
-    proxyStreams: parseBoolean(process.env.GOLDMINE_PROXY_STREAMS, true)
+    proxyStreams: parseBoolean(process.env.GOLDMINE_PROXY_STREAMS, true),
+    // Optional direct-provider fallbacks.  These are used only when the
+    // aggregator is unavailable or has no multi-audio answer; no credentials
+    // are required for the public providers.
+    direct: {
+      febboxCookies: process.env.FEBBOX_COOKIES || process.env.FEBBOX_COOKIE || '',
+      febboxRegion: process.env.FEBBOX_REGION || '',
+      fourKhdhubBaseUrl: process.env.FOUR_KHDHUB_BASE_URL || '',
+      dahmerBaseUrl: process.env.DAHMER_BASE_URL || '',
+      hdghartvBaseUrl: process.env.HDGHARTV_BASE_URL || '',
+      netmirrorApiBase: process.env.NETMIRROR_API_BASE || '',
+      netmirrorStreamReferer: process.env.NETMIRROR_STREAM_REFERER || '',
+      castleBaseUrl: process.env.CASTLETV_BASE_URL || '',
+      showboxBaseUrl: process.env.SHOWBOX_BASE_URL || '',
+      pstreamBaseUrl: process.env.PSTREAM_BASE_URL || ''
+    }
   },
 
   // External metadata endpoints (subtitles + skip segments)

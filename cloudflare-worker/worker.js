@@ -1174,26 +1174,7 @@ async function fetchSubtitleAsVtt(subUrl, { encoding = '', lang = '' } = {}) {
 
 /** Apply the viewer's `?audio=`/remembered language to a resolved payload. */
 function applyPreferredAudio(resolved, preferredAudio) {
-  if (!resolved || !preferredAudio || !Array.isArray(resolved.audioTracks)) return resolved;
-  const wanted = String(preferredAudio).trim().toLowerCase();
-  const wantedLanguage = languages.normalizeLanguageCode(wanted);
-  const matchTrack = resolved.audioTracks.find((track) =>
-    String(track.id || '').toLowerCase() === wanted ||
-    (wantedLanguage !== 'und' && languages.normalizeLanguageCode(track.lang) === wantedLanguage)
-  );
-  if (!matchTrack) return resolved;
-
-  const audioTracks = resolved.audioTracks.map((track) => ({
-    ...track,
-    default: track.id === matchTrack.id
-  }));
-  return {
-    ...resolved,
-    audioTracks,
-    streamUrl: matchTrack.streamUrl || resolved.streamUrl,
-    rawUrl: matchTrack.rawUrl || resolved.rawUrl,
-    activeAudioTrack: audioTracks.find((track) => track.id === matchTrack.id) || null
-  };
+  return goldmine.applyPreferredAudioToPayload(resolved, preferredAudio);
 }
 
 // ---------------------------------------------------------------------------
@@ -1241,10 +1222,8 @@ function defaultServerIdWorker() {
 }
 
 async function resolveGoldmineUpstream(metadata, env = null, options = {}) {
-  const { onlySource = '', preferredAudio = '' } = options;
-  if (goldmineCircuitOpen()) {
-    return { reason: 'circuit_open', diag: 'TMDB-Embed-API paused after repeated failures' };
-  }
+  const { onlySource = '', preferredAudio = '', metadataPromise = null } = options;
+  const circuitOpen = goldmineCircuitOpen();
   const timeoutMs =
     parseInt(String((env && env.GOLDMINE_TIMEOUT_MS) || ''), 10) || GOLDMINE_TIMEOUT_MS;
   try {
@@ -1253,6 +1232,21 @@ async function resolveGoldmineUpstream(metadata, env = null, options = {}) {
       timeoutMs,
       onlySource,
       preferredAudio,
+      metadataPromise,
+      directOnly: circuitOpen,
+      directFallback: circuitOpen ? 'always' : 'parallel',
+      directProviderOptions: {
+        febboxCookies: (env && (env.FEBBOX_COOKIES || env.FEBBOX_COOKIE)) || '',
+        febboxRegion: (env && env.FEBBOX_REGION) || '',
+        fourKhdhubBaseUrl: (env && (env.FOUR_KHDHUB_BASE_URL || env['4KHDHUB_BASE_URL'])) || '',
+        dahmerBaseUrl: (env && env.DAHMER_BASE_URL) || '',
+        hdghartvBaseUrl: (env && env.HDGHARTV_BASE_URL) || '',
+        netmirrorApiBase: (env && env.NETMIRROR_API_BASE) || '',
+        netmirrorStreamReferer: (env && env.NETMIRROR_STREAM_REFERER) || '',
+        castleBaseUrl: (env && env.CASTLETV_BASE_URL) || '',
+        showboxBaseUrl: (env && env.SHOWBOX_BASE_URL) || '',
+        pstreamBaseUrl: (env && env.PSTREAM_BASE_URL) || ''
+      },
       // Streams whose host requires Referer/Origin/Cookie/UA get every nested URL
       // rewritten through the proxy ('full'); open hosts only get their
       // manifests/keys rewritten so segments stream straight from the CDN.
@@ -1311,7 +1305,7 @@ async function resolveStreamWaterfall(metadata, requestedServer, preferredAudio,
   // a 15-minute-old payload turns "Retry" into "fail again instantly", which is
   // exactly what a dead source looks like from the outside.
   const fresh = !!(options && options.fresh);
-  const cacheKey = `cf:resolve:v6:${metadata.type}:${metadata.tmdbId}:s${metadata.season}:e${metadata.episode}:${validServer}${
+  const cacheKey = `cf:resolve:v7:${metadata.type}:${metadata.tmdbId}:s${metadata.season}:e${metadata.episode}:${validServer}${
     onlySource ? `:${onlySource}` : ''
   }`;
   const cached = fresh ? null : await edgeCacheGet(cacheKey);
@@ -1338,7 +1332,11 @@ async function resolveStreamWaterfall(metadata, requestedServer, preferredAudio,
     let resolved = null;
     if (srvId === 'goldmine') {
       resolved = await withTimeout(
-        resolveGoldmineUpstream(metadata, env, { onlySource, preferredAudio }),
+        resolveGoldmineUpstream(metadata, env, {
+          onlySource,
+          preferredAudio,
+          metadataPromise: options && options.metadataPromise
+        }),
         WATERFALL_UPSTREAM_TIMEOUT_MS
       );
     } else {
@@ -1443,7 +1441,7 @@ function stampTokenOnUrl(target, token, forUriAttribute = false) {
  * through this Worker (never leaking a bare segment URL that would 403 on
  * Origin/Referer + JWT gated hosts).
  */
-function rewriteManifest(m3u8, baseUrl, workerProxyBase, referer, origin, mode, token = '') {
+function rewriteManifest(m3u8, baseUrl, workerProxyBase, referer, origin, mode, token = '', cookie = '', userAgent = '') {
   const resolveAbs = (u) => {
     try {
       return new URL(u.trim(), baseUrl).toString();
@@ -1464,6 +1462,8 @@ function rewriteManifest(m3u8, baseUrl, workerProxyBase, referer, origin, mode, 
     if (referer) p.set('referer', referer);
     if (origin) p.set('origin', origin);
     if (token) p.set('token', token);
+    if (cookie) p.set('cookie', cookie);
+    if (userAgent) p.set('ua', userAgent);
     return `${workerProxyBase}?${p.toString()}`;
   };
 
@@ -1775,7 +1775,9 @@ async function handleProxyRequest(request, url) {
         referer,
         origin,
         effectiveMode,
-        token
+        token,
+        cookie,
+        ua
       );
       return new Response(rewritten, {
         status: 200,
@@ -1822,7 +1824,9 @@ async function handleProxyRequest(request, url) {
         referer,
         origin,
         effectiveMode,
-        token
+        token,
+        cookie,
+        ua
       );
       return new Response(rewritten, {
         status: 200,
@@ -2190,7 +2194,7 @@ export default {
           const metadataPromise = resolveTmdbMetadata(rawType, trimmedId, season, episode, env);
           const streamPromise = customOv
             ? Promise.resolve(buildCustomStream(customOv))
-            : resolveStreamWaterfall(stubMeta, server, audio, env, source, { fresh });
+            : resolveStreamWaterfall(stubMeta, server, audio, env, source, { fresh, metadataPromise });
           const subtitlesPromise = metadataPromise.then((m) => resolveSubtitles(m, env)).catch(() => []);
           const segmentsPromise = metadataPromise.then((m) => resolveSkipSegments(m, env)).catch(() => []);
 
