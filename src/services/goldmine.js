@@ -483,11 +483,10 @@ function normalizeGoldmineStream(raw, index) {
 }
 
 /**
- * Rank a stream for "which one plays first".
- * Dub coverage dominates (the Goldmine server exists for multi-audio MKVs),
- * then a sane resolution (1080p — 4K HEVC is heavy on a WASM decoder), then
- * container preference, while demoting Render-IP-bound links behind portable
- * MKV/HLS/MP4 sources.
+ * Rank a stream within its playback class. Dub coverage, sane resolution and
+ * container metadata still matter, but buildGoldminePayload first separates
+ * pre-generated HLS/DASH and native MP4 from slower progressive fallbacks.
+ * Render-IP-bound links are demoted behind portable sources.
  */
 function scoreGoldmineStream(stream) {
   let score = 0;
@@ -520,6 +519,23 @@ function scoreGoldmineStream(stream) {
   // Earlier rows come from the aggregator's own provider priority order.
   score -= Math.min(stream.index, 40);
   return score;
+}
+
+/**
+ * Playback comes before dub-count scoring. Pre-generated adaptive streams are
+ * immediately seekable and hardware/browser friendly; native MP4 is next;
+ * progressive MKV/unknown files are later fallbacks. IP-bound links stay last.
+ * Within each class, language coverage and quality still decide the best row.
+ */
+function playbackPriorityFor(stream) {
+  if (!stream || stream.ephemeralIpBound) return 3;
+  if (stream.container === 'hls' || stream.container === 'dash') return 0;
+  if (stream.container === 'mp4') return 1;
+  return 2;
+}
+
+function compareGoldmineStreamsForPlayback(a, b) {
+  return playbackPriorityFor(a) - playbackPriorityFor(b) || b.score - a.score;
 }
 
 /** Normalize a whole TMDB-Embed-API response into scored, grouped streams. */
@@ -640,7 +656,7 @@ function buildGoldminePayload(normalized, options = {}) {
     };
   }
 
-  const ordered = [...candidateStreams].sort((a, b) => b.score - a.score);
+  const ordered = [...candidateStreams].sort(compareGoldmineStreamsForPlayback);
   const primary = ordered[0];
 
   // URL preparation: the API's own proxied URLs (ts-proxy on the API host)
@@ -704,7 +720,7 @@ function buildGoldminePayload(normalized, options = {}) {
       const existing = languageRows.get(language.code);
       if (existing) {
         existing.count += 1;
-        if (stream.score > existing.best.score) existing.best = stream;
+        if (compareGoldmineStreamsForPlayback(stream, existing.best) < 0) existing.best = stream;
       } else {
         languageRows.set(language.code, {
           code: language.code,
@@ -1207,6 +1223,7 @@ async function fetchGoldmineStreamsFast(options = {}) {
       let reliableProviders = 0;
       let reliableCount = 0;
       let hasMkvOrMulti = false;
+      let hasNativeStreaming = false;
       let hasWantedAudio = wantedAudioCode === 'und' && !wantsOriginalAudio;
 
       for (const providerId of orderedProviders) {
@@ -1224,15 +1241,13 @@ async function fetchGoldmineStreamsFast(options = {}) {
             for (const language of norm.languages) {
               if (language.code !== 'und' || norm.original) observedLanguages.add(language.code);
             }
+            if (norm.container === 'hls' || norm.container === 'dash') {
+              hasNativeStreaming = true;
+            }
             if (norm.container === 'mkv' || norm.multi || norm.languages.length > 1) {
               hasMkvOrMulti = true;
             }
-            if (
-              !hasWantedAudio &&
-              (wantsOriginalAudio
-                ? norm.original || norm.languages.some((language) => language.code === 'und')
-                : norm.languages.some((l) => l.code === wantedAudioCode) || (norm.multi && norm.languages.length === 0))
-            ) {
+            if (!hasWantedAudio && streamSatisfiesAudioPreference(norm, wantsOriginalAudio, wantedAudioCode)) {
               hasWantedAudio = true;
             }
           }
@@ -1253,6 +1268,7 @@ async function fetchGoldmineStreamsFast(options = {}) {
         reliableProviders,
         reliableCount,
         hasMkvOrMulti,
+        hasNativeStreaming,
         hasMultiAudio: observedLanguages.size > 1 || mergedRaw.some((raw) => {
           const norm = normalizeGoldmineStream(raw, 0);
           return !!norm && (norm.multi || norm.languages.length > 1 || norm.audioTrackHints.length > 1);
@@ -1331,11 +1347,20 @@ async function fetchGoldmineStreamsFast(options = {}) {
         reliableProviders,
         reliableCount,
         hasMkvOrMulti,
+        hasNativeStreaming,
         hasMultiAudio,
         hasWantedAudio,
         mkvExtractorInFlight,
         multiAudioExtractorInFlight
       } = collectCurrentState();
+
+      // A portable, pre-generated HLS/DASH source that satisfies the requested
+      // audio is already the fastest playback path. Do not hold it hostage to
+      // slow MKV scrapers or launch another wave merely to find more dubs.
+      if (hasNativeStreaming && hasWantedAudio) {
+        scheduleSettleIn(120);
+        return;
+      }
 
       // If Wave 1 completely finished without any portable streams and Wave 2 is
       // still waiting, launch Wave 2 right away instead of settling on IP-bound MP4s.
@@ -1607,10 +1632,51 @@ function hasMultiAudioEvidence(normalized) {
   return languages.size > 1;
 }
 
+function hasNativeStreamingSource(normalized) {
+  return !!(
+    normalized &&
+    Array.isArray(normalized.streams) &&
+    normalized.streams.some((stream) =>
+      stream && !stream.ephemeralIpBound && (stream.container === 'hls' || stream.container === 'dash')
+    )
+  );
+}
+
+function streamSatisfiesAudioPreference(stream, wantsOriginal, wantedCode) {
+  if (!stream) return false;
+  const languages = Array.isArray(stream.languages) ? stream.languages : [];
+  if (wantsOriginal && (stream.original || languages.some((language) => language.code === 'und'))) return true;
+  if (!wantsOriginal && languages.some((language) => language.code === wantedCode)) return true;
+  if (stream.multi && languages.length === 0) return true;
+  // Untagged provider HLS is normally the original/default English cut. Do
+  // not turn a remembered English/default preference into a slow MKV scrape;
+  // non-default dubs still require real language evidence.
+  if (
+    languages.length === 0 &&
+    !stream.multi &&
+    (stream.container === 'hls' || stream.container === 'dash') &&
+    (wantsOriginal || wantedCode === 'und' || wantedCode === 'en')
+  ) return true;
+  return false;
+}
+
+function hasRequestedAudioMatch(normalized, preferredAudio) {
+  const requested = String(preferredAudio || '').trim();
+  if (!requested) return true;
+  const wantsOriginal = /^(?:original|org|default)$/i.test(requested);
+  const wantedCode = wantsOriginal ? 'und' : normalizeLanguageCode(requested);
+  return normalized.streams.some((stream) =>
+    stream && !stream.ephemeralIpBound && streamSatisfiesAudioPreference(stream, wantsOriginal, wantedCode)
+  );
+}
+
 function shouldUseDirectProviderFallback(normalized, fetched, options = {}) {
   if (options.directFallback === false) return false;
   if (options.directFallback === 'always' || options.directFallback === true) return true;
   if (!fetched || !fetched.ok || !normalized || normalized.streams.length === 0) return true;
+  if (hasNativeStreamingSource(normalized) && hasRequestedAudioMatch(normalized, options.preferredAudio)) {
+    return false;
+  }
   return !hasMultiAudioEvidence(normalized);
 }
 
@@ -1779,11 +1845,10 @@ async function resolveGoldmineServer(metadata, options = {}) {
     ? normalizeGoldminePayload(fetched.json)
     : { streams: [], providers: [], imdbId: null };
 
-  // Discover alternate HLS renditions before deciding whether the upstream
-  // answer is "single-audio".  Otherwise a perfectly good multi-audio master
-  // would trigger unnecessary direct scraping (and its languages would be
-  // absent from the first resolve payload).
-  if (fetched.ok && !hasMultiAudioEvidence(normalized)) {
+  // Server-side manifest probing is opt-in. It can add seconds before the
+  // player even starts; normal resolution lets hls.js discover the same real
+  // audio/quality renditions directly in the browser.
+  if (fetched.ok && options.discoverHlsAudio === true && !hasMultiAudioEvidence(normalized)) {
     const discovered = await discoverGoldmineHlsAudio(fetched.json.streams, options);
     if (discovered !== fetched.json.streams) {
       fetched = { ...fetched, json: { ...fetched.json, streams: discovered, count: discovered.length } };

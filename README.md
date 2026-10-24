@@ -246,7 +246,10 @@ tries:
 |----------|------------|--------------|------------------------|----------------------------------------|
 | 1        | `goldmine` | Goldmine MKV | Multi-Audio Dubs • MKV | Owner-hosted TMDB-Embed-API instance    |
 
-The lineup is MKV-first and single-server. The legacy HLS-only servers
+The lineup is single-server and playback-speed ordered: reliable pre-generated
+HLS/DASH first, native MP4 next, progressive MKV/other files after that, and
+Render-IP-bound streams last. A ready native HLS response settles quickly
+instead of waiting for slow MKV extractors. The legacy HLS-only servers
 (`andromeda`, `centaurus`) and the Node ffmpeg remux tier were removed with the
 move to Goldmine; the catalog machinery (priority order, listing, fallbacks,
 live admin edits) stays generic, so adding a second server later is a
@@ -282,7 +285,9 @@ then:
   scanning, so CDN host names can never masquerade as language hints.
 - **Deduplicates mirrors** — same-height alternates of the best pick become
   `backupUrls` instead of fake quality variants, while every row of the payload
-  becomes the player's Source 1…N list.
+  becomes the player's Source 1…N list. Native HLS quality/audio menus are then
+  populated from the actual manifest by hls.js; no server-side probe is added
+  to the normal startup path.
 - **Wraps header-gated files** — providers that demand a `Referer` /
   `User-Agent` (headers browsers refuse to send) route through the signed
   `/api/proxy?url=…` with server-side headers, CORS and Range support.
@@ -357,7 +362,11 @@ Codec/device combinations (HEVC/AV1 profiles, HDR/Dolby Vision, AC-3/E-AC-3)
 may still not play in every browser. The default Worker path does not conceal
 those limits with a server transcode; a suitable Node host can opt in below.
 
-### Optional Node HLS-first MKV conversion
+### Experimental Node MKV conversion (opt-in fallback)
+
+Native provider HLS is always preferred and never needs this converter. On the
+small free Codespace, multi-rung transcoding can fall behind real time and
+buffer, so `.devcontainer/start.sh` leaves it disabled by default.
 
 Cloudflare Workers cannot spawn ffmpeg. `scripts/dev-worker.mjs` therefore
 exposes `/api/mkv-hls` **only when `MKV_HLS_ENABLED=true` is set on that Node

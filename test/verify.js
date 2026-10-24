@@ -868,7 +868,7 @@ async function runTests() {
     //    MKV payload, dub languages up front, labeled sources for manual
     //    switching, subtitles and the CORS+Range stream proxy movi needs.
     console.log('[7/14] Testing /api/resolve/movie/693134 (Goldmine MKV), subtitles & /api/proxy...');
-    const resolveRes = await httpRequest(baseUrl, '/api/resolve/movie/693134');
+    const resolveRes = await httpRequest(baseUrl, '/api/resolve/movie/693134?audio=en');
     assert.strictEqual(resolveRes.status, 200);
     assert.strictEqual(resolveRes.json.ok, true);
     const stream = resolveRes.json.stream;
@@ -884,7 +884,7 @@ async function runTests() {
 
     // Dub languages up front: one row per language, flagged for in-file switching.
     assert.deepStrictEqual(
-      stream.audioTracks.map((t) => [t.id, t.lang, t.inFile]),
+      stream.audioTracks.map((t) => [t.id, t.lang, t.inFile]).sort((a, b) => a[1].localeCompare(b[1])),
       [['goldmine-en', 'en', true], ['goldmine-hi', 'hi', true], ['goldmine-ta', 'ta', true]]
     );
     assert.strictEqual(stream.audioTracks.filter((t) => t.default).length, 1, 'exactly one default audio track');
@@ -1679,14 +1679,14 @@ async function runTests() {
 
       // 12e. The worker waterfall: the same shared goldmine service, the same
       // payload shape the player consumes.
-      const workerResolveRes = await callWorker('http://player.test/api/resolve/movie/693134?server=goldmine', catalogWorkerEnv);
+      const workerResolveRes = await callWorker('http://player.test/api/resolve/movie/693134?server=goldmine&audio=en', catalogWorkerEnv);
       assert.strictEqual(workerResolveRes.status, 200);
       const workerResolveJson = await workerResolveRes.json();
       assert.strictEqual(workerResolveJson.ok, true);
       assert.strictEqual(workerResolveJson.stream.server, 'goldmine');
       assert.strictEqual(workerResolveJson.stream.engine, 'movi', 'the worker must flag MKV streams for the movi engine');
       assert.ok(workerResolveJson.stream.streamUrl.startsWith('/api/proxy?url='));
-      assert.deepStrictEqual(workerResolveJson.stream.audioTracks.map((t) => t.lang), ['en', 'hi', 'ta']);
+      assert.deepStrictEqual(workerResolveJson.stream.audioTracks.map((t) => t.lang).sort(), ['en', 'hi', 'ta']);
       assert.deepStrictEqual(workerResolveJson.servers.map((s) => s.id), ['goldmine']);
       assert.strictEqual(workerResolveJson.servers.find((s) => s.active).id, workerResolveJson.stream.server);
 
@@ -2548,11 +2548,13 @@ async function runTests() {
         proxyStreams: true,
         proxyUrl: (u) => `/api/proxy?url=${encodeURIComponent(u)}`
       });
-      assert.ok(builtMixed.rawUrl.includes('p.111477.xyz/Movie.2024.1080p'), 'portable multi-audio MKV must win primary');
+      assert.strictEqual(builtMixed.rawUrl, 'https://hls.videasy.example/master.m3u8', 'portable native HLS must win primary over MKV');
+      assert.strictEqual(builtMixed.format, 'hls');
+      assert.strictEqual(builtMixed.engine, undefined);
       assert.strictEqual(builtMixed.ephemeralOnly, undefined, 'mixed payload with MKV/HLS must not be marked ephemeralOnly');
       assert.ok(
-        builtMixed.backupUrls[0].includes(encodeURIComponent('https://pixeldrain.dev/api/file/abc123?download')),
-        'first backup must switch to a distinct provider (4khdhub) before repeating primary provider rungs'
+        builtMixed.backupUrls[0].includes(encodeURIComponent('https://p.111477.xyz/Movie.2024.1080p.Hindi.English.Multi-Audio.mkv')),
+        'first backup must switch to a distinct provider before repeating the primary HLS provider'
       );
       assert.ok(
         !builtMixed.backupUrls.some((u) => u.includes('480.mp4') || u.includes('360.mp4')),

@@ -54,7 +54,7 @@ if ! curl -fsS --max-time 2 http://127.0.0.1:3000/api/health >/dev/null 2>&1; th
       GOLDMINE_API_BASE=http://127.0.0.1:8787 \
       GOLDMINE_PROXY_STREAMS=true \
       GOLDMINE_TIMEOUT_MS=60000 \
-      MKV_HLS_ENABLED="${MKV_HLS_ENABLED:-true}" \
+      MKV_HLS_ENABLED="${MKV_HLS_ENABLED:-false}" \
       MKV_HLS_MAX_SESSIONS="${MKV_HLS_MAX_SESSIONS:-1}" \
       TMDB_API_KEY="$TMDB_KEY" \
       FEBBOX_COOKIES="${FEBBOX_COOKIES:-}" \
