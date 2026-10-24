@@ -131,6 +131,7 @@ function probeStreams(inputUrl, session) {
       '-v', 'error',
       '-rw_timeout', '30000000',
       '-show_streams',
+      '-show_format',
       '-of', 'json',
       inputUrl
     ];
@@ -268,6 +269,7 @@ function createMkvHlsHandler(options = {}) {
     session.sourceWidth = Number(videoStream.width) || 0;
     session.sourceHeight = Number(videoStream.height) || 0;
     session.sourceBandwidth = Number(videoStream.bit_rate) || 0;
+    session.sourceDuration = Number(probe.format && probe.format.duration) || Number(videoStream.duration) || 0;
     session.audioTracks = sourceAudio.map((stream, index) => ({
       lang: safeToken(stream.tags && stream.tags.language),
       label: displayTrackLabel(stream, index)
@@ -685,9 +687,22 @@ function createMkvHlsHandler(options = {}) {
         const session = await ensureSession(publicSource, inputUrl);
         await awaitReady(session);
         session.lastAccess = Date.now();
+        const masterUrl = `${ROUTE}/${session.id}/master.m3u8`;
+        if (url.searchParams.get('info') === '1') {
+          sendJson(res, 200, {
+            ok: true,
+            masterUrl,
+            sourceDuration: session.sourceDuration > 0 ? session.sourceDuration : null
+          });
+          return true;
+        }
         send(res, 302, null, {
-          Location: `${ROUTE}/${session.id}/master.m3u8`,
-          'Cache-Control': 'no-store'
+          Location: masterUrl,
+          'Cache-Control': 'no-store',
+          'Access-Control-Expose-Headers': 'Location, X-Lol-Source-Duration',
+          ...(session.sourceDuration > 0
+            ? { 'X-Lol-Source-Duration': String(session.sourceDuration) }
+            : {})
         });
       } catch (error) {
         sendJson(res, 502, { ok: false, error: 'HLS conversion failed', detail: error.message });

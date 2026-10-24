@@ -497,6 +497,9 @@
     // Logical source whose manifest is currently attached.  This differs from
     // activeHlsUrl when a proxy-to-direct fallback is used.
     activeHlsUrl: null,
+    // ffprobe's real source duration for generated HLS. The media playlist
+    // can still be growing while the timeline and skip markers use this value.
+    generatedSourceDuration: 0,
     pendingAudioSelection: null,
     dashInstance: null,
     activeSkipSegment: null,
@@ -730,7 +733,7 @@
       // runtime); `mediaDuration` is only ever the real one — use it for cut
       // detection.
       duration: getEffectiveDuration(),
-      mediaDuration: hasRealDuration() ? video.duration : null,
+      mediaDuration: hasRealDuration() ? getEffectiveDuration() : null,
       playbackRate: video.playbackRate || 1,
       volume: typeof video.volume === 'number' ? video.volume : 1,
       muted: !!video.muted,
@@ -768,8 +771,10 @@
     emitHostEvent('statechange', { previousState });
   }
 
-  // Real media duration when known; TMDB runtime as a placeholder until then.
+  // ffprobe duration is authoritative for generated HLS even while its media
+  // playlist is growing; native streams continue to use the element duration.
   function getEffectiveDuration() {
+    if (state.generatedSourceDuration > 0) return state.generatedSourceDuration;
     if (video.duration && isFinite(video.duration) && video.duration > 0) {
       return video.duration;
     }
@@ -777,7 +782,7 @@
   }
 
   function hasRealDuration() {
-    return !!(video.duration && isFinite(video.duration) && video.duration > 0);
+    return state.generatedSourceDuration > 0 || !!(video.duration && isFinite(video.duration) && video.duration > 0);
   }
 
   // --- Watch progress persistence ---
@@ -809,7 +814,7 @@
     const current = video.currentTime || 0;
     if (current <= 2) return;
     state.lastProgressSaveAt = now;
-    const duration = hasRealDuration() ? video.duration : 0;
+    const duration = hasRealDuration() ? getEffectiveDuration() : 0;
     storageSet(
       progressKey(state.type, state.tmdbId, state.season, state.episode),
       JSON.stringify({ t: Math.floor(current), d: Math.floor(duration) })
@@ -1860,6 +1865,7 @@
 
     const sourceChanged = state.attachedStreamUrl !== streamUrl;
     state.attachedStreamUrl = streamUrl;
+    if (!/\/api\/mkv-hls(?:[/?]|$)/i.test(streamUrl)) state.generatedSourceDuration = 0;
     hostBuffering = false;
     if (sourceChanged) emitHostEvent('sourcechange');
     if (state.hlsInstance) {
@@ -1889,7 +1895,7 @@
     // position past the end would otherwise start the file on its last frame.
     const applyStartTime = () => {
       let t = targetStartTime;
-      if (hasRealDuration() && isNearEnd(t, video.duration)) t = 0;
+      if (hasRealDuration() && isNearEnd(t, getEffectiveDuration())) t = 0;
       if (t > 2) {
         try {
           video.currentTime = t;
@@ -1987,7 +1993,31 @@
     if (mkvHlsUrl) {
       showLoading('Preparing HLS stream');
       setConnectProgress(86, false);
-      attachStreamToVideo(mkvHlsUrl, 0, loadToken || state.loadToken);
+      state.generatedSourceDuration = 0;
+      let generatedUrl = mkvHlsUrl;
+      try {
+        // A same-origin JSON handshake works in Brave as well as desktop
+        // browsers (unlike manually inspected redirect headers). It returns
+        // the session master and ffprobe's real full-source duration.
+        const infoUrl = `${mkvHlsUrl}${mkvHlsUrl.includes('?') ? '&' : '?'}info=1`;
+        const response = await fetch(infoUrl, { cache: 'no-store' });
+        if (attachToken !== state.attachToken) return;
+        if (response.ok) {
+          const info = await response.json();
+          if (attachToken !== state.attachToken) return;
+          if (info && info.masterUrl) generatedUrl = new URL(info.masterUrl, mkvHlsUrl).href;
+          const sourceDuration = Number(info && info.sourceDuration);
+          if (Number.isFinite(sourceDuration) && sourceDuration > 0) {
+            state.generatedSourceDuration = sourceDuration;
+            renderSegmentedTimeline();
+            timeDurationEl.textContent = formatTime(sourceDuration);
+          }
+        }
+      } catch (_) {
+        // Keep the original conversion URL as a compatibility fallback.
+      }
+      if (attachToken !== state.attachToken) return;
+      attachStreamToVideo(generatedUrl, 0, loadToken || state.loadToken);
       return;
     }
 
@@ -2044,7 +2074,7 @@
           backBufferLength: 15,
           // The conversion route redirects after the first usable segments,
           // not after an arbitrary amount of media has been generated.
-          ...(isTranscodedHls ? { manifestLoadingTimeOut: 120000, startLevel: 0 } : {})
+          ...(isTranscodedHls ? { manifestLoadingTimeOut: 120000 } : {})
         });
         state.hlsInstance = hls;
         let networkRecoveries = 0;
@@ -2058,15 +2088,9 @@
           hideLoading();
 
           // Build the visible quality menu from the actual master playlist,
-          // not the resolver's initial (often single) HLS row.
+          // not the resolver's initial (often single) HLS row. ABR remains
+          // enabled so a growing encode never forces an unsustainable rung.
           syncHlsQualityLevels(hls, data && data.levels);
-          if (isTranscodedHls && !storageGet(QUALITY_KEY) && hls.levels && hls.levels.length > 0) {
-            // The source remux runs independently and can become a complete
-            // VOD while the lower encode continues. Keep Auto from moving
-            // playback to that growing lower rung; explicit choices remain.
-            hls.currentLevel = 0;
-            syncHlsQualityLevels(hls, hls.levels);
-          }
 
           // Merge any real HLS multi-audio tracks discovered in the manifest
           if (hls.audioTracks && hls.audioTracks.length > 0) {
@@ -3010,15 +3034,57 @@
       };
     });
 
-    // A generated manifest and its progressive input are the same logical
-    // source. Do not show the input's resolver rows again beside the real HLS
-    // renditions. Keep only cross-file languages the manifest cannot provide.
-    const remainingOtherFileRows = otherFileRows.filter((row) =>
-      !mergedRows.some((merged) =>
+    // Replace only resolver rows that came from this exact converted input.
+    // Same-language dubs from other files remain available as real choices.
+    const remainingOtherFileRows = otherFileRows.filter((row) => {
+      const sameInput = row.rawUrl && currentRawUrl && sameStreamReference(row.rawUrl, currentRawUrl);
+      if (!sameInput) return true;
+      return !mergedRows.some((merged) =>
         merged.lang !== 'und' && normalizeMoviLang(row.lang) === normalizeMoviLang(merged.lang)
-      )
-    );
-    state.audioTracks = [...mergedRows, ...remainingOtherFileRows];
+      );
+    });
+    const allRows = [...mergedRows, ...remainingOtherFileRows];
+
+    // Same-language dubs are legitimate separate renditions, whether they are
+    // in this manifest or in different files. Keep every row and distinguish
+    // every same-language group. Prefer real source titles; number generic or
+    // identical labels. hls.js metadata is used only for this manifest's rows.
+    const languageCounts = {};
+    allRows.forEach((row) => {
+      const lang = normalizeMoviLang(row.lang || '');
+      if (lang !== 'und') languageCounts[lang] = (languageCounts[lang] || 0) + 1;
+    });
+    const languageSeen = {};
+    const usedLabels = new Set();
+    allRows.forEach((row, rowIndex) => {
+      const lang = normalizeMoviLang(row.lang || '');
+      if (lang === 'und' || languageCounts[lang] < 2) {
+        usedLabels.add(String(row.label || '').toLowerCase());
+        return;
+      }
+      languageSeen[lang] = (languageSeen[lang] || 0) + 1;
+      const occurrence = languageSeen[lang];
+      const audioIndex = Number.isInteger(row.audioIndex) ? row.audioIndex : rowIndex;
+      const baseLabel = langChipLabel(lang, audioIndex);
+      const isManifestRow = mergedRows.includes(row);
+      const sourceTrack = isManifestRow ? hlsTracks[row.audioIndex] || {} : null;
+      const sourceLabel = String(
+        (sourceTrack && (sourceTrack.name || sourceTrack.label)) || row.label || ''
+      ).trim();
+      const genericSourceLabel = !sourceLabel ||
+        sourceLabel.toLowerCase() === baseLabel.toLowerCase() ||
+        sourceLabel.toLowerCase() === lang ||
+        /^(?:audio|track)[\s#-]*\d+$/i.test(sourceLabel);
+      let candidate = genericSourceLabel
+        ? `${baseLabel} ${occurrence}`
+        : sourceLabel.toLowerCase().includes(baseLabel.toLowerCase())
+          ? sourceLabel
+          : `${baseLabel} · ${sourceLabel}`;
+      if (usedLabels.has(candidate.toLowerCase())) candidate = `${candidate} ${occurrence}`;
+      row.label = candidate;
+      usedLabels.add(candidate.toLowerCase());
+    });
+    state.audioTracks = allRows;
     const activeBefore = previousRows.find((row) => row && row.id === state.activeAudioId);
     const pendingRow = pending && mergedRows.find((row) =>
       (pending.id && row.id === pending.id) ||
@@ -4335,7 +4401,7 @@
     if (e.key === 'ArrowLeft') { e.preventDefault(); seekBy(-5); }
     else if (e.key === 'ArrowRight') { e.preventDefault(); seekBy(5); }
     else if (e.key === 'Home') { e.preventDefault(); video.currentTime = 0; }
-    else if (e.key === 'End' && hasRealDuration()) { e.preventDefault(); video.currentTime = Math.max(0, video.duration - 1); }
+    else if (e.key === 'End' && hasRealDuration()) { e.preventDefault(); video.currentTime = Math.max(0, getEffectiveDuration() - 1); }
   });
 
   // --- Playback Controls ---
@@ -4754,7 +4820,7 @@
     if (hasRealDuration()) {
       storageSet(
         progressKey(state.type, state.tmdbId, state.season, state.episode),
-        JSON.stringify({ t: Math.floor(video.duration), d: Math.floor(video.duration) })
+        JSON.stringify({ t: Math.floor(getEffectiveDuration()), d: Math.floor(getEffectiveDuration()) })
       );
     } else {
       storageRemove(progressKey(state.type, state.tmdbId, state.season, state.episode));
@@ -5160,7 +5226,7 @@
       goToNextEpisode();
     } else if (/^[0-9]$/.test(key) && hasRealDuration()) {
       e.preventDefault();
-      video.currentTime = (parseInt(key, 10) / 10) * video.duration;
+      video.currentTime = (parseInt(key, 10) / 10) * getEffectiveDuration();
       updateTimelineAndSkipState();
     } else if (key === 'Escape') {
       closeAllPopovers();

@@ -388,9 +388,11 @@ ffmpeg writes H.264/AAC HLS with:
 
 Playback never waits for a complete remux or a fixed buffer target. The first
 usable segments start playback while the source-quality remux continues toward
-a complete VOD in background. The lower encode does not block it. Seeking past
-any still-growing playlist's converted portion must wait for ffmpeg. Temporary
-output is deleted when a session expires or the host stops.
+a complete VOD in background. A browser-safe info handshake supplies ffprobe's
+real full duration for the timeline and intro/outro markers while media grows.
+The lower encode does not block startup. Seeking past a still-growing playlist's
+converted portion must wait for ffmpeg. Temporary output is deleted when a
+session expires or the host stops.
 `MKV_HLS_MAX_SESSIONS`
 (default `2`) bounds concurrent sessions, and renewed signed URLs for the same
 canonical source share one conversion. `MKV_HLS_DIR` overrides the temporary

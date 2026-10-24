@@ -151,8 +151,16 @@ async function runMkvHlsTest() {
       signal: AbortSignal.timeout(60000)
     });
     assert.strictEqual(redirect.status, 302, 'conversion should redirect to a session master playlist');
+    const advertisedSourceDuration = Number(redirect.headers.get('x-lol-source-duration'));
+    assert(advertisedSourceDuration > 5 && advertisedSourceDuration < 7, 'ffprobe duration must be exposed for the full player timeline');
     const masterPath = redirect.headers.get('location');
     assert.match(masterPath || '', /^\/api\/mkv-hls\/[a-f0-9]{32}\/master\.m3u8$/);
+
+    const infoResponse = await fetch(`${conversionUrl}&info=1`);
+    assert.strictEqual(infoResponse.status, 200);
+    const conversionInfo = await infoResponse.json();
+    assert.strictEqual(conversionInfo.masterUrl, masterPath);
+    assert.strictEqual(conversionInfo.sourceDuration, advertisedSourceDuration, 'browser-safe info handshake must expose the same full duration');
 
     const renewedMediaUrl = `${mediaUrl}?token=renewed`;
     const renewedProxyUrl = `http://127.0.0.1:${port}/api/proxy?url=${encodeURIComponent(renewedMediaUrl)}`;
