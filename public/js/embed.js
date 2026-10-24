@@ -771,14 +771,31 @@
     emitHostEvent('statechange', { previousState });
   }
 
+  function isGeneratedHlsPlayback() {
+    const generatedRoute = /\/api\/mkv-hls(?:[/?]|$)/i;
+    return generatedRoute.test(String(state.activeHlsUrl || '')) ||
+      generatedRoute.test(String(state.attachedStreamUrl || ''));
+  }
+
+  function generatedHlsHasCompleted() {
+    const details = state.hlsInstance && state.hlsInstance.latestLevelDetails;
+    return !!(details && details.live === false);
+  }
+
   // ffprobe duration is authoritative for generated HLS even while its media
-  // playlist is growing; native streams continue to use the element duration.
+  // playlist is growing. If a remote file does not advertise that duration,
+  // never replace the known full title runtime with the partial playlist's
+  // `video.duration`; use the real media duration after ENDLIST instead.
   function getEffectiveDuration() {
     if (state.generatedSourceDuration > 0) return state.generatedSourceDuration;
+    const metadataDuration = Number(state.media && state.media.durationSec) || 0;
+    if (isGeneratedHlsPlayback() && metadataDuration > 0 && !generatedHlsHasCompleted()) {
+      return metadataDuration;
+    }
     if (video.duration && isFinite(video.duration) && video.duration > 0) {
       return video.duration;
     }
-    return (state.media && state.media.durationSec) || 0;
+    return metadataDuration;
   }
 
   function hasRealDuration() {
@@ -1303,8 +1320,10 @@
     if (!preserveTime) clearActiveSkip();
     playerRoot.classList.remove('is-ended');
     showLoading(`Connecting to ${serverDisplayName(requestedServer)}`);
-    // Nothing is attached while a new bundle loads (see hostSnapshot()).
+    // Nothing is attached while a new bundle loads (see hostSnapshot()). Do
+    // not let the outgoing source's duration leak into the incoming title.
     state.attachedStreamUrl = null;
+    state.generatedSourceDuration = 0;
     emitHostEvent('loadstart', { server: requestedServer });
     // First open: the upstream resolve can take seconds, while the TMDB
     // metadata is one cached call away. Fetch it in parallel so the connect
@@ -1537,8 +1556,8 @@
       mediaTagsEl.appendChild(span);
     });
 
-    if (!hasRealDuration()) {
-      timeDurationEl.textContent = formatTime(m.durationSec || 0);
+    if (!hasRealDuration() || isGeneratedHlsPlayback()) {
+      timeDurationEl.textContent = formatTime(getEffectiveDuration() || m.durationSec || 0);
     }
 
     const isTv = m.type === 'tv';
