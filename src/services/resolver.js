@@ -153,10 +153,14 @@ async function resolveStreamForServer(metadata, requestedServerId = '', preferre
   const validServer = serverCatalog.resolveServerId(config.servers, requestedServerId);
 
   const onlySource = String(options.onlySource || '').toLowerCase() || '';
+  // `fresh` (the player's Retry / manual server pick) skips the cache read:
+  // provider URLs are signed and short-lived, so replaying a 15-minute-old
+  // payload makes every retry fail the same way the first attempt did.
+  const fresh = !!options.fresh;
   const cacheKey = `resolve:v5:${metadata.type}:${metadata.tmdbId}:s${metadata.season || 1}:e${metadata.episode || 1}:${validServer}${
     onlySource ? `:${onlySource}` : ''
   }`;
-  const cached = await cache.get(cacheKey);
+  const cached = fresh ? null : await cache.get(cacheKey);
   // Stream payloads are cached for 15 minutes, but the displayed server list is
   // not: rebuilding it here means a rebrand is visible immediately instead of
   // being replayed from cache.

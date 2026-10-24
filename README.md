@@ -184,7 +184,11 @@ The value must be an absolute `http(s)` URL (a path prefix is allowed and traili
 - `GET /api/subtitles/:type/:tmdbId` — external subtitle tracks (see *Subtitles*).
 - `GET /api/subtitles/proxy?url=…&enc=…&lang=…` — fetches one subtitle file from an allowed subtitle host (gzip/zip unpacked, charset detected) and returns WebVTT.
 - `GET /api/resolve/:type/:tmdbId` — resolves a source and returns stream, audio, subtitle, and segment metadata.
-- `GET /api/proxy?url=...` — HLS/MP4 stream proxy.
+- `GET /api/proxy?url=...` — HLS/MP4 stream proxy. Forwards `Range`/`206`;
+  retries a rejected request once without the `Referer`/`Origin` (hotlink
+  filters) and once without the `Range` (whole-file-only hosts); answers
+  **502** when the upstream returns an HTML/JSON page instead of media, so a
+  gate page can never masquerade as a decode failure in the player.
 - `/api/admin/*` — owner operations, all requiring `X-Admin-Key` (or `?key=`): `GET /api/admin/stats` (dashboard feed), `POST /api/admin/stats/reset`, `POST /api/admin/domains/block` (`{ domain, blocked }`), `GET`/`POST /api/admin/domains/ad-free` (`{ domain, adFree }`, player Worker), `GET /api/admin/overview`, `POST /api/admin/probe`, `GET /api/admin/goldmine/diagnose/:type/:tmdbId`, plus upstream configuration and source overrides. The `/reze` page is the UI for these.
 
 Supported media types are `movie`, `tv`, and `series` where applicable. TV requests accept `season` and `episode` query parameters. Ids are TMDB ids; IMDb ids (`tt…`) are accepted everywhere a TMDB id is and translated once through TMDB's `/find` endpoint (cached for a day) — the responses and the host API always report the TMDB id.
@@ -284,6 +288,12 @@ then:
   `/api/proxy?url=…` with server-side headers, CORS and Range support.
   `GOLDMINE_PROXY_STREAMS=false` disables the wrapping; URLs the upstream
   instance already proxied itself always pass through untouched.
+- **Picks the engine per source** — MKV / WebM / AVI / TS / MOV (and unknown
+  progressive files) play through the bundled movi-player (FFmpeg WASM); MP4 is
+  served to the native `<video>` element (hardware decode + native Range/seek)
+  and only escalates to movi when the browser rejects the file (HEVC/10-bit).
+  Each source carries its own `engine` in `sourceMeta`, so an MP4 backup of an
+  MKV primary is no longer dragged through the WASM demuxer.
 - **Pins one source manually** — `?source=<provider-id>` filters the aggregate
   to a single provider (a pinned request never falls through to the others).
 
@@ -294,7 +304,10 @@ Failure reasons map 1:1 onto the API error contract (`goldmine_timeout`,
 The Worker wraps resolution in a small circuit breaker so a cold-starting
 free-tier instance cannot stall every request for the full timeout, and
 resolution results are cached per title (a re-resolve, not a retry, is the
-answer to a dead CDN link).
+answer to a dead CDN link) — which is why the player's **Retry** button and any
+manual server pick send `?fresh=1` (`?nocache=1` is accepted too) to skip the
+cache read: provider links are signed and short-lived, so replaying a
+15-minute-old payload only reproduces the same failure.
 
 Owner surface:
 

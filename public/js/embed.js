@@ -514,7 +514,14 @@
     // Host control API: only talk to this origin when the embed names it.
     hostOrigin: null,
     attachedStreamUrl: null,
-    _triedStreamUrls: new Set()
+    _triedStreamUrls: new Set(),
+    // One-shot: the next /api/resolve must bypass the backend cache (Retry,
+    // manual server pick). Provider URLs expire, so replaying the cached
+    // payload is what made "Retry" fail exactly like the first attempt.
+    resolveFresh: false,
+    // True only once the attached source actually reached the `playing` event,
+    // so the servers popover never claims "Playing" while it is still connecting.
+    activeSourceLive: false
   };
 
   // --- Parse URL Path & Query Parameters (TMDB ID Only) ---
@@ -1204,7 +1211,7 @@
     return apiUrl(
       `/api/resolve/${state.type}/${encodeURIComponent(state.tmdbId)}?season=${state.season}&episode=${state.episode}&server=${encodeURIComponent(serverId)}&audio=${encodeURIComponent(audioQuery)}&parent=${encodeURIComponent(parentDomain)}${
         state.pinnedSource ? `&source=${encodeURIComponent(state.pinnedSource)}` : ''
-      }`
+      }${state.resolveFresh ? '&fresh=1' : ''}`
     );
   }
 
@@ -1284,8 +1291,10 @@
     if (!state.media) prefetchArtwork(loadToken);
 
     let data = null;
+    const wantFresh = state.resolveFresh;
+    state.resolveFresh = false;
     try {
-      const res = await fetch(buildResolveUrl(requestedServer));
+      const res = await fetch(buildResolveUrl(requestedServer), wantFresh ? { cache: 'no-store' } : undefined);
       try {
         data = await res.json();
       } catch (_) {
@@ -1622,18 +1631,25 @@
         /\/playlist\b|\/master\b/i.test(innerPath) ||
         (isPrimary && stream.format === 'hls'));
 
-    const useMovi =
-      !isDash &&
-      !isHls &&
-      (!!(meta && meta.engine === 'movi') ||
-        /\.(?:mkv|webm|avi|mov|ts)(?:$|[?#&])/i.test(innerUrl) ||
-        stream.engine === 'movi');
-
     const moviHeaders = meta
       ? meta.moviHeaders || null
       : isPrimary && stream.moviHeaders
         ? stream.moviHeaders
         : null;
+    // Sources that need custom request headers must stay on movi-player: only
+    // it can attach them (`headers` attribute), the native <video> cannot.
+    const needsCustomHeaders = !!(moviHeaders && Object.keys(moviHeaders).length > 0);
+
+    // `stream.engine` describes the PRIMARY source only: a per-URL `meta`
+    // (and the extension check) decides for every other source, so an MP4
+    // backup of an MKV primary is no longer dragged through the WASM demuxer.
+    const useMovi =
+      !isDash &&
+      !isHls &&
+      (needsCustomHeaders ||
+        !!(meta && meta.engine === 'movi') ||
+        /\.(?:mkv|webm|avi|mov|ts)(?:$|[?#&])/i.test(innerUrl) ||
+        (isPrimary && stream.engine === 'movi'));
 
     return {
       isDash,
@@ -1698,6 +1714,7 @@
   // --- Attach Stream via Movi (MKV/multi-audio) / HLS.js / Dash.js / Native Video ---
   async function attachStreamToVideo(streamUrl, resumeTime = 0, loadToken = 0) {
     const attachToken = ++state.attachToken;
+    state.activeSourceLive = false;
     clearMoviWatchdog();
 
     // Tear down any active movi custom element before configuring the next source.
@@ -2552,6 +2569,65 @@
 
   // --- Automatic Server Failover on Fatal Stream Error ---
   const triedServers = new Set();
+
+  /**
+   * Ask every source of the failed server how it is doing: a two-byte Range GET
+   * through the proxy tells apart "the upstream rejected us" (expired link,
+   * hotlink gate, region lock — 4xx) from "the bytes arrive but nothing plays"
+   * (unsupported codec → the movi/native engine) from "we cannot reach it at
+   * all" (network/ISP). The sentence is appended under the error message after
+   * the screen is already visible, so it never delays the message itself.
+   */
+  async function explainStreamFailure(token) {
+    const sources = sourcesFromStream(state.stream || {}).slice(0, 4);
+    if (sources.length === 0) return '';
+    // The `probe=1` marker keeps the probe out of any media cache entry for
+    // that URL. Only our own proxy tolerates it; signed upstream URLs are
+    // probed verbatim so the report reflects what the player actually saw.
+    const probe = (raw) =>
+      /\/api\/proxy\?/.test(raw) ? `${raw}${raw.includes('?') ? '&' : '?'}probe=1` : raw;
+    const statuses = await Promise.all(
+      sources.map(async (src) => {
+        try {
+          const res = await fetch(probe(src), {
+            headers: { Range: 'bytes=0-1' },
+            cache: 'no-store'
+          });
+          try {
+            if (res.body) await res.body.cancel();
+          } catch (_) {}
+          return res.status;
+        } catch (_) {
+          return 0;
+        }
+      })
+    );
+    if (token !== state.loadToken) return '';
+
+    const reachable = statuses.filter((st) => st === 200 || st === 206 || st === 304);
+    const rejected = statuses.filter((st) => st >= 400);
+    const unreachable = statuses.filter((st) => st === 0);
+    const codes = (list) => [...new Set(list)].join(', ');
+
+    if (reachable.length === statuses.length) {
+      return 'All sources answer normally, so the links are alive but this device could not decode them — the file may use a codec the browser cannot play.';
+    }
+    if (rejected.length === statuses.length) {
+      return `Every source was rejected upstream (HTTP ${codes(rejected)}) — the links have most likely expired, so Retry asks for fresh ones.`;
+    }
+    if (unreachable.length === statuses.length) {
+      return 'The sources could not be reached from this device at all — a network/ISP block is likely.';
+    }
+    return `Some sources failed upstream (HTTP ${codes([...rejected, ...unreachable])}) — try another server or retry.`;
+  }
+
+  function appendErrorDetail(sentence) {
+    if (!sentence) return;
+    const existing = loadingStatusDetail.textContent || '';
+    loadingStatusDetail.textContent = existing ? `${existing} ${sentence}` : sentence;
+    loadingStatusDetail.classList.remove('hidden');
+  }
+
   function handleFatalStreamError() {
     triedServers.add(state.server);
     setServerInfo(state.server, { status: 'failed' });
@@ -2568,6 +2644,13 @@
           ? 'Every available server was tried. Retry, or pick a server manually.'
           : 'Retry in a moment — the upstream source may be temporarily unavailable.'
       );
+      const token = state.loadToken;
+      explainStreamFailure(token)
+        .then((sentence) => {
+          if (token !== state.loadToken || loadingOverlay.classList.contains('hidden')) return;
+          appendErrorDetail(sentence);
+        })
+        .catch(() => {});
       emitHostEvent('error', { error: 'All upstream servers failed' });
     }
   }
@@ -2575,6 +2658,9 @@
   btnRetryLoad.addEventListener('click', () => {
     triedServers.clear();
     state._triedStreamUrls = new Set();
+    // Ask the backend for a live resolve: replaying a cached payload would
+    // retry the very same (most likely expired) provider URLs.
+    state.resolveFresh = true;
     loadMediaBundle(true);
   });
 
@@ -3245,9 +3331,11 @@
 
   function selectServer(serverId) {
     // Manual selection: forget every previously failed server so the user's
-    // explicit choice is always retried with a clean slate.
+    // explicit choice is always retried with a clean slate — including a live
+    // re-resolve, because the cached payload may predate an expired link.
     triedServers.clear();
     state._triedStreamUrls = new Set();
+    state.resolveFresh = true;
     state.server = serverId;
     closeAllPopovers();
     loadMediaBundle(true);
@@ -3352,8 +3440,18 @@
           row.type = 'button';
           row.className = 'server-source-row' + (isPlayingSource ? ' active' : '');
           row.setAttribute('aria-pressed', isPlayingSource ? 'true' : 'false');
+          // "Playing" only once the media element really reached `playing` —
+          // the row used to claim it the moment a source was selected, which
+          // made a source that never started look healthy.
+          const isConnecting = isPlayingSource && !state.activeSourceLive && !sourceFailed;
           const statusClass = isPlayingSource ? 'is-playing' : sourceFailed ? 'is-failed' : 'is-ready';
-          const statusText = isPlayingSource ? 'Playing' : sourceFailed ? 'Failed' : 'Ready';
+          const statusText = isConnecting
+            ? 'Connecting'
+            : isPlayingSource
+              ? 'Playing'
+              : sourceFailed
+                ? 'Failed'
+                : 'Ready';
           row.innerHTML = `<span class="source-name">${escapeHtml(label)}</span><span class="source-status ${statusClass}">${statusText}</span>`;
           row.addEventListener('click', () => switchToSource(srv.id, url, label));
           list.appendChild(row);
@@ -4219,9 +4317,12 @@
   onMediaEvent(video, 'playing', () => {
     state.progressLocked = false;
     hostBuffering = false;
+    state.activeSourceLive = true;
     hideBuffering();
     hideLoading();
     startRenderLoop();
+    // The servers popover shows "Connecting" until this point; reflect it.
+    if (!popoverServers.classList.contains('hidden')) renderServersPopover();
     emitHostEvent('playing');
     emitStateChange();
   });
