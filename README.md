@@ -171,9 +171,9 @@ The value must be an absolute `http(s)` URL (a path prefix is allowed and traili
 ## Backend surface
 
 - `GET /` — JSON service information; no HTML landing page (browsers get the rickroll).
-- `GET /embed` — the embeddable player page (Worker only; the Node API runtime stays JSON-only).
-- `GET /docs` (alias `/documentation`) — public documentation page (Worker only; see *Documentation page*).
-- `GET /reze` — owner dashboard shell (Worker only; every number on it comes from `/api/admin/stats`, see *Owner dashboard*).
+- `GET /embed` — the embeddable player page (Worker and full Node entrypoint; the JSON-only `src/server.js` does not serve it).
+- `GET /docs` (alias `/documentation`) — public documentation page (Worker and full Node entrypoint; see *Documentation page*).
+- `GET /reze` — owner dashboard shell (Worker and full Node entrypoint; every number on it comes from `/api/admin/stats`, see *Owner dashboard*).
 - `GET /meta-image.gif` — the LOL Embed social/meta image.
 - `GET /api/health` — service, runtime, and upstream health summary.
 - `GET /api/servers` — public, cacheable list of the player-visible servers (`id`, `name`, `badge`, `priority`); the ids are what `?server=` accepts. Never carries upstream/provider names.
@@ -436,28 +436,72 @@ npm run dev:player
 
 `scripts/dev-worker.mjs` runs the real Worker code (`cloudflare-worker/worker.js`) against the live upstreams instead.
 
-## Run the Node backend (optional local/dev tooling)
+## Run the full player on Node
 
-The Node server in this repository is **optional local/dev tooling only**. The
-deployed product is the Cloudflare Worker, and every deployed server
-(Goldmine) resolves inside the Worker through the same shared services —
-nothing in production requires, or is delegated to, a Node deployment.
+`src/server.js` remains the JSON-only API entrypoint (`npm start`). The full
+player, API, stream proxy and ffmpeg converter share a second entrypoint,
+`scripts/player-server.mjs`; the development harness imports the same file:
 
 ```bash
+cp .env.example .env  # once; configure deployment-specific values
 npm ci
 npm test
-npm start
+npm run start:player
+# http://localhost:3000/embed
 ```
 
-The server listens on `0.0.0.0:3000` by default and serves the JSON API only — the player page ships with the Cloudflare Worker. Copy `.env.example` to `.env` and configure deployment-specific values (`GOLDMINE_API_BASE`, secrets, optional subtitle keys).
+The server listens on `0.0.0.0` and uses `PLAYER_PORT` (3000 in `.env.example`).
+Set `GOLDMINE_API_BASE`, strong secrets and optional subtitle keys in `.env`.
+For progressive MKV/MP4 conversion, keep both `MKV_HLS_ENABLED=true` and
+`MKV_HLS_NODE_HOST=true`; Cloudflare Workers cannot spawn ffmpeg.
 
-With Docker Compose:
+## One-command VPS deployment (player + API + converter)
+
+On a Linux VPS you already operate, point a domain's A/AAAA record at the VPS
+and open inbound TCP ports **80** and **443**. Then run this single command as
+a user with `sudo` access (replace the example domain):
 
 ```bash
-docker compose up -d --build
+git clone https://github.com/themithology/Proxy.git && cd Proxy && sudo bash deploy/vps.sh embed.example.com
 ```
 
-## Deploy the Cloudflare Worker
+If the repository is already checked out, the command is just
+`sudo bash deploy/vps.sh embed.example.com`.
+
+The script:
+
+- installs Docker Engine and Compose v2 through Docker's official installer if
+  they are absent (otherwise it leaves the existing installation alone);
+- creates `.env` from `.env.example` only when missing, generates strong
+  `ADMIN_SECRET` and `PROXY_SECRET` values only for empty/sample placeholders,
+  and **never replaces existing TMDB, FebBox or Goldmine credentials**;
+- starts **one** converter-capable Node process, plus Caddy for automatic HTTPS;
+- keeps generated HLS data in the persistent `hls-data` Docker volume and
+  Caddy certificates in their own volumes; and
+- waits for `/api/health` through both the container and public HTTPS URL.
+
+The browser still receives HLS/DASH only. The container runs the real Worker
+player with the Node MKV-to-HLS handler, not the older API-only image. The HLS
+volume survives restarts and upgrades, but it is temporary conversion storage,
+not a backup or a permanent media library.
+
+Useful commands from the repository root:
+
+```bash
+docker compose ps
+docker compose logs -f lol-embed caddy
+sudo bash deploy/vps.sh embed.example.com  # rebuild/upgrade, preserving .env
+docker compose down                        # stop; named volumes remain
+```
+
+`ecosystem.config.js` also runs the same full entrypoint for PM2 users. It is
+intentionally limited to one forked process: HLS sessions and ffmpeg children
+are process-local, so `instances: max` or a non-sticky multi-process cluster
+would break playback. This deployment does **not** claim 200-CCU capacity;
+public authentication, rate limiting and multi-host session coordination are
+separate scaling work.
+
+## Deploy the Cloudflare Worker (native HLS/DASH only)
 
 `cloudflare-worker/worker.js` runs the player page, the backend API, the edge proxy, the documentation page and the owner dashboard. The `public/` directory contains the `/embed` player page with its CSS/JS/vendor assets, `docs.html`, `reze.html` and the social/meta GIF; nothing in it is served unless the Worker routes to it (`run_worker_first`), so `/docs.html`, `/reze.html` or `/index.html` stay 404.
 
