@@ -57,6 +57,7 @@ async function runMkvHlsTest() {
 
   const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'lol-mkv-hls-test-'));
   const inputPath = path.join(tempDir, 'input.mkv');
+  const mp4InputPath = path.join(tempDir, 'input.mp4');
   let server = null;
   let handler = null;
 
@@ -73,6 +74,10 @@ async function runMkvHlsTest() {
       '-metadata:s:a:1', 'language=hin',
       inputPath
     ]);
+    runFile(ffmpegInstaller.path, [
+      '-hide_banner', '-loglevel', 'error', '-y',
+      '-i', inputPath, '-map', '0:v:0', '-map', '0:a:0', '-c', 'copy', mp4InputPath
+    ]);
 
     let port = 0;
     server = http.createServer(async (req, res) => {
@@ -80,11 +85,17 @@ async function runMkvHlsTest() {
         const requestUrl = new URL(req.url, 'http://local.invalid');
         if (requestUrl.pathname === '/api/proxy') {
           const target = new URL(requestUrl.searchParams.get('url') || '');
-          if (target.origin !== `http://127.0.0.1:${port}` || target.pathname !== '/input.mkv') {
+          const sourcePath = target.pathname === '/input.mkv'
+            ? inputPath
+            : target.pathname === '/input.mp4'
+              ? mp4InputPath
+              : null;
+          if (target.origin !== `http://127.0.0.1:${port}` || !sourcePath) {
             res.writeHead(403).end('Forbidden');
             return;
           }
-          const stat = fs.statSync(inputPath);
+          const contentType = sourcePath.endsWith('.mp4') ? 'video/mp4' : 'video/x-matroska';
+          const stat = fs.statSync(sourcePath);
           const range = String(req.headers.range || '').match(/^bytes=(\d+)-(\d*)$/);
           if (range) {
             const start = Number(range[1]);
@@ -94,19 +105,19 @@ async function runMkvHlsTest() {
               return;
             }
             res.writeHead(206, {
-              'Content-Type': 'video/x-matroska',
+              'Content-Type': contentType,
               'Content-Length': end - start + 1,
               'Content-Range': `bytes ${start}-${end}/${stat.size}`,
               'Accept-Ranges': 'bytes'
             });
-            fs.createReadStream(inputPath, { start, end }).pipe(res);
+            fs.createReadStream(sourcePath, { start, end }).pipe(res);
           } else {
             res.writeHead(200, {
-              'Content-Type': 'video/x-matroska',
+              'Content-Type': contentType,
               'Content-Length': stat.size,
               'Accept-Ranges': 'bytes'
             });
-            fs.createReadStream(inputPath).pipe(res);
+            fs.createReadStream(sourcePath).pipe(res);
           }
           return;
         }
@@ -206,6 +217,26 @@ async function runMkvHlsTest() {
     assert.match(videoInfo, /1280x720/);
     assert.match(audioInfo, /Audio: aac/);
 
+    // MP4 is also converter input only; it must never require a raw browser
+    // playback fallback to produce a valid HLS master and media playlist.
+    const mp4MediaUrl = `http://127.0.0.1:${port}/input.mp4`;
+    const mp4ProxyUrl = `http://127.0.0.1:${port}/api/proxy?url=${encodeURIComponent(mp4MediaUrl)}`;
+    const mp4ConversionUrl = `http://127.0.0.1:${port}/api/mkv-hls?src=${encodeURIComponent(mp4ProxyUrl)}`;
+    const mp4Redirect = await fetch(mp4ConversionUrl, {
+      redirect: 'manual',
+      signal: AbortSignal.timeout(60000)
+    });
+    assert.strictEqual(mp4Redirect.status, 302);
+    const mp4MasterUrl = `http://127.0.0.1:${port}${mp4Redirect.headers.get('location')}`;
+    const mp4MasterResponse = await fetch(mp4MasterUrl);
+    assert.strictEqual(mp4MasterResponse.status, 200);
+    const mp4Master = await mp4MasterResponse.text();
+    const mp4Variants = videoPlaylistUris(mp4Master);
+    assert(mp4Variants.length > 0, 'MP4 input should produce real HLS video variants');
+    const mp4PlaylistResponse = await fetch(new URL(mp4Variants[0], mp4MasterUrl));
+    assert.strictEqual(mp4PlaylistResponse.status, 200);
+    assert((await mp4PlaylistResponse.text()).includes('#EXTINF'));
+
     const rejectedRemote = await fetch(
       `http://127.0.0.1:${port}/api/mkv-hls?src=${encodeURIComponent('https://example.com/api/proxy?url=https%3A%2F%2Fexample.com%2Ffile.mkv')}`
     );
@@ -216,7 +247,7 @@ async function runMkvHlsTest() {
     handler = null;
     assert(!fs.existsSync(sessionDir), 'closing the host must remove generated media');
 
-    console.log('  ✔ Real MKV→HLS route: 720p/480p H.264, dual AAC audio, VOD segments and host guard passed.');
+    console.log('  ✔ Real progressive→HLS routes: genuine variants, dual AAC audio, VOD segments and host guard passed.');
   } finally {
     if (handler) await handler.close();
     if (server) {

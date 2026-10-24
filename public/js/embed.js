@@ -1679,14 +1679,18 @@
       innerPath = String(innerUrl || '').toLowerCase();
     }
 
+    const hasProgressiveExtension = /\.(?:mkv|mp4|m4v|webm|avi|mov|ts|flv|mpg|mpeg)(?:$|[?#&])/i.test(innerUrl);
+    const isProgressive = hasProgressiveExtension || !!(meta && meta.format && meta.format !== 'hls' && meta.format !== 'dash');
     const isDash =
-      !!(meta && meta.format === 'dash') ||
+      !isProgressive &&
+      (!!(meta && meta.format === 'dash') ||
       /\.mpd(?:$|[?#&])/i.test(streamUrl) ||
       /\.mpd(?:$|[?#&])/i.test(innerUrl) ||
-      (isPrimary && stream.format === 'dash');
+      (isPrimary && stream.format === 'dash'));
 
     const isHls =
       !isDash &&
+      !isProgressive &&
       (!!(meta && meta.format === 'hls') ||
         /\.m3u8(?:$|[?#&])/i.test(streamUrl) ||
         /\.m3u8(?:$|[?#&])/i.test(innerUrl) ||
@@ -1699,25 +1703,9 @@
       : isPrimary && stream.moviHeaders
         ? stream.moviHeaders
         : null;
-    // Sources that need custom request headers must stay on movi-player: only
-    // it can attach them (`headers` attribute), the native <video> cannot.
-    const needsCustomHeaders = !!(moviHeaders && Object.keys(moviHeaders).length > 0);
-
-    // `stream.engine` describes the PRIMARY source only: a per-URL `meta`
-    // (and the extension check) decides for every other source, so an MP4
-    // backup of an MKV primary is no longer dragged through the WASM demuxer.
-    const useMovi =
-      !isDash &&
-      !isHls &&
-      (needsCustomHeaders ||
-        !!(meta && meta.engine === 'movi') ||
-        /\.(?:mkv|webm|avi|mov|ts)(?:$|[?#&])/i.test(innerUrl) ||
-        (isPrimary && stream.engine === 'movi'));
-
     return {
       isDash,
       isHls,
-      useMovi,
       meta,
       moviHeaders,
       sourceSubtitles: meta && Array.isArray(meta.subtitles) ? meta.subtitles : null
@@ -1753,7 +1741,7 @@
    * cookies that made the source reachable.
    */
   function mkvHlsUrlFor(streamUrl, candidateInfo) {
-    if (!MKV_HLS_ENABLED || !candidateInfo || !candidateInfo.useMovi) return null;
+    if (!MKV_HLS_ENABLED || !candidateInfo || candidateInfo.isHls || candidateInfo.isDash) return null;
     if (/\/api\/mkv-hls(?:[/?]|$)/i.test(String(streamUrl || ''))) return null;
 
     const stream = state.stream || {};
@@ -1992,54 +1980,21 @@
       if (addedSubs) renderSubtitlesPopover();
     }
 
-    // On a Node host with ffmpeg, never make the browser download/play the
-    // MKV or load movi's large WASM engine first. The MKV is only the upstream
-    // input; the browser goes straight to generated HLS with real audio and
-    // quality renditions. Ordinary Workers keep the direct/movi path below.
+    // Progressive files are converter inputs only. The browser receives HLS;
+    // without a working converter it skips them rather than opening raw media
+    // or loading a second playback engine.
     const mkvHlsUrl = mkvHlsUrlFor(streamUrl, candidateInfo);
     if (mkvHlsUrl) {
-      showLoading('Converting MKV to HLS');
+      showLoading('Preparing HLS stream');
       setConnectProgress(86, false);
       attachStreamToVideo(mkvHlsUrl, 0, loadToken || state.loadToken);
       return;
     }
 
-    // --- Movi engine (Goldmine MKV / multi-audio files) ----------------------
-    // Progressive containers the browser cannot decode (MKV/HEVC/AV1/EAC3) and
-    // files with several muxed dubs play through the bundled movi-player
-    // element instead of the native <video>. Streaming sources (HLS/DASH —
-    // even when wrapped in /api/proxy) stay on hls.js / dash.js below.
-    if (candidateInfo.useMovi) {
-      let moviReady = !!(window.customElements && customElements.get('movi-player'));
-      if (!moviReady) {
-        if (!loadingOverlay.classList.contains('hidden')) {
-          loadingStatusText.textContent = `Loading ${serverDisplayName(state.server)} Engine`;
-          setConnectProgress(78, false);
-        }
-        try {
-          await ensureMoviPlayer();
-          moviReady = !!(window.customElements && customElements.get('movi-player'));
-        } catch (_) {
-          moviReady = false; // script blocked/offline: try native <video> / backups
-        }
-      }
-      // A newer load or source switch may have superseded the download.
-      if ((loadToken && loadToken !== state.loadToken) || attachToken !== state.attachToken) return;
-      if (!loadingOverlay.classList.contains('hidden')) {
-        loadingStatusText.textContent = `Connecting to ${serverDisplayName(state.server)}`;
-        setConnectProgress(84, false);
-      }
-      if (moviReady) {
-        attachMoviStream(
-          streamUrl,
-          targetStartTime,
-          applyStartTime,
-          tryNextBackupStream,
-          attachToken,
-          candidateInfo
-        );
-        return;
-      }
+    if (!candidateInfo.isHls && !candidateInfo.isDash) {
+      if (tryNextBackupStream(targetStartTime || 0)) return;
+      handleFatalStreamError();
+      return;
     }
 
     if (candidateInfo.isDash && window.dashjs) {
@@ -2339,26 +2294,9 @@
     playerRoot.classList.remove('movi-mode');
   }
 
-  /** A native attach that failed on a progressive file (MKV the browser cannot
-   *  demux) gets one movi-player attempt before the backup ladder runs. */
-  function retryWithMoviIfPossible(streamUrl, targetStartTime, applyStartTime, tryNextBackupStream, attachToken, candidateInfo) {
-    if (video === state.moviEl) return false; // movi itself already failed
-    if (candidateInfo && (candidateInfo.isHls || candidateInfo.isDash)) return false;
-    if (/\.m3u8(?:$|[?#&])/i.test(streamUrl) || /\.mpd(?:$|[?#&])/i.test(streamUrl)) return false;
-    if (window.customElements && customElements.get('movi-player')) {
-      attachMoviStream(streamUrl, targetStartTime, applyStartTime, tryNextBackupStream, attachToken, candidateInfo);
-      return true;
-    }
-    ensureMoviPlayer()
-      .then(() => {
-        if (attachToken !== state.attachToken) return;
-        attachMoviStream(streamUrl, targetStartTime, applyStartTime, tryNextBackupStream, attachToken, candidateInfo);
-      })
-      .catch(() => {
-        if (attachToken !== state.attachToken) return;
-        if (!tryNextBackupStream(targetStartTime || 0)) handleFatalStreamError();
-      });
-    return true;
+  /** Progressive playback is disabled; streaming sources use their backup ladder. */
+  function retryWithMoviIfPossible() {
+    return false;
   }
 
   function attachMoviStream(streamUrl, targetStartTime, applyStartTime, tryNextBackupStream, attachToken, candidateInfo) {

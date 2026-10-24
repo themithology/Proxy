@@ -1,7 +1,7 @@
 {
   "name": "lol-embed-backend",
   "version": "1.0.0",
-  "description": "LOL Embed backend: TMDB metadata, Goldmine (TMDB-Embed-API) MKV resolution, stream proxy, movi-player embed, and Cloudflare Worker.",
+  "description": "LOL Embed backend: TMDB metadata, Goldmine HLS/DASH resolution, stream proxy, conversion, and Cloudflare Worker.",
   "main": "src/server.js",
   "scripts": {
     "start": "node src/server.js",

@@ -1305,7 +1305,7 @@ async function resolveStreamWaterfall(metadata, requestedServer, preferredAudio,
   // a 15-minute-old payload turns "Retry" into "fail again instantly", which is
   // exactly what a dead source looks like from the outside.
   const fresh = !!(options && options.fresh);
-  const cacheKey = `cf:resolve:v8:${metadata.type}:${metadata.tmdbId}:s${metadata.season}:e${metadata.episode}:${validServer}${
+  const cacheKey = `cf:resolve:v9:${metadata.type}:${metadata.tmdbId}:s${metadata.season}:e${metadata.episode}:${validServer}${
     onlySource ? `:${onlySource}` : ''
   }`;
   const cached = fresh ? null : await edgeCacheGet(cacheKey);

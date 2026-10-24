@@ -193,6 +193,42 @@ async function testFastSettleOnNativeHls() {
   assert(Date.now() - started < 600, 'native HLS should settle without the old MKV wait');
 }
 
+async function testFastSettleForHlsConversion() {
+  goldmine.clearGoldmineProviderCache();
+  let slowExtractorAborted = false;
+  const fetchImpl = async (input, init = {}) => {
+    const url = new URL(typeof input === 'string' ? input : input.url);
+    if (url.pathname.endsWith('/api/providers')) {
+      return json({ providers: [{ name: '4khdhub', enabled: true }, { name: 'dahmermovies', enabled: true }] });
+    }
+    if (url.pathname.includes('/api/streams/4khdhub/')) {
+      return json({ streams: [{ title: 'Movie English 1080p', url: 'https://cdn.example/movie.mp4', quality: '1080p' }] });
+    }
+    if (url.pathname.includes('/api/streams/dahmermovies/')) {
+      return new Promise((resolve, reject) => {
+        const timer = setTimeout(() => resolve(json({ streams: [] })), 2200);
+        if (init.signal) {
+          init.signal.addEventListener('abort', () => {
+            clearTimeout(timer);
+            slowExtractorAborted = true;
+            const error = new Error('Aborted');
+            error.name = 'AbortError';
+            reject(error);
+          });
+        }
+      });
+    }
+    return new Response('not found', { status: 404 });
+  };
+  const started = Date.now();
+  const result = await goldmine.fetchGoldmineStreamsFast({
+    apiBase: 'https://conversion-settle.invalid', tmdbId: '1', type: 'movie', timeoutMs: 2500, fetchImpl
+  });
+  assert(result.ok && result.json.streams.some((stream) => stream.url.endsWith('.mp4')));
+  assert(Date.now() - started < 1800, 'progressive fallback should reach the HLS converter without the old long settle');
+  assert.strictEqual(slowExtractorAborted, true);
+}
+
 async function testProviderFallbackDetails() {
   const netmirror = await direct.resolveDirectStreams(
     { tmdbId: '1', type: 'movie', title: 'Test Movie' },
@@ -344,6 +380,7 @@ module.exports = async function runAudioRegressions() {
   await testHlsPayload();
   await testDirectFallback();
   await testFastSettleOnNativeHls();
+  await testFastSettleForHlsConversion();
   await testProviderFallbackDetails();
   await testCastleTv();
   await testPreferredSourceMetadata();

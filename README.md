@@ -244,16 +244,16 @@ tries:
 
 | Priority | Server id  | Player name  | Badge                  | Cascade                                |
 |----------|------------|--------------|------------------------|----------------------------------------|
-| 1        | `goldmine` | Goldmine MKV | Multi-Audio Dubs • MKV | Owner-hosted TMDB-Embed-API instance    |
+| 1        | `goldmine` | Goldmine | HLS • DASH • Multi-Audio | Owner-hosted TMDB-Embed-API instance    |
 
-The lineup is single-server and playback-speed ordered: reliable pre-generated
-HLS/DASH first, native MP4 next, progressive MKV/other files after that, and
-Render-IP-bound streams last. A ready native HLS response settles quickly
-instead of waiting for slow MKV extractors. The legacy HLS-only servers
-(`andromeda`, `centaurus`) and the Node ffmpeg remux tier were removed with the
-move to Goldmine; the catalog machinery (priority order, listing, fallbacks,
-live admin edits) stays generic, so adding a second server later is a
-one-entry change.
+The lineup is single-server and the browser accepts only HLS or DASH. Reliable
+pre-generated HLS/DASH comes first; progressive candidates are converter
+inputs, never direct playback sources. On a Node host with ffmpeg they become
+HLS with genuine quality/audio renditions. Where conversion is unavailable,
+those candidates are skipped. A ready native HLS response settles quickly
+instead of waiting for slow extractors. The catalog machinery (priority order,
+listing, fallbacks, live admin edits) stays generic, so adding a second server
+later is a one-entry change.
 
 Every `/api/resolve` payload carries the `servers` array in this exact order with
 the answering server flagged `active`, and it is rebuilt from the live catalog on
@@ -293,12 +293,11 @@ then:
   `/api/proxy?url=…` with server-side headers, CORS and Range support.
   `GOLDMINE_PROXY_STREAMS=false` disables the wrapping; URLs the upstream
   instance already proxied itself always pass through untouched.
-- **Picks the engine per source** — MKV / WebM / AVI / TS / MOV (and unknown
-  progressive files) play through the bundled movi-player (FFmpeg WASM); MP4 is
-  served to the native `<video>` element (hardware decode + native Range/seek)
-  and only escalates to movi when the browser rejects the file (HEVC/10-bit).
-  Each source carries its own `engine` in `sourceMeta`, so an MP4 backup of an
-  MKV primary is no longer dragged through the WASM demuxer.
+- **Uses streaming playback only** — HLS goes through hls.js (or native HLS on
+  supported Apple browsers), and DASH goes through dash.js. Progressive files
+  are never attached to a browser media element: a Node host converts them to
+  HLS, while a host without conversion skips them and tries another streaming
+  source.
 - **Pins one source manually** — `?source=<provider-id>` filters the aggregate
   to a single provider (a pinned request never falls through to the others).
 
@@ -354,29 +353,28 @@ MKV in the browser** possible:
 - **Quality:** HLS menus are rebuilt from the actual levels hls.js discovers,
   with exact level indexes and an Auto/ABR row. Progressive files retain the
   real resolver-supplied alternatives rather than stale HLS choices.
-- **Subtitles:** embedded MKV tracks (SRT/ASS/VTT/PGS/DVB) are selectable
-  through the engine; the external `/api/subtitles` tracks layer on top as
-  usual.
+- **Subtitles:** external `/api/subtitles` tracks remain selectable. Generated
+  HLS carries the source's real video/audio renditions; embedded progressive
+  subtitle tracks are not advertised as converted renditions.
 
 Codec/device combinations (HEVC/AV1 profiles, HDR/Dolby Vision, AC-3/E-AC-3)
 may still not play in every browser. The default Worker path does not conceal
 those limits with a server transcode; a suitable Node host can opt in below.
 
-### Experimental Node MKV conversion (opt-in fallback)
+### Node HLS conversion for progressive fallbacks
 
-Native provider HLS is always preferred and never needs this converter. On the
-small free Codespace, multi-rung transcoding can fall behind real time and
-buffer, so `.devcontainer/start.sh` leaves it disabled by default.
+Native provider HLS/DASH is always preferred and never needs this converter.
+The Codespace enables conversion by default for every progressive fallback.
+Multi-rung transcoding can still fall behind real time on a small CPU.
 
 Cloudflare Workers cannot spawn ffmpeg. `scripts/dev-worker.mjs` therefore
 exposes `/api/mkv-hls` **only when `MKV_HLS_ENABLED=true` is set on that Node
 process**. Do not set this in `wrangler.toml` and expect Cloudflare to convert
-media: an ordinary Worker page advertises `mkvHlsEnabled=false` and retains its
-normal direct/movi/backup behavior.
+media: an ordinary Worker page advertises `mkvHlsEnabled=false` and skips
+progressive candidates rather than playing them raw.
 
-On an enabled Node host, an eligible MKV goes **directly** to the converter:
-the browser does not try native MKV playback, download movi, or wait for a
-failure first. ffmpeg reads the original same-origin `/api/proxy` source and
+On an enabled Node host, an eligible progressive source goes **directly** to
+the converter. ffmpeg reads the original same-origin `/api/proxy` source and
 the browser receives only HLS. ffprobe discovers the actual streams before
 ffmpeg writes H.264/AAC HLS with:
 
@@ -410,7 +408,7 @@ See [`.devcontainer/README.md`](.devcontainer/README.md) for TV examples, provid
 
 ```bash
 npm run dev:player
-# http://localhost:8790/embed?type=tv&tmdb=94605&s=1&e=1            Goldmine MKV via the movi engine, dub-language chips (English/Hindi/Tamil), skip segments
+# http://localhost:8790/embed?type=tv&tmdb=94605&s=1&e=1            Goldmine HLS/DASH playback, dub-language chips, skip segments
 # http://localhost:8790/embed?type=tv&tmdb=94605&s=1&e=1&lang=ta    Tamil preselected
 # http://localhost:8790/embed?type=tv&tmdb=94605&s=1&e=1&t=1m30s&autoskip=1 start offset + auto-skip
 # http://localhost:8790/embed?type=movie&tmdb=0                     every source empty -> error screen with the server list inline

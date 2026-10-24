@@ -613,7 +613,9 @@ function sourceLabelFor(stream) {
   const parts = [];
   const quality = stream.height > 0 ? heightToLabel(stream.height) : String(stream.qualityLabel || 'Auto');
   parts.push(quality);
-  if (stream.container && stream.container !== 'unknown') parts.push(stream.container.toUpperCase());
+  if (stream.container === 'hls' || stream.container === 'dash') {
+    parts.push(stream.container.toUpperCase());
+  }
   if (stream.languages.length > 0) {
     parts.push(stream.languages.map((language) => language.label).join(' + '));
   } else if (stream.multi) {
@@ -1396,6 +1398,11 @@ async function fetchGoldmineStreamsFast(options = {}) {
         scheduleSettleIn(320);
       } else if (hasMultiAudio && hasWantedAudio && !multiAudioExtractorInFlight) {
         scheduleSettleIn(850);
+      } else if (hasWantedAudio) {
+        // No suitable native stream arrived in the first pass. Start the HLS
+        // conversion fallback promptly instead of holding a progressive source
+        // for the old multi-audio extractor budget.
+        scheduleSettleIn(Math.max(150, 1200 - fanoutElapsed));
       } else if (multiAudioExtractorInFlight) {
         // A fast single-audio HLS/MP4 answer is only a backup while a
         // multi-audio extractor is still running.  4KHDHub's Redirector ->

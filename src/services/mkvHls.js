@@ -1,12 +1,12 @@
 'use strict';
 
 /**
- * Optional Node-host MKV -> HLS transcoding.
+ * Node-host progressive media -> HLS transcoding.
  *
  * This module is deliberately imported only by the Node development/host
  * harness. Cloudflare Workers cannot spawn ffmpeg. When the Worker page
- * explicitly advertises MKV_HLS_ENABLED=true, eligible progressive sources
- * use this route HLS-first instead of loading MKV/movi in the browser.
+ * advertises MKV_HLS_ENABLED=true, progressive sources are converter inputs;
+ * the browser receives HLS and never opens the original file directly.
  */
 
 const crypto = require('crypto');
@@ -414,7 +414,7 @@ function createMkvHlsHandler(options = {}) {
       try {
         await awaitReady(session);
       } catch (error) {
-        sendJson(res, 502, { ok: false, error: 'MKV to HLS conversion failed', detail: error.message });
+        sendJson(res, 502, { ok: false, error: 'HLS conversion failed', detail: error.message });
         return;
       }
     }
@@ -482,7 +482,7 @@ function createMkvHlsHandler(options = {}) {
       return true;
     }
     if (!enabled) {
-      sendJson(res, 404, { ok: false, error: 'MKV to HLS is not enabled on this host' });
+      sendJson(res, 404, { ok: false, error: 'HLS conversion is not enabled on this host' });
       return true;
     }
 
@@ -505,7 +505,7 @@ function createMkvHlsHandler(options = {}) {
           'Cache-Control': 'no-store'
         });
       } catch (error) {
-        sendJson(res, 502, { ok: false, error: 'MKV to HLS conversion failed', detail: error.message });
+        sendJson(res, 502, { ok: false, error: 'HLS conversion failed', detail: error.message });
       }
       return true;
     }
