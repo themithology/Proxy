@@ -2061,9 +2061,9 @@
           // not the resolver's initial (often single) HLS row.
           syncHlsQualityLevels(hls, data && data.levels);
           if (isTranscodedHls && !storageGet(QUALITY_KEY) && hls.levels && hls.levels.length > 0) {
-            // The compatible source rung is a complete VOD. Keep Auto from
-            // moving playback to a lower rung whose encode is still growing;
-            // an explicit quality choice remains available and is respected.
+            // The source remux runs independently and can become a complete
+            // VOD while the lower encode continues. Keep Auto from moving
+            // playback to that growing lower rung; explicit choices remain.
             hls.currentLevel = 0;
             syncHlsQualityLevels(hls, hls.levels);
           }

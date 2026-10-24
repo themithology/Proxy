@@ -181,8 +181,8 @@ async function runMkvHlsTest() {
 
     const startupTopPlaylist = await (await fetch(new URL(variants[0], masterUrl))).text();
     assert(
-      startupTopPlaylist.includes('#EXT-X-ENDLIST'),
-      'compatible source-quality remux should expose its complete VOD without waiting for the lower encode'
+      startupTopPlaylist.includes('#EXTINF'),
+      'first usable segments must be available without waiting for complete remux'
     );
 
     const playlistPaths = [...variants, ...audioTracks.map((track) => track.url)];

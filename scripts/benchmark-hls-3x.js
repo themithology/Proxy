@@ -130,10 +130,20 @@ async function run() {
     assert.strictEqual(variants.length, 2, 'benchmark expects two genuine video rungs');
 
     const topPlaylistUrl = new URL(variants[0], masterUrl);
-    const topPlaylistResponse = await fetch(topPlaylistUrl);
-    assert.strictEqual(topPlaylistResponse.status, 200);
-    const topPlaylist = await topPlaylistResponse.text();
-    assert(topPlaylist.includes('#EXT-X-ENDLIST'), 'source timeline must be complete before 3x playback');
+    let topPlaylist = '';
+    let fullTimelineMs = null;
+    const fullTimelineDeadline = Date.now() + 120000;
+    while (Date.now() < fullTimelineDeadline) {
+      const topPlaylistResponse = await fetch(topPlaylistUrl);
+      assert.strictEqual(topPlaylistResponse.status, 200);
+      topPlaylist = await topPlaylistResponse.text();
+      if (topPlaylist.includes('#EXT-X-ENDLIST')) {
+        fullTimelineMs = Date.now() - conversionStarted;
+        break;
+      }
+      await sleep(100);
+    }
+    assert(fullTimelineMs !== null, 'source remux should complete its full timeline in background');
     const segments = playlistSegments(topPlaylist);
     const sourceDuration = segments.reduce((sum, segment) => sum + segment.duration, 0);
     assert(segments.length > 1 && sourceDuration >= SOURCE_SECONDS * 0.9);
@@ -179,7 +189,7 @@ async function run() {
       sourceSeconds: Number(sourceDuration.toFixed(3)),
       playbackRate: PLAYBACK_RATE,
       startupMs,
-      fullTimelineBeforePlayback: true,
+      fullTimelineMs,
       videoRungs: variants.length,
       audioRenditions: (master.match(/#EXT-X-MEDIA:TYPE=AUDIO/g) || []).length,
       segments: segments.length,

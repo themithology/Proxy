@@ -386,11 +386,11 @@ ffmpeg writes H.264/AAC HLS with:
 - independent remux/encode playlists, with 2-second segments on encoded rungs
   and the source's real keyframe boundaries on remuxed video.
 
-There is no fixed buffer-delay rule. Compatible sources wait only for the fast
-source-quality remux to become a complete, genuinely seekable VOD; the lower
-encode does not block playback. Incompatible full encodes start with their
-first usable segments, and seeking past their converted portion must wait for
-ffmpeg. Temporary output is deleted when a session expires or the host stops.
+Playback never waits for a complete remux or a fixed buffer target. The first
+usable segments start playback while the source-quality remux continues toward
+a complete VOD in background. The lower encode does not block it. Seeking past
+any still-growing playlist's converted portion must wait for ffmpeg. Temporary
+output is deleted when a session expires or the host stops.
 `MKV_HLS_MAX_SESSIONS`
 (default `2`) bounds concurrent sessions, and renewed signed URLs for the same
 canonical source share one conversion. `MKV_HLS_DIR` overrides the temporary
