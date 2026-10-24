@@ -34,16 +34,18 @@ const {
  */
 async function resolveGoldmineServerNode(metadata, options = {}) {
   const providerKey = 'goldmine:tmdb-embed-api';
-  if (!circuitBreaker.isAvailable(providerKey)) {
-    return { reason: 'circuit_open', diag: 'TMDB-Embed-API paused after repeated failures' };
-  }
-  const { onlySource = '', preferredAudio = '' } = options;
+  const circuitOpen = !circuitBreaker.isAvailable(providerKey);
+  const { onlySource = '', preferredAudio = '', metadataPromise = null } = options;
   try {
     const resolved = await goldmine.resolveGoldmineServer(metadata, {
       apiBase: config.goldmine.apiBase,
       timeoutMs: config.goldmine.timeoutMs,
       onlySource,
       preferredAudio,
+      metadataPromise,
+      directOnly: circuitOpen,
+      directFallback: circuitOpen ? 'always' : undefined,
+      directProviderOptions: config.goldmine.direct || {},
       proxyStreams: config.goldmine.proxyStreams,
       // Streams whose host requires Referer/Origin/Cookie/UA get every nested URL
       // rewritten through the proxy ('full'); open hosts only get their
@@ -76,26 +78,7 @@ async function resolveGoldmineServerNode(metadata, options = {}) {
 
 /** Apply the viewer's `?audio=`/remembered language to a resolved payload. */
 function applyPreferredAudio(resolved, preferredAudio) {
-  if (!resolved || !preferredAudio || !Array.isArray(resolved.audioTracks)) return resolved;
-  const wanted = String(preferredAudio).trim().toLowerCase();
-  const wantedLanguage = normalizeLanguageCode(wanted);
-  const matchTrack = resolved.audioTracks.find((track) =>
-    String(track.id || '').toLowerCase() === wanted ||
-    (wantedLanguage !== 'und' && normalizeLanguageCode(track.lang) === wantedLanguage)
-  );
-  if (!matchTrack) return resolved;
-
-  const audioTracks = resolved.audioTracks.map((track) => ({
-    ...track,
-    default: track.id === matchTrack.id
-  }));
-  return {
-    ...resolved,
-    audioTracks,
-    streamUrl: matchTrack.streamUrl || resolved.streamUrl,
-    rawUrl: matchTrack.rawUrl || resolved.rawUrl,
-    activeAudioTrack: audioTracks.find((track) => track.id === matchTrack.id) || null
-  };
+  return goldmine.applyPreferredAudioToPayload(resolved, preferredAudio);
 }
 
 /**
@@ -157,7 +140,7 @@ async function resolveStreamForServer(metadata, requestedServerId = '', preferre
   // provider URLs are signed and short-lived, so replaying a 15-minute-old
   // payload makes every retry fail the same way the first attempt did.
   const fresh = !!options.fresh;
-  const cacheKey = `resolve:v6:${metadata.type}:${metadata.tmdbId}:s${metadata.season || 1}:e${metadata.episode || 1}:${validServer}${
+  const cacheKey = `resolve:v7:${metadata.type}:${metadata.tmdbId}:s${metadata.season || 1}:e${metadata.episode || 1}:${validServer}${
     onlySource ? `:${onlySource}` : ''
   }`;
   const cached = fresh ? null : await cache.get(cacheKey);
@@ -188,7 +171,11 @@ async function resolveStreamForServer(metadata, requestedServerId = '', preferre
     const t0 = Date.now();
     let resolved = null;
     if (srvId === 'goldmine') {
-      resolved = await resolveGoldmineServerNode(metadata, { onlySource, preferredAudio });
+      resolved = await resolveGoldmineServerNode(metadata, {
+        onlySource,
+        preferredAudio,
+        metadataPromise: options && options.metadataPromise
+      });
     } else {
       resolved = { reason: 'unknown_server', diag: `no resolver for "${srvId}"` };
     }

@@ -32,6 +32,8 @@ const {
   languageLabelForCode,
   mapLanguageNameToCode
 } = require('./languages');
+const { resolveDirectStreams, DIRECT_PROVIDER_IDS } = require('./directProviders');
+const { parseHlsAudioTracks, parseHlsSubtitleTracks, looksLikeHlsManifest } = require('./hls');
 
 /** Default deployment of the TMDB-Embed-API (owner-hosted on Render). */
 const GOLDMINE_DEFAULT_API_BASE = 'https://rdp-running-campion.onrender.com';
@@ -81,7 +83,21 @@ const SECONDARY_WAVE_PROVIDERS = [
   'vidlink'
 ];
 const SECONDARY_WAVE_SET = new Set(SECONDARY_WAVE_PROVIDERS);
+// These providers can return either muxed multi-audio files or separate dub
+// renditions.  A quick single-audio HLS answer must not cancel any of them.
+// Keep this separate from MKV_EXTRACTOR_PROVIDERS: Wave 2 contains multi-audio
+// HLS providers too, and those need the same settle protection as 4KHDHub.
 const MKV_EXTRACTOR_PROVIDERS = new Set(['dahmermovies', '4khdhub', 'castletv', 'showbox']);
+const MULTI_AUDIO_EXTRACTOR_PROVIDERS = new Set([
+  ...MKV_EXTRACTOR_PROVIDERS,
+  'netmirror',
+  'hdghartv',
+  'onetouchtv'
+]);
+// Redirector -> HubCloud/HubDrive -> Pixeldrain/FSL regularly takes 8–15s.
+// The old 7.5s deadline was shorter than the provider's own successful path.
+const MULTI_AUDIO_SETTLE_BUDGET_MS = 19000;
+const MULTI_AUDIO_PROVIDER_TIMEOUT_MS = 22000;
 
 const PROVIDERS_CACHE_TTL_MS = 10 * 60 * 1000;
 const providersCache = new Map();
@@ -129,6 +145,58 @@ function fileNameFromUrl(url) {
     return decodeURIComponent(parsed.pathname.split('/').pop() || '');
   } catch {
     return '';
+  }
+}
+
+/**
+ * Return only URL components which can contain a release/file name.  Query
+ * tokens are deliberately not dumped into language detection (a random JWT
+ * can contain "hin" or "eng"), but nested proxy/download URLs and KEY5 are
+ * useful metadata on extensionless CDN links.
+ */
+function streamMetadataFromUrl(url) {
+  const parts = [];
+  try {
+    const parsed = new URL(url);
+    for (const key of ['url', 'u', 'link', 'file', 'filename', 'name', 'KEY5']) {
+      const value = parsed.searchParams.get(key);
+      if (!value) continue;
+      let decoded = value;
+      for (let i = 0; i < 2; i += 1) {
+        try {
+          const next = decodeURIComponent(decoded);
+          if (next === decoded) break;
+          decoded = next;
+        } catch {
+          break;
+        }
+      }
+      parts.push(decoded);
+      if (key === 'url' || key === 'u' || key === 'link') {
+        parts.push(fileNameFromUrl(decoded));
+      }
+    }
+  } catch {
+    // The caller already validates HTTP URLs; malformed metadata is optional.
+  }
+  return parts.filter(Boolean).join(' ');
+}
+
+function isExtensionlessDownload(url) {
+  try {
+    const parsed = new URL(url);
+    const host = parsed.hostname.toLowerCase();
+    const path = parsed.pathname.toLowerCase();
+    const last = path.split('/').pop() || '';
+    const hasExtension = /\.[a-z0-9]{2,8}$/i.test(last);
+    const knownFileHost =
+      /(?:^|\.)pixeldrain\.(?:dev|net|com)$/.test(host) ||
+      /(?:^|\.)r2\.dev$/.test(host) ||
+      /(?:hubcloud|hubdrive|fsl|gamerxyt|buzzserver|111477\.xyz|googleusercontent)/i.test(host) ||
+      /\/api\/file\//i.test(path);
+    return knownFileHost && !hasExtension;
+  } catch {
+    return false;
   }
 }
 
@@ -184,8 +252,9 @@ function heightToLabel(height) {
  * 'hls' / 'dash' keep the player on its native engine; everything else is a
  * progressive file the movi engine plays (MKV, HEVC MP4, AVI, TS, WebM…).
  */
-function containerForStream(url, title) {
-  const haystack = `${fileNameFromUrl(url)} ${String(title || '')}`.toLowerCase();
+function containerForStream(url, title, provider = '') {
+  const providerId = typeof provider === 'object' ? provider.provider : provider;
+  const metadata = `${fileNameFromUrl(url)} ${String(title || '')} ${streamMetadataFromUrl(url)}`.toLowerCase();
   const pathname = (() => {
     try {
       return new URL(url).pathname.toLowerCase();
@@ -193,31 +262,45 @@ function containerForStream(url, title) {
       return String(url || '').toLowerCase();
     }
   })();
-  if (/\.m3u8(?:$|[?#])/.test(pathname) || /\.m3u8\b/.test(haystack)) return 'hls';
-  if (/\.mpd(?:$|[?#])/.test(pathname) || /\.mpd\b/.test(haystack)) return 'dash';
-  if (/\.ism(?:$|[?#])/.test(pathname)) return 'ism';
-  if (/\.mkv\b/.test(haystack)) return 'mkv';
-  if (/\.webm\b/.test(haystack)) return 'webm';
-  if (/\.avi\b/.test(haystack)) return 'avi';
-  if (/\.mov\b/.test(haystack)) return 'mov';
-  if (/\.ts\b/.test(haystack)) return 'ts';
-  if (/\.mp4\b/.test(haystack)) return 'mp4';
-  // Proxy-rewritten URLs (…/ts-proxy?url=…) hide the extension in the query.
   const query = (() => {
     try {
       const parsed = new URL(url);
-      const inner = parsed.searchParams.get('url') || '';
+      const inner = parsed.searchParams.get('url') || parsed.searchParams.get('u') || parsed.searchParams.get('link') || '';
       return `${inner} ${parsed.search}`.toLowerCase();
     } catch {
       return '';
     }
   })();
-  if (/\.m3u8/.test(query)) return 'hls';
-  if (/\.mpd/.test(query)) return 'dash';
-  if (/\.mkv/.test(query)) return 'mkv';
-  if (/\.webm/.test(query)) return 'webm';
-  if (/\.mp4/.test(query)) return 'mp4';
-  if (/\/playlist\b|\/master\b|hls/i.test(pathname)) return 'hls';
+
+  // Streaming formats always win over release-title words such as "TS" or
+  // "MKV".  Check both the outer proxy URL and its nested target.
+  if (/\.m3u8(?:$|[?#])/.test(pathname) || /\.m3u8\b/.test(metadata) || /\.m3u8/.test(query)) return 'hls';
+  if (/\.mpd(?:$|[?#])/.test(pathname) || /\.mpd\b/.test(metadata) || /\.mpd/.test(query)) return 'dash';
+  if (/\.ism(?:$|[?#])/.test(pathname)) return 'ism';
+  if (/\/playlist\b|\/master\b|hls/i.test(pathname) && !/\.mkv\b|\.mp4\b/i.test(metadata)) return 'hls';
+
+  // Accept bare container tags too ("... Multi Audio MKV", "Matroska"),
+  // not just a literal filename suffix.
+  if (/\b(?:mkv|matroska)\b/i.test(metadata) || /\.mkv/.test(query)) return 'mkv';
+  if (/\bwebm\b/i.test(metadata) || /\.webm/.test(query)) return 'webm';
+  if (/\bavi\b/i.test(metadata)) return 'avi';
+  if (/\bmov\b/i.test(metadata)) return 'mov';
+  if (/\bmp4\b/i.test(metadata) || /\.mp4/.test(query)) return 'mp4';
+  if (/\.ts\b/i.test(metadata)) return 'ts';
+
+  // Pixeldrain/FSL/R2/HubCloud download endpoints commonly have no suffix.
+  // 4KHDHub's release title is the authoritative container hint in that
+  // case; these providers predominantly serve Matroska releases.  Explicit
+  // MP4/HLS above still take precedence, and unrelated unknown URLs remain
+  // unknown instead of being mislabeled as MKV.
+  if (isExtensionlessDownload(url)) {
+    // These are file-download endpoints, not HTML pages.  Once HLS/DASH and
+    // explicit progressive tags have been ruled out, Matroska is the safe
+    // default for the Pixeldrain/R2/FSL/HubCloud releases these providers
+    // expose; requiring a release-tag word here used to leave valid MKVs as
+    // "unknown" and prevented the multi-audio demuxer from being selected.
+    return 'mkv';
+  }
   return 'unknown';
 }
 
@@ -254,24 +337,113 @@ function isEphemeralIpBoundStream(stream) {
   return false;
 }
 
+/** Normalize optional per-manifest/per-file audio metadata supplied by a provider. */
+function normalizeAudioTrackHints(raw) {
+  const candidates = [raw && raw.audioTracks, raw && raw.audio_tracks, raw && raw.audio]
+    .find((value) => Array.isArray(value));
+  if (!candidates) return [];
+  return candidates.map((entry, index) => {
+    const row = entry && typeof entry === 'object' ? entry : { label: String(entry || '') };
+    const label = String(row.label || row.name || row.title || '').trim();
+    const rawLang = row.lang || row.language || row.languageCode || row.code || '';
+    let lang = normalizeLanguageCode(rawLang || mapLanguageNameToCode(label));
+    if (lang === 'und' && label) {
+      const inferred = parseAudioLanguageHints(label).languages[0];
+      if (inferred) lang = inferred.code;
+    }
+    return {
+      index: Number.isInteger(row.index) ? row.index : index,
+      lang: lang || 'und',
+      label: label || languageLabelForCode(lang),
+      url: String(row.url || row.file || row.src || '').trim(),
+      default: row.default === true || row.default === 'YES' || row.selected === true
+    };
+  });
+}
+
 /**
  * Normalize one TMDB-Embed-API stream object.
  * Returns null for rows that can never play (missing/invalid URL).
  */
 function normalizeGoldmineStream(raw, index) {
   if (!raw || typeof raw !== 'object') return null;
-  const url = String(raw.url || '').trim();
+  let url = String(raw.url || raw.file || raw.src || '').trim();
   if (!url || !/^https?:\/\//i.test(url)) return null;
+  // Pixeldrain's public /u/ page is HTML; its /api/file/ endpoint is the
+  // byte-range playable file.  Normalize this at the boundary so both remote
+  // and direct provider rows take the same path.
+  url = url.replace(/(pixeldrain\.(?:dev|net|com))\/u\/([a-z0-9]+)/i, '$1/api/file/$2');
 
   const provider = String(raw.provider || 'unknown').toLowerCase();
   const title = String(raw.title || raw.name || '');
-  const qualityLabel = String(raw.quality || '') || (qualityToHeight(title) ? heightToLabel(qualityToHeight(title)) : 'Auto');
-  const height = qualityToHeight(raw.quality) || qualityToHeight(title);
-  const container = containerForStream(url, title);
+  const metadataText = [
+    raw.name,
+    raw.title,
+    raw.filename,
+    raw.fileName,
+    raw.release,
+    raw.description,
+    fileNameFromUrl(url),
+    streamMetadataFromUrl(url)
+  ].filter(Boolean).join(' ');
+  const qualityLabel = String(raw.quality || '') || (qualityToHeight(metadataText) ? heightToLabel(qualityToHeight(metadataText)) : 'Auto');
+  const height = qualityToHeight(raw.quality) || qualityToHeight(metadataText);
+  const declaredValue = String(raw.container || raw.format || '').trim().toLowerCase();
+  const declaredContainer = ({
+    matroska: 'mkv', 'x-matroska': 'mkv', 'video/x-matroska': 'mkv', 'video/matroska': 'mkv',
+    mpegts: 'ts', 'mpeg-ts': 'ts', 'video/mp2t': 'ts', m3u8: 'hls',
+    'application/vnd.apple.mpegurl': 'hls', 'application/x-mpegurl': 'hls',
+    'application/dash+xml': 'dash', 'video/mp4': 'mp4'
+  })[declaredValue] || declaredValue;
+  const container = ['mkv', 'webm', 'avi', 'mov', 'ts', 'mp4', 'hls', 'dash', 'ism'].includes(declaredContainer)
+    ? declaredContainer
+    : containerForStream(url, metadataText, provider);
 
   // Dub languages hide in titles/names/filenames ("… 1080p [Hindi + English]
-  // …", "CastleTV Tamil | 1080p", "… HIN TAM TEL Multi-Audio …").
-  const hints = parseAudioLanguageHints(`${String(raw.name || '')} ${title} ${fileNameFromUrl(url)}`);
+  // …", "CastleTV Tamil | 1080p", "… HIN TAM TEL Multi-Audio …").  Include
+  // BOTH name and title even when title exists: HubCloud puts the release
+  // name in one and the mirror/quality label in the other.
+  const hints = parseAudioLanguageHints(metadataText);
+  const audioTrackHints = normalizeAudioTrackHints(raw);
+  const seenLanguages = new Set(hints.languages.map((language) => language.code));
+  for (const track of audioTrackHints) {
+    if (track.lang === 'und') {
+      if (/^(?:original|org)(?:\s|_|\.|-|$)/i.test(String(track.label || '').trim()) && !seenLanguages.has('und')) {
+        seenLanguages.add('und');
+        hints.original = true;
+        hints.languages.push({ code: 'und', label: 'Original' });
+      }
+      continue;
+    }
+    if (seenLanguages.has(track.lang)) continue;
+    seenLanguages.add(track.lang);
+    hints.languages.push({ code: track.lang, label: track.label || languageLabelForCode(track.lang) });
+  }
+  for (const value of [raw.language, raw.lang, raw.dubLanguage]) {
+    if (!value) continue;
+    const code = normalizeLanguageCode(value);
+    if (code !== 'und' && !seenLanguages.has(code)) {
+      seenLanguages.add(code);
+      hints.languages.push({ code, label: languageLabelForCode(code) });
+    }
+  }
+  if (Array.isArray(raw.languages)) {
+    for (const value of raw.languages) {
+      const code = normalizeLanguageCode(value && typeof value === 'object' ? value.code || value.lang || value.label : value);
+      if (code !== 'und' && !seenLanguages.has(code)) {
+        seenLanguages.add(code);
+        hints.languages.push({ code, label: languageLabelForCode(code) });
+      }
+    }
+  }
+  // A provider which explicitly says "Original" gets an honest Original row
+  // instead of disappearing from the audio menu.  It can coexist with named
+  // dubs (Original + Hindi + English), so do not only add it for empty lists.
+  if (hints.original && !seenLanguages.has('und')) {
+    seenLanguages.add('und');
+    hints.languages.push({ code: 'und', label: 'Original' });
+  }
+  hints.multi = hints.multi || audioTrackHints.length > 1 || raw.multiAudio === true || raw.multi === true;
 
   const headers =
     raw.headers && typeof raw.headers === 'object' && !Array.isArray(raw.headers)
@@ -300,11 +472,13 @@ function normalizeGoldmineStream(raw, index) {
     languages: hints.languages,
     multi: hints.multi,
     original: hints.original,
+    audioTrackHints,
     headers,
     subtitles,
+    directExtracted: raw.directExtracted === true,
     ephemeralIpBound: false
   };
-  stream.ephemeralIpBound = isEphemeralIpBoundStream(stream);
+  stream.ephemeralIpBound = stream.directExtracted ? false : isEphemeralIpBoundStream(stream);
   return stream;
 }
 
@@ -336,7 +510,7 @@ function scoreGoldmineStream(stream) {
   else if (stream.container === 'dash' || stream.container === 'ism') score += 5;
   else score += 15; // unknown progressive — movi can still open it
 
-  if (stream.ephemeralIpBound || isEphemeralIpBoundStream(stream)) {
+  if (!stream.directExtracted && (stream.ephemeralIpBound || isEphemeralIpBoundStream(stream))) {
     const prov = String(stream.provider || '').toLowerCase();
     if (prov === 'pstream' || /\b(?:shegu\.net|febbox\.com)\b/i.test(stream.url || '')) score -= 220;
     else if (prov === 'vidlink') score -= 180;
@@ -503,6 +677,7 @@ function buildGoldminePayload(normalized, options = {}) {
       const subs = mapSubtitlesForStream(stream, proxyMeta);
       sourceMeta[playable] = {
         rawUrl: stream.url,
+        referer: proxyMeta.referer || '',
         container: stream.container,
         format: stream.container === 'hls' ? 'hls' : stream.container === 'dash' ? 'dash' : stream.container,
         engine: MOVI_CONTAINERS.has(stream.container) ? 'movi' : 'native',
@@ -551,13 +726,19 @@ function buildGoldminePayload(normalized, options = {}) {
   const audioTracks = [];
   if (languageRows.size > 0) {
     const wantedCode = preferredAudio ? normalizeLanguageCode(preferredAudio) : 'und';
+    const wantsOriginal = /^(?:original|org|default)$/i.test(String(preferredAudio || '').trim());
     const primaryFirstLang = primary.languages[0] ? primary.languages[0].code : '';
     const defaultCode =
+      (wantsOriginal && languageRows.has('und') ? 'und' : '') ||
       (wantedCode !== 'und' && languageRows.has(wantedCode) ? wantedCode : '') ||
       (primaryFirstLang && languageRows.has(primaryFirstLang) ? primaryFirstLang : '') ||
       [...languageRows.keys()][0];
     for (const row of languageRows.values()) {
       const bestPlayable = playableUrl(row.best);
+      const manifestTrack = row.best.audioTrackHints.find((track) =>
+        track.lang === row.code || (row.code === 'und' && track.lang === 'und')
+      );
+      const isHls = row.best.container === 'hls';
       audioTracks.push({
         id: `goldmine-${row.code}`,
         lang: row.code,
@@ -565,9 +746,11 @@ function buildGoldminePayload(normalized, options = {}) {
         type: 'dub',
         streamUrl: bestPlayable,
         rawUrl: row.best.url,
-        // The hinted languages of a multi-audio file all mux inside that one
-        // file: try an in-file track switch before reloading anything.
-        inFile: row.best.multi || row.best.languages.length > 1,
+        // Muxed progressive tracks are switched by movi-player.  HLS audio
+        // renditions instead carry their manifest index so hls.js can switch
+        // without reloading the video or losing the playhead.
+        inFile: !isHls && (row.best.multi || row.best.languages.length > 1),
+        audioIndex: isHls && manifestTrack ? manifestTrack.index : undefined,
         qualityLabel: row.best.height > 0 ? heightToLabel(row.best.height) : row.best.qualityLabel,
         default: row.code === defaultCode
       });
@@ -587,7 +770,8 @@ function buildGoldminePayload(normalized, options = {}) {
       type: 'dub',
       streamUrl: primaryPlayable,
       rawUrl: primary.url,
-      inFile: !!primary.multi,
+      inFile: primary.container !== 'hls' && !!primary.multi,
+      audioIndex: primary.container === 'hls' && primary.audioTrackHints[0] ? primary.audioTrackHints[0].index : undefined,
       default: true
     });
   }
@@ -969,7 +1153,9 @@ async function fetchGoldmineStreamsFast(options = {}) {
 
   const { wave1, wave2 } = partitionProviderWaves(enabledProviders);
   const orderedProviders = [...wave1, ...wave2];
-  const wantedAudioCode = preferredAudio ? normalizeLanguageCode(preferredAudio) : 'und';
+  const preferredAudioValue = String(preferredAudio || '').trim();
+  const wantsOriginalAudio = /^(?:original|org|default)$/i.test(preferredAudioValue);
+  const wantedAudioCode = preferredAudioValue && !wantsOriginalAudio ? normalizeLanguageCode(preferredAudioValue) : 'und';
   // Start the fan-out settle clock AFTER `/api/providers` returns so a Render
   // cold-start on provider discovery never steals budget from Wave 1 MKV scrapers.
   const fanoutStartedAt = Date.now();
@@ -1016,11 +1202,12 @@ async function fetchGoldmineStreamsFast(options = {}) {
 
     const collectCurrentState = () => {
       const mergedRaw = [];
+      const observedLanguages = new Set();
       let providersWithStreams = 0;
       let reliableProviders = 0;
       let reliableCount = 0;
       let hasMkvOrMulti = false;
-      let hasWantedAudio = wantedAudioCode === 'und';
+      let hasWantedAudio = wantedAudioCode === 'und' && !wantsOriginalAudio;
 
       for (const providerId of orderedProviders) {
         const list = streamsByProvider.get(providerId);
@@ -1034,12 +1221,17 @@ async function fetchGoldmineStreamsFast(options = {}) {
           if (!norm.ephemeralIpBound) {
             reliableCount += 1;
             providerHasReliable = true;
+            for (const language of norm.languages) {
+              if (language.code !== 'und' || norm.original) observedLanguages.add(language.code);
+            }
             if (norm.container === 'mkv' || norm.multi || norm.languages.length > 1) {
               hasMkvOrMulti = true;
             }
             if (
               !hasWantedAudio &&
-              (norm.multi || norm.languages.some((l) => l.code === wantedAudioCode))
+              (wantsOriginalAudio
+                ? norm.original || norm.languages.some((language) => language.code === 'und')
+                : norm.languages.some((l) => l.code === wantedAudioCode) || (norm.multi && norm.languages.length === 0))
             ) {
               hasWantedAudio = true;
             }
@@ -1049,11 +1241,10 @@ async function fetchGoldmineStreamsFast(options = {}) {
       }
 
       let mkvExtractorInFlight = false;
+      let multiAudioExtractorInFlight = false;
       for (const activeId of controllers.keys()) {
-        if (MKV_EXTRACTOR_PROVIDERS.has(activeId)) {
-          mkvExtractorInFlight = true;
-          break;
-        }
+        if (MKV_EXTRACTOR_PROVIDERS.has(activeId)) mkvExtractorInFlight = true;
+        if (MULTI_AUDIO_EXTRACTOR_PROVIDERS.has(activeId)) multiAudioExtractorInFlight = true;
       }
 
       return {
@@ -1062,8 +1253,13 @@ async function fetchGoldmineStreamsFast(options = {}) {
         reliableProviders,
         reliableCount,
         hasMkvOrMulti,
+        hasMultiAudio: observedLanguages.size > 1 || mergedRaw.some((raw) => {
+          const norm = normalizeGoldmineStream(raw, 0);
+          return !!norm && (norm.multi || norm.languages.length > 1 || norm.audioTrackHints.length > 1);
+        }),
         hasWantedAudio,
-        mkvExtractorInFlight
+        mkvExtractorInFlight,
+        multiAudioExtractorInFlight
       };
     };
 
@@ -1135,8 +1331,10 @@ async function fetchGoldmineStreamsFast(options = {}) {
         reliableProviders,
         reliableCount,
         hasMkvOrMulti,
+        hasMultiAudio,
         hasWantedAudio,
-        mkvExtractorInFlight
+        mkvExtractorInFlight,
+        multiAudioExtractorInFlight
       } = collectCurrentState();
 
       // If Wave 1 completely finished without any portable streams and Wave 2 is
@@ -1146,8 +1344,18 @@ async function fetchGoldmineStreamsFast(options = {}) {
         return;
       }
 
-      // Nothing left in flight (and either we already have streams or Wave 2 also ran): settle now.
-      if (inFlight === 0 && (wave2Launched || mergedRaw.length > 0)) {
+      // If Wave 1 is idle, do not let a lone HLS response suppress Wave 2.
+      // The only reason to skip the second wave here is an already useful
+      // multi-audio bundle with a backup (the fast-settle case below).
+      if (inFlight === 0 && !wave2Launched) {
+        if (hasMultiAudio && reliableProviders >= 2 && hasWantedAudio) {
+          scheduleSettleIn(320);
+        } else {
+          launchWave2();
+        }
+        return;
+      }
+      if (inFlight === 0 && wave2Launched) {
         finalize();
         return;
       }
@@ -1157,14 +1365,21 @@ async function fetchGoldmineStreamsFast(options = {}) {
       if (reliableCount === 0) return;
 
       const fanoutElapsed = Date.now() - fanoutStartedAt;
-      if (hasMkvOrMulti && reliableProviders >= 2 && hasWantedAudio) {
+      if (hasMultiAudio && reliableProviders >= 2 && hasWantedAudio) {
+        // A genuine multi-audio bundle plus a backup is already useful; do
+        // not make the viewer wait for every remaining mirror.
         scheduleSettleIn(320);
-      } else if (hasMkvOrMulti && hasWantedAudio) {
+      } else if (hasMultiAudio && hasWantedAudio && !multiAudioExtractorInFlight) {
         scheduleSettleIn(850);
+      } else if (multiAudioExtractorInFlight) {
+        // A fast single-audio HLS/MP4 answer is only a backup while a
+        // multi-audio extractor is still running.  4KHDHub's Redirector ->
+        // HubCloud/HubDrive -> Pixeldrain/FSL path normally needs 8–15s;
+        // Wave 2's NetMirror/HDGharTV/OneTouchTV calls need the same chance.
+        // Never reuse the old 7.5s cutoff here.
+        scheduleSettleIn(Math.max(600, MULTI_AUDIO_SETTLE_BUDGET_MS - fanoutElapsed));
       } else if (mkvExtractorInFlight) {
-        // A fast HLS/MP4 backup arrived while 4khdhub/dahmermovies/castletv is
-        // still scraping MKV mirrors (typically 5–8s): give MKV extractors room.
-        scheduleSettleIn(Math.max(600, 7500 - fanoutElapsed));
+        scheduleSettleIn(Math.max(600, MULTI_AUDIO_SETTLE_BUDGET_MS - fanoutElapsed));
       } else {
         scheduleSettleIn(Math.max(400, 3500 - fanoutElapsed));
       }
@@ -1177,7 +1392,10 @@ async function fetchGoldmineStreamsFast(options = {}) {
       inFlight += 1;
       launchedCount += 1;
       const t0 = Date.now();
-      const perProviderBudget = Math.min(remainingMs(), 15000);
+      const providerBudgetCap = MULTI_AUDIO_EXTRACTOR_PROVIDERS.has(providerId)
+        ? MULTI_AUDIO_PROVIDER_TIMEOUT_MS
+        : 15000;
+      const perProviderBudget = Math.min(remainingMs(), providerBudgetCap);
 
       fetchGoldmineStreams({
         apiBase,
@@ -1251,6 +1469,226 @@ async function fetchGoldmineStreamsFast(options = {}) {
 }
 
 /**
+ * Apply an audio preference to a complete payload, including the metadata of
+ * a replacement file.  Changing only streamUrl leaves the player thinking an
+ * HLS dub is still an MKV (or vice versa), and leaves quality buttons pointing
+ * at the old language's ladder.
+ */
+function applyPreferredAudioToPayload(resolved, preferredAudio) {
+  if (!resolved || !preferredAudio || !Array.isArray(resolved.audioTracks)) return resolved;
+  const wanted = String(preferredAudio).trim().toLowerCase();
+  const wantedLanguage = normalizeLanguageCode(wanted);
+  const wantsOriginal = /^(?:original|org|default)$/.test(wanted);
+  const matchTrack = resolved.audioTracks.find((track) =>
+    String(track.id || '').toLowerCase() === wanted ||
+    (wantedLanguage !== 'und' && normalizeLanguageCode(track.lang) === wantedLanguage) ||
+    (wantsOriginal && (normalizeLanguageCode(track.lang) === 'und' || /original/i.test(String(track.label || ''))))
+  );
+  if (!matchTrack) return resolved;
+
+  const audioTracks = resolved.audioTracks.map((track) => ({ ...track, default: track.id === matchTrack.id }));
+  const activeAudioTrack = audioTracks.find((track) => track.id === matchTrack.id) || null;
+  const nextUrl = matchTrack.streamUrl || resolved.streamUrl;
+  const nextRawUrl = matchTrack.rawUrl || resolved.rawUrl;
+  const sourceMeta = resolved.sourceMeta && resolved.sourceMeta[nextUrl];
+  const next = { ...resolved, audioTracks, activeAudioTrack, streamUrl: nextUrl, rawUrl: nextRawUrl };
+  if (!sourceMeta) return next;
+
+  next.format = sourceMeta.format || sourceMeta.container || resolved.format;
+  next.engine = sourceMeta.engine === 'movi' ? 'movi' : undefined;
+  next.progressiveFormat = sourceMeta.engine === 'movi' ? sourceMeta.container : undefined;
+  next.qualityLabel = sourceMeta.qualityLabel || matchTrack.qualityLabel || resolved.qualityLabel;
+  next.height = Number.isFinite(sourceMeta.height) ? sourceMeta.height : resolved.height;
+  next.moviHeaders = sourceMeta.moviHeaders;
+  next.embeddedSubtitles = sourceMeta.subtitles;
+  if (sourceMeta.referer !== undefined) next.referer = sourceMeta.referer;
+
+  const wantedCode = normalizeLanguageCode(matchTrack.lang);
+  const oldQualities = Array.isArray(resolved.qualities) ? resolved.qualities : [];
+  const compatible = oldQualities.filter((quality) => {
+    if (!quality || !quality.url) return false;
+    if (quality.url === nextUrl) return true;
+    const meta = resolved.sourceMeta && resolved.sourceMeta[quality.url];
+    if (!meta) return false;
+    if (wantedCode === 'und') return true;
+    return Array.isArray(meta.languages) && meta.languages.includes(wantedCode);
+  });
+  const selectedQuality = {
+    label: sourceMeta.qualityLabel || matchTrack.qualityLabel || 'Auto',
+    height: Number.isFinite(sourceMeta.height) ? sourceMeta.height : 0,
+    url: nextUrl
+  };
+  next.qualities = [selectedQuality, ...compatible.filter((quality) => quality.url !== nextUrl)];
+  return next;
+}
+
+/**
+ * Read only HLS master manifests (never segments) to discover alternate audio
+ * renditions before the player attaches.  Providers frequently return just
+ * `{ url: "https://…/master.m3u8" }`; without this step the resolve payload
+ * cannot show Hindi/Tamil/etc. until after hls.js happens to parse the file.
+ */
+async function discoverGoldmineHlsAudio(rawStreams, options = {}) {
+  if (!Array.isArray(rawStreams) || rawStreams.length === 0 || options.discoverHlsAudio === false) return rawStreams;
+  const doFetch = typeof options.fetchImpl === 'function' ? options.fetchImpl : globalThis.fetch;
+  if (typeof doFetch !== 'function') return rawStreams;
+  const maxProbes = Math.max(0, Number(options.maxHlsManifestProbes ?? 6) || 0);
+  const timeoutMs = Math.max(500, Number(options.hlsManifestTimeoutMs) || 3500);
+  let probes = 0;
+  const output = [...rawStreams];
+  const jobs = [];
+  for (let index = 0; index < output.length && probes < maxProbes; index += 1) {
+    const raw = output[index];
+    if (!raw || typeof raw !== 'object' || !raw.url || raw.hlsAudioDiscovered) continue;
+    const declared = String(raw.container || raw.format || '').toLowerCase();
+    const guessed = containerForStream(raw.url, [raw.name, raw.title, raw.filename].filter(Boolean).join(' '), raw.provider || '');
+    if (declared !== 'hls' && guessed !== 'hls') continue;
+    if (Array.isArray(raw.audioTracks) && raw.audioTracks.length > 1 && options.hlsManifestProbe !== 'always') continue;
+    probes += 1;
+    jobs.push((async () => {
+      const timed = createTimedSignal(timeoutMs, options.signal || null);
+      try {
+        const response = await doFetch(raw.url, {
+          headers: { 'User-Agent': USER_AGENT, Accept: 'application/vnd.apple.mpegurl, application/x-mpegURL, text/plain, */*', ...(raw.headers || {}) },
+          redirect: 'follow',
+          signal: timed.signal
+        });
+        if (!response.ok) return;
+        const body = (await response.text()).slice(0, 2 * 1024 * 1024);
+        if (!looksLikeHlsManifest(body)) return;
+        const finalUrl = response.url || raw.url;
+        const absolute = (value) => {
+          try { return new URL(value, finalUrl).toString(); } catch { return value; }
+        };
+        const manifestAudio = parseHlsAudioTracks(body).map((track) => ({
+          ...track,
+          url: track.url ? absolute(track.url) : ''
+        }));
+        const manifestSubs = parseHlsSubtitleTracks(body, finalUrl);
+        const existingAudio = Array.isArray(raw.audioTracks) ? raw.audioTracks : [];
+        const audioTracks = manifestAudio.length ? manifestAudio : existingAudio;
+        output[index] = {
+          ...raw,
+          ...(audioTracks.length ? { audioTracks } : {}),
+          ...(manifestSubs.length ? { subtitles: [...(Array.isArray(raw.subtitles) ? raw.subtitles : []), ...manifestSubs] } : {}),
+          hlsAudioDiscovered: true
+        };
+      } catch {
+        // A manifest probe is advisory.  The original URL remains playable and
+        // hls.js will get another chance to discover renditions in the browser.
+      } finally {
+        timed.cleanup();
+      }
+    })());
+  }
+  await Promise.all(jobs);
+  return output;
+}
+
+/**
+ * A single-audio HLS answer is useful as a backup, but it is not evidence that
+ * the slower MKV/dub providers have been exhausted.  Keep this predicate
+ * separate from scoring so callers and tests can make the fallback decision
+ * without relying on provider names or URL cosmetics.
+ */
+function hasMultiAudioEvidence(normalized) {
+  if (!normalized || !Array.isArray(normalized.streams)) return false;
+  const languages = new Set();
+  for (const stream of normalized.streams) {
+    if (!stream || stream.ephemeralIpBound) continue;
+    if (stream.multi || stream.languages.length > 1 || stream.audioTrackHints.length > 1) return true;
+    for (const language of stream.languages || []) {
+      if (language.code !== 'und' || stream.original) languages.add(language.code);
+    }
+  }
+  // CastleTV and similar providers expose one file per dub rather than one
+  // muxed file.  Distinct language rows across those files are multi-audio
+  // evidence too, and should suppress redundant direct scraping.
+  return languages.size > 1;
+}
+
+function shouldUseDirectProviderFallback(normalized, fetched, options = {}) {
+  if (options.directFallback === false) return false;
+  if (options.directFallback === 'always' || options.directFallback === true) return true;
+  if (!fetched || !fetched.ok || !normalized || normalized.streams.length === 0) return true;
+  return !hasMultiAudioEvidence(normalized);
+}
+
+function directMetadata(metadata, fetched) {
+  const external = metadata && (metadata.externalIds || metadata.external_ids || {});
+  return {
+    ...metadata,
+    type: metadata && metadata.type === 'movie' ? 'movie' : 'tv',
+    tmdbId: String(metadata && metadata.tmdbId || ''),
+    imdbId: String(metadata && (metadata.imdbId || metadata.imdb_id) || external.imdb_id || (fetched && fetched.json && fetched.json.imdbId) || ''),
+    title: String(metadata && (metadata.title || metadata.name || metadata.originalTitle || metadata.original_title) || ''),
+    originalTitle: String(metadata && (metadata.originalTitle || metadata.original_title) || ''),
+    releaseYear: metadata && (metadata.releaseYear || metadata.year) || '',
+    releaseDate: metadata && (metadata.releaseDate || metadata.release_date) || '',
+    season: metadata && metadata.season || 1,
+    episode: metadata && metadata.episode || 1
+  };
+}
+
+/**
+ * Merge direct provider rows into an upstream response.  Direct extraction is
+ * deliberately additive: a working Render provider remains a backup, while a
+ * direct multi-audio MKV/HLS can win scoring on its actual language metadata.
+ */
+async function addDirectProviderFallback(metadata, fetched, normalized, options = {}) {
+  if (!shouldUseDirectProviderFallback(normalized, fetched, options)) return { fetched, normalized };
+  const meta = directMetadata(metadata, fetched);
+  // Title-based scrapers cannot make a safe request without a title.  This
+  // also keeps low-level cache/diagnostic calls (which only have a TMDB id)
+  // from unexpectedly scraping the public providers.
+  if (!meta.title && !options.directProviderOptions?.allowWithoutTitle && options.directFallback !== 'always') {
+    return { fetched, normalized };
+  }
+  const directOptions = {
+    ...(options.directProviderOptions || {}),
+    fetchImpl: options.fetchImpl || options.directProviderOptions?.fetchImpl,
+    signal: options.signal || options.directProviderOptions?.signal,
+    timeoutMs: options.directTimeoutMs || options.directProviderOptions?.timeoutMs || Math.min(20000, Math.max(5000, Number(options.timeoutMs) || 20000)),
+    ...(options.onlySource ? { providers: [options.onlySource] } : {})
+  };
+  let direct;
+  try {
+    direct = options.directPromise
+      ? await options.directPromise
+      : await resolveDirectStreams(meta, directOptions);
+  } catch (error) {
+    direct = { streams: [], providerTimings: {}, errors: [{ error: error.message || String(error) }] };
+  }
+  if (!direct || !Array.isArray(direct.streams) || direct.streams.length === 0) return { fetched, normalized };
+
+  const previous = fetched && fetched.ok && fetched.json ? fetched.json : { success: true, tmdbId: meta.tmdbId, streams: [] };
+  const oldStreams = Array.isArray(previous.streams) ? previous.streams : [];
+  const seen = new Set(oldStreams.map((stream) => `${String(stream && stream.provider || '').toLowerCase()}|${stream && stream.url}`));
+  const additions = direct.streams.filter((stream) => {
+    const key = `${String(stream && stream.provider || '').toLowerCase()}|${stream && stream.url}`;
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+  if (!additions.length) return { fetched, normalized };
+  const discoveredAdditions = await discoverGoldmineHlsAudio(additions, {
+    ...options,
+    fetchImpl: options.fetchImpl || options.directProviderOptions?.fetchImpl
+  });
+  const json = {
+    ...previous,
+    success: true,
+    imdbId: previous.imdbId || meta.imdbId || null,
+    count: oldStreams.length + discoveredAdditions.length,
+    streams: [...oldStreams, ...discoveredAdditions],
+    providerTimings: { ...(previous.providerTimings || {}), ...(direct.providerTimings || {}) },
+    directProviderFallback: true,
+    directProviderErrors: direct.errors && direct.errors.length ? direct.errors : undefined
+  };
+  return { fetched: { ok: true, json, url: previous.url }, normalized: normalizeGoldminePayload(json) };
+}
+
+/**
  * Full Goldmine resolution for one title — the entry both runtimes call.
  *
  * `options` (all optional):
@@ -1279,33 +1717,105 @@ async function resolveGoldmineServer(metadata, options = {}) {
 
   const provider = String(onlySource || '').toLowerCase();
   const mediaType = metadata.type === 'movie' ? 'movie' : 'series';
-  const fetched = provider
-    ? await fetchGoldmineStreams({
-        apiBase,
-        type: mediaType,
-        tmdbId: metadata.tmdbId,
-        season: metadata.season || null,
-        episode: metadata.episode || null,
-        provider,
-        timeoutMs,
-        fetchImpl
-      })
-    : await fetchGoldmineStreamsFast({
-        apiBase,
-        type: mediaType,
-        tmdbId: metadata.tmdbId,
-        season: metadata.season || null,
-        episode: metadata.episode || null,
-        preferredAudio,
-        timeoutMs,
-        fetchImpl
-      });
+
+  // The Worker uses `parallel` mode: a dead Render host must not consume the
+  // whole waterfall budget before direct extraction starts.  The speculative
+  // request is cancelled as soon as a genuine upstream multi-audio bundle is
+  // available, so the normal fast path does not pay its latency.
+  let parallelDirect = null;
+  // The Worker starts upstream extraction with an ID-only stub while TMDB
+  // metadata is loading.  Direct title scrapers must wait for that same
+  // promise, rather than being disabled just because the stub has no title.
+  const metadataPromise = options.metadataPromise && typeof options.metadataPromise.then === 'function'
+    ? Promise.resolve(options.metadataPromise).catch(() => metadata)
+    : null;
+  const hasDirectTitle = !!(metadata.title || metadata.name || metadata.originalTitle || metadata.original_title) || !!metadataPromise;
+  if (options.directFallback === 'parallel' && hasDirectTitle) {
+    const controller = new AbortController();
+    const directOptions = {
+      ...(options.directProviderOptions || {}),
+      fetchImpl: fetchImpl || options.directProviderOptions?.fetchImpl,
+      signal: controller.signal,
+      timeoutMs: options.directTimeoutMs || options.directProviderOptions?.timeoutMs || Math.min(20000, Math.max(5000, Number(timeoutMs) || 20000)),
+      ...(provider ? { providers: [provider] } : {})
+    };
+    const promise = (async () => {
+      const directInput = metadataPromise ? await metadataPromise : metadata;
+      if (controller.signal.aborted) return { streams: [], providerTimings: {}, errors: [] };
+      return resolveDirectStreams(directMetadata(directInput, null), directOptions);
+    })();
+    promise.catch(() => {});
+    parallelDirect = { promise, controller };
+  }
+
+  let fetched;
+  if (options.directOnly) {
+    fetched = { ok: false, reason: 'goldmine_upstream_skipped', diag: 'aggregator circuit open; trying direct providers' };
+  } else {
+    fetched = provider
+      ? await fetchGoldmineStreams({
+          apiBase,
+          type: mediaType,
+          tmdbId: metadata.tmdbId,
+          season: metadata.season || null,
+          episode: metadata.episode || null,
+          provider,
+          timeoutMs,
+          fetchImpl
+        })
+      : await fetchGoldmineStreamsFast({
+          apiBase,
+          type: mediaType,
+          tmdbId: metadata.tmdbId,
+          season: metadata.season || null,
+          episode: metadata.episode || null,
+          preferredAudio,
+          timeoutMs,
+          fetchImpl
+        });
+  }
+
+  let normalized = fetched.ok
+    ? normalizeGoldminePayload(fetched.json)
+    : { streams: [], providers: [], imdbId: null };
+
+  // Discover alternate HLS renditions before deciding whether the upstream
+  // answer is "single-audio".  Otherwise a perfectly good multi-audio master
+  // would trigger unnecessary direct scraping (and its languages would be
+  // absent from the first resolve payload).
+  if (fetched.ok && !hasMultiAudioEvidence(normalized)) {
+    const discovered = await discoverGoldmineHlsAudio(fetched.json.streams, options);
+    if (discovered !== fetched.json.streams) {
+      fetched = { ...fetched, json: { ...fetched.json, streams: discovered, count: discovered.length } };
+      normalized = normalizeGoldminePayload(fetched.json);
+    }
+  }
+
+  // Render can be unreachable, have Showbox disabled by missing
+  // FEBBOX_COOKIES, or return only a fast single-audio HLS ladder.  Try the
+  // Worker-safe direct providers in exactly those cases (and merge their rows
+  // with any upstream backups) before declaring the title unresolved.
+  const needsDirectFallback = shouldUseDirectProviderFallback(normalized, fetched, options);
+  if (parallelDirect && !needsDirectFallback) {
+    parallelDirect.controller.abort();
+    parallelDirect = null;
+  }
+  // Use the full metadata for the merge/title guard as well.  Upstream has
+  // already had its head start; only this fallback decision waits for TMDB.
+  const fallbackMetadata = metadataPromise && needsDirectFallback ? await metadataPromise : metadata;
+  const fallback = await addDirectProviderFallback(fallbackMetadata, fetched, normalized, {
+    ...options,
+    onlySource: provider,
+    timeoutMs,
+    directPromise: parallelDirect && parallelDirect.promise
+  });
+  fetched = fallback.fetched;
+  normalized = fallback.normalized;
 
   if (!fetched.ok) {
     return { reason: fetched.reason, diag: fetched.diag };
   }
 
-  const normalized = normalizeGoldminePayload(fetched.json);
   if (normalized.streams.length === 0) {
     return {
       reason: provider ? 'goldmine_source_empty' : 'goldmine_no_streams',
@@ -1413,9 +1923,16 @@ module.exports = {
   containerForStream,
   isEphemeralIpBoundStream,
   normalizeGoldmineStream,
+  normalizeAudioTrackHints,
+  hasMultiAudioEvidence,
+  discoverGoldmineHlsAudio,
+  shouldUseDirectProviderFallback,
+  addDirectProviderFallback,
+  DIRECT_PROVIDER_IDS,
   scoreGoldmineStream,
   normalizeGoldminePayload,
   buildGoldminePayload,
+  applyPreferredAudioToPayload,
   sourceLabelFor,
   splitHeaders,
   proxyMetaFromHeaders,

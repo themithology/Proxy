@@ -121,7 +121,7 @@ function rewriteM3u8Manifest(m3u8Content, baseManifestUrl, refererOrOpts = '') {
       ? { referer: refererOrOpts, origin: '', reqBaseUrl: '' }
       : refererOrOpts || {};
 
-  const { referer = '', origin = '', reqBaseUrl = '', token = '', mode = 'manifest' } = opts;
+  const { referer = '', origin = '', reqBaseUrl = '', token = '', mode = 'manifest', cookie = '', userAgent = '' } = opts;
   const lines = m3u8Content.split(/\r?\n/);
 
   const resolveAbsolute = (rawUri) => {
@@ -143,11 +143,13 @@ function rewriteM3u8Manifest(m3u8Content, baseManifestUrl, refererOrOpts = '') {
       origin,
       baseUrl: proxyBase
     });
-    if (!token && mode === 'manifest') return signed;
+    if (!token && !cookie && !userAgent && mode === 'manifest') return signed;
     const [path, query = ''] = signed.split('?');
     const params = new URLSearchParams(query);
     if (mode) params.set('mode', mode);
     if (token) params.set('token', token);
+    if (cookie) params.set('cookie', cookie);
+    if (userAgent) params.set('ua', userAgent);
     return `${path}?${params.toString()}`;
   };
 
@@ -503,7 +505,9 @@ async function handleStreamProxy(req, res) {
           origin,
           reqBaseUrl: '',
           mode,
-          token
+          token,
+          cookie,
+          userAgent: ua
         });
         res.setHeader('Content-Type', 'application/vnd.apple.mpegurl; charset=utf-8');
         res.setHeader('Cache-Control', 'public, max-age=15');
@@ -532,7 +536,9 @@ async function handleStreamProxy(req, res) {
           origin,
           reqBaseUrl: '',
           mode,
-          token
+          token,
+          cookie,
+          userAgent: ua
         });
         res.setHeader('Content-Type', 'application/vnd.apple.mpegurl; charset=utf-8');
         res.setHeader('Cache-Control', 'public, max-age=15');

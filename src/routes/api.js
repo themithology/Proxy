@@ -321,7 +321,10 @@ router.get('/resolve/:type/:tmdbId', async (req, res) => {
     if (isNumericTmdb) {
       const stubMeta = { type: normalizedType, tmdbId: trimmedId, season, episode };
       const metadataPromise = resolveTmdbMetadata(type, trimmedId, season, episode);
-      const streamPromise = resolveStreamForServer(stubMeta, server, audio, streamOptions);
+      const streamPromise = resolveStreamForServer(stubMeta, server, audio, {
+        ...streamOptions,
+        metadataPromise
+      });
       const subtitlesPromise = metadataPromise.then((m) => resolveSubtitles(m)).catch(() => []);
       const segmentsPromise = metadataPromise.then((m) => resolveSkipSegments(m)).catch(() => ({ segments: [] }));
 
