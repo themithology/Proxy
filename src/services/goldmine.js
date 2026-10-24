@@ -1379,11 +1379,12 @@ async function fetchGoldmineStreamsFast(options = {}) {
         return;
       }
 
-      // Single-audio native streaming remains fast, but give a running
-      // multi-audio extractor a short bounded chance to answer first.
+      // Single-audio native streaming remains a backup while any multi-audio
+      // extractor is still running. Do not cut those extractors off after
+      // 2.5s: the real 4KHDHub/Showbox paths commonly answer after 8–15s.
       if (hasNativeStreaming && hasWantedAudio) {
         if (multiAudioExtractorInFlight || mkvExtractorInFlight) {
-          scheduleSettleIn(Math.max(250, 2500 - fanoutElapsed));
+          scheduleSettleIn(Math.max(600, MULTI_AUDIO_SETTLE_BUDGET_MS - fanoutElapsed));
         } else {
           scheduleSettleIn(120);
         }

@@ -2165,6 +2165,65 @@ async function runTests() {
         assert.strictEqual('provider' in metaEntry, false, 'sourceMeta must stay provider-anonymous');
       }
 
+      // A fast single-audio HLS bundle must not abort slower multi-audio MKV
+      // extractors at the old 2.5s cutoff. This mirrors the live Goldmine
+      // timing: CastleTV answers first, then 4KHDHub supplies the dubs.
+      goldmineSvc.clearGoldmineProviderCache();
+      let slowMultiAudioAborted = false;
+      const delayedMultiAudioFetch = async (input, init = {}) => {
+        const u = new URL(typeof input === 'string' ? input : input.url);
+        if (u.pathname.endsWith('/api/providers')) {
+          return new Response(JSON.stringify({
+            providers: [{ name: 'castletv', enabled: true }, { name: '4khdhub', enabled: true }]
+          }), { status: 200, headers: { 'Content-Type': 'application/json' } });
+        }
+        if (u.pathname.includes('/api/streams/castletv/')) {
+          await new Promise((resolve) => setTimeout(resolve, 20));
+          return new Response(JSON.stringify({
+            streams: [{
+              title: 'Dune.2024.1080p.Hindi',
+              url: 'https://cdn-fast.example/Hindi_720/index.m3u8',
+              quality: '1080p'
+            }]
+          }), { status: 200, headers: { 'Content-Type': 'application/json' } });
+        }
+        if (u.pathname.includes('/api/streams/4khdhub/')) {
+          await new Promise((resolve, reject) => {
+            const timer = setTimeout(resolve, 3000);
+            if (init.signal) {
+              init.signal.addEventListener('abort', () => {
+                clearTimeout(timer);
+                slowMultiAudioAborted = true;
+                const abortErr = new Error('Aborted');
+                abortErr.name = 'AbortError';
+                reject(abortErr);
+              });
+            }
+          });
+          return new Response(JSON.stringify({
+            streams: [{
+              title: 'Dune.2024.1080p.Multi.Audio.Hindi.English.mkv',
+              url: 'https://cdn-multi.example/dune.mkv',
+              quality: '1080p'
+            }]
+          }), { status: 200, headers: { 'Content-Type': 'application/json' } });
+        }
+        return new Response('Not found', { status: 404 });
+      };
+      const delayedResult = await goldmineSvc.resolveGoldmineServer(
+        { type: 'movie', tmdbId: '693134' },
+        {
+          apiBase: 'http://goldmine-delayed-multi.test',
+          timeoutMs: 7000,
+          fetchImpl: delayedMultiAudioFetch,
+          proxyStreams: false
+        }
+      );
+      assert.strictEqual(delayedResult.format, 'mkv', 'multi-audio MKV must beat earlier single-audio HLS');
+      assert.strictEqual(delayedResult.streamUrl, 'https://cdn-multi.example/dune.mkv');
+      assert.strictEqual(slowMultiAudioAborted, false, 'the multi-audio request must not be aborted at 2.5s');
+      assert.deepStrictEqual(delayedResult.audioTracks.map((track) => track.lang).sort(), ['en', 'hi']);
+
       // Wave 1 empty -> Wave 2 launches immediately without waiting full wave2Delay.
       goldmineSvc.clearGoldmineProviderCache();
       const wave2FallbackFetch = async (input) => {
