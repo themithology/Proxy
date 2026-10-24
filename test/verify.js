@@ -496,6 +496,36 @@ function startUpstreamMockServer() {
         return res.end('<html><body>Sign in to continue</body></html>');
       }
 
+      // A hotlink filter that returns 200 text/html (instead of 403) when a
+      // foreign Referer is sent, and serves the real MP4 once Referer is dropped.
+      if (u.pathname === '/cdn/htmlgate/file.mp4') {
+        if (req.headers.referer || req.headers.origin) {
+          res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
+          return res.end('<html><body>hotlink gate page</body></html>');
+        }
+        const body = Buffer.alloc(1024, 9);
+        res.writeHead(200, {
+          'Content-Type': 'video/mp4',
+          'Accept-Ranges': 'bytes',
+          'Content-Length': String(body.length)
+        });
+        return res.end(body);
+      }
+
+      // Stealth HLS provider serving #EXTM3U at a .txt /playlist path as text/plain.
+      if (u.pathname === '/cdn/stealth/playlist/main.txt') {
+        res.writeHead(200, { 'Content-Type': 'text/plain; charset=utf-8' });
+        return res.end(
+          '#EXTM3U\n#EXT-X-VERSION:3\n#EXT-X-STREAM-INF:BANDWIDTH=3200000,RESOLUTION=1920x1080\n1080p/index.m3u8\n'
+        );
+      }
+
+      // Expired / IP-rejected upstream link returning 403 HTML on every attempt.
+      if (u.pathname === '/cdn/dead403/file.mp4') {
+        res.writeHead(403, { 'Content-Type': 'text/html; charset=utf-8' });
+        return res.end('<html><body>403 Forbidden</body></html>');
+      }
+
       // Tiny binary "media files" for the proxy/Range tests + one real VTT.
       if (u.pathname.startsWith('/cdn/files/')) {
         goldmineHits -= 1;
@@ -2437,6 +2467,267 @@ async function runTests() {
       assert.match(embedJsSrc, /pickSubtitleTrack/, 'embedded MKV subtitle switching must call pickSubtitleTrack');
       assert.match(embedJsSrc, /evt\.currentTarget !== video/, 'media listener registry must ignore stale inactive-element events');
       assert.match(embedJsSrc, /setAttribute\('objectfit'/, 'aspect ratio must propagate objectfit attribute to movi-player');
+
+      // 14f. `/api/status` cookie filtering when `/api/providers` omits `cookieOk`.
+      const statusFilteredSlugs = await goldmineSvc.fetchGoldmineProviders({
+        apiBase: 'http://goldmine-status.mock',
+        fetchImpl: async (reqUrl) => {
+          const pathName = new URL(reqUrl).pathname;
+          if (pathName === '/api/providers') {
+            return new Response(
+              JSON.stringify({
+                providers: [
+                  { name: 'showbox', enabled: true },
+                  { name: 'dahmermovies', enabled: true },
+                  { name: '4khdhub', enabled: true }
+                ]
+              }),
+              { status: 200, headers: { 'Content-Type': 'application/json' } }
+            );
+          }
+          if (pathName === '/api/status') {
+            return new Response(
+              JSON.stringify({
+                providers: [
+                  { name: 'showbox', enabled: true, cookieRequired: true, cookieOk: false },
+                  { name: 'dahmermovies', enabled: true, cookieRequired: false, cookieOk: true },
+                  { name: '4khdhub', enabled: true, cookieRequired: false, cookieOk: true }
+                ]
+              }),
+              { status: 200, headers: { 'Content-Type': 'application/json' } }
+            );
+          }
+          return new Response('not found', { status: 404 });
+        }
+      });
+      assert.deepStrictEqual(
+        statusFilteredSlugs,
+        ['dahmermovies', '4khdhub'],
+        'fetchGoldmineProviders must drop showbox when /api/status reports cookieOk=false'
+      );
+
+      // 14g. Ephemeral Render-IP-bound MP4 demotion, provider-diverse backups & <720p pruning.
+      const mixedNorm = goldmineSvc.normalizeGoldminePayload({
+        streams: [
+          { provider: 'PStream', url: 'https://hk1.shegu.net/feb/1080.mp4', quality: '1080p', title: 'Movie 1080p' },
+          { provider: 'PStream', url: 'https://hk1.shegu.net/feb/720.mp4', quality: '720p', title: 'Movie 720p' },
+          { provider: 'PStream', url: 'https://hk1.shegu.net/feb/480.mp4', quality: '480p', title: 'Movie 480p' },
+          { provider: 'PStream', url: 'https://hk1.shegu.net/feb/360.mp4', quality: '360p', title: 'Movie 360p' },
+          { provider: 'vidlink', url: 'https://cdn.vidlink.example/1080.mp4', quality: '1080p', title: 'Vidlink 1080p' },
+          { provider: 'vidlink', url: 'https://cdn.vidlink.example/480.mp4', quality: '480p', title: 'Vidlink 480p' },
+          { provider: 'videasy', url: 'https://hls.videasy.example/master.m3u8', quality: 'Auto', title: 'Videasy HLS' },
+          { provider: 'dahmermovies', url: 'https://p.111477.xyz/Movie.2024.1080p.Hindi.English.Multi-Audio.mkv', quality: '1080p' },
+          { provider: 'dahmermovies', url: 'https://p.111477.xyz/Movie.2024.720p.Hindi.English.Multi-Audio.mkv', quality: '720p' },
+          { provider: '4khdhub', url: 'https://pixeldrain.dev/api/file/abc123?download', title: 'Movie.2024.1080p.Hindi.mkv', quality: '1080p' }
+        ]
+      });
+      const builtMixed = goldmineSvc.buildGoldminePayload(mixedNorm, {
+        proxyStreams: true,
+        proxyUrl: (u) => `/api/proxy?url=${encodeURIComponent(u)}`
+      });
+      assert.ok(builtMixed.rawUrl.includes('p.111477.xyz/Movie.2024.1080p'), 'portable multi-audio MKV must win primary');
+      assert.strictEqual(builtMixed.ephemeralOnly, undefined, 'mixed payload with MKV/HLS must not be marked ephemeralOnly');
+      assert.ok(
+        builtMixed.backupUrls[0].includes(encodeURIComponent('https://pixeldrain.dev/api/file/abc123?download')),
+        'first backup must switch to a distinct provider (4khdhub) before repeating primary provider rungs'
+      );
+      assert.ok(
+        !builtMixed.backupUrls.some((u) => u.includes('480.mp4') || u.includes('360.mp4')),
+        '<720p ephemeral IP-bound MP4 rungs must be pruned when portable MKV/HLS sources exist'
+      );
+      const videasyStream = mixedNorm.streams.find((s) => s.provider === 'videasy');
+      const pstream1080 = mixedNorm.streams.find((s) => s.url.endsWith('/1080.mp4') && s.provider === 'pstream');
+      assert.ok(videasyStream.score > pstream1080.score, 'portable Auto HLS must outscore Render-IP-bound PStream 1080p MP4');
+      assert.strictEqual(
+        goldmineSvc.isEphemeralIpBoundStream({
+          provider: 'pstream',
+          container: 'mp4',
+          url: 'https://rdp-running-campion.onrender.com/ts-proxy?url=https%3A%2F%2Fhk1.shegu.net%2Ffeb%2F1080.mp4'
+        }),
+        false,
+        'streams already wrapped in TMDB-Embed-API /ts-proxy share Render egress IP and are not IP-mismatched'
+      );
+      const ephOnlyNorm = goldmineSvc.normalizeGoldminePayload({
+        streams: [
+          { provider: 'vidlink', url: 'https://cdn.vidlink.example/720.mp4', quality: '720p' },
+          { provider: 'vidlink', url: 'https://cdn.vidlink.example/360.mp4', quality: '360p' }
+        ]
+      });
+      const builtEphOnly = goldmineSvc.buildGoldminePayload(ephOnlyNorm, { proxyStreams: false });
+      assert.strictEqual(builtEphOnly.ephemeralOnly, true, 'payload with only IP-bound streams must flag ephemeralOnly');
+      assert.strictEqual(builtEphOnly.backupUrls.length, 1, '360p rung stays available when no portable streams exist');
+
+      // 14h. Fast ephemeral MP4s must NOT trigger an early abort of in-flight MKV extractors or skip Wave 2.
+      let mkvAbortedPrematurely = false;
+      const fastWaitRes = await goldmineSvc.fetchGoldmineStreamsFast({
+        apiBase: 'http://goldmine-fast-wait.mock',
+        type: 'movie',
+        tmdbId: '693134',
+        timeoutMs: 8000,
+        fetchImpl: async (reqUrl, init = {}) => {
+          const parsedReq = new URL(reqUrl);
+          if (parsedReq.pathname === '/api/providers') {
+            await new Promise((r) => setTimeout(r, 40));
+            return new Response(
+              JSON.stringify({
+                providers: [
+                  { id: '4khdhub', enabled: true },
+                  { id: 'showbox', enabled: true, cookieOk: true },
+                  { id: 'streamflix', enabled: true }
+                ]
+              }),
+              { status: 200, headers: { 'Content-Type': 'application/json' } }
+            );
+          }
+          const provMatch = parsedReq.pathname.match(/^\/api\/streams\/([^/]+)\/movie\//);
+          const prov = provMatch ? provMatch[1] : '';
+          if (prov === 'showbox') {
+            return new Response(
+              JSON.stringify({
+                success: true,
+                streams: [{ provider: 'PStream', url: 'https://hk1.shegu.net/feb/1080.mp4', quality: '1080p' }]
+              }),
+              { status: 200, headers: { 'Content-Type': 'application/json' } }
+            );
+          }
+          if (prov === '4khdhub') {
+            await new Promise((resolveDelay, rejectDelay) => {
+              const t = setTimeout(resolveDelay, 150);
+              if (init && init.signal) {
+                init.signal.addEventListener('abort', () => {
+                  clearTimeout(t);
+                  mkvAbortedPrematurely = true;
+                  const err = new Error('Aborted');
+                  err.name = 'AbortError';
+                  rejectDelay(err);
+                });
+              }
+            });
+            return new Response(
+              JSON.stringify({
+                success: true,
+                streams: [{ provider: '4khdhub', url: 'https://hub.example/Movie.1080p.Hindi.English.mkv', quality: '1080p' }]
+              }),
+              { status: 200, headers: { 'Content-Type': 'application/json' } }
+            );
+          }
+          if (prov === 'streamflix') {
+            return new Response(JSON.stringify({ success: true, streams: [] }), {
+              status: 200,
+              headers: { 'Content-Type': 'application/json' }
+            });
+          }
+          return new Response('not found', { status: 404 });
+        }
+      });
+      assert.strictEqual(mkvAbortedPrematurely, false, '4khdhub MKV must not be aborted when PStream MP4 arrives first');
+      assert.strictEqual(fastWaitRes.ok, true);
+      assert.ok(
+        fastWaitRes.json.streams.some((s) => s.provider === '4khdhub'),
+        'fetchGoldmineStreamsFast must wait for 4khdhub MKV instead of settling early on PStream MP4s'
+      );
+
+      // When Wave 1 finishes with ONLY ephemeral MP4s, Wave 2 must launch immediately instead of settling.
+      let wave2LaunchedOnEphOnly = false;
+      const ephWaveRes = await goldmineSvc.fetchGoldmineStreamsFast({
+        apiBase: 'http://goldmine-eph-wave2.mock',
+        type: 'movie',
+        tmdbId: '693134',
+        timeoutMs: 8000,
+        fetchImpl: async (reqUrl) => {
+          const parsedReq = new URL(reqUrl);
+          if (parsedReq.pathname === '/api/providers') {
+            return new Response(
+              JSON.stringify({
+                providers: [
+                  { id: 'showbox', enabled: true, cookieOk: true },
+                  { id: 'streamflix', enabled: true }
+                ]
+              }),
+              { status: 200, headers: { 'Content-Type': 'application/json' } }
+            );
+          }
+          const provMatch = parsedReq.pathname.match(/^\/api\/streams\/([^/]+)\/movie\//);
+          const prov = provMatch ? provMatch[1] : '';
+          if (prov === 'showbox') {
+            return new Response(
+              JSON.stringify({
+                success: true,
+                streams: [{ provider: 'PStream', url: 'https://hk1.shegu.net/feb/720.mp4', quality: '720p' }]
+              }),
+              { status: 200, headers: { 'Content-Type': 'application/json' } }
+            );
+          }
+          if (prov === 'streamflix') {
+            wave2LaunchedOnEphOnly = true;
+            return new Response(
+              JSON.stringify({
+                success: true,
+                streams: [{ provider: 'streamflix', url: 'https://hls.streamflix.example/master.m3u8', quality: '1080p' }]
+              }),
+              { status: 200, headers: { 'Content-Type': 'application/json' } }
+            );
+          }
+          return new Response('not found', { status: 404 });
+        }
+      });
+      assert.strictEqual(wave2LaunchedOnEphOnly, true, 'Wave 2 must launch immediately when Wave 1 only yielded IP-bound MP4s');
+      assert.ok(ephWaveRes.json.streams.some((s) => s.provider === 'streamflix'));
+
+      // 14i. Node + Worker `/api/proxy`: 200-HTML hotlink gate relaxation, stealth text/plain #EXTM3U rewriting & clean 403 JSON.
+      const nodeHtmlGate = await httpRequest(
+        baseUrl,
+        `/api/proxy?url=${encodeURIComponent(`${mockUpstream.url}/cdn/htmlgate/file.mp4`)}&referer=${encodeURIComponent('https://wrong.example/watch')}`
+      );
+      assert.strictEqual(nodeHtmlGate.status, 200, 'Node proxy must retry 200 text/html hotlink gate without Referer');
+      assert.strictEqual(nodeHtmlGate.headers['x-proxy-relaxed'], 'hotlink');
+
+      const workerHtmlGate = await workerFetch(
+        new Request(
+          `http://player.test/api/proxy?url=${encodeURIComponent(`${mockUpstream.url}/cdn/htmlgate/file.mp4`)}&referer=${encodeURIComponent('https://wrong.example/watch')}`
+        ),
+        {}
+      );
+      assert.strictEqual(workerHtmlGate.status, 200, 'Worker proxy must retry 200 text/html hotlink gate without Referer');
+      assert.strictEqual(workerHtmlGate.headers.get('x-proxy-relaxed'), 'hotlink');
+
+      const nodeStealthM3u8 = await httpRequest(
+        baseUrl,
+        `/api/proxy?url=${encodeURIComponent(`${mockUpstream.url}/cdn/stealth/playlist/main.txt`)}`
+      );
+      assert.strictEqual(nodeStealthM3u8.status, 200, 'Node proxy must accept text/plain #EXTM3U playlists');
+      assert.match(nodeStealthM3u8.headers['content-type'] || '', /mpegurl/i);
+      assert.ok(nodeStealthM3u8.body.includes('/api/proxy?url='), 'Node proxy must rewrite stealth #EXTM3U variant URIs');
+
+      const workerStealthM3u8 = await workerFetch(
+        new Request(
+          `http://player.test/api/proxy?url=${encodeURIComponent(`${mockUpstream.url}/cdn/stealth/playlist/main.txt`)}`
+        ),
+        {}
+      );
+      assert.strictEqual(workerStealthM3u8.status, 200, 'Worker proxy must accept text/plain #EXTM3U playlists');
+      assert.match(workerStealthM3u8.headers.get('content-type') || '', /mpegurl/i);
+      assert.ok(
+        (await workerStealthM3u8.text()).includes('/api/proxy?url='),
+        'Worker proxy must rewrite stealth #EXTM3U variant URIs'
+      );
+
+      const workerDead403 = await workerFetch(
+        new Request(`http://player.test/api/proxy?url=${encodeURIComponent(`${mockUpstream.url}/cdn/dead403/file.mp4`)}`),
+        {}
+      );
+      assert.strictEqual(workerDead403.status, 403, 'Worker proxy must return clean 403 JSON without reusing cancelled body');
+      assert.strictEqual(workerDead403.headers.get('access-control-allow-origin'), '*');
+
+      // 14j. Player bundle invariants for direct fallback, WASM probe guard & all-failed popover status.
+      assert.match(embedJsSrc, /function directFallbackUrlFor/, 'player must unwrap failed /api/proxy streams for direct open-CORS fallback');
+      assert.match(embedJsSrc, /function probeProxiedMediaBytes/, 'player must probe /api/proxy before loading 12 MB WASM on failed MP4s');
+      assert.match(embedJsSrc, /allStreamsFailed/, 'player must track allStreamsFailed so the final dead source never shows Playing');
+      assert.match(
+        embedJsSrc,
+        /isPlayingSource && state\.activeSourceLive\s*\?\s*'is-playing'/,
+        'green is-playing badge must only appear once media playback is genuinely live'
+      );
     }
     console.log('  ✔ Passed MKV WASM demuxing, fast two-wave fan-out, proxy headers & multi-audio source shifting.');
 

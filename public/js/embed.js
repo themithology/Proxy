@@ -515,13 +515,17 @@
     hostOrigin: null,
     attachedStreamUrl: null,
     _triedStreamUrls: new Set(),
+    _triedDirectUrls: new Set(),
     // One-shot: the next /api/resolve must bypass the backend cache (Retry,
     // manual server pick). Provider URLs expire, so replaying the cached
     // payload is what made "Retry" fail exactly like the first attempt.
     resolveFresh: false,
     // True only once the attached source actually reached the `playing` event,
     // so the servers popover never claims "Playing" while it is still connecting.
-    activeSourceLive: false
+    activeSourceLive: false,
+    // True once every candidate stream on every server has exhausted failover,
+    // so the popover never marks the final dead source as Playing/Ready.
+    allStreamsFailed: false
   };
 
   // --- Parse URL Path & Query Parameters (TMDB ID Only) ---
@@ -1380,6 +1384,9 @@
       if (data.stream.server) triedServers.add(data.stream.server);
       state.server = data.stream.server || state.server;
       state._triedStreamUrls = new Set();
+      state._triedDirectUrls = new Set();
+      state.activeSourceLive = false;
+      state.allStreamsFailed = false;
       state.activeQualityId = 'auto';
       state.audioTracks = cloneAudioRows(data.stream.audioTracks);
       state.stream._initialAudioTracks = cloneAudioRows(state.audioTracks);
@@ -1661,6 +1668,57 @@
     };
   }
 
+  /**
+   * Unwrap a `/api/proxy?url=...` stream to its raw upstream URL when direct
+   * browser playback is safe to attempt (HTTPS anywhere, or HTTP on local test
+   * origins) and has not already been tried for this load.
+   */
+  function directFallbackUrlFor(streamUrl, candidateInfo) {
+    const rawStr = String(streamUrl || '');
+    if (!/\/api\/proxy\?/.test(rawStr)) return null;
+    const rawTarget = String(
+      (candidateInfo && candidateInfo.meta && candidateInfo.meta.rawUrl) ||
+        unwrapProxiedTargetUrl(rawStr) ||
+        ''
+    ).trim();
+    if (!rawTarget || rawTarget === rawStr) return null;
+    const allowHttp = window.location && window.location.protocol === 'http:';
+    if (!(allowHttp ? /^https?:\/\//i.test(rawTarget) : /^https:\/\//i.test(rawTarget))) {
+      return null;
+    }
+    if (state._triedDirectUrls && state._triedDirectUrls.has(rawTarget)) return null;
+    return rawTarget;
+  }
+
+  /**
+   * Two-byte Range probe against `/api/proxy` to distinguish "proxy delivered
+   * real media bytes that <video> could not decode (HEVC/EAC3 -> escalate to
+   * movi-player WASM)" from "upstream 403/502/timeout -> skip 12 MB WASM load".
+   */
+  async function probeProxiedMediaBytes(streamUrl) {
+    const controller = typeof AbortController !== 'undefined' ? new AbortController() : null;
+    const timer = controller ? setTimeout(() => controller.abort(), 3500) : null;
+    try {
+      const probeUrl = `${streamUrl}${streamUrl.includes('?') ? '&' : '?'}probe=1`;
+      const res = await fetch(probeUrl, {
+        headers: { Range: 'bytes=0-1' },
+        cache: 'no-store',
+        ...(controller ? { signal: controller.signal } : {})
+      });
+      const ct = String(res.headers.get('content-type') || '').toLowerCase();
+      try {
+        if (res.body) await res.body.cancel();
+      } catch (_) {}
+      if (res.status !== 200 && res.status !== 206) return false;
+      if (/^(?:text\/html|text\/plain|application\/json)/i.test(ct)) return false;
+      return true;
+    } catch (_) {
+      return false;
+    } finally {
+      if (timer) clearTimeout(timer);
+    }
+  }
+
   function clearMoviWatchdog() {
     if (state.moviWatchdogTimer) {
       clearTimeout(state.moviWatchdogTimer);
@@ -1715,6 +1773,7 @@
   async function attachStreamToVideo(streamUrl, resumeTime = 0, loadToken = 0) {
     const attachToken = ++state.attachToken;
     state.activeSourceLive = false;
+    state.allStreamsFailed = false;
     clearMoviWatchdog();
 
     // Tear down any active movi custom element before configuring the next source.
@@ -1763,6 +1822,7 @@
     if (!state.stream) state.stream = {};
     if (!Array.isArray(state.stream.backupUrls)) state.stream.backupUrls = [];
     if (!state._triedStreamUrls) state._triedStreamUrls = new Set();
+    if (!state._triedDirectUrls) state._triedDirectUrls = new Set();
     if (!state.stream._primaryStreamUrl) state.stream._primaryStreamUrl = state.stream.streamUrl || streamUrl;
     state._triedStreamUrls.add(streamUrl);
     if (state.stream.streamUrl !== streamUrl) state.stream.streamUrl = streamUrl;
@@ -1897,97 +1957,132 @@
     }
 
     if (window.Hls && window.Hls.isSupported() && candidateInfo.isHls) {
-      const hls = new window.Hls({
-        enableWorker: true,
-        lowLatencyMode: false
-      });
-      state.hlsInstance = hls;
-      let networkRecoveries = 0;
-      let mediaRecoveries = 0;
+      const attachHlsUrl = (activeHlsUrl) => {
+        const hls = new window.Hls({
+          enableWorker: true,
+          lowLatencyMode: false
+        });
+        state.hlsInstance = hls;
+        let networkRecoveries = 0;
+        let mediaRecoveries = 0;
 
-      hls.loadSource(streamUrl);
-      hls.attachMedia(video);
+        hls.loadSource(activeHlsUrl);
+        hls.attachMedia(video);
 
-      hls.on(window.Hls.Events.MANIFEST_PARSED, () => {
-        if (attachToken !== state.attachToken) return;
-        hideLoading();
-
-        // Merge any real HLS multi-audio tracks discovered in the manifest
-        if (hls.audioTracks && hls.audioTracks.length > 1) {
-          syncHlsAudioTracks();
-        }
-
-        applyStartTime();
-        applyRememberedQuality();
-
-        video.play().catch((error) => {
+        hls.on(window.Hls.Events.MANIFEST_PARSED, () => {
           if (attachToken !== state.attachToken) return;
-          // Autoplay denial is recoverable, but an unsupported HLS decode can use the next quality/mirror.
-          if (error && error.name === 'NotSupportedError') {
-            if (!tryNextBackupStream(video.currentTime || targetStartTime || 0)) {
-              handleFatalStreamError();
+          hideLoading();
+
+          // Merge any real HLS multi-audio tracks discovered in the manifest
+          if (hls.audioTracks && hls.audioTracks.length > 1) {
+            syncHlsAudioTracks();
+          }
+
+          applyStartTime();
+          applyRememberedQuality();
+
+          video.play().catch((error) => {
+            if (attachToken !== state.attachToken) return;
+            // Autoplay denial is recoverable, but an unsupported HLS decode can use the next quality/mirror.
+            if (error && error.name === 'NotSupportedError') {
+              if (!tryNextBackupStream(video.currentTime || targetStartTime || 0)) {
+                handleFatalStreamError();
+              }
             }
+          });
+        });
+
+        hls.on(window.Hls.Events.ERROR, (_, errData) => {
+          if (attachToken !== state.attachToken || !errData) return;
+          if (errData.fatal) {
+            const types = window.Hls.ErrorTypes || {};
+            const details = window.Hls.ErrorDetails || {};
+            const isManifestFailure =
+              errData.details === details.MANIFEST_LOAD_ERROR ||
+              errData.details === details.MANIFEST_LOAD_TIMEOUT ||
+              errData.details === details.MANIFEST_PARSING_ERROR;
+            // Standard hls.js recovery before burning a mirror: one reload for a
+            // mid-stream network drop, one decoder reset for a media error.
+            if (errData.type === types.NETWORK_ERROR && !isManifestFailure && networkRecoveries < 1) {
+              networkRecoveries += 1;
+              showBuffering();
+              hls.startLoad();
+              return;
+            }
+            if (errData.type === types.MEDIA_ERROR && mediaRecoveries < 1) {
+              mediaRecoveries += 1;
+              hls.recoverMediaError();
+              return;
+            }
+            hls.destroy();
+            if (state.hlsInstance === hls) state.hlsInstance = null;
+            if (isManifestFailure && !/[?&](?:referer|cookie)=/i.test(activeHlsUrl)) {
+              const directHls = directFallbackUrlFor(activeHlsUrl, candidateInfo);
+              if (directHls) {
+                state._triedDirectUrls.add(directHls);
+                attachHlsUrl(directHls);
+                return;
+              }
+            }
+            if (tryNextBackupStream(video.currentTime || 0)) return;
+            handleFatalStreamError();
           }
         });
-      });
-
-      hls.on(window.Hls.Events.ERROR, (_, errData) => {
-        if (attachToken !== state.attachToken || !errData) return;
-        if (errData.fatal) {
-          const types = window.Hls.ErrorTypes || {};
-          const details = window.Hls.ErrorDetails || {};
-          const isManifestFailure =
-            errData.details === details.MANIFEST_LOAD_ERROR ||
-            errData.details === details.MANIFEST_LOAD_TIMEOUT ||
-            errData.details === details.MANIFEST_PARSING_ERROR;
-          // Standard hls.js recovery before burning a mirror: one reload for a
-          // mid-stream network drop, one decoder reset for a media error.
-          if (errData.type === types.NETWORK_ERROR && !isManifestFailure && networkRecoveries < 1) {
-            networkRecoveries += 1;
-            showBuffering();
-            hls.startLoad();
-            return;
-          }
-          if (errData.type === types.MEDIA_ERROR && mediaRecoveries < 1) {
-            mediaRecoveries += 1;
-            hls.recoverMediaError();
-            return;
-          }
-          hls.destroy();
-          if (state.hlsInstance === hls) state.hlsInstance = null;
-          if (tryNextBackupStream(video.currentTime || 0)) return;
-          handleFatalStreamError();
-        }
-      });
+      };
+      attachHlsUrl(streamUrl);
       return;
     }
 
     // Native HLS (Safari/iOS) or direct MP4 CDN playback
-    video.src = streamUrl;
-    video.onloadedmetadata = () => {
-      if (attachToken !== state.attachToken) return;
-      hideLoading();
-      syncNativeAudioTracks();
-      applyStartTime();
-      video.play().catch((error) => {
+    const attachNativeUrl = (activeSrcUrl) => {
+      video.src = activeSrcUrl;
+      video.onloadedmetadata = () => {
         if (attachToken !== state.attachToken) return;
-        if (error && error.name === 'NotSupportedError') {
-          if (retryWithMoviIfPossible(streamUrl, targetStartTime, applyStartTime, tryNextBackupStream, attachToken, candidateInfo)) return;
-          if (tryNextBackupStream(video.currentTime || targetStartTime || 0)) return;
-          handleFatalStreamError();
+        hideLoading();
+        syncNativeAudioTracks();
+        applyStartTime();
+        video.play().catch((error) => {
+          if (attachToken !== state.attachToken) return;
+          if (error && error.name === 'NotSupportedError') {
+            if (retryWithMoviIfPossible(activeSrcUrl, targetStartTime, applyStartTime, tryNextBackupStream, attachToken, candidateInfo)) return;
+            if (tryNextBackupStream(video.currentTime || targetStartTime || 0)) return;
+            handleFatalStreamError();
+          }
+        });
+      };
+      video.onerror = () => {
+        if (attachToken !== state.attachToken) return;
+        const mediaErrCode = video.error && video.error.code;
+        if (/\/api\/proxy\?/.test(activeSrcUrl)) {
+          probeProxiedMediaBytes(activeSrcUrl).then((hasMediaBytes) => {
+            if (attachToken !== state.attachToken) return;
+            if (hasMediaBytes) {
+              if (retryWithMoviIfPossible(activeSrcUrl, targetStartTime, applyStartTime, tryNextBackupStream, attachToken, candidateInfo)) return;
+            } else {
+              const directMp4 = directFallbackUrlFor(activeSrcUrl, candidateInfo);
+              if (directMp4) {
+                state._triedDirectUrls.add(directMp4);
+                attachNativeUrl(directMp4);
+                return;
+              }
+            }
+            if (tryNextBackupStream(video.currentTime || targetStartTime || 0)) return;
+            handleFatalStreamError();
+          });
+          return;
         }
-      });
+        // On a direct URL, only escalate an explicit MP4 to the 12 MB WASM
+        // demuxer when bytes arrived and failed to decode (MEDIA_ERR_DECODE = 3).
+        const isKnownMp4 = candidateInfo && candidateInfo.meta && candidateInfo.meta.container === 'mp4';
+        if (!isKnownMp4 || mediaErrCode === 3) {
+          if (retryWithMoviIfPossible(activeSrcUrl, targetStartTime, applyStartTime, tryNextBackupStream, attachToken, candidateInfo)) return;
+        }
+        if (tryNextBackupStream(video.currentTime || targetStartTime || 0)) return;
+        handleFatalStreamError();
+      };
+      video.load();
     };
-    video.onerror = () => {
-      if (attachToken !== state.attachToken) return;
-      // Direct CDN <video src> failed (hotlink/ISP block, or a container the
-      // browser cannot demux such as MKV) — give movi-player a shot, then
-      // iterate the resolved backup URLs before giving up on the whole server.
-      if (retryWithMoviIfPossible(streamUrl, targetStartTime, applyStartTime, tryNextBackupStream, attachToken, candidateInfo)) return;
-      if (tryNextBackupStream(video.currentTime || targetStartTime || 0)) return;
-      handleFatalStreamError();
-    };
-    video.load();
+    attachNativeUrl(streamUrl);
   }
 
   // --- Movi-player integration (Goldmine MKV / multi-audio engine) -----------
@@ -2168,6 +2263,22 @@
       if (settled || attachToken !== state.attachToken) return;
       settled = true;
       clearMoviWatchdog();
+      // If /api/proxy failed (e.g. Worker-to-Worker 1042/403 on p.111477.xyz,
+      // Pixeldrain, R2, or workers.dev), try the open-CORS raw URL directly in
+      // movi-player before abandoning this MKV source.
+      const directMoviUrl = directFallbackUrlFor(streamUrl, candidateInfo);
+      if (directMoviUrl) {
+        state._triedDirectUrls.add(directMoviUrl);
+        attachMoviStream(
+          directMoviUrl,
+          targetStartTime,
+          applyStartTime,
+          tryNextBackupStream,
+          attachToken,
+          candidateInfo
+        );
+        return;
+      }
       const resumeAt = (video && video.currentTime) || targetStartTime || 0;
       if (tryNextBackupStream(resumeAt)) return;
       handleFatalStreamError();
@@ -2629,15 +2740,25 @@
   }
 
   function handleFatalStreamError() {
+    state.activeSourceLive = false;
     triedServers.add(state.server);
-    setServerInfo(state.server, { status: 'failed' });
-    renderServersPopover();
+    setServerInfo(state.server, {
+      status: 'failed',
+      sources: state.stream ? sourcesFromStream(state.stream) : []
+    });
     const nextSrv = state.servers.find((s) => !triedServers.has(s.id));
     if (nextSrv) {
+      renderServersPopover();
       state.server = nextSrv.id;
       showToast(`Switching to backup server: ${nextSrv.name}...`, 2800);
       loadMediaBundle(true);
     } else {
+      state.allStreamsFailed = true;
+      if (state.stream && state.stream.streamUrl) {
+        if (!state._triedStreamUrls) state._triedStreamUrls = new Set();
+        state._triedStreamUrls.add(state.stream.streamUrl);
+      }
+      renderServersPopover();
       showLoadError(
         'All servers failed to play this title.',
         state.servers.length > 1
@@ -2658,6 +2779,8 @@
   btnRetryLoad.addEventListener('click', () => {
     triedServers.clear();
     state._triedStreamUrls = new Set();
+    state._triedDirectUrls = new Set();
+    state.allStreamsFailed = false;
     // Ask the backend for a live resolve: replaying a cached payload would
     // retry the very same (most likely expired) provider URLs.
     state.resolveFresh = true;
@@ -3335,6 +3458,8 @@
     // re-resolve, because the cached payload may predate an expired link.
     triedServers.clear();
     state._triedStreamUrls = new Set();
+    state._triedDirectUrls = new Set();
+    state.allStreamsFailed = false;
     state.resolveFresh = true;
     state.server = serverId;
     closeAllPopovers();
@@ -3352,6 +3477,8 @@
       const wasInErrorOrLoading =
         playerRoot.classList.contains('is-loading') || loadingOverlay.classList.contains('is-error');
       state._triedStreamUrls = new Set();
+      state._triedDirectUrls = new Set();
+      state.allStreamsFailed = false;
       closeAllPopovers();
       prepareAudioRowsForSourceSwitch(url);
       const sourceIndex = sourcesFromStream(state.stream).indexOf(url);
@@ -3393,11 +3520,17 @@
     const triedUrls = state._triedStreamUrls || new Set();
 
     state.servers.forEach((srv) => {
-      const isActive = srv.id === state.server && !!playingUrl;
+      const isSelectedServer = srv.id === state.server && !!playingUrl;
+      const isActive = isSelectedServer && !state.allStreamsFailed;
       let info = serverInfoFor(srv.id);
-      // The playing server is the live truth, whatever we learned earlier.
-      if (isActive) info = { ...info, status: 'ready', sources: sourcesFromStream(state.stream) };
-      else if (info.status === 'unknown' && triedServers.has(srv.id)) info = { ...info, status: 'failed' };
+      // The playing server is the live truth unless every source on it failed.
+      if (isActive) {
+        info = { ...info, status: 'ready', sources: sourcesFromStream(state.stream) };
+      } else if (isSelectedServer && state.allStreamsFailed) {
+        info = { ...info, status: 'failed', sources: sourcesFromStream(state.stream) };
+      } else if (info.status === 'unknown' && triedServers.has(srv.id)) {
+        info = { ...info, status: 'failed' };
+      }
       const status = STATE_ICONS[info.status] ? info.status : 'unknown';
 
       const group = document.createElement('div');
@@ -3425,7 +3558,7 @@
       });
       group.appendChild(head);
 
-      if (status === 'ready' && info.sources.length > 0) {
+      if ((status === 'ready' || (isSelectedServer && state.allStreamsFailed)) && info.sources.length > 0) {
         const list = document.createElement('div');
         list.className = 'server-sources';
         info.sources.slice(0, 12).forEach((url, index) => {
@@ -3435,16 +3568,21 @@
           const backendLabel = state.stream && state.stream.sourceLabels ? state.stream.sourceLabels[url] : '';
           const label = backendLabel || `Source ${index + 1}`;
           const isPlayingSource = isActive && url === playingUrl;
-          const sourceFailed = isActive && !isPlayingSource && triedUrls.has(url);
+          const sourceFailed = isSelectedServer && !isPlayingSource && triedUrls.has(url);
           const row = document.createElement('button');
           row.type = 'button';
           row.className = 'server-source-row' + (isPlayingSource ? ' active' : '');
           row.setAttribute('aria-pressed', isPlayingSource ? 'true' : 'false');
-          // "Playing" only once the media element really reached `playing` —
-          // the row used to claim it the moment a source was selected, which
-          // made a source that never started look healthy.
+          // "Playing" (green) only once the media element really reached `playing`;
+          // connecting sources stay neutral (`is-ready`), and exhausted sources
+          // including the final fallback rung show `Failed` (`is-failed`).
           const isConnecting = isPlayingSource && !state.activeSourceLive && !sourceFailed;
-          const statusClass = isPlayingSource ? 'is-playing' : sourceFailed ? 'is-failed' : 'is-ready';
+          const statusClass =
+            isPlayingSource && state.activeSourceLive
+              ? 'is-playing'
+              : sourceFailed
+                ? 'is-failed'
+                : 'is-ready';
           const statusText = isConnecting
             ? 'Connecting'
             : isPlayingSource

@@ -40,6 +40,8 @@ const GOLDMINE_DEFAULT_API_BASE = 'https://rdp-running-campion.onrender.com';
  *  policy: the UI only says "Source N" + quality/language descriptors). */
 const GOLDMINE_PROVIDER_LABELS = {
   showbox: 'Showbox/FebBox',
+  pstream: 'Showbox/PStream',
+  'febbox fid': 'Showbox/FebBox',
   '4khdhub': '4KHDHub',
   vixsrc: 'VixSrc',
   videasy: 'Videasy',
@@ -55,29 +57,31 @@ const GOLDMINE_PROVIDER_LABELS = {
 };
 
 /**
- * Fast primary wave: direct multi-audio MKV/MP4 extractors + fast 1–3s backups.
- * Secondary wave only launches if Wave 1 has not settled with strong streams,
- * avoiding 15–30s straggler stalls and cutting upstream load on free hosts.
+ * Fast primary wave: direct multi-audio MKV extractors + fast non-IP-bound backups.
+ * Providers whose direct CDN links are IP-bound to the TMDB-Embed-API host
+ * (`vidlink` MP4 ladder, `vixsrc` IP-stamped tokens) sit in Wave 2 so they
+ * cannot trigger an early settle and abort MKV extractors like `4khdhub`.
  */
 const FAST_WAVE_PROVIDERS = [
   'dahmermovies',
   '4khdhub',
+  'castletv',
   'showbox',
-  'vidlink',
-  'videasy',
-  'vixsrc'
+  'videasy'
 ];
 
 const SECONDARY_WAVE_PROVIDERS = [
-  'zxcstreams',
-  'hdghartv',
-  'vaplayer',
-  'onetouchtv',
   'streamflix',
-  'castletv',
-  'netmirror'
+  'vaplayer',
+  'netmirror',
+  'onetouchtv',
+  'hdghartv',
+  'zxcstreams',
+  'vixsrc',
+  'vidlink'
 ];
 const SECONDARY_WAVE_SET = new Set(SECONDARY_WAVE_PROVIDERS);
+const MKV_EXTRACTOR_PROVIDERS = new Set(['dahmermovies', '4khdhub', 'castletv', 'showbox']);
 
 const PROVIDERS_CACHE_TTL_MS = 10 * 60 * 1000;
 const providersCache = new Map();
@@ -230,6 +234,27 @@ function containerForStream(url, title) {
 const MOVI_CONTAINERS = new Set(['mkv', 'webm', 'avi', 'mov', 'ts', 'unknown']);
 
 /**
+ * Detect streams whose direct CDN URLs are signed for the TMDB-Embed-API
+ * server's IP (e.g. Render's US datacenter IP) when `enableProxy=false` on the
+ * upstream API. When a Cloudflare Worker or residential browser fetches those
+ * links from a different IP/ASN, FebBox (`shegu.net`/`febbox.com`), Vidlink's
+ * MP4 ladder, and VixSrc's `?token=` gate reject them with HTTP 403/410.
+ *
+ * URLs that the TMDB-Embed-API already wrapped in its own `/ts-proxy` or
+ * `/m3u8-proxy` (`enableProxy=true`) exit from the same Render IP that minted
+ * the signature, so they are NOT treated as IP-mismatched here.
+ */
+function isEphemeralIpBoundStream(stream) {
+  if (!stream || !stream.url) return false;
+  if (/\/(?:ts|m3u8)-proxy\b/i.test(stream.url)) return false;
+  const prov = String(stream.provider || '').toLowerCase();
+  if (prov === 'pstream' || /\b(?:shegu\.net|febbox\.com)\b/i.test(stream.url)) return true;
+  if (prov === 'vidlink' && stream.container === 'mp4') return true;
+  if (prov === 'vixsrc') return true;
+  return false;
+}
+
+/**
  * Normalize one TMDB-Embed-API stream object.
  * Returns null for rows that can never play (missing/invalid URL).
  */
@@ -263,7 +288,7 @@ function normalizeGoldmineStream(raw, index) {
         }))
     : [];
 
-  return {
+  const stream = {
     index,
     provider,
     providerLabel: GOLDMINE_PROVIDER_LABELS[provider] || provider,
@@ -276,15 +301,19 @@ function normalizeGoldmineStream(raw, index) {
     multi: hints.multi,
     original: hints.original,
     headers,
-    subtitles
+    subtitles,
+    ephemeralIpBound: false
   };
+  stream.ephemeralIpBound = isEphemeralIpBoundStream(stream);
+  return stream;
 }
 
 /**
  * Rank a stream for "which one plays first".
  * Dub coverage dominates (the Goldmine server exists for multi-audio MKVs),
  * then a sane resolution (1080p — 4K HEVC is heavy on a WASM decoder), then
- * container preference.
+ * container preference, while demoting Render-IP-bound links behind portable
+ * MKV/HLS/MP4 sources.
  */
 function scoreGoldmineStream(stream) {
   let score = 0;
@@ -300,12 +329,19 @@ function scoreGoldmineStream(stream) {
   else if (height === 576 || height === 480) score += 40;
   else score += 20;
 
-  if (stream.container === 'mkv') score += 40; // multi-audio releases live in MKV
-  else if (stream.container === 'mp4') score += 30;
-  else if (stream.container === 'hls') score += 20;
+  if (stream.container === 'mkv') score += 45; // multi-audio releases live in MKV
+  else if (stream.container === 'hls') score += 35; // adaptive HLS beats bare untagged MP4 ladders
+  else if (stream.container === 'mp4') score += 25;
   else if (stream.container === 'webm' || stream.container === 'ts') score += 10;
   else if (stream.container === 'dash' || stream.container === 'ism') score += 5;
   else score += 15; // unknown progressive — movi can still open it
+
+  if (stream.ephemeralIpBound || isEphemeralIpBoundStream(stream)) {
+    const prov = String(stream.provider || '').toLowerCase();
+    if (prov === 'pstream' || /\b(?:shegu\.net|febbox\.com)\b/i.test(stream.url || '')) score -= 220;
+    else if (prov === 'vidlink') score -= 180;
+    else score -= 140;
+  }
 
   // Earlier rows come from the aggregator's own provider priority order.
   score -= Math.min(stream.index, 40);
@@ -466,6 +502,7 @@ function buildGoldminePayload(normalized, options = {}) {
       const { browserSafe } = splitHeaders(stream.headers);
       const subs = mapSubtitlesForStream(stream, proxyMeta);
       sourceMeta[playable] = {
+        rawUrl: stream.url,
         container: stream.container,
         format: stream.container === 'hls' ? 'hls' : stream.container === 'dash' ? 'dash' : stream.container,
         engine: MOVI_CONTAINERS.has(stream.container) ? 'movi' : 'native',
@@ -576,11 +613,59 @@ function buildGoldminePayload(normalized, options = {}) {
   });
 
   // --- Backups + labeled sources -------------------------------------------
+  // Interleave across distinct providers first so a single dead/IP-locked CDN
+  // (e.g. a 4-rung 1080p/720p/480p/360p MP4 ladder) never occupies every top
+  // backup slot before the player tries a different upstream host.
   const backupUrls = [];
   const sourceLabels = {};
   sourceLabels[primaryPlayable] = sourceLabelFor(primary);
-  for (const stream of ordered) {
-    if (stream === primary) continue;
+
+  const hasReliableCandidate = ordered.some((s) => !s.ephemeralIpBound);
+  const interleaveByProvider = (list) => {
+    const buckets = new Map();
+    const otherProviders = [];
+    for (const s of list) {
+      if (!buckets.has(s.provider)) {
+        buckets.set(s.provider, []);
+        if (s.provider !== primary.provider) otherProviders.push(s.provider);
+      }
+      buckets.get(s.provider).push(s);
+    }
+    const providerRing = buckets.has(primary.provider)
+      ? [...otherProviders, primary.provider]
+      : otherProviders;
+    const out = [];
+    let cursor = 0;
+    let moved = true;
+    while (moved) {
+      moved = false;
+      for (const pid of providerRing) {
+        const bucket = buckets.get(pid);
+        if (bucket && cursor < bucket.length) {
+          out.push(bucket[cursor]);
+          moved = true;
+        }
+      }
+      cursor += 1;
+    }
+    return out;
+  };
+
+  const reliableAlternates = ordered.filter((s) => s !== primary && !s.ephemeralIpBound);
+  const ephemeralAlternates = ordered.filter((s) => {
+    if (s === primary || !s.ephemeralIpBound) return false;
+    // When portable MKV/HLS/MP4 sources exist, drop low-res (<720p) rungs from
+    // Render-IP-bound ladders so dead 480p/360p MP4s never clutter the menu.
+    if (hasReliableCandidate && !onlySource && s.height > 0 && s.height < 720) return false;
+    return true;
+  });
+
+  const diversifiedAlternates = [
+    ...interleaveByProvider(reliableAlternates),
+    ...interleaveByProvider(ephemeralAlternates)
+  ];
+
+  for (const stream of diversifiedAlternates) {
     const playable = playableUrl(stream);
     if (playable === primaryPlayable) continue;
     if (!sourceLabels[playable]) sourceLabels[playable] = sourceLabelFor(stream);
@@ -614,6 +699,7 @@ function buildGoldminePayload(normalized, options = {}) {
     sourceLabels,
     sourceMeta,
     languages,
+    ephemeralOnly: !hasReliableCandidate ? true : undefined,
     embeddedSubtitles: embeddedSubtitles.length > 0 ? embeddedSubtitles : undefined,
     goldmineImdbId: normalized.imdbId,
     goldmineSources: normalized.providers.map((provider) => ({
@@ -733,16 +819,60 @@ async function fetchGoldmineProviders(options = {}) {
     const list = Array.isArray(json && json.providers) ? json.providers : null;
     if (!list || list.length === 0) return null;
 
-    const slugs = [];
+    let slugs = [];
     const seen = new Set();
+    let showboxMissingCookieStatus = false;
     for (const entry of list) {
       if (!entry || typeof entry !== 'object') continue;
       if (entry.enabled === false || entry.cookieOk === false) continue;
       const slug = String(entry.id || entry.name || '').trim().toLowerCase();
       if (!/^[a-z0-9]{2,28}$/.test(slug) || seen.has(slug)) continue;
+      if (slug === 'showbox' && typeof entry.cookieOk !== 'boolean') {
+        showboxMissingCookieStatus = true;
+      }
       seen.add(slug);
       slugs.push(slug);
     }
+
+    // TMDB-Embed-API's `/api/providers` only emits `{ name, enabled }`, whereas
+    // `/api/status` reports `cookieOk: false` when `FEBBOX_COOKIES` is unset.
+    // Without cookies, Showbox skips FebBox MKVs and hits unauthenticated PStream,
+    // which returns Render-IP-bound 1080p/720p/480p/360p MP4 links that 403 on
+    // any other IP. Probe `/api/status` when present; 404/unreachable keeps `slugs`.
+    if (showboxMissingCookieStatus) {
+      const statusTimed = createTimedSignal(Math.min(Math.max(600, timeoutMs), 3500));
+      try {
+        const statusRes = await doFetch(`${base}/api/status`, {
+          headers: { 'User-Agent': USER_AGENT, Accept: 'application/json' },
+          redirect: 'follow',
+          signal: statusTimed.signal
+        });
+        if (statusRes && statusRes.ok) {
+          const statusJson = await statusRes.json();
+          const statusProviders = Array.isArray(statusJson && statusJson.providers)
+            ? statusJson.providers
+            : null;
+          if (statusProviders) {
+            const cookieBlocked = new Set();
+            for (const sp of statusProviders) {
+              if (!sp || typeof sp !== 'object') continue;
+              if (sp.enabled === false || sp.cookieOk === false) {
+                const sSlug = String(sp.id || sp.name || '').trim().toLowerCase();
+                if (sSlug) cookieBlocked.add(sSlug);
+              }
+            }
+            if (cookieBlocked.size > 0) {
+              slugs = slugs.filter((s) => !cookieBlocked.has(s));
+            }
+          }
+        }
+      } catch {
+        // Ignore status-endpoint errors; fall back to /api/providers list.
+      } finally {
+        statusTimed.cleanup();
+      }
+    }
+
     if (slugs.length === 0) return null;
     if (!fetchImpl) {
       providersCache.set(base, { providers: slugs, exp: Date.now() + PROVIDERS_CACHE_TTL_MS });
@@ -840,6 +970,9 @@ async function fetchGoldmineStreamsFast(options = {}) {
   const { wave1, wave2 } = partitionProviderWaves(enabledProviders);
   const orderedProviders = [...wave1, ...wave2];
   const wantedAudioCode = preferredAudio ? normalizeLanguageCode(preferredAudio) : 'und';
+  // Start the fan-out settle clock AFTER `/api/providers` returns so a Render
+  // cold-start on provider discovery never steals budget from Wave 1 MKV scrapers.
+  const fanoutStartedAt = Date.now();
 
   return new Promise((resolve) => {
     let finished = false;
@@ -884,6 +1017,8 @@ async function fetchGoldmineStreamsFast(options = {}) {
     const collectCurrentState = () => {
       const mergedRaw = [];
       let providersWithStreams = 0;
+      let reliableProviders = 0;
+      let reliableCount = 0;
       let hasMkvOrMulti = false;
       let hasWantedAudio = wantedAudioCode === 'und';
 
@@ -891,27 +1026,44 @@ async function fetchGoldmineStreamsFast(options = {}) {
         const list = streamsByProvider.get(providerId);
         if (!Array.isArray(list) || list.length === 0) continue;
         providersWithStreams += 1;
+        let providerHasReliable = false;
         for (const raw of list) {
           mergedRaw.push(raw);
           const norm = normalizeGoldmineStream(raw, mergedRaw.length - 1);
           if (!norm) continue;
-          if (norm.container === 'mkv' || norm.multi || norm.languages.length > 1) {
-            hasMkvOrMulti = true;
+          if (!norm.ephemeralIpBound) {
+            reliableCount += 1;
+            providerHasReliable = true;
+            if (norm.container === 'mkv' || norm.multi || norm.languages.length > 1) {
+              hasMkvOrMulti = true;
+            }
+            if (
+              !hasWantedAudio &&
+              (norm.multi || norm.languages.some((l) => l.code === wantedAudioCode))
+            ) {
+              hasWantedAudio = true;
+            }
           }
-          if (
-            !hasWantedAudio &&
-            (norm.multi || norm.languages.some((l) => l.code === wantedAudioCode))
-          ) {
-            hasWantedAudio = true;
-          }
+        }
+        if (providerHasReliable) reliableProviders += 1;
+      }
+
+      let mkvExtractorInFlight = false;
+      for (const activeId of controllers.keys()) {
+        if (MKV_EXTRACTOR_PROVIDERS.has(activeId)) {
+          mkvExtractorInFlight = true;
+          break;
         }
       }
 
       return {
         mergedRaw,
         providersWithStreams,
+        reliableProviders,
+        reliableCount,
         hasMkvOrMulti,
-        hasWantedAudio
+        hasWantedAudio,
+        mkvExtractorInFlight
       };
     };
 
@@ -978,10 +1130,18 @@ async function fetchGoldmineStreamsFast(options = {}) {
 
     const evaluateProgress = () => {
       if (finished) return;
-      const { mergedRaw, providersWithStreams, hasMkvOrMulti, hasWantedAudio } = collectCurrentState();
+      const {
+        mergedRaw,
+        reliableProviders,
+        reliableCount,
+        hasMkvOrMulti,
+        hasWantedAudio,
+        mkvExtractorInFlight
+      } = collectCurrentState();
 
-      // If Wave 1 completely finished with 0 streams and Wave 2 is still waiting, launch Wave 2 right away.
-      if (inFlight === 0 && mergedRaw.length === 0 && !wave2Launched) {
+      // If Wave 1 completely finished without any portable streams and Wave 2 is
+      // still waiting, launch Wave 2 right away instead of settling on IP-bound MP4s.
+      if (inFlight === 0 && reliableCount === 0 && !wave2Launched) {
         launchWave2();
         return;
       }
@@ -992,17 +1152,21 @@ async function fetchGoldmineStreamsFast(options = {}) {
         return;
       }
 
-      if (mergedRaw.length === 0) return;
+      // Never let Render-IP-bound MP4 ladders (PStream / Vidlink) start the
+      // abort countdown before portable MKV/HLS providers have answered.
+      if (reliableCount === 0) return;
 
-      const elapsed = Date.now() - startedAt;
-      if (hasMkvOrMulti && providersWithStreams >= 2 && hasWantedAudio) {
+      const fanoutElapsed = Date.now() - fanoutStartedAt;
+      if (hasMkvOrMulti && reliableProviders >= 2 && hasWantedAudio) {
         scheduleSettleIn(320);
       } else if (hasMkvOrMulti && hasWantedAudio) {
         scheduleSettleIn(850);
+      } else if (mkvExtractorInFlight) {
+        // A fast HLS/MP4 backup arrived while 4khdhub/dahmermovies/castletv is
+        // still scraping MKV mirrors (typically 5–8s): give MKV extractors room.
+        scheduleSettleIn(Math.max(600, 7500 - fanoutElapsed));
       } else {
-        // At least one playable stream arrived (e.g. fast HLS/MP4): allow a short
-        // window for an MKV/multi-audio extractor to land, capped at ~4.2s total.
-        scheduleSettleIn(Math.max(350, 4200 - elapsed));
+        scheduleSettleIn(Math.max(400, 3500 - fanoutElapsed));
       }
     };
 
@@ -1013,7 +1177,7 @@ async function fetchGoldmineStreamsFast(options = {}) {
       inFlight += 1;
       launchedCount += 1;
       const t0 = Date.now();
-      const perProviderBudget = Math.min(remainingMs(), 12000);
+      const perProviderBudget = Math.min(remainingMs(), 15000);
 
       fetchGoldmineStreams({
         apiBase,
@@ -1247,6 +1411,7 @@ module.exports = {
   qualityToHeight,
   heightToLabel,
   containerForStream,
+  isEphemeralIpBoundStream,
   normalizeGoldmineStream,
   scoreGoldmineStream,
   normalizeGoldminePayload,
