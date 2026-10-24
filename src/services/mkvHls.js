@@ -182,7 +182,7 @@ async function waitForPlaylists(session, expectedCount, timeoutMs) {
       }
     }
     if (ready) {
-      await fs.promises.access(path.join(session.dir, 'master.m3u8'), fs.constants.R_OK);
+      await fs.promises.access(path.join(session.dir, session.masterInput || 'master.m3u8'), fs.constants.R_OK);
       return;
     }
     await new Promise((resolve) => setTimeout(resolve, 400));
@@ -190,12 +190,34 @@ async function waitForPlaylists(session, expectedCount, timeoutMs) {
   throw new Error('Timed out waiting for the first HLS segments');
 }
 
+const VOLATILE_SOURCE_PARAMS = new Set([
+  'sig', 'signature', 'expires', 'exp', 'token', 'key', 'auth', 'hdntl', 'hdnea',
+  'policy', 'key-pair-id', 'session', 'hash'
+]);
+
+function conversionIdentity(publicSource) {
+  let identity = String(publicSource || '');
+  try {
+    const proxyUrl = new URL(identity, 'http://local.invalid');
+    identity = proxyUrl.searchParams.get('url') || identity;
+    const parsed = new URL(identity);
+    const stableParams = [...parsed.searchParams.entries()]
+      .filter(([key]) => !VOLATILE_SOURCE_PARAMS.has(key.toLowerCase()))
+      .sort(([a], [b]) => a.localeCompare(b));
+    parsed.search = '';
+    stableParams.forEach(([key, value]) => parsed.searchParams.append(key, value));
+    return parsed.href;
+  } catch (_) {
+    return identity;
+  }
+}
+
 function createMkvHlsHandler(options = {}) {
   const enabled = options.enabled === true;
   const port = positiveInt(options.port, 3000, 1, 65535);
   const rootDir = options.rootDir || process.env.MKV_HLS_DIR || DEFAULT_ROOT;
   const readyTimeout = positiveInt(process.env.MKV_HLS_READY_TIMEOUT_MS, 120000, 10000, 300000);
-  const maxSessions = positiveInt(process.env.MKV_HLS_MAX_SESSIONS, 1, 1, 4);
+  const maxSessions = positiveInt(process.env.MKV_HLS_MAX_SESSIONS, 2, 1, 4);
   const ttlMs = positiveInt(process.env.MKV_HLS_SESSION_TTL_MS, 2 * 60 * 60 * 1000, 60000, 12 * 60 * 60 * 1000);
   const sessions = new Map();
 
@@ -204,7 +226,7 @@ function createMkvHlsHandler(options = {}) {
     if (session.cleanup) return session.cleanup;
     session.status = 'closed';
     sessions.delete(session.id);
-    const children = [session.probeChild, session.child].filter(Boolean);
+    const children = [...new Set([session.probeChild, session.child, ...(session.children || [])].filter(Boolean))];
     children.forEach((child) => {
       if (child.exitCode === null && !child.signalCode) {
         try { child.kill('SIGKILL'); } catch (_) {}
@@ -243,89 +265,234 @@ function createMkvHlsHandler(options = {}) {
     if (!videoStream) throw new Error('The source has no video stream');
 
     const sourceAudio = streams.filter((stream) => stream && stream.codec_type === 'audio').slice(0, 8);
+    session.sourceWidth = Number(videoStream.width) || 0;
+    session.sourceHeight = Number(videoStream.height) || 0;
+    session.sourceBandwidth = Number(videoStream.bit_rate) || 0;
     session.audioTracks = sourceAudio.map((stream, index) => ({
       lang: safeToken(stream.tags && stream.tags.language),
       label: displayTrackLabel(stream, index)
     }));
-    const ladder = buildMkvHlsLadder(videoStream.height);
+    // Two genuine rungs are useful without making a small host encode three
+    // complete copies. Compatible top video is never re-encoded at all.
+    const ladder = buildMkvHlsLadder(videoStream.height).slice(0, 2);
     session.ladder = ladder;
+    session.children = [];
 
-    const args = ['-hide_banner', '-loglevel', 'warning', '-nostats', '-y'];
-    if (/^https?:\/\//i.test(session.inputUrl)) {
+    const makeInputArgs = () => {
+      const args = ['-hide_banner', '-loglevel', 'warning', '-nostats', '-y'];
+      if (/^https?:\/\//i.test(session.inputUrl)) {
+        args.push(
+          '-rw_timeout', '30000000',
+          '-reconnect', '1',
+          '-reconnect_streamed', '1',
+          '-reconnect_delay_max', '5'
+        );
+      }
+      args.push('-i', session.inputUrl);
+      return args;
+    };
+    const addAudioArgs = (args) => {
+      sourceAudio.forEach((stream, index) => {
+        if (stream.codec_name === 'aac') {
+          args.push(`-c:a:${index}`, 'copy');
+        } else {
+          args.push(
+            `-c:a:${index}`, 'aac',
+            `-b:a:${index}`, '128k',
+            `-ac:a:${index}`, '2',
+            `-ar:a:${index}`, '48000'
+          );
+        }
+      });
+    };
+    const addHlsArgs = (args, masterName) => {
       args.push(
-        '-rw_timeout', '30000000',
-        '-reconnect', '1',
-        '-reconnect_streamed', '1',
-        '-reconnect_delay_max', '5'
+        '-f', 'hls',
+        '-hls_time', '2',
+        '-hls_list_size', '0',
+        '-hls_playlist_type', 'event',
+        '-hls_flags', 'independent_segments+temp_file'
       );
-    }
-    args.push('-i', session.inputUrl);
-
-    ladder.forEach(() => args.push('-map', `0:${videoStream.index}`));
-    sourceAudio.forEach((stream) => args.push('-map', `0:${stream.index}`));
-    args.push('-c:v', 'libx264', '-pix_fmt', 'yuv420p');
-    ladder.forEach((rung, index) => {
-      if (rung.height > 0) args.push(`-filter:v:${index}`, `scale=-2:${rung.height},setsar=1`);
+      if (masterName) args.push('-master_pl_name', masterName);
+    };
+    const addEncodeArgs = (args, rung, index = null) => {
+      const videoOption = (name) => index === null ? name : `${name}:v:${index}`;
       args.push(
-        `-preset:v:${index}`, 'ultrafast',
-        `-b:v:${index}`, `${rung.bitrate}k`,
-        `-maxrate:v:${index}`, `${rung.bitrate}k`,
-        `-bufsize:v:${index}`, `${rung.bitrate * 2}k`
+        videoOption('-c'), 'libx264',
+        videoOption('-pix_fmt'), 'yuv420p',
+        videoOption('-preset'), 'ultrafast',
+        videoOption('-threads'), '1',
+        videoOption('-b'), `${rung.bitrate}k`,
+        videoOption('-maxrate'), `${rung.bitrate}k`,
+        videoOption('-bufsize'), `${rung.bitrate * 2}k`,
+        videoOption('-g'), '120',
+        videoOption('-keyint_min'), '120',
+        videoOption('-sc_threshold'), '0',
+        videoOption('-force_key_frames'), 'expr:gte(t,n_forced*2)'
       );
-    });
-    args.push(
-      '-g', '120',
-      '-keyint_min', '120',
-      '-sc_threshold', '0',
-      '-force_key_frames', 'expr:gte(t,n_forced*2)',
-      '-c:a', 'aac',
-      '-b:a', '128k',
-      '-ac', '2',
-      '-ar', '48000',
-      '-f', 'hls',
-      '-hls_time', '2',
-      '-hls_list_size', '0',
-      '-hls_playlist_type', 'event',
-      '-hls_flags', 'independent_segments+temp_file',
-      '-master_pl_name', 'master.m3u8',
-      '-hls_segment_filename', path.join(session.dir, 'segment_%v_%05d.ts')
-    );
+      if (rung.height > 0) {
+        args.push(videoOption('-filter'), `scale=-2:${rung.height},setsar=1`);
+      }
+    };
 
-    const variantMap = [];
-    ladder.forEach((_, index) => {
-      variantMap.push(sourceAudio.length > 0 ? `v:${index},agroup:aud` : `v:${index}`);
-    });
-    sourceAudio.forEach((_, index) => variantMap.push(`a:${index},agroup:aud`));
-    if (variantMap.length > 0) args.push('-var_stream_map', variantMap.join(' '));
-    args.push(path.join(session.dir, 'variant_%v.m3u8'));
+    const runningChildren = new Set();
+    const launch = (args, label) => {
+      const child = spawn(ffmpegInstaller.path, args, {
+        stdio: ['ignore', 'ignore', 'pipe'],
+        windowsHide: true
+      });
+      if (!session.child) session.child = child;
+      session.children.push(child);
+      runningChildren.add(child);
+      child.stderr.on('data', (chunk) => appendSessionLog(session, chunk));
+      child.once('error', (error) => {
+        appendSessionLog(session, `${label}: ${error.message}`);
+        if (session.status !== 'closed') session.status = 'failed';
+      });
+      child.once('exit', (code, signal) => {
+        runningChildren.delete(child);
+        if (session.status === 'closed') return;
+        if (code !== 0) {
+          session.status = 'failed';
+          appendSessionLog(session, `${label} exited code=${code} signal=${signal || ''}`);
+          if (!session.ready) {
+            session.children.forEach((other) => {
+              if (other !== child && other.exitCode === null && !other.signalCode) {
+                try { other.kill('SIGKILL'); } catch (_) {}
+              }
+            });
+          }
+        } else if (runningChildren.size === 0 && session.status !== 'failed') {
+          session.status = 'done';
+        }
+      });
+      return child;
+    };
 
-    const child = spawn(ffmpegInstaller.path, args, {
-      stdio: ['ignore', 'ignore', 'pipe'],
-      windowsHide: true
-    });
-    session.child = child;
+    const canRemuxTop =
+      videoStream.codec_name === 'h264' &&
+      videoStream.pix_fmt === 'yuv420p' &&
+      Number(ladder[0] && ladder[0].height) === (Number(videoStream.height) || 0);
     session.status = 'running';
-    child.stderr.on('data', (chunk) => appendSessionLog(session, chunk));
-    child.once('error', (error) => {
-      appendSessionLog(session, error.message);
-      if (session.status !== 'closed') session.status = 'failed';
-    });
-    child.once('exit', (code, signal) => {
-      if (session.status === 'closed') return;
-      session.status = code === 0 ? 'done' : 'failed';
-      if (code !== 0) appendSessionLog(session, `ffmpeg exited code=${code} signal=${signal || ''}`);
-    });
+
+    if (canRemuxTop) {
+      // Remux and lower-rung encode are independent processes. The source-
+      // quality playlist can therefore reach ENDLIST/full duration without
+      // waiting for the lower encode, and neither process re-encodes audio
+      // needlessly for the other quality.
+      session.masterInput = 'remux_master.m3u8';
+      const lowerIndex = 1 + sourceAudio.length;
+      const lowerRung = ladder[1] || null;
+      const lowerHeight = lowerRung ? lowerRung.height : 0;
+      const lowerWidth = lowerRung && Number(videoStream.width) > 0 && Number(videoStream.height) > 0
+        ? Math.max(2, Math.round((Number(videoStream.width) * lowerHeight / Number(videoStream.height)) / 2) * 2)
+        : 0;
+      session.remux = lowerRung ? {
+        lowerIndex,
+        lowerWidth,
+        lowerHeight,
+        lowerBitrate: lowerRung.bitrate
+      } : null;
+
+      const topArgs = makeInputArgs();
+      topArgs.push('-map', `0:${videoStream.index}`, '-c:v', 'copy');
+      sourceAudio.forEach((stream) => topArgs.push('-map', `0:${stream.index}`));
+      addAudioArgs(topArgs);
+      addHlsArgs(topArgs, 'remux_master.m3u8');
+      topArgs.push('-hls_segment_filename', path.join(session.dir, 'segment_%v_%05d.ts'));
+      const topMap = [sourceAudio.length > 0 ? 'v:0,agroup:aud' : 'v:0'];
+      sourceAudio.forEach((_, index) => topMap.push(`a:${index},agroup:aud`));
+      topArgs.push('-var_stream_map', topMap.join(' '), path.join(session.dir, 'variant_%v.m3u8'));
+      launch(topArgs, 'source-remux');
+
+      if (lowerRung) {
+        const lowerArgs = makeInputArgs();
+        lowerArgs.push('-map', `0:${videoStream.index}`, '-an');
+        addEncodeArgs(lowerArgs, lowerRung);
+        addHlsArgs(lowerArgs);
+        lowerArgs.push(
+          '-hls_segment_filename', path.join(session.dir, `segment_${lowerIndex}_%05d.ts`),
+          path.join(session.dir, `variant_${lowerIndex}.m3u8`)
+        );
+        launch(lowerArgs, 'lower-rung-encode');
+      }
+    } else {
+      session.masterInput = 'master.m3u8';
+      session.remux = null;
+      const args = makeInputArgs();
+      ladder.forEach(() => args.push('-map', `0:${videoStream.index}`));
+      sourceAudio.forEach((stream) => args.push('-map', `0:${stream.index}`));
+      ladder.forEach((rung, index) => addEncodeArgs(args, rung, index));
+      addAudioArgs(args);
+      addHlsArgs(args, 'master.m3u8');
+      args.push('-hls_segment_filename', path.join(session.dir, 'segment_%v_%05d.ts'));
+      const variantMap = [];
+      ladder.forEach((_, index) => {
+        variantMap.push(sourceAudio.length > 0 ? `v:${index},agroup:aud` : `v:${index}`);
+      });
+      sourceAudio.forEach((_, index) => variantMap.push(`a:${index},agroup:aud`));
+      if (variantMap.length > 0) args.push('-var_stream_map', variantMap.join(' '));
+      args.push(path.join(session.dir, 'variant_%v.m3u8'));
+      launch(args, 'hls-encode');
+    }
 
     console.log(
-      `[mkv-hls] ${session.id}: ${ladder.map((rung) => rung.height ? `${rung.height}p` : 'source').join('/')}` +
+      `[mkv-hls] ${session.id}: ${canRemuxTop ? 'remux-first ' : ''}` +
+      `${ladder.map((rung) => rung.height ? `${rung.height}p` : 'source').join('/')}` +
       ` with ${sourceAudio.length} audio track(s)`
     );
-    await waitForPlaylists(session, ladder.length + sourceAudio.length, readyTimeout);
+    const expectedCount = canRemuxTop
+      ? 1 + sourceAudio.length + (ladder[1] ? 1 : 0)
+      : ladder.length + sourceAudio.length;
+    await waitForPlaylists(session, expectedCount, readyTimeout);
     session.ready = true;
   }
 
+  async function buildSessionMaster(session) {
+    const manifest = await fs.promises.readFile(path.join(session.dir, session.masterInput || 'master.m3u8'), 'utf8');
+    const patched = patchMkvHlsMaster(manifest, session.audioTracks);
+    const sourceLines = patched.split(/\r?\n/);
+    const lines = [];
+    let audioGroup = '';
+    for (let index = 0; index < sourceLines.length; index += 1) {
+      const line = sourceLines[index];
+      if (/^#EXT-X-MEDIA:/i.test(line)) {
+        const attrs = parseAttributes(line.slice(line.indexOf(':') + 1));
+        if (attrs.TYPE === 'AUDIO' && attrs['GROUP-ID']) audioGroup = attrs['GROUP-ID'];
+      }
+      // This bundled ffmpeg can omit copied video from its master. Rebuild all
+      // video declarations from ffprobe instead of trusting incomplete output.
+      if (/^#EXT-X-STREAM-INF:/i.test(line)) {
+        if (sourceLines[index + 1] && !sourceLines[index + 1].startsWith('#')) index += 1;
+        continue;
+      }
+      if (line) lines.push(line);
+    }
+
+    const lower = session.remux;
+    const lowerBandwidth = lower ? lower.lowerBitrate * 1000 + session.audioTracks.length * 128000 : 0;
+    const sourceBandwidth = Number(session.sourceBandwidth) || 0;
+    const topBandwidth = Math.max(2500000, sourceBandwidth + session.audioTracks.length * 128000, lowerBandwidth + 1);
+    const topFields = [`BANDWIDTH=${topBandwidth}`];
+    if (session.sourceWidth > 0 && session.sourceHeight > 0) {
+      topFields.push(`RESOLUTION=${session.sourceWidth}x${session.sourceHeight}`);
+    }
+    if (audioGroup) topFields.push(`AUDIO=${quoteAttribute(audioGroup)}`);
+    lines.push(`#EXT-X-STREAM-INF:${topFields.join(',')}`, 'variant_0.m3u8');
+
+    if (lower) {
+      const lowerFields = [`BANDWIDTH=${Math.max(1, lowerBandwidth)}`];
+      if (lower.lowerWidth > 0 && lower.lowerHeight > 0) {
+        lowerFields.push(`RESOLUTION=${lower.lowerWidth}x${lower.lowerHeight}`);
+      }
+      if (audioGroup) lowerFields.push(`AUDIO=${quoteAttribute(audioGroup)}`);
+      lines.push(`#EXT-X-STREAM-INF:${lowerFields.join(',')}`, `variant_${lower.lowerIndex}.m3u8`);
+    }
+    return `${lines.join('\n')}\n`;
+  }
+
   async function ensureSession(publicSource, inputUrl) {
-    const id = crypto.createHash('sha256').update(inputUrl).digest('hex').slice(0, 32);
+    const id = crypto.createHash('sha256').update(conversionIdentity(publicSource)).digest('hex').slice(0, 32);
     const existing = sessions.get(id);
     if (existing && existing.status !== 'failed' && existing.status !== 'closed') {
       existing.lastAccess = Date.now();
@@ -344,7 +511,10 @@ function createMkvHlsHandler(options = {}) {
       audioTracks: [],
       ladder: [],
       child: null,
+      children: [],
       probeChild: null,
+      masterInput: 'master.m3u8',
+      remux: null,
       cleanup: null,
       lastAccess: Date.now(),
       readyPromise: null
@@ -417,6 +587,18 @@ function createMkvHlsHandler(options = {}) {
         sendJson(res, 502, { ok: false, error: 'HLS conversion failed', detail: error.message });
         return;
       }
+    }
+    if (filename === 'master.m3u8' && session.masterInput === 'remux_master.m3u8') {
+      try {
+        const text = await buildSessionMaster(session);
+        send(res, 200, text, {
+          'Content-Type': 'application/vnd.apple.mpegurl; charset=utf-8',
+          'Cache-Control': 'no-store'
+        });
+      } catch (error) {
+        sendJson(res, 502, { ok: false, error: 'HLS master is not ready', detail: error.message });
+      }
+      return;
     }
     const filePath = path.join(session.dir, filename);
     if (filename.endsWith('.m3u8')) {

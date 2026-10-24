@@ -58,6 +58,7 @@ async function runMkvHlsTest() {
   const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'lol-mkv-hls-test-'));
   const inputPath = path.join(tempDir, 'input.mkv');
   const mp4InputPath = path.join(tempDir, 'input.mp4');
+  const incompatibleInputPath = path.join(tempDir, 'input-incompatible.mkv');
   let server = null;
   let handler = null;
 
@@ -78,6 +79,11 @@ async function runMkvHlsTest() {
       '-hide_banner', '-loglevel', 'error', '-y',
       '-i', inputPath, '-map', '0:v:0', '-map', '0:a:0', '-c', 'copy', mp4InputPath
     ]);
+    runFile(ffmpegInstaller.path, [
+      '-hide_banner', '-loglevel', 'error', '-y',
+      '-i', inputPath, '-map', '0:v:0', '-map', '0:a:0',
+      '-c:v', 'mpeg4', '-q:v', '5', '-c:a', 'copy', incompatibleInputPath
+    ]);
 
     let port = 0;
     server = http.createServer(async (req, res) => {
@@ -89,7 +95,9 @@ async function runMkvHlsTest() {
             ? inputPath
             : target.pathname === '/input.mp4'
               ? mp4InputPath
-              : null;
+              : target.pathname === '/input-incompatible.mkv'
+                ? incompatibleInputPath
+                : null;
           if (target.origin !== `http://127.0.0.1:${port}` || !sourcePath) {
             res.writeHead(403).end('Forbidden');
             return;
@@ -146,6 +154,16 @@ async function runMkvHlsTest() {
     const masterPath = redirect.headers.get('location');
     assert.match(masterPath || '', /^\/api\/mkv-hls\/[a-f0-9]{32}\/master\.m3u8$/);
 
+    const renewedMediaUrl = `${mediaUrl}?token=renewed`;
+    const renewedProxyUrl = `http://127.0.0.1:${port}/api/proxy?url=${encodeURIComponent(renewedMediaUrl)}`;
+    const renewedConversion = await fetch(
+      `http://127.0.0.1:${port}/api/mkv-hls?src=${encodeURIComponent(renewedProxyUrl)}`,
+      { redirect: 'manual', signal: AbortSignal.timeout(60000) }
+    );
+    assert.strictEqual(renewedConversion.status, 302);
+    assert.strictEqual(renewedConversion.headers.get('location'), masterPath, 'renewed signed URLs must share the same HLS session');
+    assert.strictEqual(handler._sessions.size, 1, 'clients must not start duplicate encodes for the same source');
+
     const masterUrl = `http://127.0.0.1:${port}${masterPath}`;
     const masterResponse = await fetch(masterUrl);
     assert.strictEqual(masterResponse.status, 200);
@@ -155,11 +173,17 @@ async function runMkvHlsTest() {
     assert.strictEqual(audioTracks.filter((track) => track.default).length, 1, 'exactly one default audio rendition');
 
     const variants = videoPlaylistUris(master);
-    assert.strictEqual(variants.length, 2, '720p MKV should produce exactly two video variants');
+    assert.strictEqual(variants.length, 2, `720p input should produce exactly two video variants:\n${master}`);
     assert(master.includes('RESOLUTION=1280x720'));
     assert(master.includes('RESOLUTION=854x480'));
     assert(!master.includes('RESOLUTION=1920x1080'), 'must never invent a 1080p rendition');
     assert(!/CODECS="mp4a[^\"]*",AUDIO=/.test(master), 'audio-only outputs must not be video variants');
+
+    const startupTopPlaylist = await (await fetch(new URL(variants[0], masterUrl))).text();
+    assert(
+      startupTopPlaylist.includes('#EXT-X-ENDLIST'),
+      'compatible source-quality remux should expose its complete VOD without waiting for the lower encode'
+    );
 
     const playlistPaths = [...variants, ...audioTracks.map((track) => track.url)];
     const playlists = await Promise.all(playlistPaths.map(async (uri) => {
@@ -181,8 +205,10 @@ async function runMkvHlsTest() {
 
     const finishedPlaylist = await (await fetch(new URL(variants[0], masterUrl))).text();
     assert(finishedPlaylist.includes('#EXT-X-ENDLIST'), 'completed HLS must be seekable VOD, not an endless live tail');
-    assert.match(finishedPlaylist, /#EXT-X-TARGETDURATION:2/, 'short segments should minimize startup wait');
-    assert(segmentUris(finishedPlaylist).length >= 2, 'completed playlist should expose all temporal segments');
+    assert(segmentUris(finishedPlaylist).length >= 1, 'source-quality remux should expose its real keyframe segments');
+    const finishedLowerPlaylist = await (await fetch(new URL(variants[1], masterUrl))).text();
+    assert.match(finishedLowerPlaylist, /#EXT-X-TARGETDURATION:2/, 'the encoded lower rung should keep short startup segments');
+    assert(segmentUris(finishedLowerPlaylist).length >= 2, 'completed lower playlist should expose all temporal segments');
 
     const mediaBuffers = [];
     for (let index = 0; index < playlists.length; index += 1) {
@@ -236,6 +262,19 @@ async function runMkvHlsTest() {
     const mp4PlaylistResponse = await fetch(new URL(mp4Variants[0], mp4MasterUrl));
     assert.strictEqual(mp4PlaylistResponse.status, 200);
     assert((await mp4PlaylistResponse.text()).includes('#EXTINF'));
+
+    const incompatibleMediaUrl = `http://127.0.0.1:${port}/input-incompatible.mkv`;
+    const incompatibleProxyUrl = `http://127.0.0.1:${port}/api/proxy?url=${encodeURIComponent(incompatibleMediaUrl)}`;
+    const incompatibleRedirect = await fetch(
+      `http://127.0.0.1:${port}/api/mkv-hls?src=${encodeURIComponent(incompatibleProxyUrl)}`,
+      { redirect: 'manual', signal: AbortSignal.timeout(60000) }
+    );
+    assert.strictEqual(incompatibleRedirect.status, 302);
+    const incompatibleMasterUrl = `http://127.0.0.1:${port}${incompatibleRedirect.headers.get('location')}`;
+    const incompatibleMasterResponse = await fetch(incompatibleMasterUrl);
+    assert.strictEqual(incompatibleMasterResponse.status, 200);
+    const incompatibleMaster = await incompatibleMasterResponse.text();
+    assert.strictEqual(videoPlaylistUris(incompatibleMaster).length, 2, 'incompatible video should use the full two-rung encode path');
 
     const rejectedRemote = await fetch(
       `http://127.0.0.1:${port}/api/mkv-hls?src=${encodeURIComponent('https://example.com/api/proxy?url=https%3A%2F%2Fexample.com%2Ffile.mkv')}`

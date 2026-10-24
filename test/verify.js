@@ -2551,13 +2551,16 @@ async function runTests() {
         proxyStreams: true,
         proxyUrl: (u) => `/api/proxy?url=${encodeURIComponent(u)}`
       });
-      assert.strictEqual(builtMixed.rawUrl, 'https://hls.videasy.example/master.m3u8', 'portable native HLS must win primary over MKV');
-      assert.strictEqual(builtMixed.format, 'hls');
-      assert.strictEqual(builtMixed.engine, undefined);
+      assert.strictEqual(
+        builtMixed.rawUrl,
+        'https://p.111477.xyz/Movie.2024.1080p.Hindi.English.Multi-Audio.mkv',
+        'multi-audio must win primary and become converter input'
+      );
+      assert.strictEqual(builtMixed.format, 'mkv');
       assert.strictEqual(builtMixed.ephemeralOnly, undefined, 'mixed payload with MKV/HLS must not be marked ephemeralOnly');
       assert.ok(
-        builtMixed.backupUrls[0].includes(encodeURIComponent('https://p.111477.xyz/Movie.2024.1080p.Hindi.English.Multi-Audio.mkv')),
-        'first backup must switch to a distinct provider before repeating the primary HLS provider'
+        builtMixed.backupUrls[0].includes(encodeURIComponent('https://hls.videasy.example/master.m3u8')),
+        'first backup must switch to a distinct provider before repeating the primary multi-audio provider'
       );
       assert.ok(
         !builtMixed.backupUrls.some((u) => u.includes('480.mp4') || u.includes('360.mp4')),

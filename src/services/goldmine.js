@@ -484,8 +484,8 @@ function normalizeGoldmineStream(raw, index) {
 
 /**
  * Rank a stream within its playback class. Dub coverage, sane resolution and
- * container metadata still matter, but buildGoldminePayload first separates
- * pre-generated HLS/DASH and native MP4 from slower progressive fallbacks.
+ * container metadata still matter; buildGoldminePayload first separates
+ * multi-audio sources from single-audio and plain-file fallbacks.
  * Render-IP-bound links are demoted behind portable sources.
  */
 function scoreGoldmineStream(stream) {
@@ -522,16 +522,30 @@ function scoreGoldmineStream(stream) {
 }
 
 /**
- * Playback comes before dub-count scoring. Pre-generated adaptive streams are
- * immediately seekable and hardware/browser friendly; native MP4 is next;
- * progressive MKV/unknown files are later fallbacks. IP-bound links stay last.
- * Within each class, language coverage and quality still decide the best row.
+ * Multi-audio evidence comes first, then playback convenience. Pre-generated
+ * multi-audio HLS/DASH is ideal; multi-audio progressive sources are converted
+ * ahead of single-audio streams. IP-bound links stay last. Within each class,
+ * language coverage and quality still decide the best row.
  */
+function hasStreamMultiAudioEvidence(stream) {
+  return !!(
+    stream &&
+    (stream.multi ||
+      (Array.isArray(stream.languages) && stream.languages.length > 1) ||
+      (Array.isArray(stream.audioTrackHints) && stream.audioTrackHints.length > 1))
+  );
+}
+
 function playbackPriorityFor(stream) {
-  if (!stream || stream.ephemeralIpBound) return 3;
-  if (stream.container === 'hls' || stream.container === 'dash') return 0;
-  if (stream.container === 'mp4') return 1;
-  return 2;
+  if (!stream || stream.ephemeralIpBound) return 5;
+  const nativeStreaming = stream.container === 'hls' || stream.container === 'dash';
+  const multiAudio = hasStreamMultiAudioEvidence(stream);
+  // Multi-audio is the viewer's first choice. Native multi-audio streaming is
+  // ideal; multi-audio progressive files go to the HLS converter ahead of
+  // single-audio manifests. Plain MP4 remains the last portable fallback.
+  if (multiAudio) return nativeStreaming ? 0 : 1;
+  if (nativeStreaming) return 2;
+  return stream.container === 'mp4' ? 4 : 3;
 }
 
 function compareGoldmineStreamsForPlayback(a, b) {
@@ -1356,11 +1370,23 @@ async function fetchGoldmineStreamsFast(options = {}) {
         multiAudioExtractorInFlight
       } = collectCurrentState();
 
-      // A portable, pre-generated HLS/DASH source that satisfies the requested
-      // audio is already the fastest playback path. Do not hold it hostage to
-      // slow MKV scrapers or launch another wave merely to find more dubs.
+      const fanoutElapsed = Date.now() - fanoutStartedAt;
+      // A usable multi-audio source wins immediately, whether it is already
+      // HLS/DASH or will be converted. Do not displace it with a single-audio
+      // manifest merely because that manifest arrived first.
+      if (hasMultiAudio && hasWantedAudio) {
+        scheduleSettleIn(reliableProviders >= 2 ? 320 : 600);
+        return;
+      }
+
+      // Single-audio native streaming remains fast, but give a running
+      // multi-audio extractor a short bounded chance to answer first.
       if (hasNativeStreaming && hasWantedAudio) {
-        scheduleSettleIn(120);
+        if (multiAudioExtractorInFlight || mkvExtractorInFlight) {
+          scheduleSettleIn(Math.max(250, 2500 - fanoutElapsed));
+        } else {
+          scheduleSettleIn(120);
+        }
         return;
       }
 
@@ -1391,7 +1417,6 @@ async function fetchGoldmineStreamsFast(options = {}) {
       // abort countdown before portable MKV/HLS providers have answered.
       if (reliableCount === 0) return;
 
-      const fanoutElapsed = Date.now() - fanoutStartedAt;
       if (hasMultiAudio && reliableProviders >= 2 && hasWantedAudio) {
         // A genuine multi-audio bundle plus a backup is already useful; do
         // not make the viewer wait for every remaining mirror.

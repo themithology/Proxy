@@ -2036,10 +2036,15 @@
         const hls = new window.Hls({
           enableWorker: true,
           lowLatencyMode: false,
-          // The conversion route redirects only after ffprobe and the first
-          // real segment for every rendition exist. Normal provider HLS keeps
-          // the library's shorter default timeout.
-          ...(isTranscodedHls ? { manifestLoadingTimeOut: 120000 } : {})
+          // Buffer capacity only — there is deliberately no minimum-buffer
+          // startup gate. Faster remuxing is what lets playback get ahead.
+          maxBufferLength: 45,
+          maxMaxBufferLength: 90,
+          maxBufferSize: 120 * 1024 * 1024,
+          backBufferLength: 15,
+          // The conversion route redirects after the first usable segments,
+          // not after an arbitrary amount of media has been generated.
+          ...(isTranscodedHls ? { manifestLoadingTimeOut: 120000, startLevel: 0 } : {})
         });
         state.hlsInstance = hls;
         let networkRecoveries = 0;
@@ -2998,7 +3003,15 @@
       };
     });
 
-    state.audioTracks = [...mergedRows, ...otherFileRows];
+    // A generated manifest and its progressive input are the same logical
+    // source. Do not show the input's resolver rows again beside the real HLS
+    // renditions. Keep only cross-file languages the manifest cannot provide.
+    const remainingOtherFileRows = otherFileRows.filter((row) =>
+      !mergedRows.some((merged) =>
+        merged.lang !== 'und' && normalizeMoviLang(row.lang) === normalizeMoviLang(merged.lang)
+      )
+    );
+    state.audioTracks = [...mergedRows, ...remainingOtherFileRows];
     const activeBefore = previousRows.find((row) => row && row.id === state.activeAudioId);
     const pendingRow = pending && mergedRows.find((row) =>
       (pending.id && row.id === pending.id) ||

@@ -140,7 +140,7 @@ async function resolveStreamForServer(metadata, requestedServerId = '', preferre
   // provider URLs are signed and short-lived, so replaying a 15-minute-old
   // payload makes every retry fail the same way the first attempt did.
   const fresh = !!options.fresh;
-  const cacheKey = `resolve:v9:${metadata.type}:${metadata.tmdbId}:s${metadata.season || 1}:e${metadata.episode || 1}:${validServer}${
+  const cacheKey = `resolve:v10:${metadata.type}:${metadata.tmdbId}:s${metadata.season || 1}:e${metadata.episode || 1}:${validServer}${
     onlySource ? `:${onlySource}` : ''
   }`;
   const cached = fresh ? null : await cache.get(cacheKey);

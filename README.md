@@ -246,13 +246,12 @@ tries:
 |----------|------------|--------------|------------------------|----------------------------------------|
 | 1        | `goldmine` | Goldmine | HLS • DASH • Multi-Audio | Owner-hosted TMDB-Embed-API instance    |
 
-The lineup is single-server and the browser accepts only HLS or DASH. Reliable
-pre-generated HLS/DASH comes first; progressive candidates are converter
-inputs, never direct playback sources. On a Node host with ffmpeg they become
-HLS with genuine quality/audio renditions. Where conversion is unavailable,
-those candidates are skipped. A ready native HLS response settles quickly
-instead of waiting for slow extractors. The catalog machinery (priority order,
-listing, fallbacks, live admin edits) stays generic, so adding a second server
+The lineup is single-server and the browser accepts only HLS or DASH. Native
+multi-audio HLS/DASH is ideal; multi-audio progressive sources become converter
+input ahead of single-audio streams. On a Node host with ffmpeg they become HLS
+with genuine quality/audio renditions. Where conversion is unavailable, those
+candidates are skipped. A ready source settles quickly instead of waiting for
+slow mirrors. The catalog machinery stays generic, so adding a second server
 later is a one-entry change.
 
 Every `/api/resolve` payload carries the `servers` array in this exact order with
@@ -363,9 +362,11 @@ those limits with a server transcode; a suitable Node host can opt in below.
 
 ### Node HLS conversion for progressive fallbacks
 
-Native provider HLS/DASH is always preferred and never needs this converter.
-The Codespace enables conversion by default for every progressive fallback.
-Multi-rung transcoding can still fall behind real time on a small CPU.
+Native multi-audio HLS/DASH never needs this converter. The Codespace enables
+conversion for progressive fallbacks. Compatible H.264/AAC video/audio is
+remuxed, and the source-quality remux runs independently from the lower-rung
+encode so it can expose a complete VOD without waiting for that encode.
+Incompatible codecs and the additional quality rung still require real encoding.
 
 Cloudflare Workers cannot spawn ffmpeg. `scripts/dev-worker.mjs` therefore
 exposes `/api/mkv-hls` **only when `MKV_HLS_ENABLED=true` is set on that Node
@@ -378,18 +379,19 @@ the converter. ffmpeg reads the original same-origin `/api/proxy` source and
 the browser receives only HLS. ffprobe discovers the actual streams before
 ffmpeg writes H.264/AAC HLS with:
 
-- genuine video variants no higher than the source (1080p/720p/480p for a
-  1080p source, 720p/480p for a 720p source, and no cosmetic upscaling);
-- the source's real audio streams as selectable HLS renditions (up to eight);
-- a 2-second-segment event/VOD playlist with all segments retained for
-  seeking after the conversion completes.
+- up to two genuine video variants no higher than the source (1080p/720p for
+  a 1080p source, 720p/480p for a 720p source, and no cosmetic upscaling);
+- the source's real audio streams as selectable HLS renditions (up to eight),
+  shared by the video rungs instead of encoded again for each rung;
+- independent remux/encode playlists, with 2-second segments on encoded rungs
+  and the source's real keyframe boundaries on remuxed video.
 
-The first segment takes time, long conversions can buffer on a small CPU, and
-a new conversion starts at the beginning rather than applying an old MKV
-resume timestamp. Seeking past the converted portion must wait for ffmpeg.
-Temporary output is deleted when a session expires or the host stops.
+There is no minimum-buffer startup gate; playback starts with the first usable
+segments. Seeking past an encoded playlist's converted portion must wait for
+ffmpeg. Temporary output is deleted when a session expires or the host stops.
 `MKV_HLS_MAX_SESSIONS`
-(default `1`) bounds concurrent encodes; `MKV_HLS_DIR` overrides the temporary
+(default `2`) bounds concurrent sessions, and renewed signed URLs for the same
+canonical source share one conversion. `MKV_HLS_DIR` overrides the temporary
 output directory. `npm test` includes a fully local, real ffmpeg integration
 test covering variant ladders, dual audio, codecs, segments and source-host
 validation.

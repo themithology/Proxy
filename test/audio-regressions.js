@@ -155,14 +155,14 @@ async function testFastSettleOnNativeHls() {
     const url = new URL(typeof input === 'string' ? input : input.url);
     if (url.pathname.endsWith('/api/providers')) {
       return json({ providers: [
-        { name: 'dahmermovies', enabled: true }, { name: '4khdhub', enabled: true }, { name: 'netmirror', enabled: true }
+        { name: 'dahmermovies', enabled: true }, { name: 'vidsrc', enabled: true }, { name: 'netmirror', enabled: true }
       ] });
     }
     if (url.pathname.includes('/api/streams/dahmermovies/')) {
       await new Promise((resolve) => setTimeout(resolve, 20));
       return json({ streams: [{ title: 'Native HLS', url: 'https://cdn.example/single.m3u8', quality: '1080p' }] });
     }
-    if (url.pathname.includes('/api/streams/4khdhub/')) {
+    if (url.pathname.includes('/api/streams/vidsrc/')) {
       return new Promise((resolve, reject) => {
         const timer = setTimeout(() => resolve(json({ streams: [] })), 1200);
         if (init.signal) {
@@ -191,6 +191,48 @@ async function testFastSettleOnNativeHls() {
   assert.strictEqual(wave2Called, false, 'ready native HLS must not launch another slow provider wave');
   assert.strictEqual(slowMkvAborted, true, 'ready native HLS must abort the slow MKV extractor');
   assert(Date.now() - started < 600, 'native HLS should settle without the old MKV wait');
+}
+
+async function testMultiAudioSettlePriority() {
+  goldmine.clearGoldmineProviderCache();
+  const fetchImpl = async (input, init = {}) => {
+    const url = new URL(typeof input === 'string' ? input : input.url);
+    if (url.pathname.endsWith('/api/providers')) {
+      return json({ providers: [
+        { name: 'dahmermovies', enabled: true }, { name: '4khdhub', enabled: true }, { name: 'vidsrc', enabled: true }
+      ] });
+    }
+    if (url.pathname.includes('/api/streams/dahmermovies/')) {
+      await new Promise((resolve) => setTimeout(resolve, 20));
+      return json({ streams: [{ title: 'Single HLS', url: 'https://cdn.example/single.m3u8', quality: '1080p' }] });
+    }
+    if (url.pathname.includes('/api/streams/4khdhub/')) {
+      await new Promise((resolve) => setTimeout(resolve, 100));
+      return json({ streams: [{ title: 'Movie Hindi English Multi Audio', url: 'https://cdn.example/multi.mkv', quality: '1080p' }] });
+    }
+    if (url.pathname.includes('/api/streams/vidsrc/')) {
+      return new Promise((resolve, reject) => {
+        const timer = setTimeout(() => resolve(json({ streams: [] })), 2000);
+        if (init.signal) {
+          init.signal.addEventListener('abort', () => {
+            clearTimeout(timer);
+            const error = new Error('Aborted');
+            error.name = 'AbortError';
+            reject(error);
+          });
+        }
+      });
+    }
+    return new Response('not found', { status: 404 });
+  };
+  const started = Date.now();
+  const result = await goldmine.fetchGoldmineStreamsFast({
+    apiBase: 'https://multi-priority.invalid', tmdbId: '1', type: 'movie', timeoutMs: 2500, fetchImpl
+  });
+  assert(result.ok && result.json.streams.some((stream) => stream.url.endsWith('multi.mkv')));
+  const payload = goldmine.buildGoldminePayload(goldmine.normalizeGoldminePayload(result.json), { proxyStreams: false });
+  assert.strictEqual(payload.rawUrl, 'https://cdn.example/multi.mkv');
+  assert(Date.now() - started < 1200, 'multi-audio should settle promptly instead of waiting for the remaining mirrors');
 }
 
 async function testFastSettleForHlsConversion() {
@@ -298,7 +340,7 @@ async function testPreferredSourceMetadata() {
     { provider: 'netmirror', title: 'Movie Japanese HLS', url: 'https://cdn.example/master.m3u8', quality: '720p' }
   ] });
   const payload = goldmine.buildGoldminePayload(normalized, { proxyStreams: false });
-  assert.strictEqual(payload.format, 'hls', 'native HLS must outrank multi-audio MKV by default');
+  assert.strictEqual(payload.format, 'mkv', 'multi-audio must outrank single-audio HLS for conversion');
   const preferred = goldmine.applyPreferredAudioToPayload(payload, 'ja');
   assert.strictEqual(preferred.format, 'hls');
   assert.strictEqual(preferred.engine, undefined);
@@ -380,6 +422,7 @@ module.exports = async function runAudioRegressions() {
   await testHlsPayload();
   await testDirectFallback();
   await testFastSettleOnNativeHls();
+  await testMultiAudioSettlePriority();
   await testFastSettleForHlsConversion();
   await testProviderFallbackDetails();
   await testCastleTv();

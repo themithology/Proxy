@@ -33,7 +33,7 @@ bash .devcontainer/start.sh
 - **TMDB-Embed-API** on `127.0.0.1:8787`, with its own media proxy disabled. Its default test providers are `4khdhub`, `castletv`, `hdghartv`, and `dahmermovies`.
 - **The real Worker player/API** through `scripts/dev-worker.mjs` on port `3000`. Only the static-asset binding is emulated; source resolution and media fetching are real.
 - The Worker fetches the provider API over loopback. Provider extraction **and** `/api/proxy` media requests therefore originate from the Codespace, not Render or Cloudflare.
-- **HLS/DASH-only playback.** Original provider HLS/DASH is the preferred fast path. Every progressive fallback is sent to the ffmpeg HLS converter, which is enabled by default here; raw progressive playback and the alternate browser engine are disabled.
+- **HLS/DASH-only playback with multi-audio priority.** Native multi-audio HLS/DASH is ideal; multi-audio progressive sources are converted ahead of single-audio streams. Raw progressive playback and the alternate browser engine are disabled.
 
 To restart only the player after pulling a newer version of this branch (the existing Codespace and upstream can stay):
 
@@ -42,13 +42,14 @@ kill "$(cat /tmp/lol-embed-live/player.pid)" 2>/dev/null || true
 bash .devcontainer/start.sh
 ```
 
-The start script installs the ffmpeg/ffprobe packages if they are missing and enables conversion by default. `MKV_HLS_MAX_SESSIONS` defaults to `1` so simultaneous viewers cannot start unlimited encodes on the free machine. Setting `MKV_HLS_ENABLED=false` disables conversion; progressive sources are then skipped rather than played raw.
+The start script installs ffmpeg/ffprobe if needed and enables conversion. `MKV_HLS_MAX_SESSIONS` defaults to `2`; clients opening the same canonical source share one session even when signed URL tokens change. Setting `MKV_HLS_ENABLED=false` disables conversion, and progressive sources are then skipped rather than played raw.
 
 ## Progressive-to-HLS conversion fallback
 
-- ffprobe reads the actual source height and audio streams. A 1080p source can produce 1080p/720p/480p variants; a 720p source produces only 720p/480p. It never upscales or adds cosmetic quality labels. The top transcode rung is capped at 1080p on this small host.
+- ffprobe reads the actual source height and audio streams. The fallback exposes up to two genuine rungs: 1080p/720p for a 1080p source and 720p/480p for a 720p source. It never upscales or adds cosmetic quality labels.
 - Every source audio stream (up to eight) becomes an HLS audio rendition. The existing audio menu reads these real renditions; the quality menu reads the generated video levels.
-- Output is a segmented VOD playlist under the host temporary directory, using 2-second segments to reduce the first-play wait. The first segment still requires conversion, and playback can buffer if the free CPU cannot encode faster than real time. A new conversion starts at the beginning instead of applying an old MKV resume timestamp. Seeking beyond the part converted so far must wait for ffmpeg; after conversion finishes, the whole playlist is seekable.
+- Compatible H.264/AAC streams are remuxed rather than re-encoded. The source-quality remux runs independently from the lower-rung encode, so its full VOD playlist is not held back by that encode. Incompatible codecs still require full encoding.
+- There is no minimum-buffer startup gate. Playback starts with the first usable segments. The encoded rung uses 2-second segments; remuxed video keeps the source's real keyframe boundaries. Seeking beyond an encoded playlist's generated portion must still wait for ffmpeg.
 - The converter reads through the same-origin `/api/proxy` URL, preserving provider request headers. It does not accept an arbitrary third-party proxy URL.
 
 To change the upstream provider list, stop the existing upstream process before restarting it:
