@@ -466,14 +466,15 @@ bash deploy/quick-tunnel.sh
 ```
 
 The launcher preserves existing credentials, creates missing secrets, installs
-the standalone `cloudflared` binary in the temporary directory, registers the
-tunnel, writes its public origin to `PUBLIC_BASE_URL`, explicitly configures
-the main Goldmine upstream and MKV-to-HLS converter, and starts the full player
-(not the API-only `src/server.js`). It checks health locally and through
-Cloudflare, verifies that the converter route is mounted, and requires a real
-test-movie resolution before printing the player URL and log paths. The random
-URL lasts only while both processes run; use the VPS/Caddy deployment below for
-a stable domain.
+the standalone `cloudflared` binary and the real TMDB-Embed-API in the
+temporary directory, and reproduces the Codespace architecture: a private
+provider API on `127.0.0.1:8787` with `4khdhub`, `castletv`, `hdghartv` and
+`dahmermovies`, plus the full player/converter on port 3000. Only the player is
+exposed through the tunnel. It checks both local services and public HTTPS,
+verifies that the converter route is mounted, and requires the test movie to
+select a source with real multi-audio evidence before printing the player URL
+and log paths. The random URL lasts only while these processes run; use the
+VPS/Caddy deployment below for a stable domain.
 
 ## One-command VPS deployment (player + API + converter)
 

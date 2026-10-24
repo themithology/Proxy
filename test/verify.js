@@ -2180,11 +2180,11 @@ async function runTests() {
         if (u.pathname.includes('/api/streams/castletv/')) {
           await new Promise((resolve) => setTimeout(resolve, 20));
           return new Response(JSON.stringify({
-            streams: [{
-              title: 'Dune.2024.1080p.Hindi',
-              url: 'https://cdn-fast.example/Hindi_720/index.m3u8',
+            streams: ['Hindi', 'Tamil', 'Telugu', 'Kannada'].map((language) => ({
+              title: `Dune.2024.1080p.${language}`,
+              url: `https://cdn-fast.example/${language.toLowerCase()}_720/index.m3u8`,
               quality: '1080p'
-            }]
+            }))
           }), { status: 200, headers: { 'Content-Type': 'application/json' } });
         }
         if (u.pathname.includes('/api/streams/4khdhub/')) {
@@ -2222,7 +2222,9 @@ async function runTests() {
       assert.strictEqual(delayedResult.format, 'mkv', 'multi-audio MKV must beat earlier single-audio HLS');
       assert.strictEqual(delayedResult.streamUrl, 'https://cdn-multi.example/dune.mkv');
       assert.strictEqual(slowMultiAudioAborted, false, 'the multi-audio request must not be aborted at 2.5s');
-      assert.deepStrictEqual(delayedResult.audioTracks.map((track) => track.lang).sort(), ['en', 'hi']);
+      const delayedLanguages = delayedResult.audioTracks.map((track) => track.lang);
+      assert(delayedLanguages.includes('en') && delayedLanguages.includes('hi'), 'muxed Hindi and English tracks must be present');
+      assert.strictEqual(delayedResult.activeAudioTrack.inFile, true, 'the active track must belong to the muxed MKV');
 
       // Wave 1 empty -> Wave 2 launches immediately without waiting full wave2Delay.
       goldmineSvc.clearGoldmineProviderCache();

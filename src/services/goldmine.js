@@ -1234,7 +1234,6 @@ async function fetchGoldmineStreamsFast(options = {}) {
 
     const collectCurrentState = () => {
       const mergedRaw = [];
-      const observedLanguages = new Set();
       let providersWithStreams = 0;
       let reliableProviders = 0;
       let reliableCount = 0;
@@ -1254,9 +1253,6 @@ async function fetchGoldmineStreamsFast(options = {}) {
           if (!norm.ephemeralIpBound) {
             reliableCount += 1;
             providerHasReliable = true;
-            for (const language of norm.languages) {
-              if (language.code !== 'und' || norm.original) observedLanguages.add(language.code);
-            }
             if (norm.container === 'hls' || norm.container === 'dash') {
               hasNativeStreaming = true;
             }
@@ -1285,9 +1281,12 @@ async function fetchGoldmineStreamsFast(options = {}) {
         reliableCount,
         hasMkvOrMulti,
         hasNativeStreaming,
-        hasMultiAudio: observedLanguages.size > 1 || mergedRaw.some((raw) => {
+        // Fast-settle only for multiple audio tracks inside one actual
+        // file/manifest. Separate single-audio dub files are useful backups,
+        // but must not abort a slower muxed multi-audio extractor.
+        hasMultiAudio: mergedRaw.some((raw) => {
           const norm = normalizeGoldmineStream(raw, 0);
-          return !!norm && (norm.multi || norm.languages.length > 1 || norm.audioTrackHints.length > 1);
+          return !!norm && !norm.ephemeralIpBound && hasStreamMultiAudioEvidence(norm);
         }),
         hasWantedAudio,
         mkvExtractorInFlight,

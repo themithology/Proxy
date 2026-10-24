@@ -53,7 +53,10 @@ function testStaticDeploymentWiring() {
   assert(quickTunnel.includes('CLOUDFLARED=/tmp/cloudflared'));
   assert(quickTunnel.includes('cloudflared-linux-$CLOUDFLARED_ARCH'));
   assert(quickTunnel.includes('trycloudflare'));
-  assert(quickTunnel.includes('GOLDMINE_API_BASE=https://rdp-running-campion.onrender.com'));
+  assert(quickTunnel.includes('GOLDMINE_API_BASE=http://127.0.0.1:8787'));
+  assert(quickTunnel.includes('DEFAULT_PROVIDERS=4khdhub,castletv,hdghartv,dahmermovies'));
+  assert(quickTunnel.includes('themithology/TMDB-Embed-API/tar.gz'));
+  assert(quickTunnel.indexOf('node apiServer.js') < quickTunnel.indexOf('node scripts/player-server.mjs'), 'local Goldmine must start before the player');
   assert(quickTunnel.includes('GOLDMINE_PROXY_STREAMS=true'));
   assert(quickTunnel.includes('MKV_HLS_ENABLED=true'));
   assert(quickTunnel.includes('MKV_HLS_NODE_HOST=true'));

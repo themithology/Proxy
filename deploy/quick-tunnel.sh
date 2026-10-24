@@ -8,7 +8,7 @@ if ! command -v node >/dev/null 2>&1 || ! node -e 'process.exit(Number(process.v
   echo "Node.js 22 or newer is required. Install it, then rerun this script." >&2
   exit 1
 fi
-for command_name in npm curl; do
+for command_name in npm curl tar; do
   if ! command -v "$command_name" >/dev/null 2>&1; then
     echo "$command_name is required." >&2
     exit 1
@@ -16,8 +16,11 @@ for command_name in npm curl; do
 done
 
 RUNTIME_DIR="${TMPDIR:-/tmp}/lol-embed-quick-tunnel"
+UPSTREAM_DIR=/tmp/tmdb-embed-api
+UPSTREAM_PID_FILE="$RUNTIME_DIR/upstream.pid"
 PLAYER_PID_FILE="$RUNTIME_DIR/player.pid"
 TUNNEL_PID_FILE="$RUNTIME_DIR/tunnel.pid"
+UPSTREAM_LOG="$RUNTIME_DIR/upstream.log"
 PLAYER_LOG="$RUNTIME_DIR/player.log"
 TUNNEL_LOG="$RUNTIME_DIR/tunnel.log"
 mkdir -p "$RUNTIME_DIR"
@@ -38,6 +41,7 @@ stop_previous() {
   rm -f "$pid_file"
 }
 
+stop_previous "$UPSTREAM_PID_FILE"
 stop_previous "$PLAYER_PID_FILE"
 stop_previous "$TUNNEL_PID_FILE"
 # Also replace processes started by the earlier manual instructions. In
@@ -58,7 +62,7 @@ set_env PLAYER_PORT 3000
 set_env HOST 127.0.0.1
 set_env NODE_ENV production
 set_env API_BASE_URL ""
-set_env GOLDMINE_API_BASE https://rdp-running-campion.onrender.com
+set_env GOLDMINE_API_BASE http://127.0.0.1:8787
 set_env GOLDMINE_PROXY_STREAMS true
 set_env GOLDMINE_TIMEOUT_MS 60000
 set_env MKV_HLS_ENABLED true
@@ -67,7 +71,59 @@ set_env MKV_HLS_DIR "$RUNTIME_DIR/hls"
 set_env MKV_HLS_MAX_SESSIONS 2
 set_env MKV_HLS_READY_TIMEOUT_MS 120000
 
-npm ci --omit=dev
+# Reproduce the working Codespace instead of using Render: run the real
+# TMDB-Embed-API locally with the same four providers. Codeload avoids the git
+# HTTP/2 transport failures seen on some VPS networks.
+if [[ ! -f "$UPSTREAM_DIR/apiServer.js" ]]; then
+  UPSTREAM_ARCHIVE="$RUNTIME_DIR/tmdb-embed-api.tar.gz"
+  rm -rf "$UPSTREAM_DIR"
+  mkdir -p "$UPSTREAM_DIR"
+  curl --http1.1 -fL --retry 3 \
+    https://codeload.github.com/themithology/TMDB-Embed-API/tar.gz/refs/heads/main \
+    -o "$UPSTREAM_ARCHIVE"
+  tar -xzf "$UPSTREAM_ARCHIVE" --strip-components=1 -C "$UPSTREAM_DIR"
+fi
+
+if [[ ! -f node_modules/@ffmpeg-installer/ffmpeg/package.json || ! -f node_modules/@ffprobe-installer/ffprobe/package.json ]]; then
+  npm ci --omit=dev --no-audit --no-fund
+fi
+if [[ ! -d "$UPSTREAM_DIR/node_modules" ]]; then
+  (cd "$UPSTREAM_DIR" && npm install --omit=dev --no-audit --no-fund)
+fi
+
+TMDB_KEY="${TMDB_API_KEY:-}"
+if [[ -z "$TMDB_KEY" ]]; then
+  TMDB_KEY="$(node -p "require('./src/config.js').tmdbApiKey")"
+fi
+
+: > "$UPSTREAM_LOG"
+(
+  cd "$UPSTREAM_DIR"
+  nohup env \
+    API_PORT=8787 \
+    BIND_HOST=127.0.0.1 \
+    ENABLE_PROXY=false \
+    DEFAULT_PROVIDERS=4khdhub,castletv,hdghartv,dahmermovies \
+    TMDB_API_KEY="$TMDB_KEY" \
+    FEBBOX_COOKIES="${FEBBOX_COOKIES:-}" \
+    node apiServer.js > "$UPSTREAM_LOG" 2>&1 &
+  echo $! > "$UPSTREAM_PID_FILE"
+)
+
+upstream_ready=0
+for _ in {1..45}; do
+  if ! kill -0 "$(cat "$UPSTREAM_PID_FILE")" 2>/dev/null; then break; fi
+  if curl -fsS --max-time 2 http://127.0.0.1:8787/api/health >/dev/null 2>&1; then
+    upstream_ready=1
+    break
+  fi
+  sleep 1
+done
+if [[ "$upstream_ready" -ne 1 ]]; then
+  echo "The local Goldmine provider API did not start. Upstream log:" >&2
+  tail -80 "$UPSTREAM_LOG" >&2 || true
+  exit 1
+fi
 
 case "$(uname -m)" in
   x86_64|amd64) CLOUDFLARED_ARCH=amd64 ;;
@@ -112,7 +168,7 @@ nohup env \
   PUBLIC_BASE_URL="$TUNNEL_URL" \
   NODE_ENV=production \
   API_BASE_URL= \
-  GOLDMINE_API_BASE=https://rdp-running-campion.onrender.com \
+  GOLDMINE_API_BASE=http://127.0.0.1:8787 \
   GOLDMINE_PROXY_STREAMS=true \
   GOLDMINE_TIMEOUT_MS=60000 \
   MKV_HLS_ENABLED=true \
@@ -169,23 +225,37 @@ if [[ "$converter_status" != "400" ]]; then
 fi
 
 RESOLVE_JSON="$RUNTIME_DIR/resolve.json"
-# Warm and verify Goldmine locally so a slow Render cold start does not hit
-# Cloudflare's public request timeout. The successful result is then cached for
-# the first browser request through the tunnel.
-if ! curl -fsS --max-time 120 http://127.0.0.1:3000/api/resolve/movie/693134 -o "$RESOLVE_JSON"; then
-  echo "Goldmine did not resolve the test movie. Check the player log and Render upstream." >&2
-  tail -80 "$PLAYER_LOG" >&2 || true
+# Warm and verify the local provider API before exposing the player. Do not
+# accept an early bundle of separate single-audio dubs as success: the active
+# source itself must carry real multi-audio evidence, as in the Codespace test.
+if ! curl -fsS --max-time 120 'http://127.0.0.1:3000/api/resolve/movie/693134?fresh=1' -o "$RESOLVE_JSON"; then
+  echo "Local Goldmine did not resolve the test movie." >&2
+  tail -60 "$UPSTREAM_LOG" >&2 || true
+  tail -60 "$PLAYER_LOG" >&2 || true
   exit 1
 fi
-if ! node -e 'const fs=require("fs"); const data=JSON.parse(fs.readFileSync(process.argv[1],"utf8")); if(!data.stream || !data.stream.streamUrl) { console.error(data.error || "Goldmine returned no playable stream"); process.exit(1); }' "$RESOLVE_JSON"; then
-  echo "The main Goldmine MP4/HLS source is not configured or returned no stream." >&2
+if ! node -e '
+  const fs = require("fs");
+  const data = JSON.parse(fs.readFileSync(process.argv[1], "utf8"));
+  const stream = data.stream || {};
+  const meta = stream.sourceMeta && stream.sourceMeta[stream.streamUrl];
+  const multi = !!(meta && (meta.multi || (Array.isArray(meta.languages) && meta.languages.length > 1)));
+  if (!stream.streamUrl || !multi) {
+    console.error("The active Goldmine source is not a multi-audio file/manifest");
+    process.exit(1);
+  }
+  console.log(`Verified ${stream.format} with ${(meta.languages || []).join("/") || "multi"} audio`);
+' "$RESOLVE_JSON"; then
+  echo "Goldmine source selection did not produce the required multi-audio source." >&2
+  tail -60 "$UPSTREAM_LOG" >&2 || true
   exit 1
 fi
 
-printf '\nQuick Tunnel, full player, Goldmine and MKV-to-HLS are configured.\n'
+printf '\nQuick Tunnel, local Goldmine, full player and MKV-to-HLS are configured.\n'
 printf 'Player: %s/embed/movie/693134?debug=1\n' "$TUNNEL_URL"
 printf 'Health: %s/api/health\n' "$TUNNEL_URL"
+printf 'Upstream log: tail -f %s\n' "$UPSTREAM_LOG"
 printf 'Player log: tail -f %s\n' "$PLAYER_LOG"
 printf 'Tunnel log: tail -f %s\n' "$TUNNEL_LOG"
-printf 'Stop: kill "$(cat %s)" "$(cat %s)"\n' "$PLAYER_PID_FILE" "$TUNNEL_PID_FILE"
-printf 'This random URL lasts only while cloudflared and the player keep running.\n'
+printf 'Stop: kill "$(cat %s)" "$(cat %s)" "$(cat %s)"\n' "$UPSTREAM_PID_FILE" "$PLAYER_PID_FILE" "$TUNNEL_PID_FILE"
+printf 'This random URL lasts only while the provider API, player and cloudflared keep running.\n'
