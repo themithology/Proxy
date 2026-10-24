@@ -357,6 +357,14 @@ Codec/device combinations (HEVC/AV1 profiles, HDR/Dolby Vision, AC-3/E-AC-3)
 may still not play in every browser — the WASM engine software-decodes a lot,
 but nothing is transcoded server-side to conceal the limits.
 
+## Live provider test in GitHub Codespaces
+
+For a real upstream/MKV/HLS test without Render, Cloudflare media egress, or mocked fixtures, open this branch in **GitHub Codespaces**. The included devcontainer installs TMDB-Embed-API, starts it on private loopback, and serves the real Worker player + API on forwarded port `3000`. The port remains private to your GitHub session.
+
+Use **Code → Codespaces → Create codespace on this branch**, wait for setup, then open the forwarded URL at `/embed?type=movie&tmdb=693134`. Provider extraction and media requests originate from the Codespace. This is a temporary development test, not a production host or evidence that live playback has passed.
+
+See [`.devcontainer/README.md`](.devcontainer/README.md) for TV examples, provider settings, logs, and the browser verification checklist.
+
 ## Player UI harness (optional local/dev tooling)
 
 `scripts/dev-player-mock.mjs` serves `public/` exactly like the Worker does and mounts the **real backend** (`src/server.js`) behind it — `/api/resolve`, the waterfall, the Goldmine resolver, `/api/proxy` and the telemetry all run as in production — but points the upstream configuration at built-in mocks (a tiny TMDB stand-in, a TMDB-Embed-API stand-in answering provider-shaped JSON, skip-segment fixtures) plus a fixture CDN on port 8791 serving small real multi-audio MKV/MP4 files and a VTT (generated on first start, gitignored), so no internet or keys are needed:

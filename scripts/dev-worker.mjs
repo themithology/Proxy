@@ -1,10 +1,16 @@
+// Serve the real Worker player + API against the configured live upstreams.
+// Only the static ASSETS binding is emulated; provider resolution and media
+// proxying are not mocked. See .devcontainer/README.md for a hosted live test.
+
 import http from 'http';
 import fs from 'fs';
 import path from 'path';
+import { Readable } from 'stream';
 import workerModule from '../cloudflare-worker/worker.js';
 
 const PORT = parseInt(process.env.PLAYER_PORT || '8787', 10);
 const HOST = process.env.HOST || '0.0.0.0';
+const PUBLIC_BASE_URL = String(process.env.PUBLIC_BASE_URL || '').replace(/\/+$/, '');
 const PUBLIC_DIR = path.resolve('public');
 const ASSET_TYPES = {
   '.html': 'text/html; charset=utf-8',
@@ -34,7 +40,17 @@ const mockAssets = {
 
 const server = http.createServer(async (req, res) => {
   try {
-    const url = `http://${req.headers.host || 'localhost'}${req.url}`;
+    // Codespaces and other preview proxies terminate HTTPS in front of this
+    // Node process. Preserve that public origin so rewritten HLS playlists do
+    // not emit browser-blocked http:// URLs.
+    const forwardedProto = String(req.headers['x-forwarded-proto'] || '')
+      .split(',')[0]
+      .trim()
+      .toLowerCase();
+    const requestOrigin =
+      PUBLIC_BASE_URL ||
+      `${forwardedProto === 'https' ? 'https' : 'http'}://${req.headers.host || `localhost:${PORT}`}`;
+    const url = new URL(req.url || '/', requestOrigin).toString();
     let body = null;
     if (req.method !== 'GET' && req.method !== 'HEAD') {
       const chunks = [];
@@ -55,8 +71,21 @@ const server = http.createServer(async (req, res) => {
     for (const [key, val] of webRes.headers.entries()) {
       res.setHeader(key, val);
     }
-    const arrayBuf = await webRes.arrayBuffer();
-    res.end(Buffer.from(arrayBuf));
+    // Stream the Web Response body instead of buffering it. Buffering made a
+    // real multi-GB MKV impossible to test and delayed the first byte until
+    // the entire upstream file had downloaded.
+    if (!webRes.body || req.method === 'HEAD') {
+      res.end();
+      return;
+    }
+    const responseStream = Readable.fromWeb(webRes.body);
+    res.once('close', () => {
+      if (!res.writableEnded) responseStream.destroy();
+    });
+    responseStream.once('error', (err) => {
+      if (!res.destroyed) res.destroy(err);
+    });
+    responseStream.pipe(res);
   } catch (err) {
     res.statusCode = 500;
     res.end(err.stack || err.message);
