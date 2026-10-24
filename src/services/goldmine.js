@@ -4,33 +4,26 @@
  * The Goldmine server resolves streams through a self-hosted TMDB-Embed-API
  * instance (https://github.com/themithology/TMDB-Embed-API). That API
  * aggregates a dozen providers (Showbox/FebBox, 4KHDHub, VidLink, Videasy,
- * DahmerMovies, …) behind one JSON endpoint:
+ * DahmerMovies, …) behind JSON endpoints:
  *
+ *   GET {base}/api/providers
  *   GET {base}/api/streams/{movie|series}/{tmdbId}[?season=&episode=]
  *   GET {base}/api/streams/{provider}/{movie|series}/{tmdbId}[?season=&episode=]
  *
  *   -> { success, tmdbId, imdbId, count, providerTimings,
  *        streams: [{ name, title, url, quality, provider, headers?, subtitles? }] }
  *
- * Most of those streams are progressive MKV/MP4 files — several with multiple
- * audio tracks (dubs) muxed inside one file, others as one file per language.
- * The browser cannot play MKV (or switch dubs inside one) natively, so the
- * player runs them through the bundled movi-player element (FFmpeg WASM +
- * WebCodecs): `engine: 'movi'` in the payload tells `public/js/embed.js` to
- * attach the movi-player instead of the native <video>.
+ * Why per-provider fan-out instead of the aggregate endpoint?
+ *   TMDB-Embed-API's aggregate `/api/streams/:type/:tmdbId` awaits `Promise.all`
+ *   across all 13 providers, so a single slow/timing-out provider (15–30s)
+ *   stalls every resolve. Querying enabled providers individually in two fast
+ *   waves lets us return in ~1.5–4.5s as soon as multi-audio MKV + backup
+ *   streams arrive and abort stragglers, while falling back transparently to
+ *   the aggregate route if `/api/providers` or per-provider routes are absent.
  *
- * This module is the single source of truth for that resolution. It is pure
- * JS (fetch + URL only, no Buffer, no Node APIs) so BOTH runtimes share it:
- *
+ * Pure JS (fetch + URL only, no Buffer, no Node APIs) so BOTH runtimes share it:
  *   - Node backend:  src/services/resolver.js  -> resolveStreamForServer()
  *   - CF Worker:     cloudflare-worker/worker.js -> resolveStreamWaterfall()
- *
- * The runtime injects what it owns: the API base URL, a timeout, and a
- * `proxyUrl(url, referer)` callback that wraps direct file URLs in that
- * runtime's signed /api/proxy URL (CORS + Range + upstream headers). URLs the
- * TMDB-Embed-API already proxied itself (`enableProxy` on → `{base}/ts-proxy?…`)
- * are passed through untouched — they already answer with `Access-Control-
- * Allow-Origin: *` and Range support.
  */
 
 const {
@@ -61,6 +54,34 @@ const GOLDMINE_PROVIDER_LABELS = {
   zxcstreams: 'ZXCStreams'
 };
 
+/**
+ * Fast primary wave: direct multi-audio MKV/MP4 extractors + fast 1–3s backups.
+ * Secondary wave only launches if Wave 1 has not settled with strong streams,
+ * avoiding 15–30s straggler stalls and cutting upstream load on free hosts.
+ */
+const FAST_WAVE_PROVIDERS = [
+  'dahmermovies',
+  '4khdhub',
+  'showbox',
+  'vidlink',
+  'videasy',
+  'vixsrc'
+];
+
+const SECONDARY_WAVE_PROVIDERS = [
+  'zxcstreams',
+  'hdghartv',
+  'vaplayer',
+  'onetouchtv',
+  'streamflix',
+  'castletv',
+  'netmirror'
+];
+const SECONDARY_WAVE_SET = new Set(SECONDARY_WAVE_PROVIDERS);
+
+const PROVIDERS_CACHE_TTL_MS = 10 * 60 * 1000;
+const providersCache = new Map();
+
 /** Headers a browser fetch is not allowed to set — they must go through the
  *  server-side proxy instead of movi-player's `headers` attribute. */
 const FORBIDDEN_BROWSER_HEADERS = new Set([
@@ -69,6 +90,13 @@ const FORBIDDEN_BROWSER_HEADERS = new Set([
   'sec-fetch-mode', 'sec-fetch-site', 'sec-fetch-user', 'sec-fetch-dest',
   'accept-encoding', 'accept-language', 'proxy-authorization', 'te', 'trailer',
   'transfer-encoding', 'via', 'keep-alive', 'set-cookie'
+]);
+
+/** Transport/range negotiation headers managed by the browser / movi HttpSource
+ *  itself (e.g. DahmerMovies attaches `Range: bytes=0-` and `Accept: *\/*`,
+ *  which would override movi-player's own byte-range probes if forwarded). */
+const TRANSPORT_STRIP_HEADERS = new Set([
+  'range', 'if-range', 'accept', 'cache-control', 'pragma'
 ]);
 
 const USER_AGENT =
@@ -98,6 +126,31 @@ function fileNameFromUrl(url) {
   } catch {
     return '';
   }
+}
+
+/** Combine an optional caller AbortSignal with a per-call timeout. */
+function createTimedSignal(timeoutMs, externalSignal = null) {
+  const controller = new AbortController();
+  let timedOut = false;
+  const timer = setTimeout(() => {
+    timedOut = true;
+    controller.abort();
+  }, Math.max(250, timeoutMs));
+
+  const onExternalAbort = () => controller.abort();
+  if (externalSignal) {
+    if (externalSignal.aborted) controller.abort();
+    else externalSignal.addEventListener('abort', onExternalAbort, { once: true });
+  }
+
+  return {
+    signal: controller.signal,
+    wasTimeout: () => timedOut,
+    cleanup: () => {
+      clearTimeout(timer);
+      if (externalSignal) externalSignal.removeEventListener('abort', onExternalAbort);
+    }
+  };
 }
 
 /** Quality string ("1080p", "4K", "Auto", "HD") -> pixel height (0 = unknown). */
@@ -148,7 +201,9 @@ function containerForStream(url, title) {
   // Proxy-rewritten URLs (…/ts-proxy?url=…) hide the extension in the query.
   const query = (() => {
     try {
-      return new URL(url).search.toLowerCase();
+      const parsed = new URL(url);
+      const inner = parsed.searchParams.get('url') || '';
+      return `${inner} ${parsed.search}`.toLowerCase();
     } catch {
       return '';
     }
@@ -156,7 +211,9 @@ function containerForStream(url, title) {
   if (/\.m3u8/.test(query)) return 'hls';
   if (/\.mpd/.test(query)) return 'dash';
   if (/\.mkv/.test(query)) return 'mkv';
+  if (/\.webm/.test(query)) return 'webm';
   if (/\.mp4/.test(query)) return 'mp4';
+  if (/\/playlist\b|\/master\b|hls/i.test(pathname)) return 'hls';
   return 'unknown';
 }
 
@@ -292,19 +349,28 @@ function splitHeaders(headers) {
     if (value == null) continue;
     const lower = String(key).toLowerCase();
     if (FORBIDDEN_BROWSER_HEADERS.has(lower)) serverSide[key] = String(value);
-    else browserSafe[key] = String(value);
+    else if (!TRANSPORT_STRIP_HEADERS.has(lower)) browserSafe[key] = String(value);
   }
   return { serverSide, browserSafe };
 }
 
-function refererFromHeaders(headers) {
-  if (!headers || typeof headers !== 'object') return '';
+function proxyMetaFromHeaders(headers) {
+  const meta = { referer: '', origin: '', cookie: '', userAgent: '' };
+  if (!headers || typeof headers !== 'object') return meta;
   for (const [key, value] of Object.entries(headers)) {
-    if (String(key).toLowerCase() === 'referer' || String(key).toLowerCase() === 'referrer') {
-      return String(value || '');
-    }
+    if (value == null) continue;
+    const lower = String(key).toLowerCase();
+    const str = String(value);
+    if (lower === 'referer' || lower === 'referrer') meta.referer = str;
+    else if (lower === 'origin') meta.origin = str;
+    else if (lower === 'cookie') meta.cookie = str;
+    else if (lower === 'user-agent') meta.userAgent = str;
   }
-  return '';
+  return meta;
+}
+
+function refererFromHeaders(headers) {
+  return proxyMetaFromHeaders(headers).referer;
 }
 
 /** Human descriptor for one source row in the servers popover. */
@@ -328,7 +394,7 @@ function sourceLabelFor(stream) {
  * `options`:
  *   - apiBase       — TMDB-Embed-API origin (its own /ts-proxy URLs pass through)
  *   - proxyStreams  — wrap direct file URLs in the runtime's /api/proxy (default true)
- *   - proxyUrl(url, referer) — runtime callback that builds the proxied URL
+ *   - proxyUrl(url, referer, proxyMeta) — runtime callback that builds the proxied URL
  *   - onlySource    — pin one provider id
  *   - preferredAudio — language code/name the viewer asked for (?lang=)
  */
@@ -363,15 +429,43 @@ function buildGoldminePayload(normalized, options = {}) {
   // the browser can fetch it (CORS, Range, and forbidden headers like Referer
   // are handled server-side).
   const playableCache = new Map();
+  const sourceMeta = {};
+
+  const mapSubtitlesForStream = (stream, proxyMeta) =>
+    stream.subtitles.map((sub, index) => ({
+      id: `goldmine-sub-${index}`,
+      lang: sub.lang || 'und',
+      label: sub.label || languageLabelForCode(sub.lang),
+      url:
+        proxyStreams && hostOf(sub.url) !== apiHost && typeof proxyUrl === 'function'
+          ? proxyUrl(sub.url, proxyMeta.referer, proxyMeta) || sub.url
+          : sub.url
+    }));
+
   const playableUrl = (stream) => {
     if (playableCache.has(stream.url)) return playableCache.get(stream.url);
-    const referer = refererFromHeaders(stream.headers);
+    const proxyMeta = proxyMetaFromHeaders(stream.headers);
     const sameHostAsApi = hostOf(stream.url) === apiHost;
     let playable = stream.url;
     if (!sameHostAsApi && proxyStreams && typeof proxyUrl === 'function') {
-      playable = proxyUrl(stream.url, referer) || stream.url;
+      playable = proxyUrl(stream.url, proxyMeta.referer, proxyMeta) || stream.url;
     }
     playableCache.set(stream.url, playable);
+    if (!sourceMeta[playable]) {
+      const { browserSafe } = splitHeaders(stream.headers);
+      const subs = mapSubtitlesForStream(stream, proxyMeta);
+      sourceMeta[playable] = {
+        container: stream.container,
+        format: stream.container === 'hls' ? 'hls' : stream.container === 'dash' ? 'dash' : stream.container,
+        engine: MOVI_CONTAINERS.has(stream.container) ? 'movi' : 'native',
+        height: stream.height,
+        qualityLabel: stream.height > 0 ? heightToLabel(stream.height) : String(stream.qualityLabel || 'Auto'),
+        languages: stream.languages.map((l) => l.code),
+        multi: !!stream.multi,
+        moviHeaders: Object.keys(browserSafe).length > 0 ? browserSafe : undefined,
+        subtitles: subs.length > 0 ? subs : undefined
+      };
+    }
     return playable;
   };
 
@@ -404,11 +498,8 @@ function buildGoldminePayload(normalized, options = {}) {
 
   // --- Audio tracks --------------------------------------------------------
   // One row per known dub language. Rows whose file muxes several tracks
-  // (`inFile: true`) are switched inside the running file by movi-player
-  // (selectAudioLang); rows that live in their own file switch the src and
-  // keep the playhead. When the primary only says "Multi-Audio" without
-  // naming languages, emit a single discovery row — the player replaces it
-  // with the real tracks once movi-player demuxes the file (getAudioLangs).
+  // (`inFile: true`) are switched inside the running file by movi-player;
+  // rows that live in their own file switch the src and keep the playhead.
   const audioTracks = [];
   if (languageRows.size > 0) {
     const wantedCode = preferredAudio ? normalizeLanguageCode(preferredAudio) : 'und';
@@ -443,7 +534,7 @@ function buildGoldminePayload(normalized, options = {}) {
   } else {
     audioTracks.push({
       id: 'goldmine-default',
-      lang: primary.multi ? 'und' : 'und',
+      lang: 'und',
       label: primary.multi ? 'Multi-Audio (dubs detected on load)' : 'Default Audio',
       type: 'dub',
       streamUrl: primaryPlayable,
@@ -455,15 +546,11 @@ function buildGoldminePayload(normalized, options = {}) {
 
   // --- Qualities (variants of the primary's own provider group) ------------
   const groupStreams = (normalized.providers.find((p) => p.id === primary.provider) || { streams: [] }).streams;
-  // Seed with the primary's own height: a mirror of the SAME resolution is a
-  // backup source, not a quality variant.
   const seenHeights = new Set(primary.height > 0 ? [primary.height] : []);
   const qualities = [];
   for (const stream of groupStreams) {
     if (stream === primary) continue;
     if (stream.height === 0 || seenHeights.has(stream.height)) continue;
-    // Only offer variants that keep the primary's language coverage, so a
-    // quality switch never silently drops the viewer's dub.
     const primaryLangs = primary.languages.map((l) => l.code).sort().join(',');
     const streamLangs = stream.languages.map((l) => l.code).sort().join(',');
     if (primaryLangs && streamLangs && primaryLangs !== streamLangs) continue;
@@ -487,19 +574,12 @@ function buildGoldminePayload(normalized, options = {}) {
     if (playable === primaryPlayable) continue;
     if (!sourceLabels[playable]) sourceLabels[playable] = sourceLabelFor(stream);
     if (!backupUrls.includes(playable)) backupUrls.push(playable);
-    if (backupUrls.length >= 12) break;
+    if (backupUrls.length >= 16) break;
   }
 
   // --- Embedded subtitles from the primary stream ---------------------------
-  const embeddedSubtitles = primary.subtitles.map((sub, index) => ({
-    id: `goldmine-sub-${index}`,
-    lang: sub.lang || 'und',
-    label: sub.label || languageLabelForCode(sub.lang),
-    url:
-      proxyStreams && hostOf(sub.url) !== apiHost && typeof proxyUrl === 'function'
-        ? proxyUrl(sub.url, refererFromHeaders(primary.headers)) || sub.url
-        : sub.url
-  }));
+  const primaryProxyMeta = proxyMetaFromHeaders(primary.headers);
+  const embeddedSubtitles = mapSubtitlesForStream(primary, primaryProxyMeta);
 
   const engine = MOVI_CONTAINERS.has(primary.container) ? 'movi' : undefined;
 
@@ -509,17 +589,19 @@ function buildGoldminePayload(normalized, options = {}) {
     format: primary.container === 'hls' ? 'hls' : primary.container === 'dash' ? 'dash' : primary.container,
     rawUrl: primary.url,
     streamUrl: primaryPlayable,
-    referer: refererFromHeaders(primary.headers),
+    referer: primaryProxyMeta.referer,
     headers: {},
     // Browser-safe custom headers only (Authorization, X-Api-Key…) — the
     // player passes these to movi-player's `headers` attribute. Forbidden
     // headers (Referer/UA/Cookie) are applied server-side by the proxy.
     moviHeaders: Object.keys(primaryBrowserHeaders).length > 0 ? primaryBrowserHeaders : undefined,
     progressiveFormat: engine === 'movi' ? primary.container : undefined,
+    activeAudioTrack: audioTracks.find((t) => t.default) || audioTracks[0] || null,
     audioTracks,
     qualities,
     backupUrls,
     sourceLabels,
+    sourceMeta,
     languages,
     embeddedSubtitles: embeddedSubtitles.length > 0 ? embeddedSubtitles : undefined,
     goldmineImdbId: normalized.imdbId,
@@ -532,7 +614,7 @@ function buildGoldminePayload(normalized, options = {}) {
 }
 
 /**
- * Fetch streams from the TMDB-Embed-API instance.
+ * Fetch streams from the TMDB-Embed-API instance (either aggregate or single provider).
  * Resolves `{ ok, json, reason, diag }` — never throws.
  */
 async function fetchGoldmineStreams(options = {}) {
@@ -544,7 +626,8 @@ async function fetchGoldmineStreams(options = {}) {
     episode = null,
     provider = '',
     timeoutMs = 30000,
-    fetchImpl = null
+    fetchImpl = null,
+    signal = null
   } = options;
 
   const base = stripTrailingSlash(apiBase) || GOLDMINE_DEFAULT_API_BASE;
@@ -560,11 +643,12 @@ async function fetchGoldmineStreams(options = {}) {
   const url = `${base}${path}${query.toString() ? `?${query}` : ''}`;
 
   const doFetch = typeof fetchImpl === 'function' ? fetchImpl : fetch;
+  const timed = createTimedSignal(Math.max(500, timeoutMs), signal);
   try {
     const res = await doFetch(url, {
       headers: { 'User-Agent': USER_AGENT, Accept: 'application/json' },
       redirect: 'follow',
-      signal: AbortSignal.timeout(Math.max(3000, timeoutMs))
+      signal: timed.signal
     });
     if (!res.ok) {
       let body = '';
@@ -594,11 +678,401 @@ async function fetchGoldmineStreams(options = {}) {
     return { ok: true, json, url };
   } catch (error) {
     const name = error && error.name ? error.name : '';
-    if (name === 'TimeoutError' || name === 'AbortError') {
+    if (timed.wasTimeout() || name === 'TimeoutError') {
       return { ok: false, reason: 'goldmine_timeout', diag: `TMDB-Embed-API did not answer within ${timeoutMs}ms (cold start?)` };
     }
+    if (name === 'AbortError') {
+      return { ok: false, reason: 'goldmine_aborted', diag: 'provider request aborted after fast settle' };
+    }
     return { ok: false, reason: 'goldmine_unreachable', diag: error && error.message ? error.message : String(error) };
+  } finally {
+    timed.cleanup();
   }
+}
+
+/**
+ * Discover enabled provider slugs from `GET {base}/api/providers`, cached per
+ * `apiBase` for 10 minutes. Returns `null` if the endpoint is unavailable so
+ * callers fall back cleanly to the aggregate `/api/streams/:type/:tmdbId`.
+ */
+async function fetchGoldmineProviders(options = {}) {
+  const {
+    apiBase = GOLDMINE_DEFAULT_API_BASE,
+    timeoutMs = 8000,
+    fetchImpl = null
+  } = options;
+  const base = stripTrailingSlash(apiBase) || GOLDMINE_DEFAULT_API_BASE;
+
+  // Only share the module cache when using the default fetch implementation.
+  if (!fetchImpl) {
+    const cached = providersCache.get(base);
+    if (cached && Date.now() < cached.exp) return cached.providers;
+  }
+
+  const doFetch = typeof fetchImpl === 'function' ? fetchImpl : fetch;
+  const timed = createTimedSignal(Math.min(Math.max(800, timeoutMs), 12000));
+  try {
+    const res = await doFetch(`${base}/api/providers`, {
+      headers: { 'User-Agent': USER_AGENT, Accept: 'application/json' },
+      redirect: 'follow',
+      signal: timed.signal
+    });
+    if (!res.ok) return null;
+    const json = await res.json();
+    const list = Array.isArray(json && json.providers) ? json.providers : null;
+    if (!list || list.length === 0) return null;
+
+    const slugs = [];
+    const seen = new Set();
+    for (const entry of list) {
+      if (!entry || typeof entry !== 'object') continue;
+      if (entry.enabled === false || entry.cookieOk === false) continue;
+      const slug = String(entry.id || entry.name || '').trim().toLowerCase();
+      if (!/^[a-z0-9]{2,28}$/.test(slug) || seen.has(slug)) continue;
+      seen.add(slug);
+      slugs.push(slug);
+    }
+    if (slugs.length === 0) return null;
+    if (!fetchImpl) {
+      providersCache.set(base, { providers: slugs, exp: Date.now() + PROVIDERS_CACHE_TTL_MS });
+    }
+    return slugs;
+  } catch {
+    return null;
+  } finally {
+    timed.cleanup();
+  }
+}
+
+function clearGoldmineProviderCache() {
+  providersCache.clear();
+}
+
+/** Partition enabled provider ids into Wave 1 (fast MKV + reliable backups) and Wave 2 (slow stragglers). */
+function partitionProviderWaves(enabledSlugs) {
+  const available = new Set(enabledSlugs);
+  const wave1 = [];
+  const wave2 = [];
+  const added = new Set();
+
+  // Keep any custom / non-catalog providers (e.g. test fixtures) at the front of Wave 1.
+  for (const slug of enabledSlugs) {
+    if (!FAST_WAVE_PROVIDERS.includes(slug) && !SECONDARY_WAVE_SET.has(slug)) {
+      wave1.push(slug);
+      added.add(slug);
+    }
+  }
+  for (const slug of FAST_WAVE_PROVIDERS) {
+    if (available.has(slug) && !added.has(slug)) {
+      wave1.push(slug);
+      added.add(slug);
+    }
+  }
+  for (const slug of SECONDARY_WAVE_PROVIDERS) {
+    if (available.has(slug) && !added.has(slug)) {
+      wave2.push(slug);
+      added.add(slug);
+    }
+  }
+
+  if (wave1.length === 0 && wave2.length > 0) {
+    return { wave1: wave2, wave2: [] };
+  }
+  return { wave1, wave2 };
+}
+
+/**
+ * Fast two-wave per-provider resolution:
+ *   1. Query `/api/providers` (cached 10 min) to list enabled providers.
+ *   2. Fire Wave 1 (`dahmermovies`, `4khdhub`, `showbox`, `vidlink`, `videasy`,
+ *      `vixsrc`) in parallel immediately.
+ *   3. Return early (~1.5–4.2s) once strong MKV/multi-audio + backup streams
+ *      settle, aborting slow 15–30s stragglers instead of blocking on them.
+ *   4. Launch Wave 2 only if Wave 1 hasn't settled within 2.2s (or finishes empty).
+ *   5. Fall back transparently to aggregate `/api/streams/:type/:tmdbId` if
+ *      `/api/providers` or per-provider routes are unsupported.
+ */
+async function fetchGoldmineStreamsFast(options = {}) {
+  const {
+    apiBase = GOLDMINE_DEFAULT_API_BASE,
+    type = 'movie',
+    tmdbId = '',
+    season = null,
+    episode = null,
+    preferredAudio = '',
+    timeoutMs = 30000,
+    fetchImpl = null
+  } = options;
+
+  const startedAt = Date.now();
+  const totalBudgetMs = Math.max(1000, timeoutMs);
+  const remainingMs = () => Math.max(250, totalBudgetMs - (Date.now() - startedAt));
+
+  const enabledProviders = await fetchGoldmineProviders({
+    apiBase,
+    timeoutMs: Math.min(remainingMs(), 10000),
+    fetchImpl
+  });
+
+  if (!enabledProviders || enabledProviders.length === 0) {
+    return fetchGoldmineStreams({
+      apiBase,
+      type,
+      tmdbId,
+      season,
+      episode,
+      timeoutMs: remainingMs(),
+      fetchImpl
+    });
+  }
+
+  const { wave1, wave2 } = partitionProviderWaves(enabledProviders);
+  const orderedProviders = [...wave1, ...wave2];
+  const wantedAudioCode = preferredAudio ? normalizeLanguageCode(preferredAudio) : 'und';
+
+  return new Promise((resolve) => {
+    let finished = false;
+    let wave2Launched = wave2.length === 0;
+    let inFlight = 0;
+    let settleTimer = null;
+    let settleDeadline = Infinity;
+    let wave2Timer = null;
+    let hardTimer = null;
+
+    const controllers = new Map();
+    const streamsByProvider = new Map();
+    const providerTimings = {};
+    const failureReasons = [];
+    let okResponses = 0;
+    let unknownRouteCount = 0;
+    let launchedCount = 0;
+    let resolvedImdbId = null;
+
+    const cleanupTimers = () => {
+      if (settleTimer) {
+        clearTimeout(settleTimer);
+        settleTimer = null;
+      }
+      if (wave2Timer) {
+        clearTimeout(wave2Timer);
+        wave2Timer = null;
+      }
+      if (hardTimer) {
+        clearTimeout(hardTimer);
+        hardTimer = null;
+      }
+    };
+
+    const abortRemaining = () => {
+      for (const ctrl of controllers.values()) {
+        try { ctrl.abort(); } catch {}
+      }
+      controllers.clear();
+    };
+
+    const collectCurrentState = () => {
+      const mergedRaw = [];
+      let providersWithStreams = 0;
+      let hasMkvOrMulti = false;
+      let hasWantedAudio = wantedAudioCode === 'und';
+
+      for (const providerId of orderedProviders) {
+        const list = streamsByProvider.get(providerId);
+        if (!Array.isArray(list) || list.length === 0) continue;
+        providersWithStreams += 1;
+        for (const raw of list) {
+          mergedRaw.push(raw);
+          const norm = normalizeGoldmineStream(raw, mergedRaw.length - 1);
+          if (!norm) continue;
+          if (norm.container === 'mkv' || norm.multi || norm.languages.length > 1) {
+            hasMkvOrMulti = true;
+          }
+          if (
+            !hasWantedAudio &&
+            (norm.multi || norm.languages.some((l) => l.code === wantedAudioCode))
+          ) {
+            hasWantedAudio = true;
+          }
+        }
+      }
+
+      return {
+        mergedRaw,
+        providersWithStreams,
+        hasMkvOrMulti,
+        hasWantedAudio
+      };
+    };
+
+    const finalize = () => {
+      if (finished) return;
+      finished = true;
+      cleanupTimers();
+      abortRemaining();
+
+      // If every per-provider call returned 404, the server only implements the aggregate route.
+      if (launchedCount > 0 && unknownRouteCount === launchedCount) {
+        resolve(
+          fetchGoldmineStreams({
+            apiBase,
+            type,
+            tmdbId,
+            season,
+            episode,
+            timeoutMs: remainingMs(),
+            fetchImpl
+          })
+        );
+        return;
+      }
+
+      const { mergedRaw } = collectCurrentState();
+      if (mergedRaw.length > 0 || okResponses > 0) {
+        resolve({
+          ok: true,
+          json: {
+            success: true,
+            tmdbId,
+            imdbId: resolvedImdbId,
+            count: mergedRaw.length,
+            providerTimings,
+            streams: mergedRaw
+          }
+        });
+        return;
+      }
+
+      const nonAbortFailure =
+        failureReasons.find((f) => f.reason === 'goldmine_bad_response') ||
+        failureReasons.find((f) => f.reason === 'goldmine_http_error') ||
+        failureReasons.find((f) => f.reason === 'goldmine_timeout') ||
+        failureReasons.find((f) => f.reason === 'goldmine_unreachable') ||
+        failureReasons[0];
+
+      resolve({
+        ok: false,
+        reason: (nonAbortFailure && nonAbortFailure.reason) || 'goldmine_timeout',
+        diag: (nonAbortFailure && nonAbortFailure.diag) || 'All Goldmine provider requests failed'
+      });
+    };
+
+    const scheduleSettleIn = (delayMs) => {
+      const clamped = Math.max(0, delayMs);
+      const targetAt = Date.now() + clamped;
+      if (targetAt >= settleDeadline) return;
+      settleDeadline = targetAt;
+      if (settleTimer) clearTimeout(settleTimer);
+      settleTimer = setTimeout(finalize, clamped);
+    };
+
+    const evaluateProgress = () => {
+      if (finished) return;
+      const { mergedRaw, providersWithStreams, hasMkvOrMulti, hasWantedAudio } = collectCurrentState();
+
+      // If Wave 1 completely finished with 0 streams and Wave 2 is still waiting, launch Wave 2 right away.
+      if (inFlight === 0 && mergedRaw.length === 0 && !wave2Launched) {
+        launchWave2();
+        return;
+      }
+
+      // Nothing left in flight (and either we already have streams or Wave 2 also ran): settle now.
+      if (inFlight === 0 && (wave2Launched || mergedRaw.length > 0)) {
+        finalize();
+        return;
+      }
+
+      if (mergedRaw.length === 0) return;
+
+      const elapsed = Date.now() - startedAt;
+      if (hasMkvOrMulti && providersWithStreams >= 2 && hasWantedAudio) {
+        scheduleSettleIn(320);
+      } else if (hasMkvOrMulti && hasWantedAudio) {
+        scheduleSettleIn(850);
+      } else {
+        // At least one playable stream arrived (e.g. fast HLS/MP4): allow a short
+        // window for an MKV/multi-audio extractor to land, capped at ~4.2s total.
+        scheduleSettleIn(Math.max(350, 4200 - elapsed));
+      }
+    };
+
+    const launchProvider = (providerId) => {
+      if (finished) return;
+      const ctrl = new AbortController();
+      controllers.set(providerId, ctrl);
+      inFlight += 1;
+      launchedCount += 1;
+      const t0 = Date.now();
+      const perProviderBudget = Math.min(remainingMs(), 12000);
+
+      fetchGoldmineStreams({
+        apiBase,
+        type,
+        tmdbId,
+        season,
+        episode,
+        provider: providerId,
+        timeoutMs: perProviderBudget,
+        fetchImpl,
+        signal: ctrl.signal
+      })
+        .then((res) => {
+          controllers.delete(providerId);
+          inFlight = Math.max(0, inFlight - 1);
+          if (finished) return;
+
+          if (res.ok && res.json) {
+            okResponses += 1;
+            const list = Array.isArray(res.json.streams) ? res.json.streams : [];
+            const tagged = list.map((s) => (s && typeof s === 'object' && !s.provider ? { ...s, provider: providerId } : s));
+            streamsByProvider.set(providerId, tagged);
+            const upstreamMs =
+              res.json.providerTimings && typeof res.json.providerTimings[providerId] === 'number'
+                ? res.json.providerTimings[providerId]
+                : Date.now() - t0;
+            providerTimings[providerId] = upstreamMs;
+            if (!resolvedImdbId && res.json.imdbId) resolvedImdbId = res.json.imdbId;
+          } else {
+            providerTimings[providerId] = null;
+            if (res.reason === 'goldmine_source_unknown') unknownRouteCount += 1;
+            if (res.reason && res.reason !== 'goldmine_aborted') {
+              failureReasons.push({ provider: providerId, reason: res.reason, diag: res.diag });
+            }
+          }
+          evaluateProgress();
+        })
+        .catch((err) => {
+          controllers.delete(providerId);
+          inFlight = Math.max(0, inFlight - 1);
+          if (finished) return;
+          providerTimings[providerId] = null;
+          failureReasons.push({
+            provider: providerId,
+            reason: 'goldmine_unreachable',
+            diag: err && err.message ? err.message : String(err)
+          });
+          evaluateProgress();
+        });
+    };
+
+    const launchWave2 = () => {
+      if (finished || wave2Launched) return;
+      wave2Launched = true;
+      if (wave2Timer) {
+        clearTimeout(wave2Timer);
+        wave2Timer = null;
+      }
+      for (const providerId of wave2) launchProvider(providerId);
+      if (inFlight === 0) finalize();
+    };
+
+    hardTimer = setTimeout(finalize, remainingMs());
+    for (const providerId of wave1) launchProvider(providerId);
+
+    if (!wave2Launched) {
+      const wave2Delay = Math.min(2200, Math.max(300, Math.floor(remainingMs() * 0.4)));
+      wave2Timer = setTimeout(launchWave2, wave2Delay);
+    }
+  });
 }
 
 /**
@@ -616,7 +1090,7 @@ async function fetchGoldmineStreams(options = {}) {
 async function resolveGoldmineServer(metadata, options = {}) {
   const {
     apiBase = GOLDMINE_DEFAULT_API_BASE,
-    timeoutMs = 30000,
+    timeoutMs = 25000,
     fetchImpl = null,
     onlySource = '',
     preferredAudio = '',
@@ -629,16 +1103,29 @@ async function resolveGoldmineServer(metadata, options = {}) {
   }
 
   const provider = String(onlySource || '').toLowerCase();
-  const fetched = await fetchGoldmineStreams({
-    apiBase,
-    type: metadata.type === 'movie' ? 'movie' : 'series',
-    tmdbId: metadata.tmdbId,
-    season: metadata.season || null,
-    episode: metadata.episode || null,
-    provider,
-    timeoutMs,
-    fetchImpl
-  });
+  const mediaType = metadata.type === 'movie' ? 'movie' : 'series';
+  const fetched = provider
+    ? await fetchGoldmineStreams({
+        apiBase,
+        type: mediaType,
+        tmdbId: metadata.tmdbId,
+        season: metadata.season || null,
+        episode: metadata.episode || null,
+        provider,
+        timeoutMs,
+        fetchImpl
+      })
+    : await fetchGoldmineStreamsFast({
+        apiBase,
+        type: mediaType,
+        tmdbId: metadata.tmdbId,
+        season: metadata.season || null,
+        episode: metadata.episode || null,
+        preferredAudio,
+        timeoutMs,
+        fetchImpl
+      });
+
   if (!fetched.ok) {
     return { reason: fetched.reason, diag: fetched.diag };
   }
@@ -743,6 +1230,8 @@ module.exports = {
   GOLDMINE_DEFAULT_API_BASE,
   GOLDMINE_PROVIDER_LABELS,
   MOVI_CONTAINERS,
+  FAST_WAVE_PROVIDERS,
+  SECONDARY_WAVE_PROVIDERS,
   goldmineTypeFor,
   qualityToHeight,
   heightToLabel,
@@ -753,7 +1242,11 @@ module.exports = {
   buildGoldminePayload,
   sourceLabelFor,
   splitHeaders,
+  proxyMetaFromHeaders,
+  fetchGoldmineProviders,
+  clearGoldmineProviderCache,
   fetchGoldmineStreams,
+  fetchGoldmineStreamsFast,
   resolveGoldmineServer,
   diagnoseGoldmine
 };

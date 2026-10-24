@@ -532,7 +532,7 @@ async function runTests() {
   console.log('==========================================================\n');
 
   // 1. Cryptographic Unit Tests (AES-256-CBC + HMAC-SHA256 + Handshake Token)
-  console.log('[1/13] Testing HMAC proxy signing & handshake tokens...');
+  console.log('[1/14] Testing HMAC proxy signing & handshake tokens...');
   const exp = Math.floor(Date.now() / 1000) + 3600;
   const sig = signProxyParams('https://cdn.example.com/hls/master.m3u8', 'https://gate.example/', exp);
   assert.strictEqual(
@@ -552,7 +552,7 @@ async function runTests() {
   console.log('  ✔ Passed cryptographic verification.');
 
   // 2. Language helpers + Goldmine stream normalization unit tests
-  console.log('[2/13] Testing language helpers & Goldmine stream normalization...');
+  console.log('[2/14] Testing language helpers & Goldmine stream normalization...');
   assert.strictEqual(languagesSvc.normalizeLanguageCode('en-dub'), 'en');
   assert.strictEqual(languagesSvc.normalizeLanguageCode('HIN'), 'hi');
   assert.strictEqual(languagesSvc.normalizeLanguageCode('unknown'), 'und');
@@ -609,7 +609,7 @@ async function runTests() {
   assert.ok(label.includes('1080p') && label.includes('MKV') && label.includes('English'), `source label must describe quality+container+languages, got "${label}"`);
   console.log('  ✔ Passed language helper & Goldmine normalization tests.');
 
-  console.log('[3/13] Testing SubRip (.srt) to WebVTT (.vtt) Converter...');
+  console.log('[3/14] Testing SubRip (.srt) to WebVTT (.vtt) Converter...');
   const sampleSrt = `1\r\n00:00:02,500 --> 00:00:05,800\r\nWelcome to Piltover.\r\n\r\n2\r\n00:00:06,100 --> 00:00:09,450\r\nThe City of Progress.\r\n`;
   const convertedVtt = srtToVtt(sampleSrt);
   assert.ok(convertedVtt.startsWith('WEBVTT'), 'Output must start with WEBVTT header');
@@ -620,7 +620,7 @@ async function runTests() {
   console.log('  ✔ Passed SRT -> VTT conversion.');
 
   // 4. M3U8 Manifest Rewriter Unit Test
-  console.log('[4/13] Testing M3U8 Master & Media Playlist Rewriter...');
+  console.log('[4/14] Testing M3U8 Master & Media Playlist Rewriter...');
   const sampleMasterM3u8 = [
     '#EXTM3U',
     '#EXT-X-VERSION:3',
@@ -674,7 +674,7 @@ async function runTests() {
   try {
     // 5. Health, servers list & handshake endpoints
     // 5. Health & Handshake Endpoints
-    console.log('[5/13] Testing /api/health, /api/servers & /api/handshake...');
+    console.log('[5/14] Testing /api/health, /api/servers & /api/handshake...');
     const health = await httpRequest(baseUrl, '/api/health');
     assert.strictEqual(health.status, 200);
     assert.strictEqual(health.json.ok, true);
@@ -703,7 +703,7 @@ async function runTests() {
     console.log('  ✔ Passed /api/health, /api/servers & /api/handshake.');
 
     // 6. TMDB-ID Metadata & Real IntroDB Skip Segments Resolution
-    console.log('[6/13] Testing TMDB ID -> External IDs (IMDb/TVDB) & IntroDB Skip Intro Segments...');
+    console.log('[6/14] Testing TMDB ID -> External IDs (IMDb/TVDB) & IntroDB Skip Intro Segments...');
     const infoRes = await httpRequest(baseUrl, '/api/info/tv/94605?season=1&episode=1');
     assert.strictEqual(infoRes.status, 200);
     assert.strictEqual(infoRes.json.ok, true);
@@ -790,7 +790,7 @@ async function runTests() {
     // 7. Full production stream resolution through the mocked TMDB-Embed-API:
     //    MKV payload, dub languages up front, labeled sources for manual
     //    switching, subtitles and the CORS+Range stream proxy movi needs.
-    console.log('[7/13] Testing /api/resolve/movie/693134 (Goldmine MKV), subtitles & /api/proxy...');
+    console.log('[7/14] Testing /api/resolve/movie/693134 (Goldmine MKV), subtitles & /api/proxy...');
     const resolveRes = await httpRequest(baseUrl, '/api/resolve/movie/693134');
     assert.strictEqual(resolveRes.status, 200);
     assert.strictEqual(resolveRes.json.ok, true);
@@ -910,7 +910,7 @@ async function runTests() {
     // 8. Backend-only public surface: service metadata + social image, no web UI.
     // 8. Node API public surface: service metadata + social image, JSON-only.
     // (The /embed player page ships with the Cloudflare Worker; suite 10 covers it.)
-    console.log('[8/13] Testing LOL Embed branding, meta image, and JSON-only Node surface...');
+    console.log('[8/14] Testing LOL Embed branding, meta image, and JSON-only Node surface...');
     const rootInfo = await httpRequest(baseUrl, '/');
     assert.strictEqual(rootInfo.status, 200);
     assert.strictEqual(rootInfo.json.brand, 'LOL Embed');
@@ -934,7 +934,7 @@ async function runTests() {
 
     // 9. Owner Admin Panel (telemetry, Goldmine hot-swap, probes, diagnostic,
     //    domain firewall, custom overrides)
-    console.log('[9/13] Testing JSON Admin API, Domain Telemetry, Goldmine Hot-Swap & Firewall...');
+    console.log('[9/14] Testing JSON Admin API, Domain Telemetry, Goldmine Hot-Swap & Firewall...');
 
     // Simulate API requests from an external client domain (there is no embed page).
     await httpRequest(baseUrl, '/api/resolve/tv/94605?season=1&episode=1&parent=https://partner-cinema.to', {
@@ -1073,7 +1073,7 @@ async function runTests() {
     // the API base URL is configurable for a separate API Worker, `/` stays
     // JSON for API clients (with a browser-only rickroll easter egg), and the
     // portal/admin UI stays removed.
-    console.log('[10/13] Testing Worker /embed player page, assets, API base config & root behavior...');
+    console.log('[10/14] Testing Worker /embed player page, assets, API base config & root behavior...');
     const workerModule = await import('../cloudflare-worker/worker.js');
     const workerFetch = workerModule.default.fetch;
 
@@ -1214,19 +1214,41 @@ async function runTests() {
       'Unset API_BASE_URL must inject an empty same-origin base'
     );
 
-    // 10c. Required player assets load with sensible content types.
-    for (const [assetPath, typePrefix] of [
-      ['/css/embed.css', 'text/css'],
-      ['/js/embed.js', 'text/javascript'],
-      ['/vendor/hls.min.js', 'text/javascript'],
-      ['/vendor/dash.all.min.js', 'text/javascript']
+    // 10c. Required player assets load with sensible content types (including
+    // the 12 MB movi-player WASM/WebCodecs ES module bundle for Goldmine MKV).
+    for (const [assetPath, typePattern] of [
+      ['/css/embed.css', '^text/css'],
+      ['/js/embed.js', '^(?:text|application)/javascript'],
+      ['/vendor/hls.min.js', '^(?:text|application)/javascript'],
+      ['/vendor/dash.all.min.js', '^(?:text|application)/javascript'],
+      ['/vendor/movi/element.js', '^(?:text|application)/javascript']
     ]) {
       const assetRes = await callWorker(`http://player.test${assetPath}`);
       assert.strictEqual(assetRes.status, 200, `${assetPath} must be served`);
-      assert.match(assetRes.headers.get('content-type') || '', new RegExp(`^${typePrefix}`));
+      assert.match(assetRes.headers.get('content-type') || '', new RegExp(typePattern, 'i'));
       assert.strictEqual(assetRes.headers.get('access-control-allow-origin'), '*');
       const assetBody = await assetRes.text();
       assert.ok(assetBody.length > 500, `${assetPath} must serve real content`);
+    }
+
+    // 10c-2. Fallback Content-Type safety: ES modules fail under strict MIME
+    // checking if env.ASSETS returns a response with no Content-Type header.
+    {
+      const bareAssets = {
+        async fetch() {
+          return new Response('export const ok = true;\n', { status: 200 });
+        }
+      };
+      const bareMoviRes = await workerFetch(
+        new Request('http://player.test/vendor/movi/element.js'),
+        { ASSETS: bareAssets }
+      );
+      assert.strictEqual(bareMoviRes.status, 200);
+      assert.match(
+        bareMoviRes.headers.get('content-type') || '',
+        /javascript/i,
+        'Worker must synthesize a JavaScript Content-Type for /vendor/movi/element.js when ASSETS omits it'
+      );
     }
 
     // 10d. Worker `/` stays a JSON descriptor for API clients and rickrolls browsers.
@@ -1307,7 +1329,7 @@ async function runTests() {
     // 11. Goldmine source resolution end-to-end: the shared TMDB-Embed-API
     //     service, failure reasons, ?source= pinning, resolver caching and the
     //     honest error contract of /api/resolve.
-    console.log('[11/13] Testing Goldmine service failures, ?source= pinning & resolver caching...');
+    console.log('[11/14] Testing Goldmine service failures, ?source= pinning & resolver caching...');
 
     const goldmineApiBase = `${mockUpstream.url}/goldmine`;
 
@@ -1431,7 +1453,7 @@ async function runTests() {
     // 12. Shared catalog parity: Node config, the Worker's SERVERS, the player
     //     bundle defaults and the live API payloads must all agree — and the
     //     Worker's resolve must run the same shared goldmine service.
-    console.log('[12/13] Testing shared server catalog, worker servers array & player defaults...');
+    console.log('[12/14] Testing shared server catalog, worker servers array & player defaults...');
     {
       const catalog = require('../src/services/serverCatalog');
       const expected = [['goldmine', 'Goldmine MKV', 'Multi-Audio Dubs \u2022 MKV', 1]];
@@ -1602,7 +1624,7 @@ async function runTests() {
     console.log('  ✔ Passed shared server catalog, worker servers array & player default tests.');
 
     // 13. Documentation page, owner dashboard (/reze), usage statistics & persistence
-    console.log('[13/13] Testing /docs, the /reze dashboard, usage statistics, blocking, ad-free sites & persistence...');
+    console.log('[13/14] Testing /docs, the /reze dashboard, usage statistics, blocking, ad-free sites & persistence...');
     {
       const adminKey = { 'X-Admin-Key': 'admin123' };
       const callWorkerWith = (target, env = {}, init = {}) =>
@@ -1849,6 +1871,457 @@ async function runTests() {
       }
     }
     console.log('  ✔ Passed documentation, dashboard, statistics, blocking, per-site ads & persistence tests.');
+
+    // 14. MKV WASM demuxing, fast two-wave provider fan-out, proxy MIME/header
+    //     forwarding, 50+ audio languages & smooth source-shifting contracts.
+    console.log('[14/14] Testing MKV WASM demuxing, fast two-wave fan-out, proxy headers & multi-audio source shifting...');
+    {
+      const langSvc = require('../src/services/languages');
+
+      // 14a. Expanded ISO-639-1 / 639-2 / 639-3 / release-title language support.
+      const expectedLangPairs = [
+        ['eng', 'en', 'English'],
+        ['hin', 'hi', 'Hindi'],
+        ['tam', 'ta', 'Tamil'],
+        ['tel', 'te', 'Telugu'],
+        ['mal', 'ml', 'Malayalam'],
+        ['kan', 'kn', 'Kannada'],
+        ['ben', 'bn', 'Bengali'],
+        ['mar', 'mr', 'Marathi'],
+        ['guj', 'gu', 'Gujarati'],
+        ['pan', 'pa', 'Punjabi'],
+        ['odi', 'or', 'Odia'],
+        ['asm', 'as', 'Assamese'],
+        ['nep', 'ne', 'Nepali'],
+        ['sin', 'si', 'Sinhala'],
+        ['urd', 'ur', 'Urdu'],
+        ['fas', 'fa', 'Persian'],
+        ['heb', 'he', 'Hebrew'],
+        ['jpn', 'ja', 'Japanese'],
+        ['kor', 'ko', 'Korean'],
+        ['zho', 'zh', 'Chinese'],
+        ['spa', 'es', 'Spanish'],
+        ['latino', 'es', 'Spanish'],
+        ['por', 'pt', 'Portuguese'],
+        ['pb', 'pt', 'Portuguese'],
+        ['deu', 'de', 'German'],
+        ['ger', 'de', 'German'],
+        ['fra', 'fr', 'French'],
+        ['fre', 'fr', 'French'],
+        ['rus', 'ru', 'Russian'],
+        ['ukr', 'uk', 'Ukrainian'],
+        ['pol', 'pl', 'Polish'],
+        ['tgl', 'tl', 'Filipino'],
+        ['fil', 'tl', 'Filipino']
+      ];
+      for (const [input, code, label] of expectedLangPairs) {
+        assert.strictEqual(langSvc.normalizeLanguageCode(input), code, `${input} must normalize to ${code}`);
+        assert.strictEqual(langSvc.languageLabelForCode(code), label, `${code} must label as ${label}`);
+      }
+      const parsedHint = langSvc.parseAudioLanguageHints(
+        'Movie.2025.2160p.WEB-DL.Multi.Audio.[Tam+Tel+Mal+Kan+Hin+Eng].HEVC.mkv'
+      );
+      assert.strictEqual(parsedHint.multi, true);
+      assert.deepStrictEqual(
+        parsedHint.languages.map((l) => l.code),
+        ['ta', 'te', 'ml', 'kn', 'hi', 'en']
+      );
+
+      // 14b. Two-wave fast provider fan-out: settles in <700ms and aborts 15s stragglers.
+      goldmineSvc.clearGoldmineProviderCache();
+      let wave1StragglerAborted = false;
+      let wave2Called = false;
+      const fastMockFetch = async (input, init = {}) => {
+        const u = new URL(typeof input === 'string' ? input : input.url);
+        if (u.pathname.endsWith('/api/providers')) {
+          return new Response(
+            JSON.stringify({
+              providers: [
+                { name: 'dahmermovies', enabled: true },
+                { name: 'showbox', enabled: true },
+                { name: '4khdhub', enabled: true },
+                { name: 'streamflix', enabled: true }
+              ]
+            }),
+            { status: 200, headers: { 'Content-Type': 'application/json' } }
+          );
+        }
+        if (u.pathname.includes('/api/streams/dahmermovies/')) {
+          await new Promise((r) => setTimeout(r, 20));
+          return new Response(
+            JSON.stringify({
+              imdbId: 'tt15239678',
+              streams: [
+                {
+                  title: 'Dune.2024.1080p.Multi.Audio.Hindi.English.mkv',
+                  url: 'https://cdn-a.example/dune.mkv',
+                  quality: '1080p'
+                }
+              ]
+            }),
+            { status: 200, headers: { 'Content-Type': 'application/json' } }
+          );
+        }
+        if (u.pathname.includes('/api/streams/showbox/')) {
+          await new Promise((r) => setTimeout(r, 25));
+          return new Response(
+            JSON.stringify({
+              streams: [
+                {
+                  title: 'Dune.2024.720p.English.mkv',
+                  url: 'https://cdn-b.example/dune720.mkv',
+                  quality: '720p'
+                }
+              ]
+            }),
+            { status: 200, headers: { 'Content-Type': 'application/json' } }
+          );
+        }
+        if (u.pathname.includes('/api/streams/4khdhub/')) {
+          return new Promise((_, reject) => {
+            const timer = setTimeout(() => reject(new Error('should have been aborted')), 15000);
+            if (typeof timer.unref === 'function') timer.unref();
+            if (init.signal) {
+              init.signal.addEventListener('abort', () => {
+                clearTimeout(timer);
+                wave1StragglerAborted = true;
+                const abortErr = new Error('Aborted');
+                abortErr.name = 'AbortError';
+                reject(abortErr);
+              });
+            }
+          });
+        }
+        if (u.pathname.includes('/api/streams/streamflix/')) {
+          wave2Called = true;
+          return new Response(JSON.stringify({ streams: [] }), { status: 200 });
+        }
+        return new Response('Not found', { status: 404 });
+      };
+
+      const tFastStart = Date.now();
+      const fastResult = await goldmineSvc.resolveGoldmineServer(
+        { type: 'movie', tmdbId: '693134' },
+        {
+          apiBase: 'http://goldmine-fast.test',
+          preferredAudio: 'hi',
+          timeoutMs: 15000,
+          fetchImpl: fastMockFetch,
+          proxyStreams: false
+        }
+      );
+      const fastElapsed = Date.now() - tFastStart;
+      assert.ok(fastResult && fastResult.streamUrl, 'fast two-wave resolve must return a stream bundle');
+      assert.ok(fastElapsed < 1200, `expected <1200ms early settle despite 15s straggler, got ${fastElapsed}ms`);
+      assert.strictEqual(wave1StragglerAborted, true, 'slow Wave 1 straggler must be aborted once fast MKV streams settle');
+      assert.strictEqual(wave2Called, false, 'Wave 2 slow providers must not even launch when Wave 1 settles quickly');
+      assert.strictEqual(fastResult.activeAudioTrack.lang, 'hi', 'preferredAudio=hi must select the Hindi track');
+      for (const metaEntry of Object.values(fastResult.sourceMeta || {})) {
+        assert.strictEqual('provider' in metaEntry, false, 'sourceMeta must stay provider-anonymous');
+      }
+
+      // Wave 1 empty -> Wave 2 launches immediately without waiting full wave2Delay.
+      goldmineSvc.clearGoldmineProviderCache();
+      const wave2FallbackFetch = async (input) => {
+        const u = new URL(typeof input === 'string' ? input : input.url);
+        if (u.pathname.endsWith('/api/providers')) {
+          return new Response(
+            JSON.stringify({
+              providers: [
+                { name: 'dahmermovies', enabled: true },
+                { name: 'netmirror', enabled: true }
+              ]
+            }),
+            { status: 200, headers: { 'Content-Type': 'application/json' } }
+          );
+        }
+        if (u.pathname.includes('/api/streams/dahmermovies/')) {
+          return new Response(JSON.stringify({ streams: [] }), { status: 200 });
+        }
+        if (u.pathname.includes('/api/streams/netmirror/')) {
+          return new Response(
+            JSON.stringify({
+              streams: [{ title: '1080p HLS', url: 'https://cdn-c.example/master.m3u8', quality: '1080p' }]
+            }),
+            { status: 200 }
+          );
+        }
+        return new Response('Not found', { status: 404 });
+      };
+      const tWave2 = Date.now();
+      const wave2Res = await goldmineSvc.resolveGoldmineServer(
+        { type: 'movie', tmdbId: '693134' },
+        { apiBase: 'http://goldmine-w2.test', timeoutMs: 8000, fetchImpl: wave2FallbackFetch, proxyStreams: false }
+      );
+      assert.strictEqual(wave2Res.streamUrl, 'https://cdn-c.example/master.m3u8');
+      assert.strictEqual(wave2Res.format, 'hls');
+      assert.ok(Date.now() - tWave2 < 500, 'Wave 2 must start immediately when Wave 1 finishes empty');
+
+      // 14c. Transport header stripping + proxy header forwarding & MKV MIME inference.
+      const rawProviderHeaders = {
+        Referer: 'https://host.example/watch',
+        Origin: 'https://host.example',
+        Cookie: 'sid=xyz',
+        'User-Agent': 'CustomUA/1.0',
+        Connection: 'keep-alive',
+        'Accept-Encoding': 'gzip',
+        Authorization: 'Bearer tok-1',
+        'X-Client-Token': 'abc-99'
+      };
+      const split = goldmineSvc.splitHeaders(rawProviderHeaders);
+      const pMeta = goldmineSvc.proxyMetaFromHeaders(rawProviderHeaders);
+      assert.strictEqual(pMeta.referer, 'https://host.example/watch');
+      assert.strictEqual(pMeta.origin, 'https://host.example');
+      assert.strictEqual(pMeta.cookie, 'sid=xyz');
+      assert.strictEqual(pMeta.userAgent, 'CustomUA/1.0');
+      assert.strictEqual('Connection' in split.browserSafe, false);
+      assert.strictEqual('Accept-Encoding' in split.browserSafe, false);
+      assert.strictEqual('Referer' in split.browserSafe, false);
+      assert.deepStrictEqual(split.browserSafe, {
+        Authorization: 'Bearer tok-1',
+        'X-Client-Token': 'abc-99'
+      });
+
+      // CORS preflight reflects custom headers requested by movi-player.
+      const preflightRes = await workerFetch(
+        new Request('http://player.test/api/proxy', {
+          method: 'OPTIONS',
+          headers: { 'Access-Control-Request-Headers': 'Range, X-Client-Token, Authorization' }
+        }),
+        {}
+      );
+      assert.strictEqual(preflightRes.status, 204);
+      assert.match(preflightRes.headers.get('access-control-allow-headers') || '', /X-Client-Token/i);
+
+      // 14d. Real FFmpeg WASM Demuxer (`public/vendor/movi/element.js`) over Worker `/api/proxy`
+      //      streaming a multi-audio + multi-subtitle Matroska container via HTTP Range requests.
+      const buildTestMkv = () => {
+        const vint = (num, width) => {
+          let w = width;
+          if (!w) {
+            if (num < 0x7f) w = 1;
+            else if (num < 0x3fff) w = 2;
+            else if (num < 0x1fffff) w = 3;
+            else w = 4;
+          }
+          const buf = Buffer.alloc(w);
+          let v = num;
+          for (let i = w - 1; i >= 0; i -= 1) {
+            buf[i] = v & 0xff;
+            v = Math.floor(v / 256);
+          }
+          buf[0] |= 1 << (8 - w);
+          return buf;
+        };
+        const mkEl = (idHex, payload) => {
+          const id = Buffer.from(idHex, 'hex');
+          const data = Buffer.isBuffer(payload) ? payload : Buffer.concat(payload);
+          return Buffer.concat([id, vint(data.length), data]);
+        };
+        const uintEl = (idHex, n) => {
+          const bytes = [];
+          let v = n;
+          do {
+            bytes.unshift(v & 0xff);
+            v = Math.floor(v / 256);
+          } while (v > 0);
+          return mkEl(idHex, Buffer.from(bytes));
+        };
+        const float64El = (idHex, f) => {
+          const b = Buffer.alloc(8);
+          b.writeDoubleBE(f, 0);
+          return mkEl(idHex, b);
+        };
+        const strEl = (idHex, s) => mkEl(idHex, Buffer.from(s, 'utf8'));
+        const aacPriv = Buffer.from([0x11, 0x90]);
+        const mkAudio = (num, lang, name) => {
+          const parts = [
+            uintEl('d7', num),
+            uintEl('73c5', 100 + num),
+            uintEl('83', 2),
+            strEl('86', 'A_AAC'),
+            mkEl('63a2', aacPriv),
+            mkEl('e1', [float64El('b5', 48000), uintEl('9f', 2)])
+          ];
+          if (lang) parts.push(strEl('22b59c', lang));
+          if (name) parts.push(strEl('536e', name));
+          return mkEl('ae', parts);
+        };
+        const mkSub = (num, lang, name) =>
+          mkEl('ae', [
+            uintEl('d7', num),
+            uintEl('73c5', 200 + num),
+            uintEl('83', 0x11),
+            strEl('86', 'S_TEXT/UTF8'),
+            strEl('22b59c', lang),
+            strEl('536e', name)
+          ]);
+        const silentAac = Buffer.from([0x21, 0x00, 0x49, 0x90, 0x02, 0x19, 0x00, 0x23, 0x80]);
+        const mkBlock = (trackNum, payload) => {
+          const hdr = Buffer.alloc(4);
+          hdr[0] = 0x80 | trackNum;
+          hdr.writeInt16BE(0, 1);
+          hdr[3] = 0x80;
+          return mkEl('a3', Buffer.concat([hdr, payload]));
+        };
+        const ebml = mkEl('1a45dfa3', [
+          uintEl('4286', 1),
+          uintEl('42f7', 1),
+          uintEl('42f2', 4),
+          uintEl('42f3', 8),
+          strEl('4282', 'matroska'),
+          uintEl('4287', 4),
+          uintEl('4285', 2)
+        ]);
+        const info = mkEl('1549a966', [uintEl('2ad7b1', 1000000), float64El('4489', 60000.0)]);
+        const tracks = mkEl('1654ae6b', [
+          mkAudio(1, 'eng', 'English Stereo'),
+          mkAudio(2, 'hin', 'Hindi Dub'),
+          mkAudio(3, 'jpn', 'Japanese Original'),
+          mkAudio(4, 'und', 'Spanish Dub'),
+          mkSub(5, 'eng', 'English SDH')
+        ]);
+        const cluster = mkEl('1f43b675', [
+          uintEl('e7', 0),
+          mkBlock(1, silentAac),
+          mkBlock(2, silentAac),
+          mkBlock(3, silentAac),
+          mkBlock(4, silentAac),
+          mkBlock(5, Buffer.from('Hello!', 'utf8'))
+        ]);
+        return Buffer.concat([ebml, mkEl('18538067', [info, tracks, cluster])]);
+      };
+
+      const mkvBytes = buildTestMkv();
+      const seenUpstreamMkvHeaders = [];
+      const origGlobalFetch = globalThis.fetch;
+      try {
+        globalThis.fetch = async (input, init = {}) => {
+          const reqUrl = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url;
+          if (reqUrl.startsWith('http://wasm-player.test/')) {
+            const reqObj = input instanceof Request ? input : new Request(reqUrl, init);
+            return workerFetch(reqObj, {});
+          }
+          if (reqUrl.startsWith('https://mkv-cdn.invalid/movie.mkv')) {
+            const hdrs = new Headers(input instanceof Request ? input.headers : init.headers);
+            seenUpstreamMkvHeaders.push({
+              referer: hdrs.get('referer'),
+              origin: hdrs.get('origin'),
+              cookie: hdrs.get('cookie'),
+              ua: hdrs.get('user-agent'),
+              xClientToken: hdrs.get('x-client-token'),
+              xAdminKey: hdrs.get('x-admin-key'),
+              range: hdrs.get('range')
+            });
+            const range = hdrs.get('range');
+            if (range) {
+              const m = /bytes=(\d+)-(\d*)/.exec(range);
+              const s = Number(m[1]);
+              const e = m[2] ? Math.min(Number(m[2]), mkvBytes.length - 1) : mkvBytes.length - 1;
+              return new Response(mkvBytes.subarray(s, e + 1), {
+                status: 206,
+                headers: {
+                  'Content-Type': 'application/octet-stream',
+                  'Accept-Ranges': 'bytes',
+                  'Content-Range': `bytes ${s}-${e}/${mkvBytes.length}`,
+                  'Content-Length': String(e - s + 1),
+                  'Content-Disposition': 'attachment; filename="movie.mkv"'
+                }
+              });
+            }
+            return new Response(mkvBytes, {
+              status: 200,
+              headers: {
+                'Content-Type': 'application/octet-stream',
+                'Accept-Ranges': 'bytes',
+                'Content-Length': String(mkvBytes.length)
+              }
+            });
+          }
+          return origGlobalFetch(input, init);
+        };
+
+        // Direct check on Worker /api/proxy MIME inference + Content-Disposition exposure
+        const proxyProbeUrl =
+          'http://wasm-player.test/api/proxy?' +
+          new URLSearchParams({
+            url: 'https://mkv-cdn.invalid/movie.mkv',
+            referer: 'https://dahmer.example/',
+            origin: 'https://dahmer.example',
+            cookie: 'cf=123',
+            ua: 'CustomMoviUA/2.0'
+          }).toString();
+        const rangeProbe = await globalThis.fetch(proxyProbeUrl, {
+          headers: {
+            Range: 'bytes=0-63',
+            'X-Client-Token': 'tok-mkv-77',
+            'X-Admin-Key': 'should-never-leak'
+          }
+        });
+        assert.strictEqual(rangeProbe.status, 206);
+        assert.strictEqual(rangeProbe.headers.get('content-type'), 'video/x-matroska');
+        assert.strictEqual(rangeProbe.headers.get('content-disposition'), 'attachment; filename="movie.mkv"');
+        assert.match(rangeProbe.headers.get('access-control-expose-headers') || '', /Content-Disposition/i);
+        assert.strictEqual(seenUpstreamMkvHeaders[0].referer, 'https://dahmer.example/');
+        assert.strictEqual(seenUpstreamMkvHeaders[0].origin, 'https://dahmer.example');
+        assert.strictEqual(seenUpstreamMkvHeaders[0].cookie, 'cf=123');
+        assert.strictEqual(seenUpstreamMkvHeaders[0].ua, 'CustomMoviUA/2.0');
+        assert.strictEqual(seenUpstreamMkvHeaders[0].xClientToken, 'tok-mkv-77');
+        assert.strictEqual(seenUpstreamMkvHeaders[0].xAdminKey, null, 'X-Admin-Key must never leak to upstream CDNs');
+
+        // Open the proxied MKV with the real FFmpeg WASM Demuxer from public/vendor/movi/element.js!
+        if (!globalThis.HTMLElement) globalThis.HTMLElement = class {};
+        if (!globalThis.customElements) globalThis.customElements = { get: () => null, define: () => {} };
+        if (!globalThis.document) {
+          globalThis.document = {
+            documentElement: {},
+            querySelector: () => null,
+            addEventListener: () => {},
+            createElement: () => ({ style: {} })
+          };
+        }
+        if (!globalThis.window) {
+          globalThis.window = globalThis;
+          globalThis.getComputedStyle = () => ({});
+          globalThis.addEventListener = () => {};
+        }
+        const moviMod = await import(require('url').pathToFileURL(path.join(__dirname, '..', 'public', 'vendor', 'movi', 'element.js')).href);
+        const httpSource = new moviMod.HttpSource(proxyProbeUrl, { 'X-Client-Token': 'tok-mkv-77' });
+        const demuxer = new moviMod.Demuxer(httpSource);
+        await demuxer.open();
+        const wasmAudio = demuxer.getAudioTracks();
+        const wasmSubs = demuxer.getSubtitleTracks();
+        demuxer.close();
+        assert.strictEqual(wasmAudio.length, 4, 'FFmpeg WASM must demux all 4 audio tracks over Worker /api/proxy');
+        assert.deepStrictEqual(
+          wasmAudio.map((t) => [t.id, t.language || 'und', t.label]),
+          [
+            [0, 'eng', 'English Stereo'],
+            [1, 'hin', 'Hindi Dub'],
+            [2, 'jpn', 'Japanese Original'],
+            [3, 'und', 'Spanish Dub']
+          ]
+        );
+        assert.strictEqual(wasmSubs.length, 1, 'FFmpeg WASM must demux embedded MKV subtitle track');
+        assert.strictEqual(wasmSubs[0].language, 'eng');
+      } finally {
+        globalThis.fetch = origGlobalFetch;
+      }
+
+      // 14e. Player bundle invariants for ES-module loading, muxed track switching & smooth source shifts.
+      const embedJsSrc = fs.readFileSync(path.join(__dirname, '..', 'public', 'js', 'embed.js'), 'utf8');
+      assert.match(embedJsSrc, /script\.type\s*=\s*'module'/, 'ensureMoviPlayer must load element.js as an ES module');
+      assert.match(embedJsSrc, /whenDefined\('movi-player'\)/, 'ensureMoviPlayer must await customElements.whenDefined');
+      assert.match(embedJsSrc, /setAttribute\('sw',\s*'auto'\)/, 'movi-player must enable automatic software decode fallback');
+      assert.match(embedJsSrc, /errordisplay/, 'movi-player must fail over on errordisplay events');
+      assert.match(embedJsSrc, /MOVI_CONNECT_TIMEOUT_MS/, 'movi-player must enforce a startup watchdog timer');
+      assert.match(embedJsSrc, /unwrapProxiedTargetUrl/, 'source classifier must unwrap /api/proxy?url= before choosing engine');
+      assert.match(embedJsSrc, /pickAudioTrack/, 'muxed MKV audio switching must call pickAudioTrack');
+      assert.match(embedJsSrc, /pickSubtitleTrack/, 'embedded MKV subtitle switching must call pickSubtitleTrack');
+      assert.match(embedJsSrc, /evt\.currentTarget !== video/, 'media listener registry must ignore stale inactive-element events');
+      assert.match(embedJsSrc, /setAttribute\('objectfit'/, 'aspect ratio must propagate objectfit attribute to movi-player');
+    }
+    console.log('  ✔ Passed MKV WASM demuxing, fast two-wave fan-out, proxy headers & multi-audio source shifting.');
 
     console.log('\n==========================================================');
     console.log('  ALL PRODUCTION VERIFICATION SUITES PASSED (0 TEST VIDEOS)');

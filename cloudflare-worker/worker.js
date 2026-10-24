@@ -627,7 +627,7 @@ function corsHeaders(extra = {}) {
     'Access-Control-Allow-Origin': '*',
     'Access-Control-Allow-Methods': 'GET, POST, HEAD, OPTIONS',
     'Access-Control-Allow-Headers': 'Content-Type, Range, Authorization, X-Requested-With, X-Admin-Key',
-    'Access-Control-Expose-Headers': 'Content-Length, Content-Range, Content-Type, Accept-Ranges',
+    'Access-Control-Expose-Headers': 'Content-Length, Content-Range, Content-Type, Accept-Ranges, Content-Disposition',
     'Content-Security-Policy': 'frame-ancestors *;',
     ...extra
   };
@@ -648,7 +648,8 @@ const PLAYER_ASSET_PATHS = new Set([
   '/css/embed.css',
   '/js/embed.js',
   '/vendor/hls.min.js',
-  '/vendor/dash.all.min.js'
+  '/vendor/dash.all.min.js',
+  '/vendor/movi/element.js'
 ]);
 
 /**
@@ -754,11 +755,24 @@ function srtToVtt(rawText) {
  * `cookie` (optional) is forwarded upstream — for Origin/Referer-gated
  * origins that also pin a session cookie.
  */
-function buildWorkerProxyUrl(targetUrl, referer = '', mode = 'manifest', cookie = '') {
+function buildWorkerProxyUrl(targetUrl, referer = '', mode = 'manifest', cookie = '', extra = {}) {
   const params = new URLSearchParams({ url: targetUrl, mode });
   if (referer) params.set('referer', referer);
+  if (extra && extra.origin) params.set('origin', extra.origin);
   if (cookie) params.set('cookie', cookie);
+  if (extra && extra.userAgent) params.set('ua', extra.userAgent);
   return `/api/proxy?${params.toString()}`;
+}
+
+function inferMediaContentType(pathname = '', fallbackUrl = '') {
+  const probe = `${pathname} ${fallbackUrl}`.toLowerCase();
+  if (/\.mkv(?:$|[?#&\s])/.test(probe)) return 'video/x-matroska';
+  if (/\.webm(?:$|[?#&\s])/.test(probe)) return 'video/webm';
+  if (/\.mpd(?:$|[?#&\s])/.test(probe)) return 'application/dash+xml';
+  if (/\.ts(?:$|[?#&\s])/.test(probe)) return 'video/mp2t';
+  if (/\.avi(?:$|[?#&\s])/.test(probe)) return 'video/x-msvideo';
+  if (/\.mov(?:$|[?#&\s])/.test(probe)) return 'video/quicktime';
+  return 'video/mp4';
 }
 
 /**
@@ -1228,17 +1242,27 @@ async function resolveGoldmineUpstream(metadata, env = null, options = {}) {
   if (goldmineCircuitOpen()) {
     return { reason: 'circuit_open', diag: 'TMDB-Embed-API paused after repeated failures' };
   }
+  const timeoutMs =
+    parseInt(String((env && env.GOLDMINE_TIMEOUT_MS) || ''), 10) || GOLDMINE_TIMEOUT_MS;
   try {
     const resolved = await goldmine.resolveGoldmineServer(metadata, {
       apiBase: goldmineApiBaseWorker(env),
-      timeoutMs: GOLDMINE_TIMEOUT_MS,
+      timeoutMs,
       onlySource,
       preferredAudio,
-      // Streams whose host requires Referer/Origin get every nested URL
+      // Streams whose host requires Referer/Origin/Cookie/UA get every nested URL
       // rewritten through the proxy ('full'); open hosts only get their
       // manifests/keys rewritten so segments stream straight from the CDN.
-      proxyUrl: (targetUrl, referer) =>
-        buildWorkerProxyUrl(targetUrl, referer || '', referer ? 'full' : 'manifest')
+      proxyUrl: (targetUrl, referer, meta = {}) => {
+        const needsFull = !!(referer || (meta && (meta.origin || meta.cookie || meta.userAgent)));
+        return buildWorkerProxyUrl(
+          targetUrl,
+          referer || '',
+          needsFull ? 'full' : 'manifest',
+          (meta && meta.cookie) || '',
+          meta || {}
+        );
+      }
     });
     if (resolved && resolved.streamUrl) {
       goldmineCircuitRecord(true);
@@ -1259,8 +1283,8 @@ async function resolveGoldmineUpstream(metadata, env = null, options = {}) {
 /** Per-upstream budget keeps the waterfall deterministic. Generous: the
  *  TMDB-Embed-API fans out to every enabled provider and free-tier hosts
  *  (Render) cold-start slowly. */
-const WATERFALL_UPSTREAM_TIMEOUT_MS = 32000;
-const GOLDMINE_TIMEOUT_MS = 30000;
+const WATERFALL_UPSTREAM_TIMEOUT_MS = 28000;
+const GOLDMINE_TIMEOUT_MS = 25000;
 
 async function withTimeout(promise, ms, fallback = null) {
   let timer;
@@ -1457,6 +1481,7 @@ async function handleProxyRequest(request, url) {
   const origin = url.searchParams.get('origin') || '';
   const mode = url.searchParams.get('mode') || 'manifest';
   const cookie = url.searchParams.get('cookie') || '';
+  const ua = url.searchParams.get('ua') || '';
   const passthroughToken = url.searchParams.get('token') || '';
   const vidsrcStamp = url.searchParams.get('vidsrcStamp') === '1';
 
@@ -1480,7 +1505,7 @@ async function handleProxyRequest(request, url) {
   // a synthesized Referer is what triggered Pixeldrain's hotlink filter and the
   // Origin/Referer-gated hosts answer 403 without their headers.
   const upstreamHeaders = new Headers({
-    'User-Agent': request.headers.get('User-Agent') || USER_AGENT,
+    'User-Agent': ua || request.headers.get('User-Agent') || USER_AGENT,
     Accept: '*/*'
   });
   if (referer) upstreamHeaders.set('Referer', referer);
@@ -1506,6 +1531,16 @@ async function handleProxyRequest(request, url) {
 
   const range = request.headers.get('Range');
   if (range) upstreamHeaders.set('Range', range);
+
+  // Forward custom safe headers (e.g. Authorization, X-Client-Token, X-Requested-With)
+  // sent by movi-player's `headers` attribute without leaking infra/admin headers.
+  const proxySkipX = /^x-(?:admin-key|forwarded-|real-ip|amzn-|vercel-|railway-)/i;
+  request.headers.forEach((val, key) => {
+    const lower = key.toLowerCase();
+    if (lower === 'authorization' || (lower.startsWith('x-') && !proxySkipX.test(lower))) {
+      if (val && !upstreamHeaders.has(key)) upstreamHeaders.set(key, val);
+    }
+  });
 
   const upstreamResp = await fetch(upstreamUrl.toString(), {
     method: request.method === 'HEAD' ? 'HEAD' : 'GET',
@@ -1556,14 +1591,18 @@ async function handleProxyRequest(request, url) {
 
   const respHeaders = new Headers(corsHeaders());
   respHeaders.set('Accept-Ranges', 'bytes');
-  respHeaders.set(
-    'Content-Type', contentType.includes('octet-stream') ? 'video/mp4' : contentType || 'video/mp4'
-  );
+  const resolvedMime =
+    !contentType || contentType.includes('octet-stream')
+      ? inferMediaContentType(parsed.pathname, finalUrl)
+      : contentType;
+  respHeaders.set('Content-Type', resolvedMime);
 
   const cl = upstreamResp.headers.get('content-length');
   if (cl) respHeaders.set('Content-Length', cl);
   const cr = upstreamResp.headers.get('content-range');
   if (cr) respHeaders.set('Content-Range', cr);
+  const cd = upstreamResp.headers.get('content-disposition');
+  if (cd) respHeaders.set('Content-Disposition', cd);
 
   return new Response(upstreamResp.body, {
     status: upstreamResp.status,
@@ -1578,7 +1617,16 @@ export default {
     statsQueue.enabled = !!statsStub(env);
 
     if (request.method === 'OPTIONS') {
-      return new Response(null, { status: 204, headers: corsHeaders() });
+      const reqHeaders = request.headers.get('Access-Control-Request-Headers');
+      return new Response(
+        null,
+        {
+          status: 204,
+          headers: corsHeaders(
+            reqHeaders ? { 'Access-Control-Allow-Headers': reqHeaders } : {}
+          )
+        }
+      );
     }
 
     // Support standalone proxy mode at root `/?url=https://...` or `/api/proxy?url=https://...`
@@ -1803,27 +1851,99 @@ export default {
       const rawSource = (url.searchParams.get('source') || '').toLowerCase();
       const source = /^[a-z0-9]{3,24}$/.test(rawSource) ? rawSource : '';
 
-      const metadata = await resolveTmdbMetadata(rawType, tmdbId, season, episode, env);
+      if (action !== 'resolve') {
+        const metadata = await resolveTmdbMetadata(rawType, tmdbId, season, episode, env);
 
-      if (action === 'info') {
-        const segments = await resolveSkipSegments(metadata, env);
-        return jsonResponse({ ok: true, metadata, segments, servers: serverCatalog.listableServers(SERVERS) });
-      }
+        if (action === 'info') {
+          const segments = await resolveSkipSegments(metadata, env);
+          return jsonResponse({ ok: true, metadata, segments, servers: serverCatalog.listableServers(SERVERS) });
+        }
 
-      if (action === 'segments') {
-        const segments = await resolveSkipSegments(metadata, env);
-        return jsonResponse({ ok: true, tmdbId: metadata.tmdbId, segments });
-      }
+        if (action === 'segments') {
+          const segments = await resolveSkipSegments(metadata, env);
+          return jsonResponse({ ok: true, tmdbId: metadata.tmdbId, segments });
+        }
 
-      if (action === 'subtitles') {
-        const tracks = await resolveSubtitles(metadata, env);
-        return jsonResponse({ ok: true, tmdbId: metadata.tmdbId, tracks });
+        if (action === 'subtitles') {
+          const tracks = await resolveSubtitles(metadata, env);
+          return jsonResponse({ ok: true, tmdbId: metadata.tmdbId, tracks });
+        }
       }
 
       if (action === 'resolve') {
         const callerDomain = extractCallerDomain(request, url);
         if (await isCallerBlocked(request, url, env)) {
           return jsonResponse({ ok: false, error: `Domain "${callerDomain}" is blocked by the embed owner.` }, 403);
+        }
+
+        const normalizedType = rawType.toLowerCase() === 'movie' ? 'movie' : 'tv';
+        const trimmedId = String(tmdbId || '').trim();
+        const isNumericTmdb = /^\d+$/.test(trimmedId);
+
+        const buildCustomStream = (customOv) => ({
+          server: 'custom',
+          format: customOv.format || 'hls',
+          rawUrl: customOv.streamUrl,
+          streamUrl: buildWorkerProxyUrl(customOv.streamUrl, ''),
+          audioTracks: [
+            {
+              id: 'custom-orig',
+              lang: 'en',
+              label: customOv.label || 'Custom Admin Source',
+              type: 'sub',
+              streamUrl: buildWorkerProxyUrl(customOv.streamUrl, ''),
+              rawUrl: customOv.streamUrl,
+              default: true
+            }
+          ],
+          qualities: [{ label: 'Auto', height: 0, url: buildWorkerProxyUrl(customOv.streamUrl, '') }],
+          servers: serverCatalog.buildServerPayload(SERVERS, null)
+        });
+
+        let metadata;
+        let streamData;
+        let subtitles;
+        let segments;
+
+        if (isNumericTmdb) {
+          // Fast path: Goldmine only needs { type, tmdbId, season, episode }, so run
+          // stream extraction in parallel with TMDB metadata instead of sequentially.
+          const stubMeta = { type: normalizedType, tmdbId: trimmedId, season, episode };
+          const ovKey = normalizedType === 'tv' ? `tv:${trimmedId}:${season}:${episode}` : `movie:${trimmedId}:1:1`;
+          const customOv = runtimeState.customOverrides.get(ovKey);
+
+          const metadataPromise = resolveTmdbMetadata(rawType, trimmedId, season, episode, env);
+          const streamPromise = customOv
+            ? Promise.resolve(buildCustomStream(customOv))
+            : resolveStreamWaterfall(stubMeta, server, audio, env, source);
+          const subtitlesPromise = metadataPromise.then((m) => resolveSubtitles(m, env)).catch(() => []);
+          const segmentsPromise = metadataPromise.then((m) => resolveSkipSegments(m, env)).catch(() => []);
+
+          [metadata, streamData] = await Promise.all([metadataPromise, streamPromise]);
+          [subtitles, segments] = await Promise.all([
+            withTimeout(subtitlesPromise, 2500, []),
+            withTimeout(segmentsPromise, 2500, [])
+          ]);
+          if (ctx && typeof ctx.waitUntil === 'function') {
+            ctx.waitUntil(Promise.allSettled([subtitlesPromise, segmentsPromise]));
+          }
+        } else {
+          // IMDb (`tt...`) ids translate to TMDB id first inside resolveTmdbMetadata.
+          metadata = await resolveTmdbMetadata(rawType, trimmedId, season, episode, env);
+          const ovKey = metadata.type === 'tv' ? `tv:${metadata.tmdbId}:${season}:${episode}` : `movie:${metadata.tmdbId}:1:1`;
+          const customOv = runtimeState.customOverrides.get(ovKey);
+          const subtitlesPromise = resolveSubtitles(metadata, env).catch(() => []);
+          const segmentsPromise = resolveSkipSegments(metadata, env).catch(() => []);
+          streamData = customOv
+            ? buildCustomStream(customOv)
+            : await resolveStreamWaterfall(metadata, server, audio, env, source);
+          [subtitles, segments] = await Promise.all([
+            withTimeout(subtitlesPromise, 2500, []),
+            withTimeout(segmentsPromise, 2500, [])
+          ]);
+          if (ctx && typeof ctx.waitUntil === 'function') {
+            ctx.waitUntil(Promise.allSettled([subtitlesPromise, segmentsPromise]));
+          }
         }
 
         recordWorkerDomainHit(request, url, 'resolve', metadata);
@@ -1835,39 +1955,6 @@ export default {
           episode: metadata.type === 'tv' ? episode : null,
           server
         };
-
-        // Check custom override first
-        const ovKey =
-          metadata.type === 'tv'
-            ? `tv:${metadata.tmdbId}:${season}:${episode}`
-            : `movie:${metadata.tmdbId}:1:1`;
-        const customOv = runtimeState.customOverrides.get(ovKey);
-
-        const [streamData, subtitles, segments] = await Promise.all([
-          customOv
-            ? Promise.resolve({
-                server: 'custom',
-                format: customOv.format || 'hls',
-                rawUrl: customOv.streamUrl,
-                streamUrl: buildWorkerProxyUrl(customOv.streamUrl, ''),
-                audioTracks: [
-                  {
-                    id: 'custom-orig',
-                    lang: 'en',
-                    label: customOv.label || 'Custom Admin Source',
-                    type: 'sub',
-                    streamUrl: buildWorkerProxyUrl(customOv.streamUrl, ''),
-                    rawUrl: customOv.streamUrl,
-                    default: true
-                  }
-                ],
-                qualities: [{ label: 'Auto', height: 0, url: buildWorkerProxyUrl(customOv.streamUrl, '') }],
-                servers: serverCatalog.buildServerPayload(SERVERS, null)
-              })
-            : resolveStreamWaterfall(metadata, server, audio, env, source),
-          resolveSubtitles(metadata, env),
-          resolveSkipSegments(metadata, env)
-        ]);
 
         if (!streamData || !streamData.streamUrl) {
           // Include a useful per-server explanation in this API error response.
@@ -2027,6 +2114,12 @@ export default {
       for (const headerName of ['Content-Type', 'ETag', 'Last-Modified']) {
         const value = assetRes.headers.get(headerName);
         if (value) headers.set(headerName, value);
+      }
+      const existingCt = (headers.get('Content-Type') || '').toLowerCase();
+      if (pathname.endsWith('.css') && !existingCt.includes('text/css')) {
+        headers.set('Content-Type', 'text/css; charset=utf-8');
+      } else if (pathname.endsWith('.js') && !existingCt.includes('javascript')) {
+        headers.set('Content-Type', 'text/javascript; charset=utf-8');
       }
       return new Response(assetRes.body, { status: assetRes.status, headers });
     }

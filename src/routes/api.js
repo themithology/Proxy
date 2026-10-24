@@ -298,14 +298,45 @@ router.get('/resolve/:type/:tmdbId', async (req, res) => {
       });
     }
 
-    const metadata = await resolveTmdbMetadata(type, tmdbId, season, episode);
-    telemetry.recordDomainActivity(req, 'resolve', metadata);
+    const withSoftTimeout = (promise, ms, fallback) =>
+      Promise.race([
+        promise,
+        new Promise((resolve) => setTimeout(() => resolve(fallback), ms))
+      ]);
 
-    const [streamData, subtitles, segmentsData] = await Promise.all([
-      resolveStreamForServer(metadata, server, audio, onlySource ? { onlySource } : {}),
-      resolveSubtitles(metadata),
-      resolveSkipSegments(metadata)
-    ]);
+    const normalizedType = String(type || '').toLowerCase() === 'movie' ? 'movie' : 'tv';
+    const trimmedId = String(tmdbId || '').trim();
+    const isNumericTmdb = /^\d+$/.test(trimmedId);
+
+    let metadata;
+    let streamData;
+    let subtitles;
+    let segmentsData;
+
+    if (isNumericTmdb) {
+      const stubMeta = { type: normalizedType, tmdbId: trimmedId, season, episode };
+      const metadataPromise = resolveTmdbMetadata(type, trimmedId, season, episode);
+      const streamPromise = resolveStreamForServer(stubMeta, server, audio, onlySource ? { onlySource } : {});
+      const subtitlesPromise = metadataPromise.then((m) => resolveSubtitles(m)).catch(() => []);
+      const segmentsPromise = metadataPromise.then((m) => resolveSkipSegments(m)).catch(() => ({ segments: [] }));
+
+      [metadata, streamData] = await Promise.all([metadataPromise, streamPromise]);
+      [subtitles, segmentsData] = await Promise.all([
+        withSoftTimeout(subtitlesPromise, 2500, []),
+        withSoftTimeout(segmentsPromise, 2500, { segments: [] })
+      ]);
+    } else {
+      metadata = await resolveTmdbMetadata(type, trimmedId, season, episode);
+      const subtitlesPromise = resolveSubtitles(metadata).catch(() => []);
+      const segmentsPromise = resolveSkipSegments(metadata).catch(() => ({ segments: [] }));
+      streamData = await resolveStreamForServer(metadata, server, audio, onlySource ? { onlySource } : {});
+      [subtitles, segmentsData] = await Promise.all([
+        withSoftTimeout(subtitlesPromise, 2500, []),
+        withSoftTimeout(segmentsPromise, 2500, { segments: [] })
+      ]);
+    }
+
+    telemetry.recordDomainActivity(req, 'resolve', metadata);
 
     if (!streamData || !streamData.streamUrl) {
       // Return structured failure detail so an API client can explain which

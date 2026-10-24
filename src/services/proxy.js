@@ -33,20 +33,32 @@ function getProxyNodeBase(reqBaseUrl = '') {
 function buildProxyStreamUrl(targetUrl, referer = '', origin = '', options = {}) {
   if (!targetUrl) return '';
   if (targetUrl.startsWith('/api/proxy?')) return targetUrl;
-  const { mode = '', token = '', cookie = '' } = options || {};
+  const { mode = '', token = '', cookie = '', userAgent = '' } = options || {};
   const baseUrl = getProxyNodeBase('');
   const signed = createSignedProxyUrl(targetUrl, {
     referer,
     origin,
     baseUrl
   });
-  if (!mode && !token && !cookie) return signed;
+  if (!mode && !token && !cookie && !userAgent) return signed;
   const [path, query = ''] = signed.split('?');
   const params = new URLSearchParams(query);
   if (mode) params.set('mode', mode);
   if (token) params.set('token', token);
   if (cookie) params.set('cookie', cookie);
+  if (userAgent) params.set('ua', userAgent);
   return `${path}?${params.toString()}`;
+}
+
+function inferMediaContentType(pathname = '', fallbackUrl = '') {
+  const probe = `${pathname} ${fallbackUrl}`.toLowerCase();
+  if (/\.mkv(?:$|[?#&\s])/.test(probe)) return 'video/x-matroska';
+  if (/\.webm(?:$|[?#&\s])/.test(probe)) return 'video/webm';
+  if (/\.mpd(?:$|[?#&\s])/.test(probe)) return 'application/dash+xml';
+  if (/\.ts(?:$|[?#&\s])/.test(probe)) return 'video/mp2t';
+  if (/\.avi(?:$|[?#&\s])/.test(probe)) return 'video/x-msvideo';
+  if (/\.mov(?:$|[?#&\s])/.test(probe)) return 'video/quicktime';
+  return 'video/mp4';
 }
 
 /**
@@ -171,6 +183,7 @@ async function handleStreamProxy(req, res) {
   const referer = req.query.referer || '';
   const origin = req.query.origin || '';
   const cookie = req.query.cookie || '';
+  const ua = req.query.ua || '';
   const mode = req.query.mode || 'manifest';
   const passthroughToken = req.query.token || '';
   const vidsrcStamp = req.query.vidsrcStamp === '1';
@@ -186,7 +199,7 @@ async function handleStreamProxy(req, res) {
   );
   res.setHeader(
     'Access-Control-Expose-Headers',
-    'Content-Length, Content-Range, Accept-Ranges, Content-Type'
+    'Content-Length, Content-Range, Accept-Ranges, Content-Type, Content-Disposition'
   );
 
   if (req.method === 'OPTIONS') {
@@ -218,7 +231,7 @@ async function handleStreamProxy(req, res) {
   // synthesized Referer is exactly what trips release-host hotlink filters
   // (Pixeldrain-style 403s).
   const upstreamHeaders = {
-    'User-Agent': DEFAULT_USER_AGENT,
+    'User-Agent': ua || DEFAULT_USER_AGENT,
     Accept: '*/*',
     'Accept-Language': 'en-US,en;q=0.9'
   };
@@ -250,6 +263,17 @@ async function handleStreamProxy(req, res) {
 
   if (req.headers.range) {
     upstreamHeaders.Range = req.headers.range;
+  }
+
+  // Forward custom safe headers (Authorization, X-Client-Token, X-Requested-With, …)
+  // sent by movi-player without leaking infra/admin headers.
+  const proxySkipX = /^x-(?:admin-key|forwarded-|real-ip|amzn-|vercel-|railway-)/i;
+  for (const [key, val] of Object.entries(req.headers || {})) {
+    const lower = key.toLowerCase();
+    if (lower === 'authorization' || (lower.startsWith('x-') && !proxySkipX.test(lower))) {
+      const headerVal = Array.isArray(val) ? val.join(', ') : val;
+      if (headerVal) upstreamHeaders[key] = headerVal;
+    }
   }
 
   try {
@@ -296,9 +320,9 @@ async function handleStreamProxy(req, res) {
     res.status(upstreamRes.status);
     res.setHeader(
       'Content-Type',
-      contentType.includes('octet-stream') && parsedUrl.pathname.endsWith('.mp4')
-        ? 'video/mp4'
-        : contentType || 'video/mp4'
+      !contentType || contentType.includes('octet-stream')
+        ? inferMediaContentType(parsedUrl.pathname, finalUrl)
+        : contentType
     );
     res.setHeader('Accept-Ranges', 'bytes');
 
@@ -307,6 +331,9 @@ async function handleStreamProxy(req, res) {
 
     const contentRange = upstreamRes.headers.get('content-range');
     if (contentRange) res.setHeader('Content-Range', contentRange);
+
+    const contentDisposition = upstreamRes.headers.get('content-disposition');
+    if (contentDisposition) res.setHeader('Content-Disposition', contentDisposition);
 
     if (req.method === 'HEAD' || !upstreamRes.body) {
       return res.end();

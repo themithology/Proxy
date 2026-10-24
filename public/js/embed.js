@@ -70,6 +70,118 @@
       });
       stream.sourceLabels = remapped;
     }
+    if (stream.sourceMeta && typeof stream.sourceMeta === 'object') {
+      const remappedMeta = {};
+      Object.keys(stream.sourceMeta).forEach((key) => {
+        const meta = stream.sourceMeta[key];
+        if (!meta || typeof meta !== 'object') return;
+        const copy = Object.assign({}, meta);
+        if (Array.isArray(copy.subtitles)) {
+          copy.subtitles = copy.subtitles.map((sub) =>
+            sub && typeof sub === 'object' ? Object.assign({}, sub, { url: absolutizeApiUrl(sub.url) }) : sub
+          );
+        }
+        remappedMeta[absolutizeApiUrl(key)] = copy;
+      });
+      stream.sourceMeta = remappedMeta;
+    }
+  }
+
+  // --- Language code & label normalization (shared across URL params, MKV, HLS, subtitles) ---
+  const MOVI_LANG_FIX = {
+    english: 'en', eng: 'en',
+    hindi: 'hi', hin: 'hi',
+    tamil: 'ta', tam: 'ta',
+    telugu: 'te', tel: 'te',
+    malayalam: 'ml', mal: 'ml',
+    kannada: 'kn', kan: 'kn',
+    bengali: 'bn', bangla: 'bn', ben: 'bn', beng: 'bn',
+    marathi: 'mr', mar: 'mr',
+    gujarati: 'gu', guj: 'gu',
+    punjabi: 'pa', pan: 'pa',
+    urdu: 'ur', urd: 'ur',
+    odia: 'or', oriya: 'or', ori: 'or', odi: 'or', ory: 'or',
+    assamese: 'as', asm: 'as',
+    nepali: 'ne', nep: 'ne',
+    sinhala: 'si', sinhalese: 'si', sin: 'si',
+    bhojpuri: 'bho',
+    arabic: 'ar', ara: 'ar',
+    spanish: 'es', espanol: 'es', castellano: 'es', latino: 'es', spa: 'es',
+    french: 'fr', francais: 'fr', fra: 'fr', fre: 'fr',
+    german: 'de', deutsch: 'de', deu: 'de', ger: 'de',
+    italian: 'it', italiano: 'it', ita: 'it',
+    portuguese: 'pt', portugues: 'pt', por: 'pt', pb: 'pt', pob: 'pt', ptbr: 'pt',
+    russian: 'ru', rus: 'ru',
+    ukrainian: 'uk', ukr: 'uk',
+    polish: 'pl', pol: 'pl',
+    dutch: 'nl', nld: 'nl', dut: 'nl',
+    swedish: 'sv', swe: 'sv',
+    norwegian: 'no', nor: 'no', nob: 'no', nno: 'no',
+    danish: 'da', dan: 'da',
+    finnish: 'fi', fin: 'fi',
+    czech: 'cs', ces: 'cs', cze: 'cs',
+    slovak: 'sk', slk: 'sk', slo: 'sk',
+    hungarian: 'hu', hun: 'hu',
+    romanian: 'ro', ron: 'ro', rum: 'ro',
+    bulgarian: 'bg', bul: 'bg',
+    serbian: 'sr', srp: 'sr',
+    croatian: 'hr', hrv: 'hr',
+    slovenian: 'sl', slv: 'sl',
+    greek: 'el', ell: 'el', gre: 'el',
+    hebrew: 'he', heb: 'he',
+    persian: 'fa', farsi: 'fa', fas: 'fa', per: 'fa',
+    japanese: 'ja', jpn: 'ja',
+    korean: 'ko', kor: 'ko',
+    chinese: 'zh', mandarin: 'zh', cantonese: 'zh', zho: 'zh', chi: 'zh', cmn: 'zh', yue: 'zh',
+    thai: 'th', tha: 'th',
+    indonesian: 'id', ind: 'id',
+    malay: 'ms', msa: 'ms', may: 'ms',
+    filipino: 'tl', tagalog: 'tl', fil: 'tl', tgl: 'tl',
+    turkish: 'tr', tur: 'tr',
+    vietnamese: 'vi', vie: 'vi',
+    catalan: 'ca', cat: 'ca'
+  };
+
+  const LANG_CHIP_LABELS = {
+    en: 'English', hi: 'Hindi', ta: 'Tamil', te: 'Telugu', ml: 'Malayalam',
+    kn: 'Kannada', bn: 'Bengali', mr: 'Marathi', gu: 'Gujarati', pa: 'Punjabi',
+    ur: 'Urdu', or: 'Odia', as: 'Assamese', ne: 'Nepali', si: 'Sinhala',
+    bho: 'Bhojpuri', ar: 'Arabic', fa: 'Persian', he: 'Hebrew', es: 'Spanish',
+    fr: 'French', de: 'German', it: 'Italian', pt: 'Portuguese', ru: 'Russian',
+    uk: 'Ukrainian', pl: 'Polish', nl: 'Dutch', sv: 'Swedish', no: 'Norwegian',
+    da: 'Danish', fi: 'Finnish', cs: 'Czech', sk: 'Slovak', hu: 'Hungarian',
+    ro: 'Romanian', bg: 'Bulgarian', sr: 'Serbian', hr: 'Croatian', sl: 'Slovenian',
+    el: 'Greek', ja: 'Japanese', ko: 'Korean', zh: 'Chinese', th: 'Thai',
+    id: 'Indonesian', ms: 'Malay', tl: 'Filipino', tr: 'Turkish', vi: 'Vietnamese',
+    ca: 'Catalan'
+  };
+
+  function normalizeMoviLang(lang) {
+    const raw = String(lang || '').trim().toLowerCase().replace(/_/g, '-');
+    if (!raw || /^(und|unknown|undefined|zxx|mis|none|mul|default)$/i.test(raw)) return 'und';
+    const token = raw.split(/[\s,;.]/, 1)[0];
+    const base = token.split('-', 1)[0];
+    if (!base) return 'und';
+    if (MOVI_LANG_FIX[base]) return MOVI_LANG_FIX[base];
+    if (/^[a-z]{2,3}$/.test(base)) return base;
+    return 'und';
+  }
+
+  function inferLangFromTrackLabel(label) {
+    const text = String(label || '');
+    if (!text) return 'und';
+    const words = text.toLowerCase().split(/[^a-z]+/).filter(Boolean);
+    for (let i = 0; i < words.length; i++) {
+      const w = words[i];
+      if (w.length >= 3 && MOVI_LANG_FIX[w]) return MOVI_LANG_FIX[w];
+    }
+    return 'und';
+  }
+
+  function langChipLabel(lang, index) {
+    const code = normalizeMoviLang(lang);
+    if (!code || code === 'und') return `Audio ${index + 1}`;
+    return LANG_CHIP_LABELS[code] || (code.length <= 3 ? code.toUpperCase() : code.charAt(0).toUpperCase() + code.slice(1));
   }
 
   // --- Small helpers ---
@@ -353,8 +465,11 @@
     // A specific source the viewer picked before the server finished resolving.
     pendingSourceUrl: null,
     activeAudioId: '',
+    preferredAudioLang: '',
     activeSubtitleId: 'off',
     preferredSubtitleLang: '',
+    attachToken: 0,
+    moviWatchdogTimer: null,
     // `?t=` / `?start=` offset; consumed by the first stream that attaches so
     // the next episode does not inherit it.
     startAt: 0,
@@ -444,14 +559,24 @@
       if (/^[a-z0-9]{3,24}$/.test(rawSource)) state.pinnedSource = rawSource;
     }
     if (params.get('branding')) state.branding = params.get('branding');
-    if (params.get('lang')) {
-      const l = params.get('lang').toLowerCase();
-      state.activeAudioId = l.includes('-') ? l : `${l}-dub`;
+    const audioParam = params.get('audio') || params.get('lang') || '';
+    if (audioParam) {
+      const normalizedAudio = normalizeMoviLang(audioParam);
+      if (normalizedAudio && normalizedAudio !== 'und') {
+        state.preferredAudioLang = normalizedAudio;
+        state.activeAudioId = normalizedAudio;
+      } else {
+        state.activeAudioId = String(audioParam).trim().toLowerCase();
+      }
     }
     if (params.get('sub')) {
       // Subtitle ids are assigned by the API (`os-…`, `wyzie-…`), so a URL
-      // preference can only be matched by language once the tracks arrive.
-      state.preferredSubtitleLang = params.get('sub').toLowerCase().slice(0, 2);
+      // preference is normalized to an ISO language code ('jpn' -> 'ja', 'spa' -> 'es').
+      const normalizedSub = normalizeMoviLang(params.get('sub'));
+      state.preferredSubtitleLang =
+        normalizedSub && normalizedSub !== 'und'
+          ? normalizedSub
+          : params.get('sub').toLowerCase().slice(0, 2);
     }
     state.startAt = parseStartParam(params.has('t') ? params.get('t') : params.get('start'));
     if (params.has('autoskip')) {
@@ -1067,15 +1192,70 @@
       (window.location.ancestorOrigins && window.location.ancestorOrigins[0]) ||
       document.referrer ||
       window.location.origin;
-    // Ask for the audio track the viewer last chose for this title, so the
-    // backend answers with that cut instead of the default one.
-    const rememberedAudioId = readShowPrefs().audioId;
-    if (rememberedAudioId) state.activeAudioId = String(rememberedAudioId);
+    // Ask for the audio language/track the viewer last chose for this title, so
+    // the backend answers with that cut instead of the default one.
+    const prefs = readShowPrefs();
+    const audioQuery =
+      prefs.audio ||
+      prefs.audioId ||
+      state.preferredAudioLang ||
+      state.activeAudioId ||
+      '';
     return apiUrl(
-      `/api/resolve/${state.type}/${encodeURIComponent(state.tmdbId)}?season=${state.season}&episode=${state.episode}&server=${encodeURIComponent(serverId)}&audio=${encodeURIComponent(state.activeAudioId)}&parent=${encodeURIComponent(parentDomain)}${
+      `/api/resolve/${state.type}/${encodeURIComponent(state.tmdbId)}?season=${state.season}&episode=${state.episode}&server=${encodeURIComponent(serverId)}&audio=${encodeURIComponent(audioQuery)}&parent=${encodeURIComponent(parentDomain)}${
         state.pinnedSource ? `&source=${encodeURIComponent(state.pinnedSource)}` : ''
       }`
     );
+  }
+
+  function cloneAudioRows(rows) {
+    if (!Array.isArray(rows)) return [];
+    return rows.map((row) => (row && typeof row === 'object' ? Object.assign({}, row) : row)).filter(Boolean);
+  }
+
+  function applyPreferredSubtitleSelection() {
+    const rememberedSub = String(readShowPrefs().sub || '').toLowerCase();
+    const byLang = (lang) => {
+      if (!lang) return null;
+      const norm = normalizeMoviLang(lang);
+      return state.subtitles.find((s) => s && normalizeMoviLang(s.lang) === norm) || null;
+    };
+    const preferredSub =
+      (state.activeSubtitleId !== 'off' && state.subtitles.find((s) => s.id === state.activeSubtitleId)) ||
+      (state.lastSubtitleId && state.subtitles.find((s) => s.id === state.lastSubtitleId)) ||
+      (rememberedSub && rememberedSub !== 'off' && byLang(rememberedSub)) ||
+      (rememberedSub !== 'off' && byLang(state.preferredSubtitleLang));
+    if (preferredSub) {
+      loadSubtitleTrack(preferredSub, { silent: true, remember: false });
+    } else if (state.activeSubtitleId !== 'off' && state.activeSubtitleId !== 'custom-upload') {
+      disableSubtitles({ remember: false });
+    }
+  }
+
+  async function lazyRefreshSubtitlesIfEmpty(loadToken) {
+    try {
+      const res = await fetch(
+        apiUrl(`/api/subtitles/${state.type}/${encodeURIComponent(state.tmdbId)}?season=${state.season}&episode=${state.episode}`)
+      );
+      if (!res.ok) return;
+      const json = await res.json();
+      if (loadToken !== state.loadToken || !json || !Array.isArray(json.tracks) || json.tracks.length === 0) return;
+      const seenUrls = new Set(state.subtitles.map((s) => s && s.url).filter(Boolean));
+      let added = false;
+      json.tracks.forEach((sub) => {
+        if (!sub || !sub.url) return;
+        const absUrl = absolutizeApiUrl(sub.url);
+        if (seenUrls.has(absUrl)) return;
+        seenUrls.add(absUrl);
+        state.subtitles.push(Object.assign({}, sub, { url: absUrl }));
+        added = true;
+      });
+      if (added) {
+        renderSubtitlesPopover();
+        updateSettingsSummaryValues();
+        if (state.activeSubtitleId === 'off') applyPreferredSubtitleSelection();
+      }
+    } catch (_) {}
   }
 
   // --- Load Media Bundle from Backend ---
@@ -1192,7 +1372,8 @@
       state.server = data.stream.server || state.server;
       state._triedStreamUrls = new Set();
       state.activeQualityId = 'auto';
-      state.audioTracks = Array.isArray(data.stream.audioTracks) ? data.stream.audioTracks : [];
+      state.audioTracks = cloneAudioRows(data.stream.audioTracks);
+      state.stream._initialAudioTracks = cloneAudioRows(state.audioTracks);
       state.qualities = (Array.isArray(data.stream.qualities) ? data.stream.qualities : [])
         .filter((q) => q && q.label)
         .map((q, idx) => ({
@@ -1205,12 +1386,16 @@
 
       if (state.audioTracks.length > 0) {
         // Order: the language the viewer already picked for this title, then
-        // the track the backend says is playing, then `?lang=`.
+        // `?audio=`/`?lang=`, then the track the backend says is playing.
         const prefs = readShowPrefs();
-        const rememberedAudioLang = String(prefs.audio || '').toLowerCase();
+        const rememberedAudioLang = normalizeMoviLang(prefs.audio || '');
+        const wantedLang =
+          (rememberedAudioLang !== 'und' ? rememberedAudioLang : '') ||
+          state.preferredAudioLang ||
+          '';
         const rememberedTrack =
           (prefs.audioId && state.audioTracks.find((a) => a.id === prefs.audioId)) ||
-          (rememberedAudioLang && state.audioTracks.find((a) => String(a.lang || '').toLowerCase() === rememberedAudioLang)) ||
+          (wantedLang && state.audioTracks.find((a) => normalizeMoviLang(a.lang) === wantedLang)) ||
           null;
         const activeTrack =
           rememberedTrack ||
@@ -1220,6 +1405,10 @@
           state.audioTracks[0];
         if (activeTrack) {
           state.activeAudioId = activeTrack.id;
+          const activeNorm = normalizeMoviLang(activeTrack.lang);
+          if (activeNorm && activeNorm !== 'und' && wantedLang) {
+            state.preferredAudioLang = activeNorm;
+          }
         }
         // A remembered track that lives in its own file (sub vs dub streams)
         // must actually be the file that plays, as when it is picked from the menu.
@@ -1245,19 +1434,9 @@
       setConnectProgress(72, false);
       await attachStreamToVideo(targetStreamUrl, savedTime, loadToken);
 
-      // Apply the subtitle preference: a track the viewer already had on, the
-      // language remembered for this title, a `?sub=` language, or nothing.
-      const rememberedSub = String(readShowPrefs().sub || '').toLowerCase();
-      const byLang = (lang) => (lang ? state.subtitles.find((s) => String(s.lang || '').toLowerCase() === lang) : null);
-      const preferredSub =
-        (state.activeSubtitleId !== 'off' && state.subtitles.find((s) => s.id === state.activeSubtitleId)) ||
-        (state.lastSubtitleId && state.subtitles.find((s) => s.id === state.lastSubtitleId)) ||
-        (rememberedSub && rememberedSub !== 'off' && byLang(rememberedSub)) ||
-        (rememberedSub !== 'off' && byLang(state.preferredSubtitleLang));
-      if (preferredSub) {
-        loadSubtitleTrack(preferredSub, { silent: true, remember: false });
-      } else if (state.activeSubtitleId !== 'off' && state.activeSubtitleId !== 'custom-upload') {
-        disableSubtitles({ remember: false });
+      applyPreferredSubtitleSelection();
+      if (state.subtitles.length === 0) {
+        lazyRefreshSubtitlesIfEmpty(loadToken);
       }
 
       emitHostEvent('ready', { title: state.media ? state.media.displayTitle : '' });
@@ -1400,13 +1579,132 @@
     if (cursor < total) addPiece('', cursor, total);
   }
 
-  // --- Attach Stream via HLS.js / Dash.js / Native Video ---
+  function unwrapProxiedTargetUrl(rawUrl) {
+    if (typeof rawUrl !== 'string' || !rawUrl) return '';
+    try {
+      const parsed = new URL(rawUrl, window.location.href);
+      if (
+        parsed.pathname.endsWith('/api/proxy') ||
+        parsed.pathname.endsWith('/ts-proxy') ||
+        (parsed.pathname === '/' && parsed.searchParams.has('url'))
+      ) {
+        return parsed.searchParams.get('url') || rawUrl;
+      }
+      return parsed.href;
+    } catch (_) {
+      return rawUrl;
+    }
+  }
+
+  function classifyCandidateStream(streamUrl, isPrimary) {
+    const stream = state.stream || {};
+    const meta =
+      stream.sourceMeta && typeof stream.sourceMeta === 'object' ? stream.sourceMeta[streamUrl] || null : null;
+    const innerUrl = unwrapProxiedTargetUrl(streamUrl);
+    let innerPath = '';
+    try {
+      innerPath = new URL(innerUrl, window.location.href).pathname.toLowerCase();
+    } catch (_) {
+      innerPath = String(innerUrl || '').toLowerCase();
+    }
+
+    const isDash =
+      !!(meta && meta.format === 'dash') ||
+      /\.mpd(?:$|[?#&])/i.test(streamUrl) ||
+      /\.mpd(?:$|[?#&])/i.test(innerUrl) ||
+      (isPrimary && stream.format === 'dash');
+
+    const isHls =
+      !isDash &&
+      (!!(meta && meta.format === 'hls') ||
+        /\.m3u8(?:$|[?#&])/i.test(streamUrl) ||
+        /\.m3u8(?:$|[?#&])/i.test(innerUrl) ||
+        /\/playlist\b|\/master\b/i.test(innerPath) ||
+        (isPrimary && stream.format === 'hls'));
+
+    const useMovi =
+      !isDash &&
+      !isHls &&
+      (!!(meta && meta.engine === 'movi') ||
+        /\.(?:mkv|webm|avi|mov|ts)(?:$|[?#&])/i.test(innerUrl) ||
+        stream.engine === 'movi');
+
+    const moviHeaders = meta
+      ? meta.moviHeaders || null
+      : isPrimary && stream.moviHeaders
+        ? stream.moviHeaders
+        : null;
+
+    return {
+      isDash,
+      isHls,
+      useMovi,
+      meta,
+      moviHeaders,
+      sourceSubtitles: meta && Array.isArray(meta.subtitles) ? meta.subtitles : null
+    };
+  }
+
+  function clearMoviWatchdog() {
+    if (state.moviWatchdogTimer) {
+      clearTimeout(state.moviWatchdogTimer);
+      state.moviWatchdogTimer = null;
+    }
+  }
+
+  function resetNativeVideoElement() {
+    nativeVideo.onerror = null;
+    nativeVideo.onloadedmetadata = null;
+    try {
+      if (!nativeVideo.paused) nativeVideo.pause();
+    } catch (_) {}
+    if (nativeVideo.hasAttribute('src') || nativeVideo.currentSrc) {
+      nativeVideo.removeAttribute('src');
+      try {
+        nativeVideo.load();
+      } catch (_) {}
+    }
+  }
+
+  function prepareAudioRowsForSourceSwitch(nextUrl) {
+    if (!state.stream || !Array.isArray(state.stream._initialAudioTracks)) return;
+    const baseRows = cloneAudioRows(state.stream._initialAudioTracks);
+    if (baseRows.length === 0) return;
+
+    const currentActive = state.audioTracks.find((t) => t && t.id === state.activeAudioId);
+    const wantedLang =
+      (currentActive && normalizeMoviLang(currentActive.lang) !== 'und'
+        ? normalizeMoviLang(currentActive.lang)
+        : '') ||
+      normalizeMoviLang(readShowPrefs().audio || '') ||
+      state.preferredAudioLang ||
+      '';
+
+    // Remove stale muxed-only rows discovered from a previous MKV while keeping
+    // the full cross-source dub catalog ready for the newly attached source.
+    state.audioTracks = baseRows;
+    const match =
+      (wantedLang && wantedLang !== 'und' && state.audioTracks.find((r) => normalizeMoviLang(r.lang) === wantedLang)) ||
+      state.audioTracks.find((r) => r.streamUrl === nextUrl && r.default) ||
+      state.audioTracks.find((r) => r.streamUrl === nextUrl) ||
+      state.audioTracks.find((r) => r.default) ||
+      state.audioTracks[0];
+    if (match) state.activeAudioId = match.id;
+    renderAudioPopover();
+    renderLangChips();
+    updateSettingsSummaryValues();
+  }
+
+  // --- Attach Stream via Movi (MKV/multi-audio) / HLS.js / Dash.js / Native Video ---
   async function attachStreamToVideo(streamUrl, resumeTime = 0, loadToken = 0) {
-    // Leaving movi mode (the next source is HLS/DASH/native): tear the custom
-    // element down so the native <video> is the active media element again.
-    if (video !== nativeVideo) detachMoviPlayer();
-    video.onerror = null;
-    video.onloadedmetadata = null;
+    const attachToken = ++state.attachToken;
+    clearMoviWatchdog();
+
+    // Tear down any active movi custom element before configuring the next source.
+    if (video !== nativeVideo || state.moviEl) detachMoviPlayer();
+    nativeVideo.onerror = null;
+    nativeVideo.onloadedmetadata = null;
+
     const sourceChanged = state.attachedStreamUrl !== streamUrl;
     state.attachedStreamUrl = streamUrl;
     hostBuffering = false;
@@ -1433,7 +1731,9 @@
       let t = targetStartTime;
       if (hasRealDuration() && isNearEnd(t, video.duration)) t = 0;
       if (t > 2) {
-        video.currentTime = t;
+        try {
+          video.currentTime = t;
+        } catch (_) {}
         if (resumeTime <= 0 && startParam <= 0) {
           showToast(`Resuming from ${formatTime(t)}`, 2200);
         }
@@ -1451,9 +1751,9 @@
     if (state.stream.streamUrl !== streamUrl) state.stream.streamUrl = streamUrl;
     if (!popoverServers.classList.contains('hidden')) renderServersPopover();
 
-    // Walk the resolved backup ladder (googleusercontent -> fsl2 -> 480p ->
-    // /api/proxy) before declaring the stream dead.
+    // Walk the resolved backup ladder before declaring the server dead.
     const tryNextBackupStream = (fromTime = 0) => {
+      if (attachToken !== state.attachToken) return true;
       const backups = Array.isArray(state.stream && state.stream.backupUrls)
         ? state.stream.backupUrls
         : [];
@@ -1468,50 +1768,98 @@
           state.activeQualityId = quality.id;
           updateSettingsSummaryValues();
         }
-        showToast(quality ? `Switching to ${quality.label} fallback...` : 'Switching to backup stream mirror...', 2200);
-        attachStreamToVideo(candidate, fromTime);
+        const sourceList = sourcesFromStream(state.stream);
+        const nextIdx = sourceList.indexOf(candidate);
+        if (nextIdx >= 0 && !loadingOverlay.classList.contains('hidden')) {
+          setConnectSource(state.server, nextIdx);
+          setConnectProgress(74, false);
+        }
+        prepareAudioRowsForSourceSwitch(candidate);
+        showToast(
+          quality
+            ? `Switching to ${quality.label} fallback...`
+            : nextIdx >= 0
+              ? `Switching to Source ${String(nextIdx + 1).padStart(2, '0')}...`
+              : 'Switching to backup stream mirror...',
+          2200
+        );
+        attachStreamToVideo(candidate, fromTime, loadToken || state.loadToken);
         return true;
       }
       return false;
     };
 
     const isDeclaredPrimaryUrl = streamUrl === state.stream._primaryStreamUrl;
+    const candidateInfo = classifyCandidateStream(streamUrl, isDeclaredPrimaryUrl);
+
+    if (Array.isArray(candidateInfo.sourceSubtitles) && candidateInfo.sourceSubtitles.length > 0) {
+      const seenSubUrls = new Set(state.subtitles.map((s) => s && s.url).filter(Boolean));
+      let addedSubs = false;
+      candidateInfo.sourceSubtitles.forEach((sub) => {
+        if (!sub || !sub.url || seenSubUrls.has(sub.url)) return;
+        seenSubUrls.add(sub.url);
+        state.subtitles.push({
+          id: sub.id || `gm-sub-${state.subtitles.length}`,
+          lang: sub.lang || 'und',
+          label: sub.label || 'Embedded',
+          url: absolutizeApiUrl(sub.url)
+        });
+        addedSubs = true;
+      });
+      if (addedSubs) renderSubtitlesPopover();
+    }
 
     // --- Movi engine (Goldmine MKV / multi-audio files) ----------------------
-    // Progressive containers the browser cannot decode (MKV/HEVC/AV1) and
+    // Progressive containers the browser cannot decode (MKV/HEVC/AV1/EAC3) and
     // files with several muxed dubs play through the bundled movi-player
     // element instead of the native <video>. Streaming sources (HLS/DASH —
-    // even from Goldmine) stay on the regular paths below.
-    const looksStreaming = /\.m3u8(?:[?#]|$)/i.test(streamUrl) || /\.mpd(?:[?#]|$)/i.test(streamUrl);
-    if (state.stream.engine === 'movi' && !looksStreaming) {
+    // even when wrapped in /api/proxy) stay on hls.js / dash.js below.
+    if (candidateInfo.useMovi) {
       let moviReady = !!(window.customElements && customElements.get('movi-player'));
       if (!moviReady) {
+        if (!loadingOverlay.classList.contains('hidden')) {
+          loadingStatusText.textContent = `Loading ${serverDisplayName(state.server)} Engine`;
+          setConnectProgress(78, false);
+        }
         try {
           await ensureMoviPlayer();
-          moviReady = true;
+          moviReady = !!(window.customElements && customElements.get('movi-player'));
         } catch (_) {
-          moviReady = false; // script blocked/offline: try the native <video>
+          moviReady = false; // script blocked/offline: try native <video> / backups
         }
       }
-      // A newer load (episode/source switch) may have superseded the download.
-      if (loadToken && loadToken !== state.loadToken) return;
+      // A newer load or source switch may have superseded the download.
+      if ((loadToken && loadToken !== state.loadToken) || attachToken !== state.attachToken) return;
+      if (!loadingOverlay.classList.contains('hidden')) {
+        loadingStatusText.textContent = `Connecting to ${serverDisplayName(state.server)}`;
+        setConnectProgress(84, false);
+      }
       if (moviReady) {
-        attachMoviStream(streamUrl, targetStartTime, applyStartTime, tryNextBackupStream);
+        attachMoviStream(
+          streamUrl,
+          targetStartTime,
+          applyStartTime,
+          tryNextBackupStream,
+          attachToken,
+          candidateInfo
+        );
         return;
       }
     }
 
-    if ((/\.mpd(?:[?#]|$)/i.test(streamUrl) || (state.stream.format === 'dash' && isDeclaredPrimaryUrl)) && window.dashjs) {
+    if (candidateInfo.isDash && window.dashjs) {
       const player = window.dashjs.MediaPlayer().create();
       state.dashInstance = player;
       player.initialize(video, streamUrl, true);
       player.on('canPlay', () => {
+        if (attachToken !== state.attachToken) return;
         hideLoading();
         applyStartTime();
       });
       const dashErrorEvent = window.dashjs.MediaPlayer.events && window.dashjs.MediaPlayer.events.ERROR;
       if (dashErrorEvent) {
         player.on(dashErrorEvent, (event) => {
+          if (attachToken !== state.attachToken) return;
           if (!event || (!event.fatal && !event.error && !event.event)) return;
           try { player.reset(); } catch (_) {}
           state.dashInstance = null;
@@ -1520,6 +1868,7 @@
         });
       }
       video.onerror = () => {
+        if (attachToken !== state.attachToken) return;
         if (state.dashInstance) {
           try { state.dashInstance.reset(); } catch (_) {}
         }
@@ -1530,8 +1879,7 @@
       return;
     }
 
-    const isHlsUrl = /\.m3u8(?:[?#]|$)/i.test(streamUrl) || (state.stream.format === 'hls' && isDeclaredPrimaryUrl);
-    if (window.Hls && window.Hls.isSupported() && isHlsUrl) {
+    if (window.Hls && window.Hls.isSupported() && candidateInfo.isHls) {
       const hls = new window.Hls({
         enableWorker: true,
         lowLatencyMode: false
@@ -1544,6 +1892,7 @@
       hls.attachMedia(video);
 
       hls.on(window.Hls.Events.MANIFEST_PARSED, () => {
+        if (attachToken !== state.attachToken) return;
         hideLoading();
 
         // Merge any real HLS multi-audio tracks discovered in the manifest
@@ -1555,6 +1904,7 @@
         applyRememberedQuality();
 
         video.play().catch((error) => {
+          if (attachToken !== state.attachToken) return;
           // Autoplay denial is recoverable, but an unsupported HLS decode can use the next quality/mirror.
           if (error && error.name === 'NotSupportedError') {
             if (!tryNextBackupStream(video.currentTime || targetStartTime || 0)) {
@@ -1565,7 +1915,7 @@
       });
 
       hls.on(window.Hls.Events.ERROR, (_, errData) => {
-        if (!errData) return;
+        if (attachToken !== state.attachToken || !errData) return;
         if (errData.fatal) {
           const types = window.Hls.ErrorTypes || {};
           const details = window.Hls.ErrorDetails || {};
@@ -1595,24 +1945,28 @@
       return;
     }
 
-    // Native HLS (Safari/iOS) or direct MP4/MKV CDN playback
+    // Native HLS (Safari/iOS) or direct MP4 CDN playback
     video.src = streamUrl;
     video.onloadedmetadata = () => {
+      if (attachToken !== state.attachToken) return;
       hideLoading();
+      syncNativeAudioTracks();
       applyStartTime();
       video.play().catch((error) => {
+        if (attachToken !== state.attachToken) return;
         if (error && error.name === 'NotSupportedError') {
-          if (retryWithMoviIfPossible(streamUrl, targetStartTime, applyStartTime, tryNextBackupStream)) return;
+          if (retryWithMoviIfPossible(streamUrl, targetStartTime, applyStartTime, tryNextBackupStream, attachToken, candidateInfo)) return;
           if (tryNextBackupStream(video.currentTime || targetStartTime || 0)) return;
           handleFatalStreamError();
         }
       });
     };
     video.onerror = () => {
+      if (attachToken !== state.attachToken) return;
       // Direct CDN <video src> failed (hotlink/ISP block, or a container the
       // browser cannot demux such as MKV) — give movi-player a shot, then
       // iterate the resolved backup URLs before giving up on the whole server.
-      if (retryWithMoviIfPossible(streamUrl, targetStartTime, applyStartTime, tryNextBackupStream)) return;
+      if (retryWithMoviIfPossible(streamUrl, targetStartTime, applyStartTime, tryNextBackupStream, attachToken, candidateInfo)) return;
       if (tryNextBackupStream(video.currentTime || targetStartTime || 0)) return;
       handleFatalStreamError();
     };
@@ -1620,25 +1974,70 @@
   }
 
   // --- Movi-player integration (Goldmine MKV / multi-audio engine) -----------
-  // movi-player is a canvas-based WebCodecs/FFmpeg-WASM custom element that
-  // mirrors the HTMLMediaElement API and event set. While one is attached the
-  // module-scoped `video` reference points at it, so the entire HUD (timeline,
-  // volume, hotkeys, skip segments, host events) keeps driving playback with
-  // no engine-specific branches. The 12 MB bundle is fetched lazily — only
-  // when a stream actually declares `engine: "movi"`.
+  // movi-player is an ES-module WebCodecs/FFmpeg-WASM custom element (`element.js`
+  // uses `import.meta.url` + `export`), so it MUST load via `<script type="module">`
+  // and wait for `customElements.whenDefined('movi-player')` before attaching.
+
+  const MOVI_LOAD_TIMEOUT_MS = 25000;
+  const MOVI_CONNECT_TIMEOUT_MS = 18000;
 
   function ensureMoviPlayer() {
     if (window.customElements && customElements.get('movi-player')) return Promise.resolve(true);
     if (!state.moviScriptPromise) {
       state.moviScriptPromise = new Promise((resolve, reject) => {
+        if (!window.customElements) {
+          state.moviScriptPromise = null;
+          reject(new Error('CustomElements API unavailable'));
+          return;
+        }
+        let settled = false;
         const script = document.createElement('script');
+        script.type = 'module';
+        script.crossOrigin = 'anonymous';
         script.src = '/vendor/movi/element.js';
         script.async = true;
-        script.onload = () => resolve(true);
-        script.onerror = () => {
-          state.moviScriptPromise = null; // allow a retry on the next attach
-          reject(new Error('movi-player failed to load'));
+
+        const timer = setTimeout(() => {
+          if (settled) return;
+          settled = true;
+          state.moviScriptPromise = null;
+          try { if (script.parentNode) script.parentNode.removeChild(script); } catch (_) {}
+          reject(new Error('movi-player module load timed out'));
+        }, MOVI_LOAD_TIMEOUT_MS);
+
+        const finishOk = () => {
+          if (settled) return;
+          settled = true;
+          clearTimeout(timer);
+          resolve(true);
         };
+        const finishErr = (reason) => {
+          if (settled) return;
+          settled = true;
+          clearTimeout(timer);
+          state.moviScriptPromise = null;
+          try { if (script.parentNode) script.parentNode.removeChild(script); } catch (_) {}
+          reject(new Error(reason || 'movi-player failed to load'));
+        };
+
+        if (typeof customElements.whenDefined === 'function') {
+          customElements.whenDefined('movi-player').then(finishOk).catch(() => {});
+        }
+        script.onload = () => {
+          if (customElements.get('movi-player')) {
+            finishOk();
+            return;
+          }
+          if (typeof customElements.whenDefined === 'function') {
+            customElements
+              .whenDefined('movi-player')
+              .then(finishOk)
+              .catch(() => finishErr('movi-player failed to register'));
+          } else {
+            finishErr('movi-player custom element did not register');
+          }
+        };
+        script.onerror = () => finishErr('movi-player script failed to fetch');
         document.head.appendChild(script);
       });
     }
@@ -1646,18 +2045,32 @@
   }
 
   function detachMoviPlayer() {
+    clearMoviWatchdog();
     const el = state.moviEl;
     state.moviEl = null;
-    video = nativeVideo;
     if (el) {
+      // Preserve volume/mute changes made while movi-player was active.
+      try {
+        if (typeof el.volume === 'number' && Number.isFinite(el.volume)) nativeVideo.volume = el.volume;
+        if (typeof el.muted === 'boolean') nativeVideo.muted = el.muted;
+      } catch (_) {}
+      // Remove all listeners BEFORE pause/dispose so teardown never fires stale UI events.
       if (Array.isArray(el._lolHandlers)) {
         el._lolHandlers.forEach(([type, fn]) => el.removeEventListener(type, fn));
+        el._lolHandlers = null;
       }
+      if (Array.isArray(el._lolMediaHandlers)) {
+        el._lolMediaHandlers.forEach(({ type, handler, opts }) => el.removeEventListener(type, handler, opts));
+        el._lolMediaHandlers = null;
+      }
+      video = nativeVideo;
       try { el.pause(); } catch (_) {}
       try {
         if (typeof el.dispose === 'function') el.dispose();
       } catch (_) {}
       if (el.parentNode) el.parentNode.removeChild(el);
+    } else {
+      video = nativeVideo;
     }
     moviMount.classList.add('hidden');
     playerRoot.classList.remove('movi-mode');
@@ -1665,29 +2078,52 @@
 
   /** A native attach that failed on a progressive file (MKV the browser cannot
    *  demux) gets one movi-player attempt before the backup ladder runs. */
-  function retryWithMoviIfPossible(streamUrl, targetStartTime, applyStartTime, tryNextBackupStream) {
+  function retryWithMoviIfPossible(streamUrl, targetStartTime, applyStartTime, tryNextBackupStream, attachToken, candidateInfo) {
     if (video === state.moviEl) return false; // movi itself already failed
-    if (!(window.customElements && customElements.get('movi-player'))) return false;
-    if (/\.m3u8(?:[?#]|$)/i.test(streamUrl) || /\.mpd(?:[?#]|$)/i.test(streamUrl)) return false;
-    attachMoviStream(streamUrl, targetStartTime, applyStartTime, tryNextBackupStream);
+    if (candidateInfo && (candidateInfo.isHls || candidateInfo.isDash)) return false;
+    if (/\.m3u8(?:$|[?#&])/i.test(streamUrl) || /\.mpd(?:$|[?#&])/i.test(streamUrl)) return false;
+    if (window.customElements && customElements.get('movi-player')) {
+      attachMoviStream(streamUrl, targetStartTime, applyStartTime, tryNextBackupStream, attachToken, candidateInfo);
+      return true;
+    }
+    ensureMoviPlayer()
+      .then(() => {
+        if (attachToken !== state.attachToken) return;
+        attachMoviStream(streamUrl, targetStartTime, applyStartTime, tryNextBackupStream, attachToken, candidateInfo);
+      })
+      .catch(() => {
+        if (attachToken !== state.attachToken) return;
+        if (!tryNextBackupStream(targetStartTime || 0)) handleFatalStreamError();
+      });
     return true;
   }
 
-  function attachMoviStream(streamUrl, targetStartTime, applyStartTime, tryNextBackupStream) {
-    let el = moviMount.querySelector('movi-player');
-    if (!el) {
-      el = document.createElement('movi-player');
-      // Headless + no internal hotkeys: the embed HUD is the only UI and the
-      // only keyboard handler.
-      el.setAttribute('nohotkeys', '');
-      moviMount.appendChild(el);
-      // Replay the embed's media listeners on the custom element — movi
-      // re-emits the full HTMLMediaElement event set (play/pause/timeupdate/…).
-      mediaListenerRegistry.forEach(({ type, handler, opts }) => el.addEventListener(type, handler, opts));
+  function attachMoviStream(streamUrl, targetStartTime, applyStartTime, tryNextBackupStream, attachToken, candidateInfo) {
+    // Always start with a clean MoviElement so previous probe/error flags never leak;
+    // the compiled FFmpeg WASM module is cached globally inside element.js.
+    if (state.moviEl || moviMount.querySelector('movi-player')) {
+      detachMoviPlayer();
     }
-    if (Array.isArray(el._lolHandlers)) {
-      el._lolHandlers.forEach(([type, fn]) => el.removeEventListener(type, fn));
-    }
+    resetNativeVideoElement();
+
+    const el = document.createElement('movi-player');
+    // Headless + automatic WebCodecs->WASM software fallback (`sw="auto"`) for
+    // mobile/desktop GPUs that refuse HEVC 10-bit / AV1 hardware decode.
+    el.setAttribute('nohotkeys', '');
+    el.setAttribute('nolinkwarning', '');
+    el.setAttribute('smoothwarning', 'false');
+    el.setAttribute('sw', 'auto');
+    el.setAttribute('playsinline', '');
+    el.setAttribute('preload', 'auto');
+    // Custom error slot suppresses Movi's internal Shadow DOM broken-screen UI.
+    const errSlot = document.createElement('div');
+    errSlot.setAttribute('slot', 'error');
+    errSlot.hidden = true;
+    el.appendChild(errSlot);
+
+    moviMount.appendChild(el);
+    el._lolMediaHandlers = mediaListenerRegistry.slice();
+    el._lolMediaHandlers.forEach(({ type, handler, opts }) => el.addEventListener(type, handler, opts));
 
     // Swap the active media element BEFORE anything reads or writes `video`.
     state.moviEl = el;
@@ -1703,89 +2139,257 @@
     } catch (_) {}
     applyMediaTransforms();
 
-    const stream = state.stream || {};
-    // Browser-safe custom headers only — Referer/UA-gated URLs already arrive
-    // wrapped in the backend proxy, which applies those server-side.
-    if (stream.moviHeaders && typeof stream.moviHeaders === 'object' && Object.keys(stream.moviHeaders).length > 0) {
-      el.setAttribute('headers', JSON.stringify(stream.moviHeaders));
+    const moviHeaders = candidateInfo && candidateInfo.moviHeaders ? candidateInfo.moviHeaders : null;
+    if (moviHeaders && typeof moviHeaders === 'object' && Object.keys(moviHeaders).length > 0) {
+      el.setAttribute('headers', JSON.stringify(moviHeaders));
     } else {
       el.removeAttribute('headers');
     }
-    const poster = state.media && (state.media.poster || state.media.backdrop);
-    if (poster) el.setAttribute('poster', poster);
-    else el.removeAttribute('poster');
 
-    const failOver = () => {
-      if (tryNextBackupStream((video && video.currentTime) || targetStartTime || 0)) return;
+    let settled = false;
+    const failOverOnce = () => {
+      if (settled || attachToken !== state.attachToken) return;
+      settled = true;
+      clearMoviWatchdog();
+      const resumeAt = (video && video.currentTime) || targetStartTime || 0;
+      if (tryNextBackupStream(resumeAt)) return;
       handleFatalStreamError();
     };
-    const onError = () => failOver();
+
+    const onError = () => failOverOnce();
+    const onErrorDisplay = () => failOverOnce();
     const onLoadedMetadata = () => {
+      if (attachToken !== state.attachToken) return;
+      settled = true;
+      clearMoviWatchdog();
       hideLoading();
       applyStartTime();
       syncMoviAudioTracks();
-      // The wanted dub may be muxed inside this very file: switch to it
-      // in-place instead of reloading anything.
-      const wanted = state.audioTracks.find((t) => t && t.id === state.activeAudioId);
-      if (wanted && wanted.inFile) selectMoviAudioLang(wanted.moviLang || wanted.lang);
-      el.play().catch((error) => {
-        if (error && error.name === 'NotSupportedError') failOver();
-      });
+      syncMoviSubtitleTracks();
+      if (state.activeSubtitleId === 'off') {
+        applyPreferredSubtitleSelection();
+      }
+
+      // Switch to the viewer's preferred/active muxed audio track in-place.
+      const prefs = readShowPrefs();
+      const wantedLang =
+        normalizeMoviLang(
+          (state.audioTracks.find((t) => t && t.id === state.activeAudioId) || {}).lang ||
+            prefs.audio ||
+            state.preferredAudioLang ||
+            ''
+        );
+      const wanted =
+        state.audioTracks.find((t) => t && t.inFile && t.id === state.activeAudioId) ||
+        (wantedLang && wantedLang !== 'und'
+          ? state.audioTracks.find((t) => t && t.inFile && normalizeMoviLang(t.lang) === wantedLang)
+          : null);
+      if (wanted) {
+        state.activeAudioId = wanted.id;
+        selectMoviAudioTrack(wanted);
+        renderAudioPopover();
+        renderLangChips();
+        updateSettingsSummaryValues();
+      }
+
+      // Keep Movi's internal subtitle renderer off unless an embedded MKV subtitle is explicitly chosen.
+      const activeSub = state.subtitles.find((s) => s && s.id === state.activeSubtitleId);
+      if (activeSub && Number.isInteger(activeSub.moviSubTrackId)) {
+        try { el.pickSubtitleTrack(activeSub.moviSubTrackId); } catch (_) {}
+      } else if (typeof el.pickSubtitleTrack === 'function') {
+        try { el.pickSubtitleTrack(null); } catch (_) {}
+      }
+
+      if (typeof el.play === 'function') {
+        el.play().catch((error) => {
+          if (attachToken !== state.attachToken) return;
+          if (error && error.name === 'NotSupportedError') failOverOnce();
+        });
+      }
     };
+
     el.addEventListener('error', onError);
+    el.addEventListener('errordisplay', onErrorDisplay);
     el.addEventListener('loadedmetadata', onLoadedMetadata);
-    el._lolHandlers = [['error', onError], ['loadedmetadata', onLoadedMetadata]];
+    el._lolHandlers = [
+      ['error', onError],
+      ['errordisplay', onErrorDisplay],
+      ['loadedmetadata', onLoadedMetadata]
+    ];
+
+    // Startup watchdog: if an upstream CDN hangs or returns non-media bytes
+    // without firing metadata/error, advance smoothly to the next backup source.
+    clearMoviWatchdog();
+    state.moviWatchdogTimer = setTimeout(() => {
+      if (!settled && attachToken === state.attachToken && (!el.readyState || el.readyState < 1)) {
+        failOverOnce();
+      }
+    }, MOVI_CONNECT_TIMEOUT_MS);
 
     el.setAttribute('src', streamUrl);
   }
 
-  /** movi-player demuxes the real file: merge the audio tracks it reports
-   *  with the payload's hint rows — a "Multi-Audio (dubs detected on load)"
-   *  placeholder becomes the actual dub list, one click per language. */
+  /**
+   * Read muxed MKV/MP4 audio tracks from `el.player.getAudioTracks()` (falling
+   * back to `el.getAudioLangs()` for split external audio) and merge them with
+   * cross-file dub rows so every language in the container is one click away.
+   */
   function syncMoviAudioTracks() {
     const el = state.moviEl;
-    if (!el || typeof el.getAudioLangs !== 'function' || !state.stream) return;
-    let moviTracks = [];
+    if (!el || !state.stream) return;
+
+    let rawTracks = [];
     try {
-      moviTracks = el.getAudioLangs() || [];
+      const muxed =
+        el.player && typeof el.player.getAudioTracks === 'function'
+          ? el.player.getAudioTracks()
+          : null;
+      if (Array.isArray(muxed) && muxed.length > 0) {
+        const activeMuxed =
+          el.player &&
+          el.player.trackManager &&
+          typeof el.player.trackManager.getActiveAudioTrack === 'function'
+            ? el.player.trackManager.getActiveAudioTrack()
+            : null;
+        const activeId = activeMuxed && activeMuxed.id != null ? activeMuxed.id : muxed[0].id;
+        rawTracks = muxed.map((mt, idx) => {
+          const trackId = Number.isInteger(mt.id) ? mt.id : idx;
+          const rawLang = mt.language || mt.lang || '';
+          const normFromCode = normalizeMoviLang(rawLang);
+          const inferred = normFromCode !== 'und' ? normFromCode : inferLangFromTrackLabel(mt.label || mt.title || '');
+          return {
+            trackId,
+            rawLang: rawLang || inferred,
+            lang: inferred,
+            rawLabel: String(mt.label || mt.title || '').trim(),
+            channels: mt.channels || 0,
+            active: trackId === activeId
+          };
+        });
+      } else if (typeof el.getAudioLangs === 'function') {
+        const ext = el.getAudioLangs() || [];
+        rawTracks = ext.map((et, idx) => {
+          const rawLang = (et && et.lang) || '';
+          const normFromCode = normalizeMoviLang(rawLang);
+          const inferred = normFromCode !== 'und' ? normFromCode : inferLangFromTrackLabel(et && et.label);
+          return {
+            trackId: null,
+            rawLang,
+            lang: inferred,
+            rawLabel: String((et && et.label) || '').trim(),
+            channels: 0,
+            active: !!(et && et.active) || idx === 0
+          };
+        });
+      }
     } catch (_) {
       return;
     }
-    if (!Array.isArray(moviTracks) || moviTracks.length === 0) return;
+
+    if (!Array.isArray(rawTracks) || rawTracks.length === 0) return;
 
     const currentUrl = state.stream.streamUrl;
-    const inFileRows = moviTracks.map((track, index) => {
-      const lang = normalizeMoviLang(track && track.lang) || 'und';
-      const existing = state.audioTracks.find(
-        (row) => row && row.streamUrl === currentUrl && String(row.lang || '').toLowerCase() === lang
-      );
-      if (existing) {
-        return { ...existing, inFile: true, moviLang: track.lang, default: existing.default || !!track.active };
+
+    // Single untagged audio stream inside a language-specific dub file (e.g. a
+    // dedicated Hindi dub file whose audio stream lacks an ISO tag): keep the
+    // payload's known language row instead of overwriting it with "Audio 1".
+    if (rawTracks.length === 1 && rawTracks[0].lang === 'und') {
+      const sameUrlRows = state.audioTracks.filter((row) => row && row.streamUrl === currentUrl);
+      if (sameUrlRows.length === 1) {
+        sameUrlRows[0].inFile = true;
+        if (Number.isInteger(rawTracks[0].trackId)) {
+          sameUrlRows[0].moviTrackId = rawTracks[0].trackId;
+        }
+        renderAudioPopover();
+        renderLangChips();
+        updateSettingsSummaryValues();
+        return;
       }
-      const label = (track && track.label) || langChipLabel(lang, index);
+    }
+
+    const langOccurrences = {};
+    rawTracks.forEach((t) => {
+      langOccurrences[t.lang] = (langOccurrences[t.lang] || 0) + 1;
+    });
+    const usedIds = new Set();
+    const matchedExistingIds = new Set();
+
+    const inFileRows = rawTracks.map((track, index) => {
+      const lang = track.lang || 'und';
+      const existing = state.audioTracks.find(
+        (row) =>
+          row &&
+          !matchedExistingIds.has(row.id) &&
+          row.streamUrl === currentUrl &&
+          normalizeMoviLang(row.lang) === lang &&
+          lang !== 'und'
+      );
+
+      const baseLabel = lang !== 'und' ? langChipLabel(lang, index) : '';
+      let displayLabel = baseLabel || track.rawLabel || langChipLabel(lang, index);
+      if (langOccurrences[lang] > 1 && lang !== 'und') {
+        if (track.rawLabel && track.rawLabel.toLowerCase() !== baseLabel.toLowerCase()) {
+          displayLabel = `${baseLabel} · ${track.rawLabel}`;
+        } else if (track.channels >= 6) {
+          displayLabel = `${baseLabel} (5.1)`;
+        } else {
+          displayLabel = `${baseLabel} #${index + 1}`;
+        }
+      }
+
+      if (existing) {
+        matchedExistingIds.add(existing.id);
+        usedIds.add(existing.id);
+        return Object.assign({}, existing, {
+          label: langOccurrences[lang] > 1 ? displayLabel : existing.label || displayLabel,
+          inFile: true,
+          moviLang: track.rawLang || lang,
+          moviTrackId: track.trackId,
+          default: existing.default || !!track.active
+        });
+      }
+
+      let id = `goldmine-${lang === 'und' ? `track-${index}` : lang}`;
+      if (usedIds.has(id)) id = `${id}-${index + 1}`;
+      usedIds.add(id);
+
       return {
-        id: `goldmine-${lang === 'und' ? `track-${index}` : lang}`,
+        id,
         lang,
-        label,
+        label: displayLabel,
         type: 'dub',
         streamUrl: currentUrl,
         rawUrl: state.stream.rawUrl || currentUrl,
         inFile: true,
-        moviLang: track.lang,
+        moviLang: track.rawLang || lang,
+        moviTrackId: track.trackId,
         default: !!track.active
       };
     });
+
     // Per-language rows that live in OTHER files survive the merge — picking
     // one of those loads its file and keeps the playhead.
     const otherFileRows = state.audioTracks.filter(
       (row) =>
-        row && row.streamUrl && row.streamUrl !== currentUrl &&
-        !inFileRows.some((merged) => merged.lang === String(row.lang || '').toLowerCase())
+        row &&
+        row.streamUrl &&
+        row.streamUrl !== currentUrl &&
+        !inFileRows.some((merged) => merged.lang !== 'und' && merged.lang === normalizeMoviLang(row.lang))
     );
     state.audioTracks = [...inFileRows, ...otherFileRows];
 
+    const prefs = readShowPrefs();
+    const preferredLang =
+      normalizeMoviLang(prefs.audio || '') !== 'und'
+        ? normalizeMoviLang(prefs.audio)
+        : state.preferredAudioLang;
     const active =
       state.audioTracks.find((row) => row.id === state.activeAudioId) ||
+      (preferredLang && preferredLang !== 'und'
+        ? state.audioTracks.find((row) => row.inFile && normalizeMoviLang(row.lang) === preferredLang) ||
+          state.audioTracks.find((row) => normalizeMoviLang(row.lang) === preferredLang)
+        : null) ||
+      state.audioTracks.find((row) => row.inFile && row.default) ||
       state.audioTracks.find((row) => row.default) ||
       state.audioTracks[0];
     if (active) state.activeAudioId = active.id;
@@ -1794,40 +2398,127 @@
     updateSettingsSummaryValues();
   }
 
-  // movi/ffmpeg report ISO-639-2 codes ('eng'); the payload rows and the rest
-  // of the player use ISO-639-1 ('en'). Normalize so in-file tracks merge with
-  // the payload's up-front language rows instead of duplicating them.
-  const MOVI_LANG_FIX = {
-    eng: 'en', hin: 'hi', tam: 'ta', tel: 'te', mal: 'ml', kan: 'kn', ben: 'bn',
-    mar: 'mr', pan: 'pa', urd: 'ur', ara: 'ar', spa: 'es', fra: 'fr', fre: 'fr',
-    deu: 'de', ger: 'de', ita: 'it', por: 'pt', rus: 'ru', jpn: 'ja', kor: 'ko',
-    zho: 'zh', chi: 'zh', tha: 'th', ind: 'id', tur: 'tr', vie: 'vi'
-  };
-  const LANG_CHIP_LABELS = {
-    en: 'English', hi: 'Hindi', ta: 'Tamil', te: 'Telugu', ml: 'Malayalam',
-    kn: 'Kannada', bn: 'Bengali', mr: 'Marathi', pa: 'Punjabi', ur: 'Urdu',
-    ar: 'Arabic', es: 'Spanish', fr: 'French', de: 'German', it: 'Italian',
-    pt: 'Portuguese', ru: 'Russian', ja: 'Japanese', ko: 'Korean', zh: 'Chinese',
-    th: 'Thai', id: 'Indonesian', tr: 'Turkish', vi: 'Vietnamese'
-  };
-  function normalizeMoviLang(lang) {
-    const raw = String(lang || '').toLowerCase().trim();
-    return MOVI_LANG_FIX[raw] || raw;
-  }
-  function langChipLabel(lang, index) {
-    const code = normalizeMoviLang(lang);
-    if (!code || code === 'und') return `Audio ${index + 1}`;
-    return LANG_CHIP_LABELS[code] || code.charAt(0).toUpperCase() + code.slice(1);
+  /** Expose muxed MKV subtitle tracks in the CC menu alongside external VTTs. */
+  function syncMoviSubtitleTracks() {
+    const el = state.moviEl;
+    if (!el || !el.player || typeof el.player.getSubtitleTracks !== 'function') return;
+    let muxedSubs = [];
+    try {
+      muxedSubs = el.player.getSubtitleTracks() || [];
+    } catch (_) {
+      return;
+    }
+    // Remove any stale embedded subtitle entries from an earlier MKV file first.
+    state.subtitles = state.subtitles.filter((s) => !s || !Number.isInteger(s.moviSubTrackId));
+    if (!Array.isArray(muxedSubs) || muxedSubs.length === 0) {
+      renderSubtitlesPopover();
+      return;
+    }
+    muxedSubs.forEach((ms, idx) => {
+      const trackId = Number.isInteger(ms.id) ? ms.id : idx;
+      const rawLang = ms.language || ms.lang || '';
+      const normLang = normalizeMoviLang(rawLang) !== 'und'
+        ? normalizeMoviLang(rawLang)
+        : inferLangFromTrackLabel(ms.label || ms.title || '');
+      const baseName = normLang !== 'und' ? langChipLabel(normLang, idx) : `Track ${idx + 1}`;
+      const extra = ms.label && ms.label.toLowerCase() !== baseName.toLowerCase() ? ` · ${ms.label}` : '';
+      state.subtitles.push({
+        id: `movi-sub-${trackId}`,
+        lang: normLang,
+        label: `${baseName}${extra} (Embedded)`,
+        moviSubTrackId: trackId
+      });
+    });
+    renderSubtitlesPopover();
+    updateSettingsSummaryValues();
   }
 
   function selectMoviAudioLang(moviLang) {
+    if (!moviLang) return false;
+    return selectMoviAudioTrack({ lang: moviLang, moviLang });
+  }
+
+  function selectMoviAudioTrack(track) {
     const el = state.moviEl;
-    if (!el || typeof el.selectAudioLang !== 'function' || !moviLang) return false;
+    if (!el || !track) return false;
     try {
-      el.selectAudioLang(moviLang);
-      return true;
+      // 1. Direct muxed track selection by demuxer track id (`0`, `1`, `2`, ...).
+      if (Number.isInteger(track.moviTrackId) && typeof el.pickAudioTrack === 'function') {
+        if (
+          el.player &&
+          typeof el.player.isNativeAudioActive === 'function' &&
+          el.player.isNativeAudioActive() &&
+          typeof el.player.useMuxedAudio === 'function'
+        ) {
+          el.player.useMuxedAudio().then(() => {
+            try { el.pickAudioTrack(track.moviTrackId); } catch (_) {}
+          }).catch(() => {});
+          return true;
+        }
+        return !!el.pickAudioTrack(track.moviTrackId);
+      }
+      // 2. Match muxed track by language if `moviTrackId` was not resolved yet.
+      if (el.player && typeof el.player.getAudioTracks === 'function' && typeof el.pickAudioTrack === 'function') {
+        const muxed = el.player.getAudioTracks() || [];
+        const wanted = normalizeMoviLang(track.moviLang || track.lang);
+        if (wanted && wanted !== 'und' && muxed.length > 0) {
+          const hit = muxed.find((mt) => {
+            const code = normalizeMoviLang(mt.language || mt.lang);
+            const fromTitle = code !== 'und' ? code : inferLangFromTrackLabel(mt.label || mt.title || '');
+            return fromTitle === wanted;
+          });
+          if (hit && Number.isInteger(hit.id)) {
+            track.moviTrackId = hit.id;
+            return !!el.pickAudioTrack(hit.id);
+          }
+        }
+      }
+      // 3. Fallback: external split-audio track switching (`getAudioLangs` / `selectAudioLang`).
+      const moviLang = track.moviLang || track.lang;
+      if (moviLang && typeof el.selectAudioLang === 'function') {
+        return !!el.selectAudioLang(moviLang);
+      }
     } catch (_) {
       return false;
+    }
+    return false;
+  }
+
+  /** Sync native HTMLMediaElement `audioTracks` (Safari/WebKit/Chromium) when present. */
+  function syncNativeAudioTracks() {
+    const list = nativeVideo && nativeVideo.audioTracks;
+    if (!list || !(list.length > 1)) return;
+    const currentUrl = state.stream ? state.stream.streamUrl : '';
+    const nativeRows = [];
+    for (let i = 0; i < list.length; i++) {
+      const nt = list[i];
+      const lang = normalizeMoviLang(nt.language) !== 'und'
+        ? normalizeMoviLang(nt.language)
+        : inferLangFromTrackLabel(nt.label);
+      const label = nt.label || langChipLabel(lang, i);
+      nativeRows.push({
+        id: `native-audio-${i}`,
+        lang,
+        label,
+        type: 'dub',
+        streamUrl: currentUrl,
+        nativeAudioIndex: i,
+        default: !!nt.enabled
+      });
+    }
+    if (nativeRows.length > 1) {
+      const otherFileRows = state.audioTracks.filter(
+        (row) => row && row.streamUrl && row.streamUrl !== currentUrl
+      );
+      state.audioTracks = [...nativeRows, ...otherFileRows];
+      const active =
+        state.audioTracks.find((r) => r.id === state.activeAudioId) ||
+        nativeRows.find((r) => r.default) ||
+        nativeRows[0];
+      if (active) state.activeAudioId = active.id;
+      renderAudioPopover();
+      renderLangChips();
+      updateSettingsSummaryValues();
     }
   }
 
@@ -1933,20 +2624,30 @@
     // The payload may expose a single row for a manifest that actually carries
     // several audio renditions (multi-track HLS masters do this). hls.js is the
     // source of truth once the manifest is parsed: add a row per rendition so
-    // the menu can switch them.
+    // the menu and language chips can switch them.
     const distinctStreams = new Set(state.audioTracks.map((t) => t && t.streamUrl).filter(Boolean));
     if (hlsTracks.length > state.audioTracks.length && distinctStreams.size <= 1) {
       hlsTracks.forEach((hlsTrack, index) => {
-        const hlsLang = String((hlsTrack && hlsTrack.lang) || '').toLowerCase();
+        const rawLang = String((hlsTrack && hlsTrack.lang) || '').toLowerCase();
+        const normFromCode = normalizeMoviLang(rawLang);
+        const hlsLang =
+          normFromCode !== 'und'
+            ? normFromCode
+            : inferLangFromTrackLabel((hlsTrack && hlsTrack.name) || '');
         const already = state.audioTracks.find(
-          (t) => t.audioIndex === index || (hlsLang && t.lang && t.lang.toLowerCase() === hlsLang && t.audioIndex == null)
+          (t) =>
+            t.audioIndex === index ||
+            (hlsLang !== 'und' && normalizeMoviLang(t.lang) === hlsLang && t.audioIndex == null)
         );
         if (already) {
           already.audioIndex = index;
           if (hlsTrack && hlsTrack.default) already.default = true;
           return;
         }
-        const label = (hlsTrack && hlsTrack.name) || (hlsLang ? hlsLang.toUpperCase() : `Audio ${index + 1}`);
+        const label =
+          (hlsLang !== 'und' ? langChipLabel(hlsLang, index) : '') ||
+          (hlsTrack && hlsTrack.name) ||
+          `Audio ${index + 1}`;
         state.audioTracks.push({
           id: `hls-${index}`,
           lang: hlsLang,
@@ -1958,6 +2659,7 @@
         });
       });
       renderAudioPopover();
+      renderLangChips();
       updateSettingsSummaryValues();
     }
 
@@ -2006,28 +2708,42 @@
   }
 
   function selectAudioTrack(track, options = {}) {
+    if (!track) return;
     state.activeAudioId = track.id;
+    const normLang = normalizeMoviLang(track.lang);
+    if (normLang && normLang !== 'und') {
+      state.preferredAudioLang = normLang;
+    }
     renderAudioPopover();
     renderLangChips();
     updateSettingsSummaryValues();
-    if (options.remember !== false && track.lang) writeShowPrefs({ audio: String(track.lang).toLowerCase(), audioId: track.id });
+    if (options.remember !== false && normLang && normLang !== 'und') {
+      writeShowPrefs({ audio: normLang, audioId: track.id });
+    } else if (options.remember !== false && track.id) {
+      writeShowPrefs({ audioId: track.id });
+    }
 
     let switched = false;
     let switchHint = '';
+    const sameStreamUrl = !track.streamUrl || !state.stream || track.streamUrl === state.stream.streamUrl;
 
     // 0. In-file dub (movi engine): the track is muxed inside the running
-    // file — switch it in place, no reload and no playhead move.
-    if (
-      track.inFile && state.moviEl && video === state.moviEl &&
-      (!track.streamUrl || !state.stream || track.streamUrl === state.stream.streamUrl)
-    ) {
-      switched = selectMoviAudioLang(track.moviLang || track.lang);
+    // file — switch it in place via pickAudioTrack(id), no reload and no playhead jump.
+    if (state.moviEl && video === state.moviEl && sameStreamUrl && (track.inFile || Number.isInteger(track.moviTrackId))) {
+      switched = selectMoviAudioTrack(track);
       if (!switched) switchHint = ' — this file could not switch tracks';
     }
-    // 1. If the selected audio track has its own distinct streamUrl (e.g. separate Sub vs Dub HLS/MP4 stream), switch stream preserving current time
+    // 1. If the selected audio track has its own distinct streamUrl (e.g. separate Hindi/English dub file), switch stream preserving current time
     else if (track.streamUrl && state.stream && track.streamUrl !== state.stream.streamUrl) {
+      const resumeAt = (video && video.currentTime) || 0;
       state.stream.streamUrl = track.streamUrl;
-      attachStreamToVideo(track.streamUrl, video.currentTime || 0);
+      prepareAudioRowsForSourceSwitch(track.streamUrl);
+      if (state.audioTracks.some((r) => r.id === track.id)) {
+        state.activeAudioId = track.id;
+        renderAudioPopover();
+        renderLangChips();
+      }
+      attachStreamToVideo(track.streamUrl, resumeAt, state.loadToken);
       switched = true;
     }
     // 2. If HLS instance has multiple embedded audio renditions, switch natively
@@ -2040,16 +2756,38 @@
       } else {
         switchHint = ' — no matching track in this stream';
       }
+    }
+    // 3. Native HTMLMediaElement.audioTracks (Safari / iOS / Chromium)
+    else if (nativeVideo && video === nativeVideo && nativeVideo.audioTracks && nativeVideo.audioTracks.length > 1) {
+      let targetIdx = Number.isInteger(track.nativeAudioIndex) ? track.nativeAudioIndex : -1;
+      if (targetIdx < 0 && normLang && normLang !== 'und') {
+        for (let i = 0; i < nativeVideo.audioTracks.length; i++) {
+          if (normalizeMoviLang(nativeVideo.audioTracks[i].language) === normLang) {
+            targetIdx = i;
+            break;
+          }
+        }
+      }
+      if (targetIdx >= 0 && targetIdx < nativeVideo.audioTracks.length) {
+        for (let i = 0; i < nativeVideo.audioTracks.length; i++) {
+          nativeVideo.audioTracks[i].enabled = i === targetIdx;
+        }
+        switched = true;
+      } else {
+        switchHint = ' — no matching track in this stream';
+      }
+    }
+    // 4. Fallback attempt on movi-player if active even when `inFile` was not pre-tagged
+    else if (state.moviEl && video === state.moviEl && sameStreamUrl) {
+      switched = selectMoviAudioTrack(track);
+      if (!switched) switchHint = ' — this file plays its default audio track only';
     } else {
-      // The stream is a single progressive file (no HLS audio renditions) and
-      // every row shares one URL: the browser cannot switch the file's
-      // embedded tracks. Say so instead of faking a successful switch.
       switchHint = ' — this file plays its default audio track only';
     }
 
-    // 3. If track is a "sub" variant, auto-enable English subtitles if available and currently Off
+    // 5. If track is a "sub" variant, auto-enable English subtitles if available and currently Off
     if (track.type === 'sub' && state.activeSubtitleId === 'off' && state.subtitles.length > 0) {
-      const enSub = state.subtitles.find((s) => s.lang === 'en') || state.subtitles[0];
+      const enSub = state.subtitles.find((s) => normalizeMoviLang(s.lang) === 'en') || state.subtitles[0];
       if (enSub) {
         loadSubtitleTrack(enSub, { remember: false });
       }
@@ -2120,6 +2858,9 @@
     state.activeSubtitleId = 'off';
     state.parsedCues = [];
     customSubtitleText.textContent = '';
+    if (state.moviEl && typeof state.moviEl.pickSubtitleTrack === 'function') {
+      try { state.moviEl.pickSubtitleTrack(null); } catch (_) {}
+    }
     renderSubtitlesPopover();
     updateSettingsSummaryValues();
     // Only a deliberate "Off" is remembered for the title, not a failed load.
@@ -2133,7 +2874,27 @@
     renderSubtitlesPopover();
     updateSettingsSummaryValues();
     if (options.remember !== false && sub.id !== 'custom-upload' && sub.lang) {
-      writeShowPrefs({ sub: String(sub.lang).toLowerCase() });
+      const normSubLang = normalizeMoviLang(sub.lang);
+      if (normSubLang && normSubLang !== 'und') {
+        writeShowPrefs({ sub: normSubLang });
+      }
+    }
+
+    // Embedded MKV subtitle track rendered by movi-player's SubtitleOverlay
+    if (Number.isInteger(sub.moviSubTrackId)) {
+      state.parsedCues = [];
+      customSubtitleText.textContent = '';
+      if (state.moviEl && typeof state.moviEl.pickSubtitleTrack === 'function') {
+        try { state.moviEl.pickSubtitleTrack(sub.moviSubTrackId); } catch (_) {}
+      }
+      if (!options.silent) showToast(`Subtitles: ${sub.label}`, 2000);
+      emitHostEvent('subtitlechange', { subtitle: sub.label, lang: sub.lang });
+      return;
+    }
+
+    // External VTT or uploaded SRT/VTT: ensure movi-player's internal subtitle overlay is off
+    if (state.moviEl && typeof state.moviEl.pickSubtitleTrack === 'function') {
+      try { state.moviEl.pickSubtitleTrack(null); } catch (_) {}
     }
 
     if (sub.id === 'custom-upload' && Array.isArray(sub.cues)) {
@@ -2495,16 +3256,27 @@
 
   function switchToSource(serverId, url, label) {
     if (serverId === state.server && state.stream && state.stream.streamUrl) {
-      if (state.stream.streamUrl === url) {
+      if (state.stream.streamUrl === url && !loadingOverlay.classList.contains('is-error')) {
         closeAllPopovers();
         return;
       }
+      const resumeAt = (video && video.currentTime) || 0;
+      const wasInErrorOrLoading =
+        playerRoot.classList.contains('is-loading') || loadingOverlay.classList.contains('is-error');
       state._triedStreamUrls = new Set();
       closeAllPopovers();
-      showLoading(`Connecting to ${serverDisplayName(serverId)}`);
-      setConnectSource(serverId, sourcesFromStream(state.stream).indexOf(url));
-      setConnectProgress(72, false);
-      attachStreamToVideo(url, video.currentTime || 0);
+      prepareAudioRowsForSourceSwitch(url);
+      const sourceIndex = sourcesFromStream(state.stream).indexOf(url);
+      if (wasInErrorOrLoading) {
+        showLoading(`Connecting to ${serverDisplayName(serverId)}`);
+        setConnectSource(serverId, sourceIndex);
+        setConnectProgress(74, false);
+      } else {
+        hostBuffering = true;
+        bufferingIndicator.classList.remove('hidden');
+        showToast(`Switching to ${label || `Source ${sourceIndex + 1}`}…`, 2200);
+      }
+      attachStreamToVideo(url, resumeAt, state.loadToken);
       renderServersPopover();
       return;
     }
@@ -2568,7 +3340,7 @@
       if (status === 'ready' && info.sources.length > 0) {
         const list = document.createElement('div');
         list.className = 'server-sources';
-        info.sources.slice(0, 8).forEach((url, index) => {
+        info.sources.slice(0, 12).forEach((url, index) => {
           // Goldmine labels its sources with quality/language descriptors
           // ("1080p · Multi-Audio · MKV"); anything else falls back to the
           // plain slot number.
@@ -2582,7 +3354,7 @@
           row.setAttribute('aria-pressed', isPlayingSource ? 'true' : 'false');
           const statusClass = isPlayingSource ? 'is-playing' : sourceFailed ? 'is-failed' : 'is-ready';
           const statusText = isPlayingSource ? 'Playing' : sourceFailed ? 'Failed' : 'Ready';
-          row.innerHTML = `<span class="source-name">${label}</span><span class="source-status ${statusClass}">${statusText}</span>`;
+          row.innerHTML = `<span class="source-name">${escapeHtml(label)}</span><span class="source-status ${statusClass}">${statusText}</span>`;
           row.addEventListener('click', () => switchToSource(srv.id, url, label));
           list.appendChild(row);
         });
@@ -2698,15 +3470,21 @@
 
   // Apply CSS transforms & filters for Aspect Ratio, Brightness, and Mirror
   function applyMediaTransforms() {
-    video.style.filter = `brightness(${state.brightness / 100})`;
-    video.style.transform = state.mirror ? 'scaleX(-1)' : 'scaleX(1)';
+    const filterVal = `brightness(${state.brightness / 100})`;
+    const transformVal = state.mirror ? 'scaleX(-1)' : 'scaleX(1)';
+    let fitVal = 'contain';
+    if (state.aspectRatio === 'Fill') fitVal = 'cover';
+    else if (state.aspectRatio === 'Stretch') fitVal = 'fill';
 
-    if (state.aspectRatio === 'Fit') {
-      video.style.objectFit = 'contain';
-    } else if (state.aspectRatio === 'Fill') {
-      video.style.objectFit = 'cover';
-    } else if (state.aspectRatio === 'Stretch') {
-      video.style.objectFit = 'fill';
+    nativeVideo.style.filter = filterVal;
+    nativeVideo.style.transform = transformVal;
+    nativeVideo.style.objectFit = fitVal;
+
+    if (state.moviEl) {
+      state.moviEl.style.filter = filterVal;
+      state.moviEl.style.transform = transformVal;
+      state.moviEl.style.objectFit = fitVal;
+      try { state.moviEl.setAttribute('objectfit', fitVal); } catch (_) {}
     }
     updateSettingsSummaryValues();
   }
@@ -2786,8 +3564,10 @@
         ? -1
         : (levelIdx !== -1 ? levelIdx : Math.min(Math.max(idx - 1, 0), state.hlsInstance.levels.length - 1));
     } else if (!options.hlsOnly && q.url && state.stream && q.url !== state.stream.streamUrl) {
+      const resumeAt = (video && video.currentTime) || 0;
       state.stream.streamUrl = q.url;
-      attachStreamToVideo(q.url, video.currentTime || 0);
+      prepareAudioRowsForSourceSwitch(q.url);
+      attachStreamToVideo(q.url, resumeAt, state.loadToken);
     }
     updateSettingsSummaryValues();
   }
@@ -3418,8 +4198,12 @@
   // Goldmine MKV engine mirrors the HTMLMediaElement event set).
   const mediaListenerRegistry = [];
   function onMediaEvent(el, type, handler, opts) {
-    el.addEventListener(type, handler, opts);
-    mediaListenerRegistry.push({ type, handler, opts });
+    const guarded = function (evt) {
+      if (evt && evt.currentTarget && evt.currentTarget !== video) return;
+      return handler.call(this, evt);
+    };
+    el.addEventListener(type, guarded, opts);
+    mediaListenerRegistry.push({ type, handler: guarded, opts });
   }
 
   onMediaEvent(video, 'play', () => {
@@ -4025,8 +4809,12 @@
           disableSubtitles({ remember: true });
           return { ok: true };
         }
-        const lang = String(wanted).toLowerCase();
-        const track = state.subtitles.find((t) => t.id === wanted) || state.subtitles.find((t) => String(t.lang || '').toLowerCase() === lang);
+        const normLang = normalizeMoviLang(wanted);
+        const rawLower = String(wanted).toLowerCase();
+        const track =
+          state.subtitles.find((t) => t.id === wanted) ||
+          (normLang !== 'und' && state.subtitles.find((t) => normalizeMoviLang(t.lang) === normLang)) ||
+          state.subtitles.find((t) => String(t.lang || '').toLowerCase() === rawLower);
         if (!track) return { ok: false, error: `No subtitle track matches "${wanted}"` };
         loadSubtitleTrack(track, { silent: true, remember: true });
         return { ok: true };
@@ -4034,10 +4822,30 @@
       case 'setAudio': {
         const wanted = msg.id || msg.lang || msg.audio;
         if (!wanted) return { ok: false, error: 'setAudio needs `id` or `lang`' };
-        const lang = String(wanted).toLowerCase();
-        const track = state.audioTracks.find((t) => t.id === wanted) || state.audioTracks.find((t) => String(t.lang || '').toLowerCase() === lang);
+        const normLang = normalizeMoviLang(wanted);
+        const rawLower = String(wanted).toLowerCase();
+        const track =
+          state.audioTracks.find((t) => t.id === wanted) ||
+          (normLang !== 'und' && state.audioTracks.find((t) => t.inFile && normalizeMoviLang(t.lang) === normLang)) ||
+          (normLang !== 'und' && state.audioTracks.find((t) => normalizeMoviLang(t.lang) === normLang)) ||
+          state.audioTracks.find((t) => String(t.lang || '').toLowerCase() === rawLower);
         if (!track) return { ok: false, error: `No audio track matches "${wanted}"` };
         selectAudioTrack(track);
+        return { ok: true };
+      }
+      case 'setSource': {
+        if (!state.stream) return { ok: false, error: 'No active stream bundle' };
+        const sources = sourcesFromStream(state.stream);
+        let url = typeof msg.url === 'string' && sources.includes(msg.url) ? msg.url : null;
+        if (!url) {
+          const idx1 = num(msg.index !== undefined ? msg.index : msg.sourceIndex);
+          if (idx1 !== null && idx1 >= 1 && idx1 <= sources.length) {
+            url = sources[Math.floor(idx1) - 1];
+          }
+        }
+        if (!url) return { ok: false, error: 'setSource needs a valid 1-based `index` or `url`' };
+        const label = (state.stream.sourceLabels && state.stream.sourceLabels[url]) || `Source ${sources.indexOf(url) + 1}`;
+        switchToSource(state.server, url, label);
         return { ok: true };
       }
       case 'setServer': {
