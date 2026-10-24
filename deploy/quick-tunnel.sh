@@ -74,7 +74,11 @@ case "$(uname -m)" in
   aarch64|arm64) CLOUDFLARED_ARCH=arm64 ;;
   *) echo "cloudflared does not have a supported binary for $(uname -m)." >&2; exit 1 ;;
 esac
-CLOUDFLARED="$RUNTIME_DIR/cloudflared-$CLOUDFLARED_ARCH"
+if [[ -x /tmp/cloudflared ]]; then
+  CLOUDFLARED=/tmp/cloudflared
+else
+  CLOUDFLARED="$RUNTIME_DIR/cloudflared-$CLOUDFLARED_ARCH"
+fi
 if [[ ! -x "$CLOUDFLARED" ]]; then
   curl -fsSL "https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-$CLOUDFLARED_ARCH" -o "$CLOUDFLARED"
   chmod 700 "$CLOUDFLARED"

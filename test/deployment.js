@@ -50,6 +50,7 @@ function testStaticDeploymentWiring() {
   assert(fs.statSync(path.join(root, 'deploy/vps.sh')).mode & 0o111, 'VPS installer must be executable');
   assert(fs.statSync(path.join(root, 'deploy/quick-tunnel.sh')).mode & 0o111, 'Quick Tunnel launcher must be executable');
   const quickTunnel = read('deploy/quick-tunnel.sh');
+  assert(quickTunnel.includes('CLOUDFLARED=/tmp/cloudflared'));
   assert(quickTunnel.includes('cloudflared-linux-$CLOUDFLARED_ARCH'));
   assert(quickTunnel.includes('trycloudflare'));
   assert(quickTunnel.includes('GOLDMINE_API_BASE=https://rdp-running-campion.onrender.com'));
