@@ -52,6 +52,12 @@ function testStaticDeploymentWiring() {
   const quickTunnel = read('deploy/quick-tunnel.sh');
   assert(quickTunnel.includes('cloudflared-linux-$CLOUDFLARED_ARCH'));
   assert(quickTunnel.includes('trycloudflare'));
+  assert(quickTunnel.includes('GOLDMINE_API_BASE=https://rdp-running-campion.onrender.com'));
+  assert(quickTunnel.includes('GOLDMINE_PROXY_STREAMS=true'));
+  assert(quickTunnel.includes('MKV_HLS_ENABLED=true'));
+  assert(quickTunnel.includes('MKV_HLS_NODE_HOST=true'));
+  assert(quickTunnel.includes('api/mkv-hls?src=invalid'));
+  assert(quickTunnel.includes('api/resolve/movie/693134'));
   assert(quickTunnel.includes('set_env PUBLIC_BASE_URL "$TUNNEL_URL"'));
   assert(quickTunnel.indexOf('set_env PUBLIC_BASE_URL "$TUNNEL_URL"') < quickTunnel.indexOf('node scripts/player-server.mjs'), 'public origin must be configured before player startup');
   assert(read('README.md').includes('sudo bash deploy/vps.sh embed.example.com'));

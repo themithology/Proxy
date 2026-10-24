@@ -40,6 +40,13 @@ stop_previous() {
 
 stop_previous "$PLAYER_PID_FILE"
 stop_previous "$TUNNEL_PID_FILE"
+# Also replace processes started by the earlier manual instructions. In
+# particular, src/server.js is API-only and must not keep port 3000.
+if command -v pkill >/dev/null 2>&1; then
+  pkill -f 'node scripts/player-server\.mjs' 2>/dev/null || true
+  pkill -f 'node src/server\.js' 2>/dev/null || true
+fi
+if [[ -f /tmp/lol-player.pid ]]; then stop_previous /tmp/lol-player.pid; fi
 
 if [[ ! -f .env ]]; then cp .env.example .env; fi
 chmod 600 .env
@@ -50,10 +57,15 @@ ensure_secret PROXY_SECRET
 set_env PLAYER_PORT 3000
 set_env HOST 127.0.0.1
 set_env NODE_ENV production
+set_env API_BASE_URL ""
+set_env GOLDMINE_API_BASE https://rdp-running-campion.onrender.com
+set_env GOLDMINE_PROXY_STREAMS true
+set_env GOLDMINE_TIMEOUT_MS 60000
 set_env MKV_HLS_ENABLED true
 set_env MKV_HLS_NODE_HOST true
 set_env MKV_HLS_DIR "$RUNTIME_DIR/hls"
-if [[ -z "$(get_env MKV_HLS_MAX_SESSIONS)" ]]; then set_env MKV_HLS_MAX_SESSIONS 2; fi
+set_env MKV_HLS_MAX_SESSIONS 2
+set_env MKV_HLS_READY_TIMEOUT_MS 120000
 
 npm ci --omit=dev
 
@@ -95,9 +107,15 @@ nohup env \
   PLAYER_PORT=3000 \
   PUBLIC_BASE_URL="$TUNNEL_URL" \
   NODE_ENV=production \
+  API_BASE_URL= \
+  GOLDMINE_API_BASE=https://rdp-running-campion.onrender.com \
+  GOLDMINE_PROXY_STREAMS=true \
+  GOLDMINE_TIMEOUT_MS=60000 \
   MKV_HLS_ENABLED=true \
   MKV_HLS_NODE_HOST=true \
   MKV_HLS_DIR="$RUNTIME_DIR/hls" \
+  MKV_HLS_MAX_SESSIONS=2 \
+  MKV_HLS_READY_TIMEOUT_MS=120000 \
   node scripts/player-server.mjs > "$PLAYER_LOG" 2>&1 &
 echo $! > "$PLAYER_PID_FILE"
 
@@ -130,7 +148,37 @@ if [[ "$public_ready" -ne 1 ]]; then
   exit 1
 fi
 
-printf '\nQuick Tunnel is healthy — no domain or open inbound port is needed.\n'
+EMBED_HTML="$RUNTIME_DIR/embed.html"
+if ! curl -fsS --max-time 15 "$TUNNEL_URL/embed/movie/693134" -o "$EMBED_HTML" || ! grep -q 'mkvHlsEnabled":true' "$EMBED_HTML"; then
+  echo "The full player is not advertising its MKV-to-HLS converter." >&2
+  tail -60 "$PLAYER_LOG" >&2 || true
+  exit 1
+fi
+
+# An invalid source must produce 400 from the converter itself. A 404 here
+# means the API-only server was started or the converter was not enabled.
+converter_status="$(curl -sS --max-time 10 -o /dev/null -w '%{http_code}' "$TUNNEL_URL/api/mkv-hls?src=invalid" || true)"
+if [[ "$converter_status" != "400" ]]; then
+  echo "MKV-to-HLS is not mounted (expected HTTP 400, got $converter_status)." >&2
+  tail -60 "$PLAYER_LOG" >&2 || true
+  exit 1
+fi
+
+RESOLVE_JSON="$RUNTIME_DIR/resolve.json"
+# Warm and verify Goldmine locally so a slow Render cold start does not hit
+# Cloudflare's public request timeout. The successful result is then cached for
+# the first browser request through the tunnel.
+if ! curl -fsS --max-time 120 http://127.0.0.1:3000/api/resolve/movie/693134 -o "$RESOLVE_JSON"; then
+  echo "Goldmine did not resolve the test movie. Check the player log and Render upstream." >&2
+  tail -80 "$PLAYER_LOG" >&2 || true
+  exit 1
+fi
+if ! node -e 'const fs=require("fs"); const data=JSON.parse(fs.readFileSync(process.argv[1],"utf8")); if(!data.stream || !data.stream.streamUrl) { console.error(data.error || "Goldmine returned no playable stream"); process.exit(1); }' "$RESOLVE_JSON"; then
+  echo "The main Goldmine MP4/HLS source is not configured or returned no stream." >&2
+  exit 1
+fi
+
+printf '\nQuick Tunnel, full player, Goldmine and MKV-to-HLS are configured.\n'
 printf 'Player: %s/embed/movie/693134?debug=1\n' "$TUNNEL_URL"
 printf 'Health: %s/api/health\n' "$TUNNEL_URL"
 printf 'Player log: tail -f %s\n' "$PLAYER_LOG"
