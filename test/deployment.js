@@ -48,9 +48,15 @@ function testStaticDeploymentWiring() {
   assert(read('.dockerignore').includes('node_modules'));
   assert(read('.dockerignore').includes('.env'));
   assert(fs.statSync(path.join(root, 'deploy/vps.sh')).mode & 0o111, 'VPS installer must be executable');
+  assert(fs.statSync(path.join(root, 'deploy/quick-tunnel.sh')).mode & 0o111, 'Quick Tunnel launcher must be executable');
+  const quickTunnel = read('deploy/quick-tunnel.sh');
+  assert(quickTunnel.includes('cloudflared-linux-$CLOUDFLARED_ARCH'));
+  assert(quickTunnel.includes('trycloudflare'));
+  assert(quickTunnel.includes('set_env PUBLIC_BASE_URL "$TUNNEL_URL"'));
+  assert(quickTunnel.indexOf('set_env PUBLIC_BASE_URL "$TUNNEL_URL"') < quickTunnel.indexOf('node scripts/player-server.mjs'), 'public origin must be configured before player startup');
   assert(read('README.md').includes('sudo bash deploy/vps.sh embed.example.com'));
 
-  for (const script of ['deploy/vps.sh', 'deploy/env.sh']) {
+  for (const script of ['deploy/vps.sh', 'deploy/env.sh', 'deploy/quick-tunnel.sh']) {
     const syntax = spawnSync('bash', ['-n', path.join(root, script)], { encoding: 'utf8' });
     assert.strictEqual(syntax.status, 0, syntax.stderr);
   }

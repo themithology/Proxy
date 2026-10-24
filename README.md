@@ -455,6 +455,23 @@ Set `GOLDMINE_API_BASE`, strong secrets and optional subtitle keys in `.env`.
 For progressive MKV/MP4 conversion, keep both `MKV_HLS_ENABLED=true` and
 `MKV_HLS_NODE_HOST=true`; Cloudflare Workers cannot spawn ffmpeg.
 
+## Temporary HTTPS without a domain (Cloudflare Quick Tunnel)
+
+For a short test on a Node 22+ host, Cloudflare Quick Tunnel supplies a random
+`https://….trycloudflare.com` origin without a domain, Cloudflare account, or
+open inbound firewall port:
+
+```bash
+bash deploy/quick-tunnel.sh
+```
+
+The launcher preserves existing credentials, creates missing secrets, installs
+the standalone `cloudflared` binary in the temporary directory, registers the
+tunnel, writes its public origin to `PUBLIC_BASE_URL`, starts the full player,
+and checks health locally and through Cloudflare. It prints the player URL and
+log paths when ready. The random URL lasts only while both processes run; use
+the VPS/Caddy deployment below for a stable domain.
+
 ## One-command VPS deployment (player + API + converter)
 
 On a Linux VPS you already operate, point a domain's A/AAAA record at the VPS
