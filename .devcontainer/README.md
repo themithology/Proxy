@@ -51,7 +51,9 @@ A successful test means checking all of these in the browser, not merely seeing 
 1. A real MKV starts playback and can seek.
 2. The audio menu is populated from the loaded file and switching audio changes the audible track without reloading the file.
 3. Quality rows correspond to real alternate files or HLS variants.
-4. For HLS, inspect the original playlist if selection is missing. `#EXT-X-STREAM-INF` indicates quality variants and `#EXT-X-MEDIA:TYPE=AUDIO` indicates audio renditions. A media playlist containing only `#EXTINF` segments cannot provide a quality/audio ladder that the source does not have.
+4. For HLS, the player now rebuilds its quality menu from the levels hls.js actually discovers. `#EXT-X-STREAM-INF` indicates quality variants and `#EXT-X-MEDIA:TYPE=AUDIO` indicates audio renditions. If the menu contains only Auto plus one rung, inspect the original playlist: a media playlist containing only `#EXTINF` segments cannot provide a quality/audio ladder that the source does not have.
+
+For real movi/FFmpeg decoder diagnostics, add `?debug=1` to the player URL (or `&debug=1` when it already has a query string), then open the browser console with **F12 → Console**. Reproduce the failure and look for `[movi:...]` and `[LOL Embed] movi ...` messages. Debug mode does not alter resolution or playback behavior.
 
 Useful checks from the Codespace terminal:
 

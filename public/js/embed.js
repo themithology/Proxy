@@ -1,6 +1,11 @@
 (function () {
   'use strict';
 
+  // Optional live diagnostics. Set before the movi module loads so its own
+  // FFmpeg/WebCodecs logs reach the browser console during real-source tests.
+  const PLAYER_DEBUG = new URLSearchParams(window.location.search).get('debug') === '1';
+  if (PLAYER_DEBUG) window.__movilog = console;
+
   // --- Configurable API base URL ---
   // The player page (/embed) and the JSON/stream API may run on different
   // Workers. The API base is resolved in this order:
@@ -1401,8 +1406,13 @@
           label: q.label,
           height: q.height,
           bitrate: q.bitrate,
+          levelIndex: Number.isInteger(q.levelIndex) ? q.levelIndex : undefined,
           url: q.url
         }));
+      // HLS replaces this list with its real manifest levels while attached.
+      // Keep the payload rows so a progressive fallback never inherits stale
+      // HLS-only choices after a source switch.
+      state.stream._initialQualities = state.qualities.map((quality) => ({ ...quality }));
 
       if (state.audioTracks.length > 0) {
         // Order: the language the viewer already picked for this title, then
@@ -1920,6 +1930,15 @@
     const candidateInfo = classifyCandidateStream(streamUrl, isDeclaredPrimaryUrl);
     if (candidateInfo.meta && candidateInfo.meta.rawUrl) state.stream.rawUrl = candidateInfo.meta.rawUrl;
 
+    if (!candidateInfo.isHls && Array.isArray(state.stream._initialQualities)) {
+      state.qualities = state.stream._initialQualities.map((quality) => ({ ...quality }));
+      const currentQuality = state.qualities.find(
+        (quality) => quality.url && sameStreamReference(quality.url, streamUrl)
+      );
+      state.activeQualityId = currentQuality ? currentQuality.id : 'auto';
+      updateSettingsSummaryValues();
+    }
+
     if (Array.isArray(candidateInfo.sourceSubtitles) && candidateInfo.sourceSubtitles.length > 0) {
       const seenSubUrls = new Set(state.subtitles.map((s) => s && s.url).filter(Boolean));
       let addedSubs = false;
@@ -2021,9 +2040,13 @@
         hls.loadSource(activeHlsUrl);
         hls.attachMedia(video);
 
-        hls.on(window.Hls.Events.MANIFEST_PARSED, () => {
+        hls.on(window.Hls.Events.MANIFEST_PARSED, (_, data) => {
           if (attachToken !== state.attachToken) return;
           hideLoading();
+
+          // Build the visible quality menu from the actual master playlist,
+          // not the resolver's initial (often single) HLS row.
+          syncHlsQualityLevels(hls, data && data.levels);
 
           // Merge any real HLS multi-audio tracks discovered in the manifest
           if (hls.audioTracks && hls.audioTracks.length > 0) {
@@ -2048,6 +2071,13 @@
           hls.on(window.Hls.Events.AUDIO_TRACKS_UPDATED, () => {
             if (attachToken !== state.attachToken) return;
             syncHlsAudioTracks();
+          });
+        }
+
+        if (window.Hls.Events.LEVELS_UPDATED) {
+          hls.on(window.Hls.Events.LEVELS_UPDATED, (_, data) => {
+            if (attachToken !== state.attachToken) return;
+            syncHlsQualityLevels(hls, data && data.levels);
           });
         }
 
@@ -2343,8 +2373,24 @@
       handleFatalStreamError();
     };
 
-    const onError = () => failOverOnce();
-    const onErrorDisplay = () => failOverOnce();
+    const logMoviFailure = (event, kind) => {
+      if (!PLAYER_DEBUG) return;
+      console.error(`[LOL Embed] movi ${kind}`, {
+        detail: event && event.detail,
+        mediaError: el.error || null,
+        readyState: el.readyState,
+        networkState: el.networkState,
+        container: candidateInfo && candidateInfo.meta && candidateInfo.meta.container
+      });
+    };
+    const onError = (event) => {
+      logMoviFailure(event, 'error');
+      failOverOnce();
+    };
+    const onErrorDisplay = (event) => {
+      logMoviFailure(event, 'error display');
+      failOverOnce();
+    };
     const onLoadedMetadata = () => {
       if (attachToken !== state.attachToken) return;
       settled = true;
@@ -2390,6 +2436,7 @@
       if (typeof el.play === 'function') {
         el.play().catch((error) => {
           if (attachToken !== state.attachToken) return;
+          if (PLAYER_DEBUG) console.error('[LOL Embed] movi play() rejected', error);
           if (error && error.name === 'NotSupportedError') failOverOnce();
         });
       }
@@ -3869,7 +3916,7 @@
     });
   });
 
-  /** Switch to a payload quality; remembered across titles (`lol_embed_quality`). */
+  /** Switch to a payload or manifest-discovered quality; remembered across titles (`lol_embed_quality`). */
   function applyQuality(q, idx = state.qualities.indexOf(q), options = {}) {
     state.activeQualityId = q.id;
     if (options.remember !== false) {
@@ -3877,13 +3924,14 @@
       else storageSet(QUALITY_KEY, String(q.height));
     }
     if (state.hlsInstance && state.hlsInstance.levels && state.hlsInstance.levels.length > 0) {
-      // Match the payload quality to the real HLS level by height first.
-      // The old positional `idx - 1` assumption broke whenever the
-      // payload ladder and the manifest ladder disagreed (they usually
-      // do: payload is [Auto, 1080, 720, 480], hls.js levels ascend).
+      // Prefer the exact manifest index captured from hls.js. Height matching
+      // remains as a fallback for resolver-supplied rows and older payloads.
       const heights = state.hlsInstance.levels.map((l) => (l && l.height) || 0);
-      let levelIdx = -1;
-      if (q.id !== 'auto' && q.height) {
+      let levelIdx =
+        Number.isInteger(q.levelIndex) && q.levelIndex >= 0 && q.levelIndex < state.hlsInstance.levels.length
+          ? q.levelIndex
+          : -1;
+      if (levelIdx === -1 && q.id !== 'auto' && q.height) {
         levelIdx = heights.findIndex((h) => h === q.height);
         if (levelIdx === -1) {
           const closest = heights.reduce(
@@ -3902,6 +3950,45 @@
       prepareAudioRowsForSourceSwitch(q.url);
       attachStreamToVideo(q.url, resumeAt, state.loadToken);
     }
+    updateSettingsSummaryValues();
+  }
+
+  /**
+   * hls.js, not the resolver's initial row, is authoritative for a master
+   * playlist's quality ladder. Replace the visible menu with the levels that
+   * actually exist and retain each exact level index for duplicate-height
+   * ladders. A single media playlist consequently yields Auto + one honest
+   * rung instead of pretending that 1080/720/480 variants exist.
+   */
+  function syncHlsQualityLevels(hls, eventLevels) {
+    if (!hls || state.hlsInstance !== hls) return;
+    const levels = Array.isArray(eventLevels) ? eventLevels : hls.levels;
+    if (!Array.isArray(levels) || levels.length === 0) return;
+
+    const rows = levels
+      .map((level, levelIndex) => {
+        const height = Number(level && level.height) || 0;
+        const bitrate = Number(level && level.bitrate) || 0;
+        const bitrateLabel = bitrate > 0 ? `${Math.round(bitrate / 1000)} kbps` : '';
+        const name = String((level && level.name) || '').trim();
+        if (!height && !bitrateLabel && !name) return null;
+        return {
+          id: `hls-level-${levelIndex}`,
+          label: height > 0 ? `${height}p` : name || bitrateLabel,
+          height,
+          bitrate: bitrateLabel || undefined,
+          levelIndex,
+          url: ''
+        };
+      })
+      .filter(Boolean)
+      .sort((a, b) => b.height - a.height || (parseInt(b.bitrate, 10) || 0) - (parseInt(a.bitrate, 10) || 0));
+    if (rows.length === 0) return;
+
+    state.qualities = [{ id: 'auto', label: 'Auto', height: 0, url: '' }, ...rows];
+    const currentLevel = Number.isInteger(hls.currentLevel) ? hls.currentLevel : -1;
+    const currentRow = rows.find((row) => row.levelIndex === currentLevel);
+    state.activeQualityId = currentRow ? currentRow.id : 'auto';
     updateSettingsSummaryValues();
   }
 
