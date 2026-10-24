@@ -633,10 +633,13 @@ function corsHeaders(extra = {}) {
   };
 }
 
-function jsonResponse(data, status = 200) {
+function jsonResponse(data, status = 200, extraHeaders = {}) {
   return new Response(JSON.stringify(data), {
     status,
-    headers: corsHeaders({ 'Content-Type': 'application/json; charset=utf-8' })
+    headers: corsHeaders({
+      'Content-Type': 'application/json; charset=utf-8',
+      ...extraHeaders
+    })
   });
 }
 
@@ -1308,7 +1311,7 @@ async function resolveStreamWaterfall(metadata, requestedServer, preferredAudio,
   // a 15-minute-old payload turns "Retry" into "fail again instantly", which is
   // exactly what a dead source looks like from the outside.
   const fresh = !!(options && options.fresh);
-  const cacheKey = `cf:resolve:v5:${metadata.type}:${metadata.tmdbId}:s${metadata.season}:e${metadata.episode}:${validServer}${
+  const cacheKey = `cf:resolve:v6:${metadata.type}:${metadata.tmdbId}:s${metadata.season}:e${metadata.episode}:${validServer}${
     onlySource ? `:${onlySource}` : ''
   }`;
   const cached = fresh ? null : await edgeCacheGet(cacheKey);
@@ -1354,7 +1357,7 @@ async function resolveStreamWaterfall(metadata, requestedServer, preferredAudio,
         servers: serverCatalog.buildServerPayload(SERVERS, resolved.server)
       };
       const finalPayload = applyPreferredAudio(payload, preferredAudio);
-      await edgeCacheSet(cacheKey, finalPayload, 900);
+      await edgeCacheSet(cacheKey, finalPayload, finalPayload.ephemeralOnly ? 60 : 900);
       return finalPayload;
     } else {
       const reason =
@@ -1490,6 +1493,93 @@ const PROXY_RETRY_STATUSES = new Set([
   400, 401, 403, 404, 405, 406, 410, 412, 415, 416, 429, 451, 500, 502, 503, 504
 ]);
 
+/** 200 OK bodies that are hotlink/WAF gates rather than media or text/plain HLS. */
+const GATE_BODY_CONTENT_TYPE = /^(?:text\/html|text\/xml|application\/(?:json|xml|xhtml\+xml))/i;
+
+/**
+ * Peek the first bytes of a non-Range 200 stream when Content-Type is
+ * `text/plain` or `application/octet-stream` so disguised `#EXTM3U` HLS
+ * playlists (StreamFlix, VaPlayer, Videasy, CastleTV, OneTouchTV, VixSrc) can
+ * be rewritten instead of rejected or streamed raw, without buffering binary media.
+ */
+async function sniffDisguisedM3u8(body, maxManifestBytes = 2 * 1024 * 1024) {
+  if (!body || typeof body.getReader !== 'function') {
+    return { isPlaylist: false, body };
+  }
+  const reader = body.getReader();
+  const headChunks = [];
+  let headLen = 0;
+  while (headLen < 32) {
+    const { value, done } = await reader.read();
+    if (done) break;
+    if (value && value.byteLength > 0) {
+      headChunks.push(value);
+      headLen += value.byteLength;
+    }
+  }
+  if (headLen === 0) {
+    try { reader.releaseLock(); } catch {}
+    return { isPlaylist: false, body: new ReadableStream({ start(c) { c.close(); } }) };
+  }
+  const headBuf = new Uint8Array(Math.min(headLen, 64));
+  let offset = 0;
+  for (const ch of headChunks) {
+    const slice = ch.subarray(0, Math.min(ch.byteLength, headBuf.byteLength - offset));
+    headBuf.set(slice, offset);
+    offset += slice.byteLength;
+    if (offset >= headBuf.byteLength) break;
+  }
+  const headText = new TextDecoder('utf-8', { fatal: false })
+    .decode(headBuf)
+    .replace(/^\uFEFF/, '')
+    .trimStart();
+
+  if (!headText.startsWith('#EXTM3U')) {
+    let idx = 0;
+    const rebuilt = new ReadableStream({
+      pull(controller) {
+        if (idx < headChunks.length) {
+          controller.enqueue(headChunks[idx++]);
+          return;
+        }
+        return reader.read().then(({ value, done }) => {
+          if (done) controller.close();
+          else controller.enqueue(value);
+        });
+      },
+      cancel(reason) {
+        return reader.cancel(reason);
+      }
+    });
+    return { isPlaylist: false, body: rebuilt };
+  }
+
+  let totalBytes = headLen;
+  while (totalBytes <= maxManifestBytes) {
+    const { value, done } = await reader.read();
+    if (done) break;
+    if (value && value.byteLength > 0) {
+      headChunks.push(value);
+      totalBytes += value.byteLength;
+    }
+  }
+  if (totalBytes > maxManifestBytes) {
+    try { await reader.cancel(); } catch {}
+    return { isPlaylist: false, body: null, tooLarge: true };
+  }
+  const full = new Uint8Array(totalBytes);
+  let pos = 0;
+  for (const ch of headChunks) {
+    full.set(ch, pos);
+    pos += ch.byteLength;
+  }
+  return {
+    isPlaylist: true,
+    text: new TextDecoder('utf-8', { fatal: false }).decode(full),
+    body: null
+  };
+}
+
 /**
  * Fetch the upstream stream, relaxing request details one at a time when a CDN
  * rejects the first attempt. Order matters: the exact request the player asked
@@ -1517,7 +1607,9 @@ async function fetchUpstreamWithFallbacks(targetUrl, baseHeaders, method, { hasR
   if (method === 'HEAD') variants.push({ relax: [], method: 'GET' });
 
   let last = null;
-  for (const variant of variants) {
+  let gateResp = null;
+  for (let i = 0; i < variants.length; i += 1) {
+    const variant = variants[i];
     const headers = new Headers(baseHeaders);
     if (variant.relax.includes('hotlink')) {
       headers.delete('Referer');
@@ -1542,6 +1634,14 @@ async function fetchUpstreamWithFallbacks(targetUrl, baseHeaders, method, { hasR
     }
 
     if (resp.ok || resp.status === 206) {
+      const respCt = (resp.headers.get('content-type') || '').toLowerCase();
+      if (resp.status === 200 && GATE_BODY_CONTENT_TYPE.test(respCt) && i < variants.length - 1) {
+        try {
+          if (resp.body) await resp.body.cancel();
+        } catch {}
+        if (!gateResp) gateResp = resp;
+        continue;
+      }
       return { resp, relaxed: variant.relax.join('+'), method: variant.method };
     }
     // Nobody wants this body; release it before the next attempt.
@@ -1551,7 +1651,7 @@ async function fetchUpstreamWithFallbacks(targetUrl, baseHeaders, method, { hasR
     last = resp;
     if (!PROXY_RETRY_STATUSES.has(resp.status)) break;
   }
-  return { resp: last, relaxed: null, method };
+  return { resp: gateResp || last, relaxed: null, method };
 }
 
 /** Bodies that are never a playable stream (hotlink gates, error pages, JSON). */
@@ -1642,6 +1742,18 @@ async function handleProxyRequest(request, url) {
     );
   }
 
+  if (!upstreamResp.ok && upstreamResp.status !== 206) {
+    return jsonResponse(
+      {
+        ok: false,
+        error: `Upstream returned HTTP ${upstreamResp.status}`,
+        target: parsed.hostname
+      },
+      upstreamResp.status,
+      { 'X-Upstream-Status': String(upstreamResp.status) }
+    );
+  }
+
   const contentType = (upstreamResp.headers.get('content-type') || '').toLowerCase();
   const finalUrl = upstreamResp.url || upstreamUrl.toString();
   const isM3u8 =
@@ -1669,7 +1781,9 @@ async function handleProxyRequest(request, url) {
         status: 200,
         headers: corsHeaders({
           'Content-Type': 'application/vnd.apple.mpegurl; charset=utf-8',
-          'Cache-Control': 'public, max-age=15'
+          'Cache-Control': 'public, max-age=15',
+          'X-Upstream-Status': String(upstreamResp.status),
+          ...(relaxed ? { 'X-Proxy-Relaxed': relaxed } : {})
         })
       });
     }
@@ -1683,12 +1797,52 @@ async function handleProxyRequest(request, url) {
     );
   }
 
+  let responseBody = upstreamResp.body;
+  const declaredLen = parseInt(upstreamResp.headers.get('content-length') || '0', 10);
+  const canSniffM3u8 =
+    !isM3u8 &&
+    requestedMethod !== 'HEAD' &&
+    upstreamResp.status === 200 &&
+    !range &&
+    (!declaredLen || declaredLen <= 2 * 1024 * 1024) &&
+    (contentType.startsWith('text/plain') ||
+      !contentType ||
+      contentType.includes('octet-stream') ||
+      contentType.includes('binary/'));
+
+  if (canSniffM3u8 && responseBody) {
+    const sniffed = await sniffDisguisedM3u8(responseBody);
+    if (sniffed.isPlaylist && sniffed.text) {
+      const workerProxyBase = `${url.origin}/api/proxy`;
+      const effectiveMode = mode === 'full' ? 'full' : mode;
+      const rewritten = rewriteManifest(
+        sniffed.text,
+        finalUrl,
+        workerProxyBase,
+        referer,
+        origin,
+        effectiveMode,
+        token
+      );
+      return new Response(rewritten, {
+        status: 200,
+        headers: corsHeaders({
+          'Content-Type': 'application/vnd.apple.mpegurl; charset=utf-8',
+          'Cache-Control': 'public, max-age=15',
+          'X-Upstream-Status': String(upstreamResp.status),
+          ...(relaxed ? { 'X-Proxy-Relaxed': relaxed } : {})
+        })
+      });
+    }
+    responseBody = sniffed.body;
+  }
+
   // A 200 that answers with an HTML/JSON body is a hotlink gate or an error
   // page — passing it through turns into a silent "source failed to decode" in
   // the player. Say what actually happened instead.
   if (upstreamResp.ok && NON_MEDIA_CONTENT_TYPE.test(contentType)) {
     try {
-      if (upstreamResp.body) await upstreamResp.body.cancel();
+      if (responseBody) await responseBody.cancel();
     } catch {}
     return jsonResponse(
       {
@@ -1720,7 +1874,7 @@ async function handleProxyRequest(request, url) {
   if (cd) respHeaders.set('Content-Disposition', cd);
 
   // A HEAD answer must stay body-less even when it was retried as a GET.
-  const body = requestedMethod === 'HEAD' ? null : upstreamResp.body;
+  const body = requestedMethod === 'HEAD' ? null : responseBody;
   return new Response(body, {
     status: upstreamResp.status,
     headers: respHeaders

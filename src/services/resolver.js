@@ -157,7 +157,7 @@ async function resolveStreamForServer(metadata, requestedServerId = '', preferre
   // provider URLs are signed and short-lived, so replaying a 15-minute-old
   // payload makes every retry fail the same way the first attempt did.
   const fresh = !!options.fresh;
-  const cacheKey = `resolve:v5:${metadata.type}:${metadata.tmdbId}:s${metadata.season || 1}:e${metadata.episode || 1}:${validServer}${
+  const cacheKey = `resolve:v6:${metadata.type}:${metadata.tmdbId}:s${metadata.season || 1}:e${metadata.episode || 1}:${validServer}${
     onlySource ? `:${onlySource}` : ''
   }`;
   const cached = fresh ? null : await cache.get(cacheKey);
@@ -207,7 +207,7 @@ async function resolveStreamForServer(metadata, requestedServerId = '', preferre
 
       // Cache the canonical source selection; apply each caller's audio preference
       // on a clone so one viewer cannot change the next viewer's cached default.
-      await cache.set(cacheKey, payload, 900);
+      await cache.set(cacheKey, payload, payload.ephemeralOnly ? 60 : 900);
       return applyPreferredAudio(payload, preferredAudio);
     } else {
       const reason =
