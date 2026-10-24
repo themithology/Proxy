@@ -1747,12 +1747,12 @@
   }
 
   /**
-   * Node-host-only last resort for a progressive source that movi could not
-   * play. Always send ffmpeg back through the original same-origin /api/proxy
-   * URL: a direct movi retry may have changed streamUrl, but the raw provider
-   * URL alone can lack the headers/cookies that made the source reachable.
+   * Node-host conversion for a progressive source. Always send ffmpeg back
+   * through the original same-origin /api/proxy URL: a direct retry may have
+   * changed streamUrl, but the raw provider URL alone can lack the headers or
+   * cookies that made the source reachable.
    */
-  function mkvHlsFallbackUrlFor(streamUrl, candidateInfo) {
+  function mkvHlsUrlFor(streamUrl, candidateInfo) {
     if (!MKV_HLS_ENABLED || !candidateInfo || !candidateInfo.useMovi) return null;
     if (/\/api\/mkv-hls(?:[/?]|$)/i.test(String(streamUrl || ''))) return null;
 
@@ -1767,9 +1767,9 @@
       (/\/api\/proxy\?/.test(String(streamUrl || '')) ? streamUrl : '');
     if (!sourceUrl) return null;
 
-    const fallbackUrl = apiUrl(`/api/mkv-hls?src=${encodeURIComponent(sourceUrl)}`);
-    if (state._triedStreamUrls && state._triedStreamUrls.has(fallbackUrl)) return null;
-    return fallbackUrl;
+    const conversionUrl = apiUrl(`/api/mkv-hls?src=${encodeURIComponent(sourceUrl)}`);
+    if (state._triedStreamUrls && state._triedStreamUrls.has(conversionUrl)) return null;
+    return conversionUrl;
   }
 
   /**
@@ -1990,6 +1990,18 @@
         addedSubs = true;
       });
       if (addedSubs) renderSubtitlesPopover();
+    }
+
+    // On a Node host with ffmpeg, never make the browser download/play the
+    // MKV or load movi's large WASM engine first. The MKV is only the upstream
+    // input; the browser goes straight to generated HLS with real audio and
+    // quality renditions. Ordinary Workers keep the direct/movi path below.
+    const mkvHlsUrl = mkvHlsUrlFor(streamUrl, candidateInfo);
+    if (mkvHlsUrl) {
+      showLoading('Converting MKV to HLS');
+      setConnectProgress(86, false);
+      attachStreamToVideo(mkvHlsUrl, 0, loadToken || state.loadToken);
+      return;
     }
 
     // --- Movi engine (Goldmine MKV / multi-audio files) ----------------------
@@ -2419,13 +2431,6 @@
         return;
       }
       const resumeAt = (video && video.currentTime) || targetStartTime || 0;
-      const mkvHlsUrl = mkvHlsFallbackUrlFor(streamUrl, candidateInfo);
-      if (mkvHlsUrl) {
-        showLoading('Converting this source to HLS');
-        showToast('Converting the MKV with ffmpeg; the first segment can take a moment…', 5000);
-        attachStreamToVideo(mkvHlsUrl, resumeAt, state.loadToken);
-        return;
-      }
       if (tryNextBackupStream(resumeAt)) return;
       handleFatalStreamError();
     };

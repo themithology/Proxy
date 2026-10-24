@@ -170,6 +170,7 @@ async function runMkvHlsTest() {
 
     const finishedPlaylist = await (await fetch(new URL(variants[0], masterUrl))).text();
     assert(finishedPlaylist.includes('#EXT-X-ENDLIST'), 'completed HLS must be seekable VOD, not an endless live tail');
+    assert.match(finishedPlaylist, /#EXT-X-TARGETDURATION:2/, 'short segments should minimize startup wait');
     assert(segmentUris(finishedPlaylist).length >= 2, 'completed playlist should expose all temporal segments');
 
     const mediaBuffers = [];

@@ -4,9 +4,9 @@
  * Optional Node-host MKV -> HLS transcoding.
  *
  * This module is deliberately imported only by the Node development/host
- * harness. Cloudflare Workers cannot spawn ffmpeg. The browser falls back to
- * this route only after movi/native playback has failed and the Worker page
- * explicitly advertises MKV_HLS_ENABLED=true.
+ * harness. Cloudflare Workers cannot spawn ffmpeg. When the Worker page
+ * explicitly advertises MKV_HLS_ENABLED=true, eligible progressive sources
+ * use this route HLS-first instead of loading MKV/movi in the browser.
  */
 
 const crypto = require('crypto');
@@ -277,13 +277,13 @@ function createMkvHlsHandler(options = {}) {
       '-g', '120',
       '-keyint_min', '120',
       '-sc_threshold', '0',
-      '-force_key_frames', 'expr:gte(t,n_forced*4)',
+      '-force_key_frames', 'expr:gte(t,n_forced*2)',
       '-c:a', 'aac',
       '-b:a', '128k',
       '-ac', '2',
       '-ar', '48000',
       '-f', 'hls',
-      '-hls_time', '4',
+      '-hls_time', '2',
       '-hls_list_size', '0',
       '-hls_playlist_type', 'event',
       '-hls_flags', 'independent_segments+temp_file',

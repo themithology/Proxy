@@ -357,7 +357,7 @@ Codec/device combinations (HEVC/AV1 profiles, HDR/Dolby Vision, AC-3/E-AC-3)
 may still not play in every browser. The default Worker path does not conceal
 those limits with a server transcode; a suitable Node host can opt in below.
 
-### Optional Node MKV→HLS fallback
+### Optional Node HLS-first MKV conversion
 
 Cloudflare Workers cannot spawn ffmpeg. `scripts/dev-worker.mjs` therefore
 exposes `/api/mkv-hls` **only when `MKV_HLS_ENABLED=true` is set on that Node
@@ -365,15 +365,17 @@ process**. Do not set this in `wrangler.toml` and expect Cloudflare to convert
 media: an ordinary Worker page advertises `mkvHlsEnabled=false` and retains its
 normal direct/movi/backup behavior.
 
-After native playback and the direct movi retry fail, the player sends the
-original same-origin `/api/proxy` source to the Node route. ffprobe discovers
-the actual streams; ffmpeg then writes H.264/AAC HLS with:
+On an enabled Node host, an eligible MKV goes **directly** to the converter:
+the browser does not try native MKV playback, download movi, or wait for a
+failure first. ffmpeg reads the original same-origin `/api/proxy` source and
+the browser receives only HLS. ffprobe discovers the actual streams before
+ffmpeg writes H.264/AAC HLS with:
 
 - genuine video variants no higher than the source (1080p/720p/480p for a
   1080p source, 720p/480p for a 720p source, and no cosmetic upscaling);
 - the source's real audio streams as selectable HLS renditions (up to eight);
-- an event/VOD playlist with all segments retained for seeking after the
-  conversion completes.
+- a 2-second-segment event/VOD playlist with all segments retained for
+  seeking after the conversion completes.
 
 The first segment takes time, long conversions can buffer on a small CPU, and
 a new conversion starts at the beginning rather than applying an old MKV

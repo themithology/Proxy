@@ -33,7 +33,7 @@ bash .devcontainer/start.sh
 - **TMDB-Embed-API** on `127.0.0.1:8787`, with its own media proxy disabled. Its default test providers are `4khdhub`, `castletv`, `hdghartv`, and `dahmermovies`.
 - **The real Worker player/API** through `scripts/dev-worker.mjs` on port `3000`. Only the static-asset binding is emulated; source resolution and media fetching are real.
 - The Worker fetches the provider API over loopback. Provider extraction **and** `/api/proxy` media requests therefore originate from the Codespace, not Render or Cloudflare.
-- **Optional ffmpeg MKV→HLS fallback** is enabled on this Node host. If native playback and movi both fail, the player asks `/api/mkv-hls` to convert that same proxied source to H.264 video and AAC audio. A real Cloudflare Worker cannot run this route.
+- **HLS-first ffmpeg MKV→HLS conversion** is enabled on this Node host. Eligible MKV sources go straight to `/api/mkv-hls`; the browser does not try to play the MKV or load movi first. It receives H.264 video and AAC audio as HLS. A real Cloudflare Worker cannot run this route.
 
 To restart only the player after pulling a newer version of this branch (the existing Codespace and upstream can stay):
 
@@ -48,7 +48,7 @@ The start script installs the new ffmpeg/ffprobe packages if they are missing. S
 
 - ffprobe reads the actual source height and audio streams. A 1080p source can produce 1080p/720p/480p variants; a 720p source produces only 720p/480p. It never upscales or adds cosmetic quality labels. The top transcode rung is capped at 1080p on this small host.
 - Every source audio stream (up to eight) becomes an HLS audio rendition. The existing audio menu reads these real renditions; the quality menu reads the generated video levels.
-- Output is a segmented VOD playlist under the host temporary directory. The first segment requires an initial wait, and playback can buffer if the free CPU cannot encode faster than real time. A new conversion starts at the beginning instead of applying an old MKV resume timestamp. Seeking beyond the part converted so far must wait for ffmpeg; after conversion finishes, the whole playlist is seekable.
+- Output is a segmented VOD playlist under the host temporary directory, using 2-second segments to reduce the first-play wait. The first segment still requires conversion, and playback can buffer if the free CPU cannot encode faster than real time. A new conversion starts at the beginning instead of applying an old MKV resume timestamp. Seeking beyond the part converted so far must wait for ffmpeg; after conversion finishes, the whole playlist is seekable.
 - The converter reads through the same-origin `/api/proxy` URL, preserving provider request headers. It does not accept an arbitrary third-party proxy URL.
 
 To change the upstream provider list, stop the existing upstream process before restarting it:
@@ -69,9 +69,9 @@ A successful test means checking all of these in the browser, not merely seeing 
 2. The audio menu is populated from the loaded file/manifest and switching audio changes the audible track without reloading the whole source.
 3. Quality rows correspond to real alternate files or HLS variants; selecting each generated rung changes the actual HLS level.
 4. For HLS, the player rebuilds its quality menu from the levels hls.js actually discovers. `#EXT-X-STREAM-INF` indicates quality variants and `#EXT-X-MEDIA:TYPE=AUDIO` indicates audio renditions. If the menu contains only Auto plus one rung, inspect the original playlist: a media playlist containing only `#EXTINF` segments cannot provide a quality/audio ladder that the source does not have.
-5. When movi fails and conversion starts, the connect screen says **Converting this source to HLS**. `/tmp/lol-embed-live/player.log` should contain a `[mkv-hls]` line with the real ladder and audio count. The generated master must contain only those actual variants and audio renditions.
+5. An eligible MKV goes directly to **Converting MKV to HLS**; there should be no earlier MKV/movi playback attempt. `/tmp/lol-embed-live/player.log` should contain a `[mkv-hls]` line with the real ladder and audio count. The generated master must contain only those actual variants and audio renditions.
 
-For real movi/FFmpeg decoder diagnostics, add `?debug=1` to the player URL (or `&debug=1` when it already has a query string), then open the browser console with **F12 → Console**. Reproduce the failure and look for `[movi:...]` and `[LOL Embed] movi ...` messages. Debug mode does not alter resolution or playback behavior.
+For diagnostics, add `?debug=1` to the player URL (or `&debug=1` when it already has a query string), then open **F12 → Console**. HLS failures appear as `[LOL Embed] HLS fatal error`; ffmpeg details are in `player.log` under `[mkv-hls]`. Non-converted sources can still emit `[movi:...]` and `[LOL Embed] movi ...` messages. Debug mode does not alter resolution or playback behavior.
 
 Useful checks from the Codespace terminal:
 

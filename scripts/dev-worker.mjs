@@ -47,8 +47,8 @@ const mockAssets = {
 
 const server = http.createServer(async (req, res) => {
   try {
-    // Node-only ffmpeg fallback. This route never reaches the Worker and is
-    // advertised by the player only when MKV_HLS_ENABLED=true on this host.
+    // Node-only HLS-first ffmpeg conversion. This route never reaches the
+    // Worker and is advertised only when MKV_HLS_ENABLED=true on this host.
     if (await mkvHls.handle(req, res)) return;
 
     // Codespaces and other preview proxies terminate HTTPS in front of this
@@ -112,7 +112,7 @@ const server = http.createServer(async (req, res) => {
 server.listen(PORT, HOST, () => {
   console.log(`[LOL Embed Player] Listening on http://${HOST}:${PORT}`);
   if (process.env.MKV_HLS_ENABLED === 'true') {
-    console.log('[LOL Embed Player] Optional MKV to HLS fallback is enabled');
+    console.log('[LOL Embed Player] HLS-first MKV conversion is enabled');
   }
 });
 

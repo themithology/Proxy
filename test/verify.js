@@ -2745,6 +2745,10 @@ async function runTests() {
       // 14j. Player bundle invariants for direct fallback, WASM probe guard & all-failed popover status.
       assert.match(embedJsSrc, /function directFallbackUrlFor/, 'player must unwrap failed /api/proxy streams for direct open-CORS fallback');
       assert.match(embedJsSrc, /function probeProxiedMediaBytes/, 'player must probe /api/proxy before loading 12 MB WASM on failed MP4s');
+      const hlsFirstHook = embedJsSrc.indexOf('const mkvHlsUrl = mkvHlsUrlFor(streamUrl, candidateInfo);');
+      const moviEngineBranch = embedJsSrc.indexOf('if (candidateInfo.useMovi) {');
+      assert.ok(hlsFirstHook !== -1, 'Node hosts must build an HLS conversion URL for MKV sources');
+      assert.ok(moviEngineBranch !== -1 && hlsFirstHook < moviEngineBranch, 'HLS conversion must run before movi/WASM, not after an MKV failure');
       assert.match(embedJsSrc, /allStreamsFailed/, 'player must track allStreamsFailed so the final dead source never shows Playing');
       assert.match(
         embedJsSrc,
