@@ -49,7 +49,7 @@ The start script installs ffmpeg/ffprobe if needed and enables conversion. `MKV_
 - ffprobe reads the actual source height and audio streams. The fallback exposes up to two genuine rungs: 1080p/720p for a 1080p source and 720p/480p for a 720p source. It never upscales or adds cosmetic quality labels.
 - Every source audio stream (up to eight) becomes an HLS audio rendition. The existing audio menu reads these real renditions; the quality menu reads the generated video levels.
 - Compatible H.264/AAC streams are remuxed rather than re-encoded. The source-quality remux runs independently from the lower-rung encode, so its full VOD playlist is not held back by that encode. Incompatible codecs still require full encoding.
-- There is no minimum-buffer startup gate. Playback starts with the first usable segments. The encoded rung uses 2-second segments; remuxed video keeps the source's real keyframe boundaries. Seeking beyond an encoded playlist's generated portion must still wait for ffmpeg.
+- There is no fixed buffer-delay rule. Compatible sources wait only for the fast source-quality remux to become a complete, genuinely seekable VOD; the lower encode does not block playback. Incompatible full encodes still start with their first usable segments. Encoded rungs use 2-second segments; remuxed video keeps real source keyframes.
 - The converter reads through the same-origin `/api/proxy` URL, preserving provider request headers. It does not accept an arbitrary third-party proxy URL.
 
 To change the upstream provider list, stop the existing upstream process before restarting it:

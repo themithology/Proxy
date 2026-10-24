@@ -2060,6 +2060,13 @@
           // Build the visible quality menu from the actual master playlist,
           // not the resolver's initial (often single) HLS row.
           syncHlsQualityLevels(hls, data && data.levels);
+          if (isTranscodedHls && !storageGet(QUALITY_KEY) && hls.levels && hls.levels.length > 0) {
+            // The compatible source rung is a complete VOD. Keep Auto from
+            // moving playback to a lower rung whose encode is still growing;
+            // an explicit quality choice remains available and is respected.
+            hls.currentLevel = 0;
+            syncHlsQualityLevels(hls, hls.levels);
+          }
 
           // Merge any real HLS multi-audio tracks discovered in the manifest
           if (hls.audioTracks && hls.audioTracks.length > 0) {
@@ -4089,7 +4096,7 @@
       });
     } else if (panelType === 'speed') {
       settingsDrillTitle.textContent = 'Playback Speed';
-      [0.5, 0.75, 1, 1.25, 1.5, 1.75, 2].forEach((spd) => {
+      [0.5, 0.75, 1, 1.25, 1.5, 1.75, 2, 2.5, 3].forEach((spd) => {
         const item = createDrillOption(spd === 1 ? '1x (Normal)' : `${spd}x`, state.playbackSpeed === spd, () => {
           state.playbackSpeed = spd;
           video.playbackRate = spd;

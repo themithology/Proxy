@@ -386,8 +386,10 @@ ffmpeg writes H.264/AAC HLS with:
 - independent remux/encode playlists, with 2-second segments on encoded rungs
   and the source's real keyframe boundaries on remuxed video.
 
-There is no minimum-buffer startup gate; playback starts with the first usable
-segments. Seeking past an encoded playlist's converted portion must wait for
+There is no fixed buffer-delay rule. Compatible sources wait only for the fast
+source-quality remux to become a complete, genuinely seekable VOD; the lower
+encode does not block playback. Incompatible full encodes start with their
+first usable segments, and seeking past their converted portion must wait for
 ffmpeg. Temporary output is deleted when a session expires or the host stops.
 `MKV_HLS_MAX_SESSIONS`
 (default `2`) bounds concurrent sessions, and renewed signed URLs for the same
@@ -395,6 +397,14 @@ canonical source share one conversion. `MKV_HLS_DIR` overrides the temporary
 output directory. `npm test` includes a fully local, real ffmpeg integration
 test covering variant ladders, dual audio, codecs, segments and source-host
 validation.
+
+### 3× generation/delivery benchmark
+
+`npm run benchmark:hls` creates a local 60-second dual-audio source, converts it
+through the real handler, downloads the actual HLS segments against a 3×
+playback clock, and reports startup time, full-timeline status, late segments
+and buffer measurements. It uses no public provider or downloaded test video.
+Set `BENCHMARK_SECONDS` or `BENCHMARK_RATE` to change the workload.
 
 ## Live provider test in GitHub Codespaces
 

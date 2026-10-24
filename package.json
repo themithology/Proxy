@@ -7,6 +7,7 @@
     "start": "node src/server.js",
     "dev": "node src/server.js",
     "test": "node test/verify.js && node test/mkv-hls.js",
+    "benchmark:hls": "node scripts/benchmark-hls-3x.js",
     "dev:player": "node scripts/dev-player-mock.mjs"
   },
   "repository": {

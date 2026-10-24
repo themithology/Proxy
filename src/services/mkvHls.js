@@ -159,7 +159,7 @@ function appendSessionLog(session, chunk) {
   session.log = `${session.log}${String(chunk || '')}`.slice(-32768);
 }
 
-async function waitForPlaylists(session, expectedCount, timeoutMs) {
+async function waitForPlaylists(session, expectedCount, timeoutMs, requireSourceComplete = false) {
   const started = Date.now();
   while (Date.now() - started < timeoutMs) {
     if (session.status === 'failed' || session.status === 'closed') {
@@ -172,6 +172,10 @@ async function waitForPlaylists(session, expectedCount, timeoutMs) {
         try {
           const playlist = await fs.promises.readFile(path.join(session.dir, `variant_${index}.m3u8`), 'utf8');
           if (!playlist.includes('#EXTM3U') || !playlist.includes('#EXTINF')) {
+            ready = false;
+            break;
+          }
+          if (requireSourceComplete && index === 0 && !playlist.includes('#EXT-X-ENDLIST')) {
             ready = false;
             break;
           }
@@ -444,7 +448,10 @@ function createMkvHlsHandler(options = {}) {
     const expectedCount = canRemuxTop
       ? 1 + sourceAudio.length + (ladder[1] ? 1 : 0)
       : ladder.length + sourceAudio.length;
-    await waitForPlaylists(session, expectedCount, readyTimeout);
+    // Compatible remuxing is fast and produces the real, fully seekable
+    // source timeline. Wait for that actual VOD completion only — never for a
+    // fixed buffer amount and never for the independent lower-rung encode.
+    await waitForPlaylists(session, expectedCount, readyTimeout, canRemuxTop);
     session.ready = true;
   }
 
