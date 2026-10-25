@@ -327,7 +327,10 @@ function createMkvHlsHandler(options = {}) {
       if (masterName) args.push('-master_pl_name', masterName);
     };
     const addEncodeArgs = (args, rung, index = null) => {
-      const videoOption = (name) => index === null ? name : `${name}:v:${index}`;
+      // Always scope these options to video. In particular, bare `-b` is
+      // rejected as ambiguous by ffmpeg when the input carries multiple audio
+      // streams; the lower-rung encoder must emit `-b:v` / `-b:v:N`.
+      const videoOption = (name) => index === null ? `${name}:v` : `${name}:v:${index}`;
       args.push(
         videoOption('-c'), 'libx264',
         videoOption('-pix_fmt'), 'yuv420p',
