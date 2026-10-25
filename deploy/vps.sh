@@ -94,6 +94,11 @@ if [[ -z "$(get_env MKV_HLS_MAX_SESSIONS)" ]]; then
   set_env MKV_HLS_MAX_SESSIONS 2
 fi
 
+# Earlier releases used fixed container names. Remove only those legacy
+# containers so they cannot conflict or hold ports 80/443; named volumes and
+# their HLS/certificate data are deliberately preserved.
+docker rm -f lol-embed-player lol-embed-https >/dev/null 2>&1 || true
+
 # The compose file uses the same .env for container variables and substitution.
 docker compose up -d --build --remove-orphans
 

@@ -1,7 +1,6 @@
 services:
   lol-embed:
     build: .
-    container_name: lol-embed-player
     restart: unless-stopped
     env_file:
       - .env
@@ -27,7 +26,6 @@ services:
 
   caddy:
     image: caddy:2-alpine
-    container_name: lol-embed-https
     restart: unless-stopped
     depends_on:
       lol-embed:

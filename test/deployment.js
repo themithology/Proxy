@@ -30,6 +30,8 @@ function testStaticDeploymentWiring() {
   assert(compose.includes('caddy-data:/data'));
   assert(compose.includes('"80:80"') && compose.includes('"443:443"'));
   assert(compose.includes('http://127.0.0.1:3000/api/health'));
+  assert(!compose.includes('container_name:'), 'Compose must replace project-owned containers without global name conflicts');
+  assert(read('deploy/vps.sh').includes('docker rm -f lol-embed-player lol-embed-https'));
 
   const caddy = read('deploy/Caddyfile');
   assert(caddy.includes('{$DOMAIN}'));
