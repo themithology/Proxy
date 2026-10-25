@@ -144,10 +144,16 @@ async function runMkvHlsTest() {
     });
     await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
     port = server.address().port;
+    const hlsRoot = path.join(tempDir, 'hls-sessions');
+    const staleSessionDir = path.join(hlsRoot, 'a'.repeat(32));
+    const unrelatedCacheFile = path.join(hlsRoot, 'cache-owner.txt');
+    fs.mkdirSync(staleSessionDir, { recursive: true });
+    fs.writeFileSync(path.join(staleSessionDir, 'orphaned-segment.ts'), Buffer.alloc(1024));
+    fs.writeFileSync(unrelatedCacheFile, 'not a conversion session');
     handler = createMkvHlsHandler({
       enabled: true,
       port,
-      rootDir: path.join(tempDir, 'hls-sessions')
+      rootDir: hlsRoot
     });
 
     const mediaUrl = `http://127.0.0.1:${port}/input.mkv`;
@@ -158,6 +164,8 @@ async function runMkvHlsTest() {
       signal: AbortSignal.timeout(60000)
     });
     assert.strictEqual(redirect.status, 302, 'conversion should redirect to a session master playlist');
+    assert(!fs.existsSync(staleSessionDir), 'orphaned Docker-volume transcodes must be reclaimed before encoding');
+    assert(fs.existsSync(unrelatedCacheFile), 'cache cleanup must not delete unrelated volume data');
     const advertisedSourceDuration = Number(redirect.headers.get('x-lol-source-duration'));
     assert(advertisedSourceDuration > 5 && advertisedSourceDuration < 7, 'ffprobe duration must be exposed for the full player timeline');
     const masterPath = redirect.headers.get('location');

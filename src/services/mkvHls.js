@@ -221,6 +221,31 @@ function createMkvHlsHandler(options = {}) {
   const maxSessions = positiveInt(process.env.MKV_HLS_MAX_SESSIONS, 2, 1, 4);
   const ttlMs = positiveInt(process.env.MKV_HLS_SESSION_TTL_MS, 2 * 60 * 60 * 1000, 60000, 12 * 60 * 60 * 1000);
   const sessions = new Map();
+  let rootReady = null;
+
+  function prepareRoot() {
+    if (!rootReady) {
+      rootReady = (async () => {
+        await fs.promises.mkdir(rootDir, { recursive: true });
+        // HLS is a disposable transcode cache, not a media library. A Docker
+        // rebuild keeps its named volume, but the new process has no sessions
+        // for directories left by the old one. Reclaim those orphaned runs
+        // before ffmpeg starts so repeated deploys cannot fill the disk.
+        const entries = await fs.promises.readdir(rootDir, { withFileTypes: true });
+        const stale = entries.filter((entry) => SESSION_ID.test(entry.name));
+        await Promise.all(stale.map((entry) =>
+          fs.promises.rm(path.join(rootDir, entry.name), { recursive: true, force: true })
+        ));
+        if (stale.length > 0) {
+          console.log(`[mkv-hls] Reclaimed ${stale.length} stale conversion cache director${stale.length === 1 ? 'y' : 'ies'}`);
+        }
+      })().catch((error) => {
+        rootReady = null;
+        throw error;
+      });
+    }
+    return rootReady;
+  }
 
   function stopSession(session) {
     if (!session) return Promise.resolve();
@@ -511,6 +536,7 @@ function createMkvHlsHandler(options = {}) {
   }
 
   async function ensureSession(publicSource, inputUrl, requestedOffset = 0) {
+    await prepareRoot();
     const sourceKey = conversionIdentity(publicSource);
     const offset = Math.round(Math.max(0, Number(requestedOffset) || 0) * 1000) / 1000;
     const identity = offset > 0 ? `${sourceKey}\nseek=${offset.toFixed(3)}` : sourceKey;
