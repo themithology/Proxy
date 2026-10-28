@@ -483,11 +483,10 @@ function normalizeGoldmineStream(raw, index) {
 }
 
 /**
- * Rank a stream for "which one plays first".
- * Dub coverage dominates (the Goldmine server exists for multi-audio MKVs),
- * then a sane resolution (1080p — 4K HEVC is heavy on a WASM decoder), then
- * container preference, while demoting Render-IP-bound links behind portable
- * MKV/HLS/MP4 sources.
+ * Rank a stream within its playback class. Dub coverage, sane resolution and
+ * container metadata still matter; buildGoldminePayload first separates
+ * multi-audio sources from single-audio and plain-file fallbacks.
+ * Render-IP-bound links are demoted behind portable sources.
  */
 function scoreGoldmineStream(stream) {
   let score = 0;
@@ -520,6 +519,37 @@ function scoreGoldmineStream(stream) {
   // Earlier rows come from the aggregator's own provider priority order.
   score -= Math.min(stream.index, 40);
   return score;
+}
+
+/**
+ * Multi-audio evidence comes first, then playback convenience. Pre-generated
+ * multi-audio HLS/DASH is ideal; multi-audio progressive sources are converted
+ * ahead of single-audio streams. IP-bound links stay last. Within each class,
+ * language coverage and quality still decide the best row.
+ */
+function hasStreamMultiAudioEvidence(stream) {
+  return !!(
+    stream &&
+    (stream.multi ||
+      (Array.isArray(stream.languages) && stream.languages.length > 1) ||
+      (Array.isArray(stream.audioTrackHints) && stream.audioTrackHints.length > 1))
+  );
+}
+
+function playbackPriorityFor(stream) {
+  if (!stream || stream.ephemeralIpBound) return 5;
+  const nativeStreaming = stream.container === 'hls' || stream.container === 'dash';
+  const multiAudio = hasStreamMultiAudioEvidence(stream);
+  // Multi-audio is the viewer's first choice. Native multi-audio streaming is
+  // ideal; multi-audio progressive files go to the HLS converter ahead of
+  // single-audio manifests. Plain MP4 remains the last portable fallback.
+  if (multiAudio) return nativeStreaming ? 0 : 1;
+  if (nativeStreaming) return 2;
+  return stream.container === 'mp4' ? 4 : 3;
+}
+
+function compareGoldmineStreamsForPlayback(a, b) {
+  return playbackPriorityFor(a) - playbackPriorityFor(b) || b.score - a.score;
 }
 
 /** Normalize a whole TMDB-Embed-API response into scored, grouped streams. */
@@ -597,7 +627,9 @@ function sourceLabelFor(stream) {
   const parts = [];
   const quality = stream.height > 0 ? heightToLabel(stream.height) : String(stream.qualityLabel || 'Auto');
   parts.push(quality);
-  if (stream.container && stream.container !== 'unknown') parts.push(stream.container.toUpperCase());
+  if (stream.container === 'hls' || stream.container === 'dash') {
+    parts.push(stream.container.toUpperCase());
+  }
   if (stream.languages.length > 0) {
     parts.push(stream.languages.map((language) => language.label).join(' + '));
   } else if (stream.multi) {
@@ -640,7 +672,7 @@ function buildGoldminePayload(normalized, options = {}) {
     };
   }
 
-  const ordered = [...candidateStreams].sort((a, b) => b.score - a.score);
+  const ordered = [...candidateStreams].sort(compareGoldmineStreamsForPlayback);
   const primary = ordered[0];
 
   // URL preparation: the API's own proxied URLs (ts-proxy on the API host)
@@ -704,7 +736,7 @@ function buildGoldminePayload(normalized, options = {}) {
       const existing = languageRows.get(language.code);
       if (existing) {
         existing.count += 1;
-        if (stream.score > existing.best.score) existing.best = stream;
+        if (compareGoldmineStreamsForPlayback(stream, existing.best) < 0) existing.best = stream;
       } else {
         languageRows.set(language.code, {
           code: language.code,
@@ -1202,11 +1234,11 @@ async function fetchGoldmineStreamsFast(options = {}) {
 
     const collectCurrentState = () => {
       const mergedRaw = [];
-      const observedLanguages = new Set();
       let providersWithStreams = 0;
       let reliableProviders = 0;
       let reliableCount = 0;
       let hasMkvOrMulti = false;
+      let hasNativeStreaming = false;
       let hasWantedAudio = wantedAudioCode === 'und' && !wantsOriginalAudio;
 
       for (const providerId of orderedProviders) {
@@ -1221,18 +1253,13 @@ async function fetchGoldmineStreamsFast(options = {}) {
           if (!norm.ephemeralIpBound) {
             reliableCount += 1;
             providerHasReliable = true;
-            for (const language of norm.languages) {
-              if (language.code !== 'und' || norm.original) observedLanguages.add(language.code);
+            if (norm.container === 'hls' || norm.container === 'dash') {
+              hasNativeStreaming = true;
             }
             if (norm.container === 'mkv' || norm.multi || norm.languages.length > 1) {
               hasMkvOrMulti = true;
             }
-            if (
-              !hasWantedAudio &&
-              (wantsOriginalAudio
-                ? norm.original || norm.languages.some((language) => language.code === 'und')
-                : norm.languages.some((l) => l.code === wantedAudioCode) || (norm.multi && norm.languages.length === 0))
-            ) {
+            if (!hasWantedAudio && streamSatisfiesAudioPreference(norm, wantsOriginalAudio, wantedAudioCode)) {
               hasWantedAudio = true;
             }
           }
@@ -1253,9 +1280,13 @@ async function fetchGoldmineStreamsFast(options = {}) {
         reliableProviders,
         reliableCount,
         hasMkvOrMulti,
-        hasMultiAudio: observedLanguages.size > 1 || mergedRaw.some((raw) => {
+        hasNativeStreaming,
+        // Fast-settle only for multiple audio tracks inside one actual
+        // file/manifest. Separate single-audio dub files are useful backups,
+        // but must not abort a slower muxed multi-audio extractor.
+        hasMultiAudio: mergedRaw.some((raw) => {
           const norm = normalizeGoldmineStream(raw, 0);
-          return !!norm && (norm.multi || norm.languages.length > 1 || norm.audioTrackHints.length > 1);
+          return !!norm && !norm.ephemeralIpBound && hasStreamMultiAudioEvidence(norm);
         }),
         hasWantedAudio,
         mkvExtractorInFlight,
@@ -1331,11 +1362,33 @@ async function fetchGoldmineStreamsFast(options = {}) {
         reliableProviders,
         reliableCount,
         hasMkvOrMulti,
+        hasNativeStreaming,
         hasMultiAudio,
         hasWantedAudio,
         mkvExtractorInFlight,
         multiAudioExtractorInFlight
       } = collectCurrentState();
+
+      const fanoutElapsed = Date.now() - fanoutStartedAt;
+      // A usable multi-audio source wins immediately, whether it is already
+      // HLS/DASH or will be converted. Do not displace it with a single-audio
+      // manifest merely because that manifest arrived first.
+      if (hasMultiAudio && hasWantedAudio) {
+        scheduleSettleIn(reliableProviders >= 2 ? 320 : 600);
+        return;
+      }
+
+      // Single-audio native streaming remains a backup while any multi-audio
+      // extractor is still running. Do not cut those extractors off after
+      // 2.5s: the real 4KHDHub/Showbox paths commonly answer after 8–15s.
+      if (hasNativeStreaming && hasWantedAudio) {
+        if (multiAudioExtractorInFlight || mkvExtractorInFlight) {
+          scheduleSettleIn(Math.max(600, MULTI_AUDIO_SETTLE_BUDGET_MS - fanoutElapsed));
+        } else {
+          scheduleSettleIn(120);
+        }
+        return;
+      }
 
       // If Wave 1 completely finished without any portable streams and Wave 2 is
       // still waiting, launch Wave 2 right away instead of settling on IP-bound MP4s.
@@ -1364,13 +1417,17 @@ async function fetchGoldmineStreamsFast(options = {}) {
       // abort countdown before portable MKV/HLS providers have answered.
       if (reliableCount === 0) return;
 
-      const fanoutElapsed = Date.now() - fanoutStartedAt;
       if (hasMultiAudio && reliableProviders >= 2 && hasWantedAudio) {
         // A genuine multi-audio bundle plus a backup is already useful; do
         // not make the viewer wait for every remaining mirror.
         scheduleSettleIn(320);
       } else if (hasMultiAudio && hasWantedAudio && !multiAudioExtractorInFlight) {
         scheduleSettleIn(850);
+      } else if (hasWantedAudio) {
+        // No suitable native stream arrived in the first pass. Start the HLS
+        // conversion fallback promptly instead of holding a progressive source
+        // for the old multi-audio extractor budget.
+        scheduleSettleIn(Math.max(150, 1200 - fanoutElapsed));
       } else if (multiAudioExtractorInFlight) {
         // A fast single-audio HLS/MP4 answer is only a backup while a
         // multi-audio extractor is still running.  4KHDHub's Redirector ->
@@ -1607,10 +1664,51 @@ function hasMultiAudioEvidence(normalized) {
   return languages.size > 1;
 }
 
+function hasNativeStreamingSource(normalized) {
+  return !!(
+    normalized &&
+    Array.isArray(normalized.streams) &&
+    normalized.streams.some((stream) =>
+      stream && !stream.ephemeralIpBound && (stream.container === 'hls' || stream.container === 'dash')
+    )
+  );
+}
+
+function streamSatisfiesAudioPreference(stream, wantsOriginal, wantedCode) {
+  if (!stream) return false;
+  const languages = Array.isArray(stream.languages) ? stream.languages : [];
+  if (wantsOriginal && (stream.original || languages.some((language) => language.code === 'und'))) return true;
+  if (!wantsOriginal && languages.some((language) => language.code === wantedCode)) return true;
+  if (stream.multi && languages.length === 0) return true;
+  // Untagged provider HLS is normally the original/default English cut. Do
+  // not turn a remembered English/default preference into a slow MKV scrape;
+  // non-default dubs still require real language evidence.
+  if (
+    languages.length === 0 &&
+    !stream.multi &&
+    (stream.container === 'hls' || stream.container === 'dash') &&
+    (wantsOriginal || wantedCode === 'und' || wantedCode === 'en')
+  ) return true;
+  return false;
+}
+
+function hasRequestedAudioMatch(normalized, preferredAudio) {
+  const requested = String(preferredAudio || '').trim();
+  if (!requested) return true;
+  const wantsOriginal = /^(?:original|org|default)$/i.test(requested);
+  const wantedCode = wantsOriginal ? 'und' : normalizeLanguageCode(requested);
+  return normalized.streams.some((stream) =>
+    stream && !stream.ephemeralIpBound && streamSatisfiesAudioPreference(stream, wantsOriginal, wantedCode)
+  );
+}
+
 function shouldUseDirectProviderFallback(normalized, fetched, options = {}) {
   if (options.directFallback === false) return false;
   if (options.directFallback === 'always' || options.directFallback === true) return true;
   if (!fetched || !fetched.ok || !normalized || normalized.streams.length === 0) return true;
+  if (hasNativeStreamingSource(normalized) && hasRequestedAudioMatch(normalized, options.preferredAudio)) {
+    return false;
+  }
   return !hasMultiAudioEvidence(normalized);
 }
 
@@ -1779,11 +1877,10 @@ async function resolveGoldmineServer(metadata, options = {}) {
     ? normalizeGoldminePayload(fetched.json)
     : { streams: [], providers: [], imdbId: null };
 
-  // Discover alternate HLS renditions before deciding whether the upstream
-  // answer is "single-audio".  Otherwise a perfectly good multi-audio master
-  // would trigger unnecessary direct scraping (and its languages would be
-  // absent from the first resolve payload).
-  if (fetched.ok && !hasMultiAudioEvidence(normalized)) {
+  // Server-side manifest probing is opt-in. It can add seconds before the
+  // player even starts; normal resolution lets hls.js discover the same real
+  // audio/quality renditions directly in the browser.
+  if (fetched.ok && options.discoverHlsAudio === true && !hasMultiAudioEvidence(normalized)) {
     const discovered = await discoverGoldmineHlsAudio(fetched.json.streams, options);
     if (discovered !== fetched.json.streams) {
       fetched = { ...fetched, json: { ...fetched.json, streams: discovered, count: discovered.length } };

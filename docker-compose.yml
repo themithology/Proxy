@@ -1,18 +1,46 @@
 services:
   lol-embed:
     build: .
-    container_name: lol-embed-backend
     restart: unless-stopped
-    ports:
-      - "3000:3000"
     env_file:
       - .env
     environment:
-      - NODE_ENV=production
-      - PORT=3000
-      - HOST=0.0.0.0
+      NODE_ENV: production
+      PLAYER_PORT: 3000
+      HOST: 0.0.0.0
+      PUBLIC_BASE_URL: ${PUBLIC_BASE_URL:-}
+      MKV_HLS_ENABLED: "true"
+      MKV_HLS_NODE_HOST: "true"
+      MKV_HLS_DIR: /data/hls
+    expose:
+      - "3000"
+    volumes:
+      - hls-data:/data/hls
+    stop_grace_period: 10s
     healthcheck:
       test: ["CMD", "wget", "-qO-", "http://127.0.0.1:3000/api/health"]
-      interval: 30s
+      interval: 10s
       timeout: 5s
-      retries: 3
+      retries: 12
+      start_period: 10s
+
+  caddy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    depends_on:
+      lol-embed:
+        condition: service_healthy
+    environment:
+      DOMAIN: ${DOMAIN:?Set DOMAIN in .env or pass it to deploy/vps.sh}
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./deploy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+      - caddy-config:/config
+
+volumes:
+  hls-data:
+  caddy-data:
+  caddy-config:

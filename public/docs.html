@@ -867,7 +867,7 @@ socket.onmessage = async ({ data }) =&gt; {
   var apiBase = (cfg.apiBaseUrl || '').replace(/\/+$/, '');
   var servers = Array.isArray(cfg.servers) && cfg.servers.length
     ? cfg.servers
-    : [{ id: 'goldmine', name: 'Goldmine MKV', badge: 'Multi-Audio Dubs • MKV' }];
+    : [{ id: 'goldmine', name: 'Goldmine', badge: 'HLS • DASH • Multi-Audio' }];
 
   function $(sel, root) { return (root || document).querySelector(sel); }
   function $$(sel, root) { return Array.prototype.slice.call((root || document).querySelectorAll(sel)); }

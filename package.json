@@ -1,12 +1,14 @@
 {
   "name": "lol-embed-backend",
   "version": "1.0.0",
-  "description": "LOL Embed backend: TMDB metadata, Goldmine (TMDB-Embed-API) MKV resolution, stream proxy, movi-player embed, and Cloudflare Worker.",
+  "description": "LOL Embed backend: TMDB metadata, Goldmine HLS/DASH resolution, stream proxy, conversion, and Cloudflare Worker.",
   "main": "src/server.js",
   "scripts": {
     "start": "node src/server.js",
+    "start:player": "node scripts/player-server.mjs",
     "dev": "node src/server.js",
-    "test": "node test/verify.js",
+    "test": "node test/deployment.js && node test/verify.js && node test/player-duration.js && node test/mkv-hls.js",
+    "benchmark:hls": "node scripts/benchmark-hls-3x.js",
     "dev:player": "node scripts/dev-player-mock.mjs"
   },
   "repository": {
@@ -22,6 +24,8 @@
   ],
   "license": "MIT",
   "dependencies": {
+    "@ffmpeg-installer/ffmpeg": "^1.1.0",
+    "@ffprobe-installer/ffprobe": "^1.4.1",
     "cheerio": "^1.0.0",
     "compression": "^1.7.5",
     "cors": "^2.8.5",
@@ -29,8 +33,5 @@
     "dotenv": "^16.4.7",
     "express": "^4.21.2",
     "helmet": "^8.0.0"
-  },
-  "devDependencies": {
-    "@ffmpeg-installer/ffmpeg": "^1.1.0"
   }
 }

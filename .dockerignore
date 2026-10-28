@@ -1,0 +1,11 @@
+node_modules
+.git
+.gitignore
+.env
+.dev.vars
+.wrangler
+.vercel
+.netlify
+*.log
+scripts/.mock-media
+coverage

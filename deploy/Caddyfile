@@ -1,0 +1,11 @@
+{$DOMAIN} {
+	# HLS playlists and proxied media must stream immediately rather than being
+	# held in a response buffer. Caddy itself adds no conversion-request timeout.
+	reverse_proxy lol-embed:3000 {
+		flush_interval -1
+	}
+
+	header {
+		-Server
+	}
+}

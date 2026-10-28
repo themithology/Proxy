@@ -683,7 +683,10 @@ async function runTests() {
   const single = goldmineSvc.normalizeGoldmineStream({ name: 'x', title: 'Show.720p.MKV', url: 'https://c.example/b.mkv', quality: '720', provider: 'p1' }, 1);
   assert.ok(goldmineSvc.scoreGoldmineStream(multi) > goldmineSvc.scoreGoldmineStream(single));
   const label = goldmineSvc.sourceLabelFor(multi);
-  assert.ok(label.includes('1080p') && label.includes('MKV') && label.includes('English'), `source label must describe quality+container+languages, got "${label}"`);
+  assert.ok(
+    label.includes('1080p') && label.includes('English') && !label.includes('MKV'),
+    `source label must describe quality+languages without advertising raw playback, got "${label}"`
+  );
   console.log('  ✔ Passed language helper & Goldmine normalization tests.');
 
   console.log('[3/14] Testing SubRip (.srt) to WebVTT (.vtt) Converter...');
@@ -868,7 +871,7 @@ async function runTests() {
     //    MKV payload, dub languages up front, labeled sources for manual
     //    switching, subtitles and the CORS+Range stream proxy movi needs.
     console.log('[7/14] Testing /api/resolve/movie/693134 (Goldmine MKV), subtitles & /api/proxy...');
-    const resolveRes = await httpRequest(baseUrl, '/api/resolve/movie/693134');
+    const resolveRes = await httpRequest(baseUrl, '/api/resolve/movie/693134?audio=en');
     assert.strictEqual(resolveRes.status, 200);
     assert.strictEqual(resolveRes.json.ok, true);
     const stream = resolveRes.json.stream;
@@ -884,7 +887,7 @@ async function runTests() {
 
     // Dub languages up front: one row per language, flagged for in-file switching.
     assert.deepStrictEqual(
-      stream.audioTracks.map((t) => [t.id, t.lang, t.inFile]),
+      stream.audioTracks.map((t) => [t.id, t.lang, t.inFile]).sort((a, b) => a[1].localeCompare(b[1])),
       [['goldmine-en', 'en', true], ['goldmine-hi', 'hi', true], ['goldmine-ta', 'ta', true]]
     );
     assert.strictEqual(stream.audioTracks.filter((t) => t.default).length, 1, 'exactly one default audio track');
@@ -899,7 +902,7 @@ async function runTests() {
     assert.strictEqual(stream.backupUrls.length, 3, 'hin file + mp4 + external cdn copy are the alternates');
     const labelValues = Object.values(stream.sourceLabels || {});
     assert.strictEqual(labelValues.length, 4);
-    assert.ok(labelValues.some((l) => /1080p/.test(l) && /MKV/i.test(l) && /English/.test(l)));
+    assert.ok(labelValues.some((l) => /1080p/.test(l) && /English/.test(l) && !/MKV/i.test(l)));
     assert.ok(labelValues.some((l) => /Hindi/i.test(l)), 'the per-language file keeps its language in the label');
 
     // Qualities only offer real variants (same provider, different height) —
@@ -1081,7 +1084,7 @@ async function runTests() {
     assert.deepStrictEqual(nodeStats.json.catalog.map((c) => c.id), ['goldmine']);
     const nodeServers = await httpRequest(baseUrl, '/api/servers');
     assert.strictEqual(nodeServers.status, 200);
-    assert.deepStrictEqual(nodeServers.json.servers.map((s) => [s.id, s.name]), [['goldmine', 'Goldmine MKV']]);
+    assert.deepStrictEqual(nodeServers.json.servers.map((s) => [s.id, s.name]), [['goldmine', 'Goldmine']]);
 
     // Blocking & unblocking a domain.
     const blockRes = await httpRequest(baseUrl, '/api/admin/domains/block', {
@@ -1237,9 +1240,31 @@ async function runTests() {
       assert.ok(embedHtml.includes(assetRef), `embed page must reference ${assetRef}`);
     }
     assert.ok(embedHtml.includes('window.__LOL_EMBED_CONFIG__'), 'Worker must inject the player config');
-    assert.ok(
-      embedHtml.includes(JSON.stringify({ apiBaseUrl: baseUrl })),
-      'Injected config must carry the normalized API Worker URL'
+    const readInjectedConfig = (html) => {
+      const match = html.match(/window\.__LOL_EMBED_CONFIG__=(.*?);<\/script>/);
+      assert.ok(match, 'Injected config script must be present');
+      return JSON.parse(match[1]);
+    };
+    const injectedConfig = readInjectedConfig(embedHtml);
+    assert.strictEqual(injectedConfig.apiBaseUrl, baseUrl, 'Injected config must carry the normalized API Worker URL');
+    assert.strictEqual(injectedConfig.mkvHlsEnabled, false, 'ordinary Workers must not advertise host-only ffmpeg');
+    const workerOnlyFlagHtml = await (await callWorker(
+      'http://player.test/embed?type=movie&tmdb=693134',
+      { MKV_HLS_ENABLED: 'true', ADS_ENABLED: 'false' }
+    )).text();
+    assert.strictEqual(
+      readInjectedConfig(workerOnlyFlagHtml).mkvHlsEnabled,
+      false,
+      'the public flag alone must not advertise ffmpeg on a Worker'
+    );
+    const nodeEmbedHtml = await (await callWorker(
+      'http://player.test/embed?type=movie&tmdb=693134',
+      { MKV_HLS_ENABLED: 'true', MKV_HLS_NODE_HOST: 'true', ADS_ENABLED: 'false' }
+    )).text();
+    assert.strictEqual(
+      readInjectedConfig(nodeEmbedHtml).mkvHlsEnabled,
+      true,
+      'an explicitly configured Node host may advertise MKV to HLS'
     );
     assert.ok(!embedHtml.includes('<!--LOL_EMBED_CONFIG-->'), 'Config placeholder must be replaced');
     assert.ok(!/vidstuck/i.test(embedHtml), 'Player page must be rebranded to LOL Embed');
@@ -1317,8 +1342,9 @@ async function runTests() {
     const embedDefaultRes = await callWorker('http://player.test/embed?type=movie&tmdb=693134');
     assert.strictEqual(embedDefaultRes.status, 200);
     const embedDefaultHtml = await embedDefaultRes.text();
-    assert.ok(
-      embedDefaultHtml.includes(JSON.stringify({ apiBaseUrl: '' })),
+    assert.strictEqual(
+      readInjectedConfig(embedDefaultHtml).apiBaseUrl,
+      '',
       'Unset API_BASE_URL must inject an empty same-origin base'
     );
 
@@ -1575,7 +1601,7 @@ async function runTests() {
     console.log('[12/14] Testing shared server catalog, worker servers array & player defaults...');
     {
       const catalog = require('../src/services/serverCatalog');
-      const expected = [['goldmine', 'Goldmine MKV', 'Multi-Audio Dubs \u2022 MKV', 1]];
+      const expected = [['goldmine', 'Goldmine', 'HLS \u2022 DASH \u2022 Multi-Audio', 1]];
 
       // 12a. The Node backend serves the catalog order verbatim.
       assert.deepStrictEqual(
@@ -1639,7 +1665,7 @@ async function runTests() {
       const workerInfoJson = await workerInfoRes.json();
       assert.deepStrictEqual(
         workerInfoJson.servers.map((s) => [s.id, s.name, s.priority]),
-        [['goldmine', 'Goldmine MKV', 1]],
+        [['goldmine', 'Goldmine', 1]],
         'worker /api/info must expose the catalog server objects'
       );
       // The Worker must resolve the exact same skip segments and artwork as
@@ -1656,14 +1682,14 @@ async function runTests() {
 
       // 12e. The worker waterfall: the same shared goldmine service, the same
       // payload shape the player consumes.
-      const workerResolveRes = await callWorker('http://player.test/api/resolve/movie/693134?server=goldmine', catalogWorkerEnv);
+      const workerResolveRes = await callWorker('http://player.test/api/resolve/movie/693134?server=goldmine&audio=en', catalogWorkerEnv);
       assert.strictEqual(workerResolveRes.status, 200);
       const workerResolveJson = await workerResolveRes.json();
       assert.strictEqual(workerResolveJson.ok, true);
       assert.strictEqual(workerResolveJson.stream.server, 'goldmine');
       assert.strictEqual(workerResolveJson.stream.engine, 'movi', 'the worker must flag MKV streams for the movi engine');
       assert.ok(workerResolveJson.stream.streamUrl.startsWith('/api/proxy?url='));
-      assert.deepStrictEqual(workerResolveJson.stream.audioTracks.map((t) => t.lang), ['en', 'hi', 'ta']);
+      assert.deepStrictEqual(workerResolveJson.stream.audioTracks.map((t) => t.lang).sort(), ['en', 'hi', 'ta']);
       assert.deepStrictEqual(workerResolveJson.servers.map((s) => s.id), ['goldmine']);
       assert.strictEqual(workerResolveJson.servers.find((s) => s.active).id, workerResolveJson.stream.server);
 
@@ -2139,6 +2165,67 @@ async function runTests() {
         assert.strictEqual('provider' in metaEntry, false, 'sourceMeta must stay provider-anonymous');
       }
 
+      // A fast single-audio HLS bundle must not abort slower multi-audio MKV
+      // extractors at the old 2.5s cutoff. This mirrors the live Goldmine
+      // timing: CastleTV answers first, then 4KHDHub supplies the dubs.
+      goldmineSvc.clearGoldmineProviderCache();
+      let slowMultiAudioAborted = false;
+      const delayedMultiAudioFetch = async (input, init = {}) => {
+        const u = new URL(typeof input === 'string' ? input : input.url);
+        if (u.pathname.endsWith('/api/providers')) {
+          return new Response(JSON.stringify({
+            providers: [{ name: 'castletv', enabled: true }, { name: '4khdhub', enabled: true }]
+          }), { status: 200, headers: { 'Content-Type': 'application/json' } });
+        }
+        if (u.pathname.includes('/api/streams/castletv/')) {
+          await new Promise((resolve) => setTimeout(resolve, 20));
+          return new Response(JSON.stringify({
+            streams: ['Hindi', 'Tamil', 'Telugu', 'Kannada'].map((language) => ({
+              title: `Dune.2024.1080p.${language}`,
+              url: `https://cdn-fast.example/${language.toLowerCase()}_720/index.m3u8`,
+              quality: '1080p'
+            }))
+          }), { status: 200, headers: { 'Content-Type': 'application/json' } });
+        }
+        if (u.pathname.includes('/api/streams/4khdhub/')) {
+          await new Promise((resolve, reject) => {
+            const timer = setTimeout(resolve, 3000);
+            if (init.signal) {
+              init.signal.addEventListener('abort', () => {
+                clearTimeout(timer);
+                slowMultiAudioAborted = true;
+                const abortErr = new Error('Aborted');
+                abortErr.name = 'AbortError';
+                reject(abortErr);
+              });
+            }
+          });
+          return new Response(JSON.stringify({
+            streams: [{
+              title: 'Dune.2024.1080p.Multi.Audio.Hindi.English.mkv',
+              url: 'https://cdn-multi.example/dune.mkv',
+              quality: '1080p'
+            }]
+          }), { status: 200, headers: { 'Content-Type': 'application/json' } });
+        }
+        return new Response('Not found', { status: 404 });
+      };
+      const delayedResult = await goldmineSvc.resolveGoldmineServer(
+        { type: 'movie', tmdbId: '693134' },
+        {
+          apiBase: 'http://goldmine-delayed-multi.test',
+          timeoutMs: 7000,
+          fetchImpl: delayedMultiAudioFetch,
+          proxyStreams: false
+        }
+      );
+      assert.strictEqual(delayedResult.format, 'mkv', 'multi-audio MKV must beat earlier single-audio HLS');
+      assert.strictEqual(delayedResult.streamUrl, 'https://cdn-multi.example/dune.mkv');
+      assert.strictEqual(slowMultiAudioAborted, false, 'the multi-audio request must not be aborted at 2.5s');
+      const delayedLanguages = delayedResult.audioTracks.map((track) => track.lang);
+      assert(delayedLanguages.includes('en') && delayedLanguages.includes('hi'), 'muxed Hindi and English tracks must be present');
+      assert.strictEqual(delayedResult.activeAudioTrack.inFile, true, 'the active track must belong to the muxed MKV');
+
       // Wave 1 empty -> Wave 2 launches immediately without waiting full wave2Delay.
       goldmineSvc.clearGoldmineProviderCache();
       const wave2FallbackFetch = async (input) => {
@@ -2525,11 +2612,16 @@ async function runTests() {
         proxyStreams: true,
         proxyUrl: (u) => `/api/proxy?url=${encodeURIComponent(u)}`
       });
-      assert.ok(builtMixed.rawUrl.includes('p.111477.xyz/Movie.2024.1080p'), 'portable multi-audio MKV must win primary');
+      assert.strictEqual(
+        builtMixed.rawUrl,
+        'https://p.111477.xyz/Movie.2024.1080p.Hindi.English.Multi-Audio.mkv',
+        'multi-audio must win primary and become converter input'
+      );
+      assert.strictEqual(builtMixed.format, 'mkv');
       assert.strictEqual(builtMixed.ephemeralOnly, undefined, 'mixed payload with MKV/HLS must not be marked ephemeralOnly');
       assert.ok(
-        builtMixed.backupUrls[0].includes(encodeURIComponent('https://pixeldrain.dev/api/file/abc123?download')),
-        'first backup must switch to a distinct provider (4khdhub) before repeating primary provider rungs'
+        builtMixed.backupUrls[0].includes(encodeURIComponent('https://hls.videasy.example/master.m3u8')),
+        'first backup must switch to a distinct provider before repeating the primary multi-audio provider'
       );
       assert.ok(
         !builtMixed.backupUrls.some((u) => u.includes('480.mp4') || u.includes('360.mp4')),
@@ -2719,9 +2811,19 @@ async function runTests() {
       assert.strictEqual(workerDead403.status, 403, 'Worker proxy must return clean 403 JSON without reusing cancelled body');
       assert.strictEqual(workerDead403.headers.get('access-control-allow-origin'), '*');
 
-      // 14j. Player bundle invariants for direct fallback, WASM probe guard & all-failed popover status.
+      // 14j. Player bundle invariants for streaming-only playback and failover.
       assert.match(embedJsSrc, /function directFallbackUrlFor/, 'player must unwrap failed /api/proxy streams for direct open-CORS fallback');
-      assert.match(embedJsSrc, /function probeProxiedMediaBytes/, 'player must probe /api/proxy before loading 12 MB WASM on failed MP4s');
+      assert.match(embedJsSrc, /function probeProxiedMediaBytes/, 'player must retain its proxy media probe');
+      const conversionHook = embedJsSrc.indexOf('const mkvHlsUrl = mkvHlsUrlFor(streamUrl, candidateInfo);');
+      const streamingOnlyGuard = embedJsSrc.indexOf('if (!candidateInfo.isHls && !candidateInfo.isDash) {');
+      const dashBranch = embedJsSrc.indexOf('if (candidateInfo.isDash && window.dashjs) {');
+      assert.ok(conversionHook !== -1, 'Node hosts must build an HLS conversion URL for progressive sources');
+      assert.ok(
+        streamingOnlyGuard > conversionHook && dashBranch > streamingOnlyGuard,
+        'every progressive candidate must be converted or skipped before streaming playback'
+      );
+      assert.strictEqual(embedJsSrc.indexOf('if (candidateInfo.useMovi) {'), -1, 'raw alternate-engine playback must stay disabled');
+      assert.match(embedJsSrc, /function retryWithMoviIfPossible\(\) \{\s*return false;/, 'native errors must never escalate to raw playback');
       assert.match(embedJsSrc, /allStreamsFailed/, 'player must track allStreamsFailed so the final dead source never shows Playing');
       assert.match(
         embedJsSrc,

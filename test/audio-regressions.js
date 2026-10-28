@@ -73,13 +73,17 @@ async function testHlsPayload() {
 }
 
 async function testDirectFallback() {
+  let directRequested = false;
   const fetchImpl = async (input) => {
     const url = new URL(typeof input === 'string' ? input : input.url);
     if (url.pathname.endsWith('/api/providers')) return json({ providers: [{ name: 'hdghartv', enabled: true }] });
     if (url.pathname.includes('/api/streams/hdghartv/')) {
       return json({ streams: [{ provider: 'hdghartv', name: 'single HLS', title: 'Test Movie 1080p', url: 'https://remote.example/master.m3u8', quality: '1080p' }] });
     }
-    if (url.pathname === '/api/search') return json({ movies: [{ _id: 'm1', title: 'Test Movie (2024)' }] });
+    if (url.pathname === '/api/search') {
+      directRequested = true;
+      return json({ movies: [{ _id: 'm1', title: 'Test Movie (2024)' }] });
+    }
     if (url.pathname === '/api/movies/public/m1') {
       return json({ streamingLinks: [
         { url: 'https://pixeldrain.dev/api/file/abc', quality: '1080p', language: 'Hindi', title: 'Test Movie Multi Audio MKV' },
@@ -89,17 +93,42 @@ async function testDirectFallback() {
     if (url.hostname === 'remote.example') return new Response('#EXTM3U\n#EXT-X-STREAM-INF:BANDWIDTH=1\nvideo.m3u8', { status: 200 });
     return new Response('not found', { status: 404 });
   };
-  const payload = await goldmine.resolveGoldmineServer(
-    { type: 'movie', tmdbId: 'regression-1', title: 'Test Movie', year: '2024' },
+  const fastPayload = await goldmine.resolveGoldmineServer(
+    { type: 'movie', tmdbId: 'regression-fast', title: 'Test Movie', year: '2024' },
     {
       apiBase: 'https://audio-regression.invalid', fetchImpl, proxyStreams: false,
       timeoutMs: 2500, directTimeoutMs: 1000, hlsManifestTimeoutMs: 500,
       directProviderOptions: { providers: ['hdghartv'], hdghartvBaseUrl: 'https://hd.example/api' }
     }
   );
-  assert(payload.streamUrl.includes('pixeldrain'), 'direct MKV should beat the fast single-audio HLS');
-  assert(payload.audioTracks.some((row) => row.lang === 'hi'));
-  assert(payload.audioTracks.some((row) => row.lang === 'en'));
+  assert.strictEqual(fastPayload.format, 'hls', 'native HLS must be the default fast path');
+  assert(fastPayload.streamUrl.includes('remote.example'));
+  assert.strictEqual(directRequested, false, 'native HLS must not trigger speculative direct MKV scraping');
+
+  const rememberedEnglish = await goldmine.resolveGoldmineServer(
+    { type: 'movie', tmdbId: 'regression-fast-en', title: 'Test Movie', year: '2024' },
+    {
+      apiBase: 'https://audio-regression.invalid', fetchImpl, proxyStreams: false, preferredAudio: 'en',
+      timeoutMs: 2500, directTimeoutMs: 1000, hlsManifestTimeoutMs: 500,
+      directProviderOptions: { providers: ['hdghartv'], hdghartvBaseUrl: 'https://hd.example/api' }
+    }
+  );
+  assert.strictEqual(rememberedEnglish.format, 'hls');
+  assert.strictEqual(directRequested, false, 'remembered English must stay on untagged native HLS');
+
+  const payload = await goldmine.resolveGoldmineServer(
+    { type: 'movie', tmdbId: 'regression-1', title: 'Test Movie', year: '2024' },
+    {
+      apiBase: 'https://audio-regression.invalid', fetchImpl, proxyStreams: false,
+      timeoutMs: 2500, directTimeoutMs: 1000, hlsManifestTimeoutMs: 500, preferredAudio: 'hi',
+      directProviderOptions: { providers: ['hdghartv'], hdghartvBaseUrl: 'https://hd.example/api' }
+    }
+  );
+  const preferredPayload = goldmine.applyPreferredAudioToPayload(payload, 'hi');
+  assert(preferredPayload.streamUrl.includes('pixeldrain'), 'an explicitly requested dub may still select its direct MKV');
+  assert(preferredPayload.audioTracks.some((row) => row.lang === 'hi'));
+  assert(preferredPayload.audioTracks.some((row) => row.lang === 'en'));
+  assert.strictEqual(directRequested, true, 'a missing requested dub should still permit direct extraction');
 
   // Numeric Worker requests begin with this ID-only stub.  The metadata
   // promise must still enable title-based direct extraction and its merge.
@@ -107,42 +136,139 @@ async function testDirectFallback() {
     { type: 'movie', tmdbId: 'regression-lazy' },
     {
       apiBase: 'https://audio-regression.invalid', fetchImpl, proxyStreams: false,
-      timeoutMs: 2500, directTimeoutMs: 1000, hlsManifestTimeoutMs: 500,
+      timeoutMs: 2500, directTimeoutMs: 1000, hlsManifestTimeoutMs: 500, preferredAudio: 'hi',
       directFallback: 'parallel',
       metadataPromise: Promise.resolve({ type: 'movie', tmdbId: 'regression-lazy', title: 'Test Movie', year: '2024' }),
       directProviderOptions: { providers: ['hdghartv'], hdghartvBaseUrl: 'https://hd.example/api' }
     }
   );
-  assert(lazyPayload.streamUrl.includes('pixeldrain'), 'ID-only Worker stubs must still reach direct MKV fallback');
-  assert(lazyPayload.audioTracks.some((row) => row.lang === 'hi'));
+  const lazyPreferred = goldmine.applyPreferredAudioToPayload(lazyPayload, 'hi');
+  assert(lazyPreferred.streamUrl.includes('pixeldrain'), 'ID-only Worker stubs must still reach direct MKV fallback for a requested dub');
+  assert(lazyPreferred.audioTracks.some((row) => row.lang === 'hi'));
 }
 
-async function testWave2AfterSingleHls() {
+async function testFastSettleOnNativeHls() {
   goldmine.clearGoldmineProviderCache();
   let wave2Called = false;
-  const fetchImpl = async (input) => {
+  let slowMkvAborted = false;
+  const fetchImpl = async (input, init = {}) => {
     const url = new URL(typeof input === 'string' ? input : input.url);
     if (url.pathname.endsWith('/api/providers')) {
       return json({ providers: [
-        { name: 'dahmermovies', enabled: true }, { name: '4khdhub', enabled: true }, { name: 'netmirror', enabled: true }
+        { name: 'dahmermovies', enabled: true }, { name: 'vidsrc', enabled: true }, { name: 'netmirror', enabled: true }
       ] });
     }
     if (url.pathname.includes('/api/streams/dahmermovies/')) {
-      return json({ streams: [{ title: 'Single HLS', url: 'https://cdn.example/single.m3u8', quality: '1080p' }] });
+      await new Promise((resolve) => setTimeout(resolve, 20));
+      return json({ streams: [{ title: 'Native HLS', url: 'https://cdn.example/single.m3u8', quality: '1080p' }] });
     }
-    if (url.pathname.includes('/api/streams/4khdhub/')) return json({ streams: [] });
+    if (url.pathname.includes('/api/streams/vidsrc/')) {
+      return new Promise((resolve, reject) => {
+        const timer = setTimeout(() => resolve(json({ streams: [] })), 1200);
+        if (init.signal) {
+          init.signal.addEventListener('abort', () => {
+            clearTimeout(timer);
+            slowMkvAborted = true;
+            const error = new Error('Aborted');
+            error.name = 'AbortError';
+            reject(error);
+          });
+        }
+      });
+    }
     if (url.pathname.includes('/api/streams/netmirror/')) {
       wave2Called = true;
-      await new Promise((resolve) => setTimeout(resolve, 25));
       return json({ streams: [{ title: 'Movie Hindi English Multi Audio MKV', url: 'https://cdn.example/multi.mkv', quality: '1080p' }] });
     }
     return new Response('not found', { status: 404 });
   };
+  const started = Date.now();
   const result = await goldmine.fetchGoldmineStreamsFast({
     apiBase: 'https://wave2-regression.invalid', tmdbId: '1', type: 'movie', timeoutMs: 1500, fetchImpl
   });
-  assert.strictEqual(wave2Called, true, 'single-audio Wave 1 must not suppress Wave 2');
-  assert(result.ok && result.json.streams.some((stream) => stream.url.includes('multi.mkv')));
+  assert(result.ok && result.json.streams.some((stream) => stream.url.includes('single.m3u8')));
+  assert(!result.json.streams.some((stream) => stream.url.includes('multi.mkv')));
+  assert.strictEqual(wave2Called, false, 'ready native HLS must not launch another slow provider wave');
+  assert.strictEqual(slowMkvAborted, true, 'ready native HLS must abort the slow MKV extractor');
+  assert(Date.now() - started < 600, 'native HLS should settle without the old MKV wait');
+}
+
+async function testMultiAudioSettlePriority() {
+  goldmine.clearGoldmineProviderCache();
+  const fetchImpl = async (input, init = {}) => {
+    const url = new URL(typeof input === 'string' ? input : input.url);
+    if (url.pathname.endsWith('/api/providers')) {
+      return json({ providers: [
+        { name: 'dahmermovies', enabled: true }, { name: '4khdhub', enabled: true }, { name: 'vidsrc', enabled: true }
+      ] });
+    }
+    if (url.pathname.includes('/api/streams/dahmermovies/')) {
+      await new Promise((resolve) => setTimeout(resolve, 20));
+      return json({ streams: [{ title: 'Single HLS', url: 'https://cdn.example/single.m3u8', quality: '1080p' }] });
+    }
+    if (url.pathname.includes('/api/streams/4khdhub/')) {
+      await new Promise((resolve) => setTimeout(resolve, 100));
+      return json({ streams: [{ title: 'Movie Hindi English Multi Audio', url: 'https://cdn.example/multi.mkv', quality: '1080p' }] });
+    }
+    if (url.pathname.includes('/api/streams/vidsrc/')) {
+      return new Promise((resolve, reject) => {
+        const timer = setTimeout(() => resolve(json({ streams: [] })), 2000);
+        if (init.signal) {
+          init.signal.addEventListener('abort', () => {
+            clearTimeout(timer);
+            const error = new Error('Aborted');
+            error.name = 'AbortError';
+            reject(error);
+          });
+        }
+      });
+    }
+    return new Response('not found', { status: 404 });
+  };
+  const started = Date.now();
+  const result = await goldmine.fetchGoldmineStreamsFast({
+    apiBase: 'https://multi-priority.invalid', tmdbId: '1', type: 'movie', timeoutMs: 2500, fetchImpl
+  });
+  assert(result.ok && result.json.streams.some((stream) => stream.url.endsWith('multi.mkv')));
+  const payload = goldmine.buildGoldminePayload(goldmine.normalizeGoldminePayload(result.json), { proxyStreams: false });
+  assert.strictEqual(payload.rawUrl, 'https://cdn.example/multi.mkv');
+  assert(Date.now() - started < 1200, 'multi-audio should settle promptly instead of waiting for the remaining mirrors');
+}
+
+async function testFastSettleForHlsConversion() {
+  goldmine.clearGoldmineProviderCache();
+  let slowExtractorAborted = false;
+  const fetchImpl = async (input, init = {}) => {
+    const url = new URL(typeof input === 'string' ? input : input.url);
+    if (url.pathname.endsWith('/api/providers')) {
+      return json({ providers: [{ name: '4khdhub', enabled: true }, { name: 'dahmermovies', enabled: true }] });
+    }
+    if (url.pathname.includes('/api/streams/4khdhub/')) {
+      return json({ streams: [{ title: 'Movie English 1080p', url: 'https://cdn.example/movie.mp4', quality: '1080p' }] });
+    }
+    if (url.pathname.includes('/api/streams/dahmermovies/')) {
+      return new Promise((resolve, reject) => {
+        const timer = setTimeout(() => resolve(json({ streams: [] })), 2200);
+        if (init.signal) {
+          init.signal.addEventListener('abort', () => {
+            clearTimeout(timer);
+            slowExtractorAborted = true;
+            const error = new Error('Aborted');
+            error.name = 'AbortError';
+            reject(error);
+          });
+        }
+      });
+    }
+    return new Response('not found', { status: 404 });
+  };
+  const started = Date.now();
+  const result = await goldmine.fetchGoldmineStreamsFast({
+    apiBase: 'https://conversion-settle.invalid', tmdbId: '1', type: 'movie', timeoutMs: 2500, fetchImpl
+  });
+  assert(result.ok && result.json.streams.some((stream) => stream.url.endsWith('.mp4')));
+  assert(Date.now() - started < 1800, 'progressive fallback should reach the HLS converter without the old long settle');
+  assert.strictEqual(slowExtractorAborted, true);
 }
 
 async function testProviderFallbackDetails() {
@@ -214,6 +340,7 @@ async function testPreferredSourceMetadata() {
     { provider: 'netmirror', title: 'Movie Japanese HLS', url: 'https://cdn.example/master.m3u8', quality: '720p' }
   ] });
   const payload = goldmine.buildGoldminePayload(normalized, { proxyStreams: false });
+  assert.strictEqual(payload.format, 'mkv', 'multi-audio must outrank single-audio HLS for conversion');
   const preferred = goldmine.applyPreferredAudioToPayload(payload, 'ja');
   assert.strictEqual(preferred.format, 'hls');
   assert.strictEqual(preferred.engine, undefined);
@@ -294,7 +421,9 @@ module.exports = async function runAudioRegressions() {
   await testNormalization();
   await testHlsPayload();
   await testDirectFallback();
-  await testWave2AfterSingleHls();
+  await testFastSettleOnNativeHls();
+  await testMultiAudioSettlePriority();
+  await testFastSettleForHlsConversion();
   await testProviderFallbackDetails();
   await testCastleTv();
   await testPreferredSourceMetadata();

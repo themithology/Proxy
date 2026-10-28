@@ -1,6 +1,11 @@
 (function () {
   'use strict';
 
+  // Optional live diagnostics. Set before the movi module loads so its own
+  // FFmpeg/WebCodecs logs reach the browser console during real-source tests.
+  const PLAYER_DEBUG = new URLSearchParams(window.location.search).get('debug') === '1';
+  if (PLAYER_DEBUG) window.__movilog = console;
+
   // --- Configurable API base URL ---
   // The player page (/embed) and the JSON/stream API may run on different
   // Workers. The API base is resolved in this order:
@@ -28,6 +33,9 @@
     return '';
   }
   const API_BASE = resolveApiBaseUrl();
+  const MKV_HLS_ENABLED = !!(
+    window.__LOL_EMBED_CONFIG__ && window.__LOL_EMBED_CONFIG__.mkvHlsEnabled === true
+  );
 
   // Prefix an API path (e.g. `/api/resolve/...`) with the configured base.
   function apiUrl(path) {
@@ -489,6 +497,16 @@
     // Logical source whose manifest is currently attached.  This differs from
     // activeHlsUrl when a proxy-to-direct fallback is used.
     activeHlsUrl: null,
+    // ffprobe's real source duration for generated HLS. The media playlist
+    // can still be growing while the timeline and skip markers use this value.
+    generatedSourceDuration: 0,
+    // On-demand seek windows start their media timestamps at zero. Keep the
+    // original source offset separately so every UI/subtitle/progress timestamp
+    // remains absolute to the movie rather than to the current HLS window.
+    generatedSourceOffset: 0,
+    generatedConversionUrl: '',
+    generatedSeekToken: 0,
+    pendingSeekTime: null,
     pendingAudioSelection: null,
     dashInstance: null,
     activeSkipSegment: null,
@@ -717,12 +735,12 @@
       buffering: playback === 'buffering',
       seeking: !!video.seeking,
       ended: !!video.ended,
-      currentTime: video.currentTime || 0,
+      currentTime: getPlaybackTime(),
       // `duration` keeps its historical meaning (real duration, else the TMDB
       // runtime); `mediaDuration` is only ever the real one — use it for cut
       // detection.
       duration: getEffectiveDuration(),
-      mediaDuration: hasRealDuration() ? video.duration : null,
+      mediaDuration: hasRealDuration() ? getEffectiveDuration() : null,
       playbackRate: video.playbackRate || 1,
       volume: typeof video.volume === 'number' ? video.volume : 1,
       muted: !!video.muted,
@@ -760,16 +778,45 @@
     emitHostEvent('statechange', { previousState });
   }
 
-  // Real media duration when known; TMDB runtime as a placeholder until then.
+  function isGeneratedHlsPlayback() {
+    const generatedRoute = /\/api\/mkv-hls(?:[/?]|$)/i;
+    return generatedRoute.test(String(state.activeHlsUrl || '')) ||
+      generatedRoute.test(String(state.attachedStreamUrl || ''));
+  }
+
+  function generatedHlsHasCompleted() {
+    const details = state.hlsInstance && state.hlsInstance.latestLevelDetails;
+    return !!(details && details.live === false);
+  }
+
+  function getPlaybackOffset() {
+    return isGeneratedHlsPlayback() ? Math.max(0, Number(state.generatedSourceOffset) || 0) : 0;
+  }
+
+  function getPlaybackTime() {
+    if (Number.isFinite(state.pendingSeekTime)) return state.pendingSeekTime;
+    return Math.max(0, (video.currentTime || 0) + getPlaybackOffset());
+  }
+
+  // ffprobe duration is authoritative for generated HLS even while its media
+  // playlist is growing. If a remote file does not advertise that duration,
+  // never replace the known full title runtime with the partial playlist's
+  // `video.duration`; use the real media duration after ENDLIST instead.
   function getEffectiveDuration() {
-    if (video.duration && isFinite(video.duration) && video.duration > 0) {
-      return video.duration;
+    if (state.generatedSourceDuration > 0) return state.generatedSourceDuration;
+    const metadataDuration = Number(state.media && state.media.durationSec) || 0;
+    const generated = isGeneratedHlsPlayback();
+    if (generated && metadataDuration > 0 && !generatedHlsHasCompleted()) {
+      return metadataDuration;
     }
-    return (state.media && state.media.durationSec) || 0;
+    if (video.duration && isFinite(video.duration) && video.duration > 0) {
+      return video.duration + (generated ? getPlaybackOffset() : 0);
+    }
+    return metadataDuration;
   }
 
   function hasRealDuration() {
-    return !!(video.duration && isFinite(video.duration) && video.duration > 0);
+    return state.generatedSourceDuration > 0 || !!(video.duration && isFinite(video.duration) && video.duration > 0);
   }
 
   // --- Watch progress persistence ---
@@ -798,10 +845,10 @@
     if (state.progressLocked) return;
     const now = Date.now();
     if (!force && now - state.lastProgressSaveAt < 3000) return;
-    const current = video.currentTime || 0;
+    const current = getPlaybackTime();
     if (current <= 2) return;
     state.lastProgressSaveAt = now;
-    const duration = hasRealDuration() ? video.duration : 0;
+    const duration = hasRealDuration() ? getEffectiveDuration() : 0;
     storageSet(
       progressKey(state.type, state.tmdbId, state.season, state.episode),
       JSON.stringify({ t: Math.floor(current), d: Math.floor(duration) })
@@ -1275,7 +1322,7 @@
 
   // --- Load Media Bundle from Backend ---
   async function loadMediaBundle(preserveTime = false) {
-    const savedTime = preserveTime ? video.currentTime : 0;
+    const savedTime = preserveTime ? getPlaybackTime() : 0;
     const loadToken = ++state.loadToken;
     const requestedServer = state.server;
     if (!preserveTime) {
@@ -1290,8 +1337,14 @@
     if (!preserveTime) clearActiveSkip();
     playerRoot.classList.remove('is-ended');
     showLoading(`Connecting to ${serverDisplayName(requestedServer)}`);
-    // Nothing is attached while a new bundle loads (see hostSnapshot()).
+    // Nothing is attached while a new bundle loads (see hostSnapshot()). Do
+    // not let the outgoing source's duration leak into the incoming title.
     state.attachedStreamUrl = null;
+    state.generatedSourceDuration = 0;
+    state.generatedSourceOffset = 0;
+    state.generatedConversionUrl = '';
+    state.pendingSeekTime = null;
+    state.generatedSeekToken += 1;
     emitHostEvent('loadstart', { server: requestedServer });
     // First open: the upstream resolve can take seconds, while the TMDB
     // metadata is one cached call away. Fetch it in parallel so the connect
@@ -1401,8 +1454,13 @@
           label: q.label,
           height: q.height,
           bitrate: q.bitrate,
+          levelIndex: Number.isInteger(q.levelIndex) ? q.levelIndex : undefined,
           url: q.url
         }));
+      // HLS replaces this list with its real manifest levels while attached.
+      // Keep the payload rows so a progressive fallback never inherits stale
+      // HLS-only choices after a source switch.
+      state.stream._initialQualities = state.qualities.map((quality) => ({ ...quality }));
 
       if (state.audioTracks.length > 0) {
         // Order: the language the viewer already picked for this title, then
@@ -1519,8 +1577,8 @@
       mediaTagsEl.appendChild(span);
     });
 
-    if (!hasRealDuration()) {
-      timeDurationEl.textContent = formatTime(m.durationSec || 0);
+    if (!hasRealDuration() || isGeneratedHlsPlayback()) {
+      timeDurationEl.textContent = formatTime(getEffectiveDuration() || m.durationSec || 0);
     }
 
     const isTv = m.type === 'tv';
@@ -1666,18 +1724,23 @@
       innerPath = String(innerUrl || '').toLowerCase();
     }
 
+    const hasProgressiveExtension = /\.(?:mkv|mp4|m4v|webm|avi|mov|ts|flv|mpg|mpeg)(?:$|[?#&])/i.test(innerUrl);
+    const isProgressive = hasProgressiveExtension || !!(meta && meta.format && meta.format !== 'hls' && meta.format !== 'dash');
     const isDash =
-      !!(meta && meta.format === 'dash') ||
+      !isProgressive &&
+      (!!(meta && meta.format === 'dash') ||
       /\.mpd(?:$|[?#&])/i.test(streamUrl) ||
       /\.mpd(?:$|[?#&])/i.test(innerUrl) ||
-      (isPrimary && stream.format === 'dash');
+      (isPrimary && stream.format === 'dash'));
 
     const isHls =
       !isDash &&
+      !isProgressive &&
       (!!(meta && meta.format === 'hls') ||
         /\.m3u8(?:$|[?#&])/i.test(streamUrl) ||
         /\.m3u8(?:$|[?#&])/i.test(innerUrl) ||
         /\/playlist\b|\/master\b/i.test(innerPath) ||
+        /\/api\/mkv-hls(?:\/|$)/i.test(innerPath) ||
         (isPrimary && stream.format === 'hls'));
 
     const moviHeaders = meta
@@ -1685,25 +1748,9 @@
       : isPrimary && stream.moviHeaders
         ? stream.moviHeaders
         : null;
-    // Sources that need custom request headers must stay on movi-player: only
-    // it can attach them (`headers` attribute), the native <video> cannot.
-    const needsCustomHeaders = !!(moviHeaders && Object.keys(moviHeaders).length > 0);
-
-    // `stream.engine` describes the PRIMARY source only: a per-URL `meta`
-    // (and the extension check) decides for every other source, so an MP4
-    // backup of an MKV primary is no longer dragged through the WASM demuxer.
-    const useMovi =
-      !isDash &&
-      !isHls &&
-      (needsCustomHeaders ||
-        !!(meta && meta.engine === 'movi') ||
-        /\.(?:mkv|webm|avi|mov|ts)(?:$|[?#&])/i.test(innerUrl) ||
-        (isPrimary && stream.engine === 'movi'));
-
     return {
       isDash,
       isHls,
-      useMovi,
       meta,
       moviHeaders,
       sourceSubtitles: meta && Array.isArray(meta.subtitles) ? meta.subtitles : null
@@ -1730,6 +1777,32 @@
     }
     if (state._triedDirectUrls && state._triedDirectUrls.has(rawTarget)) return null;
     return rawTarget;
+  }
+
+  /**
+   * Node-host conversion for a progressive source. Always send ffmpeg back
+   * through the original same-origin /api/proxy URL: a direct retry may have
+   * changed streamUrl, but the raw provider URL alone can lack the headers or
+   * cookies that made the source reachable.
+   */
+  function mkvHlsUrlFor(streamUrl, candidateInfo) {
+    if (!MKV_HLS_ENABLED || !candidateInfo || candidateInfo.isHls || candidateInfo.isDash) return null;
+    if (/\/api\/mkv-hls(?:[/?]|$)/i.test(String(streamUrl || ''))) return null;
+
+    const stream = state.stream || {};
+    const metas = stream.sourceMeta && typeof stream.sourceMeta === 'object' ? stream.sourceMeta : {};
+    const matchingProxy = Object.keys(metas).find((candidate) =>
+      /\/api\/proxy\?/.test(candidate) && sameStreamReference(candidate, streamUrl)
+    );
+    const primary = stream._primaryStreamUrl || '';
+    const sourceUrl = matchingProxy ||
+      (/\/api\/proxy\?/.test(primary) && sameStreamReference(primary, streamUrl) ? primary : '') ||
+      (/\/api\/proxy\?/.test(String(streamUrl || '')) ? streamUrl : '');
+    if (!sourceUrl) return null;
+
+    const conversionUrl = apiUrl(`/api/mkv-hls?src=${encodeURIComponent(sourceUrl)}`);
+    if (state._triedStreamUrls && state._triedStreamUrls.has(conversionUrl)) return null;
+    return conversionUrl;
   }
 
   /**
@@ -1819,8 +1892,9 @@
   }
 
   // --- Attach Stream via Movi (MKV/multi-audio) / HLS.js / Dash.js / Native Video ---
-  async function attachStreamToVideo(streamUrl, resumeTime = 0, loadToken = 0) {
+  async function attachStreamToVideo(streamUrl, resumeTime = 0, loadToken = 0, options = {}) {
     const attachToken = ++state.attachToken;
+    if (!options.preservePendingSeek) state.pendingSeekTime = null;
     state.activeSourceLive = false;
     state.allStreamsFailed = false;
     clearMoviWatchdog();
@@ -1832,6 +1906,11 @@
 
     const sourceChanged = state.attachedStreamUrl !== streamUrl;
     state.attachedStreamUrl = streamUrl;
+    if (!/\/api\/mkv-hls(?:[/?]|$)/i.test(streamUrl)) {
+      state.generatedSourceDuration = 0;
+      state.generatedSourceOffset = 0;
+      state.generatedConversionUrl = '';
+    }
     hostBuffering = false;
     if (sourceChanged) emitHostEvent('sourcechange');
     if (state.hlsInstance) {
@@ -1849,21 +1928,28 @@
     const saved = readProgress(state.type, state.tmdbId, state.season, state.episode);
     let savedProgress = saved ? saved.time : 0;
     if (saved && isNearEnd(saved.time, saved.duration)) savedProgress = 0;
-    const targetStartTime = resumeTime > 0 ? resumeTime : (startParam > 0 ? startParam : savedProgress);
+    // Generated seek windows use timestamps relative to their own HLS start.
+    // The player translates them back to absolute source time everywhere else.
+    const isGeneratedMkvHls = /\/api\/mkv-hls(?:[/?]|$)/i.test(streamUrl);
+    const targetStartTime = isGeneratedMkvHls
+      ? Math.max(0, Number(options.generatedStartTime) || 0)
+      : (resumeTime > 0 ? resumeTime : (startParam > 0 ? startParam : savedProgress));
 
     // Re-checked against the real duration once it is known: a stale "resume"
     // position past the end would otherwise start the file on its last frame.
     const applyStartTime = () => {
       let t = targetStartTime;
-      if (hasRealDuration() && isNearEnd(t, video.duration)) t = 0;
-      if (t > 2) {
+      if (hasRealDuration() && isNearEnd(t, getEffectiveDuration())) t = 0;
+      if (t > 0 && (isGeneratedMkvHls || t > 2)) {
         try {
           video.currentTime = t;
         } catch (_) {}
-        if (resumeTime <= 0 && startParam <= 0) {
+        if (!isGeneratedMkvHls && resumeTime <= 0 && startParam <= 0) {
           showToast(`Resuming from ${formatTime(t)}`, 2200);
         }
       }
+      state.pendingSeekTime = null;
+      updateTimelineAndSkipState();
       // The `?t=` offset is a one-shot: later attaches resume from progress.
       if (startParam > 0) state.startAt = 0;
     };
@@ -1920,6 +2006,15 @@
     const candidateInfo = classifyCandidateStream(streamUrl, isDeclaredPrimaryUrl);
     if (candidateInfo.meta && candidateInfo.meta.rawUrl) state.stream.rawUrl = candidateInfo.meta.rawUrl;
 
+    if (!candidateInfo.isHls && Array.isArray(state.stream._initialQualities)) {
+      state.qualities = state.stream._initialQualities.map((quality) => ({ ...quality }));
+      const currentQuality = state.qualities.find(
+        (quality) => quality.url && sameStreamReference(quality.url, streamUrl)
+      );
+      state.activeQualityId = currentQuality ? currentQuality.id : 'auto';
+      updateSettingsSummaryValues();
+    }
+
     if (Array.isArray(candidateInfo.sourceSubtitles) && candidateInfo.sourceSubtitles.length > 0) {
       const seenSubUrls = new Set(state.subtitles.map((s) => s && s.url).filter(Boolean));
       let addedSubs = false;
@@ -1937,42 +2032,58 @@
       if (addedSubs) renderSubtitlesPopover();
     }
 
-    // --- Movi engine (Goldmine MKV / multi-audio files) ----------------------
-    // Progressive containers the browser cannot decode (MKV/HEVC/AV1/EAC3) and
-    // files with several muxed dubs play through the bundled movi-player
-    // element instead of the native <video>. Streaming sources (HLS/DASH —
-    // even when wrapped in /api/proxy) stay on hls.js / dash.js below.
-    if (candidateInfo.useMovi) {
-      let moviReady = !!(window.customElements && customElements.get('movi-player'));
-      if (!moviReady) {
-        if (!loadingOverlay.classList.contains('hidden')) {
-          loadingStatusText.textContent = `Loading ${serverDisplayName(state.server)} Engine`;
-          setConnectProgress(78, false);
+    // Progressive files are converter inputs only. The browser receives HLS;
+    // without a working converter it skips them rather than opening raw media
+    // or loading a second playback engine.
+    const mkvHlsUrl = mkvHlsUrlFor(streamUrl, candidateInfo);
+    if (mkvHlsUrl) {
+      showLoading('Preparing HLS stream');
+      setConnectProgress(86, false);
+      state.generatedSourceDuration = 0;
+      state.generatedSourceOffset = 0;
+      state.generatedConversionUrl = mkvHlsUrl;
+      const requestedSourceTime = Math.max(0, targetStartTime || 0);
+      let generatedStartTime = 0;
+      let generatedUrl = mkvHlsUrl;
+      try {
+        // A same-origin JSON handshake works in Brave as well as desktop
+        // browsers (unlike manually inspected redirect headers). It returns
+        // the session master, full-source duration and optional seek offset.
+        const infoUrl = new URL(mkvHlsUrl, window.location.href);
+        infoUrl.searchParams.set('info', '1');
+        if (requestedSourceTime > 0) {
+          infoUrl.searchParams.set('seek', String(Math.floor(requestedSourceTime / 2) * 2));
         }
-        try {
-          await ensureMoviPlayer();
-          moviReady = !!(window.customElements && customElements.get('movi-player'));
-        } catch (_) {
-          moviReady = false; // script blocked/offline: try native <video> / backups
+        const response = await fetch(infoUrl.href, { cache: 'no-store' });
+        if (attachToken !== state.attachToken) return;
+        if (response.ok) {
+          const info = await response.json();
+          if (attachToken !== state.attachToken) return;
+          if (info && info.masterUrl) generatedUrl = new URL(info.masterUrl, infoUrl.href).href;
+          const sourceDuration = Number(info && info.sourceDuration);
+          if (Number.isFinite(sourceDuration) && sourceDuration > 0) {
+            state.generatedSourceDuration = sourceDuration;
+            renderSegmentedTimeline();
+            timeDurationEl.textContent = formatTime(sourceDuration);
+          }
+          const sourceOffset = Number(info && info.sourceOffset);
+          if (Number.isFinite(sourceOffset) && sourceOffset >= 0) {
+            state.generatedSourceOffset = sourceOffset;
+            generatedStartTime = Math.max(0, requestedSourceTime - sourceOffset);
+          }
         }
+      } catch (_) {
+        // Keep the original conversion URL as a compatibility fallback.
       }
-      // A newer load or source switch may have superseded the download.
-      if ((loadToken && loadToken !== state.loadToken) || attachToken !== state.attachToken) return;
-      if (!loadingOverlay.classList.contains('hidden')) {
-        loadingStatusText.textContent = `Connecting to ${serverDisplayName(state.server)}`;
-        setConnectProgress(84, false);
-      }
-      if (moviReady) {
-        attachMoviStream(
-          streamUrl,
-          targetStartTime,
-          applyStartTime,
-          tryNextBackupStream,
-          attachToken,
-          candidateInfo
-        );
-        return;
-      }
+      if (attachToken !== state.attachToken) return;
+      attachStreamToVideo(generatedUrl, 0, loadToken || state.loadToken, { generatedStartTime });
+      return;
+    }
+
+    if (!candidateInfo.isHls && !candidateInfo.isDash) {
+      if (tryNextBackupStream(targetStartTime || 0)) return;
+      handleFatalStreamError();
+      return;
     }
 
     if (candidateInfo.isDash && window.dashjs) {
@@ -1991,7 +2102,7 @@
           if (!event || (!event.fatal && !event.error && !event.event)) return;
           try { player.reset(); } catch (_) {}
           state.dashInstance = null;
-          if (tryNextBackupStream(video.currentTime || targetStartTime || 0)) return;
+          if (tryNextBackupStream(getPlaybackTime() || targetStartTime || 0)) return;
           handleFatalStreamError();
         });
       }
@@ -2001,7 +2112,7 @@
           try { state.dashInstance.reset(); } catch (_) {}
         }
         state.dashInstance = null;
-        if (tryNextBackupStream(video.currentTime || targetStartTime || 0)) return;
+        if (tryNextBackupStream(getPlaybackTime() || targetStartTime || 0)) return;
         handleFatalStreamError();
       };
       return;
@@ -2010,9 +2121,19 @@
     if (window.Hls && window.Hls.isSupported() && candidateInfo.isHls) {
       const attachHlsUrl = (activeHlsUrl) => {
         state.activeHlsUrl = activeHlsUrl;
+        const isTranscodedHls = /\/api\/mkv-hls(?:[/?]|$)/i.test(activeHlsUrl);
         const hls = new window.Hls({
           enableWorker: true,
-          lowLatencyMode: false
+          lowLatencyMode: false,
+          // Buffer capacity only — there is deliberately no minimum-buffer
+          // startup gate. Faster remuxing is what lets playback get ahead.
+          maxBufferLength: 45,
+          maxMaxBufferLength: 90,
+          maxBufferSize: 120 * 1024 * 1024,
+          backBufferLength: 15,
+          // The conversion route redirects after the first usable segments,
+          // not after an arbitrary amount of media has been generated.
+          ...(isTranscodedHls ? { manifestLoadingTimeOut: 120000, startPosition: targetStartTime } : {})
         });
         state.hlsInstance = hls;
         let networkRecoveries = 0;
@@ -2021,9 +2142,14 @@
         hls.loadSource(activeHlsUrl);
         hls.attachMedia(video);
 
-        hls.on(window.Hls.Events.MANIFEST_PARSED, () => {
+        hls.on(window.Hls.Events.MANIFEST_PARSED, (_, data) => {
           if (attachToken !== state.attachToken) return;
           hideLoading();
+
+          // Build the visible quality menu from the actual master playlist,
+          // not the resolver's initial (often single) HLS row. ABR remains
+          // enabled so a growing encode never forces an unsustainable rung.
+          syncHlsQualityLevels(hls, data && data.levels);
 
           // Merge any real HLS multi-audio tracks discovered in the manifest
           if (hls.audioTracks && hls.audioTracks.length > 0) {
@@ -2033,15 +2159,19 @@
           applyStartTime();
           applyRememberedQuality();
 
-          video.play().catch((error) => {
-            if (attachToken !== state.attachToken) return;
-            // Autoplay denial is recoverable, but an unsupported HLS decode can use the next quality/mirror.
-            if (error && error.name === 'NotSupportedError') {
-              if (!tryNextBackupStream(video.currentTime || targetStartTime || 0)) {
-                handleFatalStreamError();
+          if (options.autoplay === false) {
+            video.pause();
+          } else {
+            video.play().catch((error) => {
+              if (attachToken !== state.attachToken) return;
+              // Autoplay denial is recoverable, but an unsupported HLS decode can use the next quality/mirror.
+              if (error && error.name === 'NotSupportedError') {
+                if (!tryNextBackupStream(getPlaybackTime() || targetStartTime || 0)) {
+                  handleFatalStreamError();
+                }
               }
-            }
-          });
+            });
+          }
         });
 
         if (window.Hls.Events.AUDIO_TRACKS_UPDATED) {
@@ -2051,9 +2181,25 @@
           });
         }
 
+        if (window.Hls.Events.LEVELS_UPDATED) {
+          hls.on(window.Hls.Events.LEVELS_UPDATED, (_, data) => {
+            if (attachToken !== state.attachToken) return;
+            syncHlsQualityLevels(hls, data && data.levels);
+          });
+        }
+
         hls.on(window.Hls.Events.ERROR, (_, errData) => {
           if (attachToken !== state.attachToken || !errData) return;
           if (errData.fatal) {
+            if (PLAYER_DEBUG) {
+              console.error('[LOL Embed] HLS fatal error', {
+                type: errData.type,
+                details: errData.details,
+                error: errData.error || null,
+                response: errData.response || null,
+                url: activeHlsUrl
+              });
+            }
             const types = window.Hls.ErrorTypes || {};
             const details = window.Hls.ErrorDetails || {};
             const isManifestFailure =
@@ -2083,7 +2229,7 @@
                 return;
               }
             }
-            if (tryNextBackupStream(video.currentTime || 0)) return;
+            if (tryNextBackupStream(getPlaybackTime() || 0)) return;
             handleFatalStreamError();
           }
         });
@@ -2100,14 +2246,18 @@
         hideLoading();
         syncNativeAudioTracks();
         applyStartTime();
-        video.play().catch((error) => {
-          if (attachToken !== state.attachToken) return;
-          if (error && error.name === 'NotSupportedError') {
-            if (retryWithMoviIfPossible(activeSrcUrl, targetStartTime, applyStartTime, tryNextBackupStream, attachToken, candidateInfo)) return;
-            if (tryNextBackupStream(video.currentTime || targetStartTime || 0)) return;
-            handleFatalStreamError();
-          }
-        });
+        if (options.autoplay === false) {
+          video.pause();
+        } else {
+          video.play().catch((error) => {
+            if (attachToken !== state.attachToken) return;
+            if (error && error.name === 'NotSupportedError') {
+              if (retryWithMoviIfPossible(activeSrcUrl, targetStartTime, applyStartTime, tryNextBackupStream, attachToken, candidateInfo)) return;
+              if (tryNextBackupStream(getPlaybackTime() || targetStartTime || 0)) return;
+              handleFatalStreamError();
+            }
+          });
+        }
       };
       video.onerror = () => {
         if (attachToken !== state.attachToken) return;
@@ -2125,7 +2275,7 @@
                 return;
               }
             }
-            if (tryNextBackupStream(video.currentTime || targetStartTime || 0)) return;
+            if (tryNextBackupStream(getPlaybackTime() || targetStartTime || 0)) return;
             handleFatalStreamError();
           });
           return;
@@ -2136,7 +2286,7 @@
         if (!isKnownMp4 || mediaErrCode === 3) {
           if (retryWithMoviIfPossible(activeSrcUrl, targetStartTime, applyStartTime, tryNextBackupStream, attachToken, candidateInfo)) return;
         }
-        if (tryNextBackupStream(video.currentTime || targetStartTime || 0)) return;
+        if (tryNextBackupStream(getPlaybackTime() || targetStartTime || 0)) return;
         handleFatalStreamError();
       };
       video.load();
@@ -2247,26 +2397,9 @@
     playerRoot.classList.remove('movi-mode');
   }
 
-  /** A native attach that failed on a progressive file (MKV the browser cannot
-   *  demux) gets one movi-player attempt before the backup ladder runs. */
-  function retryWithMoviIfPossible(streamUrl, targetStartTime, applyStartTime, tryNextBackupStream, attachToken, candidateInfo) {
-    if (video === state.moviEl) return false; // movi itself already failed
-    if (candidateInfo && (candidateInfo.isHls || candidateInfo.isDash)) return false;
-    if (/\.m3u8(?:$|[?#&])/i.test(streamUrl) || /\.mpd(?:$|[?#&])/i.test(streamUrl)) return false;
-    if (window.customElements && customElements.get('movi-player')) {
-      attachMoviStream(streamUrl, targetStartTime, applyStartTime, tryNextBackupStream, attachToken, candidateInfo);
-      return true;
-    }
-    ensureMoviPlayer()
-      .then(() => {
-        if (attachToken !== state.attachToken) return;
-        attachMoviStream(streamUrl, targetStartTime, applyStartTime, tryNextBackupStream, attachToken, candidateInfo);
-      })
-      .catch(() => {
-        if (attachToken !== state.attachToken) return;
-        if (!tryNextBackupStream(targetStartTime || 0)) handleFatalStreamError();
-      });
-    return true;
+  /** Progressive playback is disabled; streaming sources use their backup ladder. */
+  function retryWithMoviIfPossible() {
+    return false;
   }
 
   function attachMoviStream(streamUrl, targetStartTime, applyStartTime, tryNextBackupStream, attachToken, candidateInfo) {
@@ -2338,13 +2471,29 @@
         );
         return;
       }
-      const resumeAt = (video && video.currentTime) || targetStartTime || 0;
+      const resumeAt = getPlaybackTime() || targetStartTime || 0;
       if (tryNextBackupStream(resumeAt)) return;
       handleFatalStreamError();
     };
 
-    const onError = () => failOverOnce();
-    const onErrorDisplay = () => failOverOnce();
+    const logMoviFailure = (event, kind) => {
+      if (!PLAYER_DEBUG) return;
+      console.error(`[LOL Embed] movi ${kind}`, {
+        detail: event && event.detail,
+        mediaError: el.error || null,
+        readyState: el.readyState,
+        networkState: el.networkState,
+        container: candidateInfo && candidateInfo.meta && candidateInfo.meta.container
+      });
+    };
+    const onError = (event) => {
+      logMoviFailure(event, 'error');
+      failOverOnce();
+    };
+    const onErrorDisplay = (event) => {
+      logMoviFailure(event, 'error display');
+      failOverOnce();
+    };
     const onLoadedMetadata = () => {
       if (attachToken !== state.attachToken) return;
       settled = true;
@@ -2390,6 +2539,7 @@
       if (typeof el.play === 'function') {
         el.play().catch((error) => {
           if (attachToken !== state.attachToken) return;
+          if (PLAYER_DEBUG) console.error('[LOL Embed] movi play() rejected', error);
           if (error && error.name === 'NotSupportedError') failOverOnce();
         });
       }
@@ -2951,7 +3101,57 @@
       };
     });
 
-    state.audioTracks = [...mergedRows, ...otherFileRows];
+    // Replace only resolver rows that came from this exact converted input.
+    // Same-language dubs from other files remain available as real choices.
+    const remainingOtherFileRows = otherFileRows.filter((row) => {
+      const sameInput = row.rawUrl && currentRawUrl && sameStreamReference(row.rawUrl, currentRawUrl);
+      if (!sameInput) return true;
+      return !mergedRows.some((merged) =>
+        merged.lang !== 'und' && normalizeMoviLang(row.lang) === normalizeMoviLang(merged.lang)
+      );
+    });
+    const allRows = [...mergedRows, ...remainingOtherFileRows];
+
+    // Same-language dubs are legitimate separate renditions, whether they are
+    // in this manifest or in different files. Keep every row and distinguish
+    // every same-language group. Prefer real source titles; number generic or
+    // identical labels. hls.js metadata is used only for this manifest's rows.
+    const languageCounts = {};
+    allRows.forEach((row) => {
+      const lang = normalizeMoviLang(row.lang || '');
+      if (lang !== 'und') languageCounts[lang] = (languageCounts[lang] || 0) + 1;
+    });
+    const languageSeen = {};
+    const usedLabels = new Set();
+    allRows.forEach((row, rowIndex) => {
+      const lang = normalizeMoviLang(row.lang || '');
+      if (lang === 'und' || languageCounts[lang] < 2) {
+        usedLabels.add(String(row.label || '').toLowerCase());
+        return;
+      }
+      languageSeen[lang] = (languageSeen[lang] || 0) + 1;
+      const occurrence = languageSeen[lang];
+      const audioIndex = Number.isInteger(row.audioIndex) ? row.audioIndex : rowIndex;
+      const baseLabel = langChipLabel(lang, audioIndex);
+      const isManifestRow = mergedRows.includes(row);
+      const sourceTrack = isManifestRow ? hlsTracks[row.audioIndex] || {} : null;
+      const sourceLabel = String(
+        (sourceTrack && (sourceTrack.name || sourceTrack.label)) || row.label || ''
+      ).trim();
+      const genericSourceLabel = !sourceLabel ||
+        sourceLabel.toLowerCase() === baseLabel.toLowerCase() ||
+        sourceLabel.toLowerCase() === lang ||
+        /^(?:audio|track)[\s#-]*\d+$/i.test(sourceLabel);
+      let candidate = genericSourceLabel
+        ? `${baseLabel} ${occurrence}`
+        : sourceLabel.toLowerCase().includes(baseLabel.toLowerCase())
+          ? sourceLabel
+          : `${baseLabel} · ${sourceLabel}`;
+      if (usedLabels.has(candidate.toLowerCase())) candidate = `${candidate} ${occurrence}`;
+      row.label = candidate;
+      usedLabels.add(candidate.toLowerCase());
+    });
+    state.audioTracks = allRows;
     const activeBefore = previousRows.find((row) => row && row.id === state.activeAudioId);
     const pendingRow = pending && mergedRows.find((row) =>
       (pending.id && row.id === pending.id) ||
@@ -3036,7 +3236,7 @@
     }
     // 1. If the selected audio track has its own distinct streamUrl (e.g. separate Hindi/English dub file), switch stream preserving current time
     else if (!hlsRenditionSwitch && track.streamUrl && state.stream && !sameStreamUrl) {
-      const resumeAt = (video && video.currentTime) || 0;
+      const resumeAt = getPlaybackTime();
       state.pendingAudioSelection = {
         id: track.id,
         lang: track.lang,
@@ -3294,7 +3494,7 @@
       if (customSubtitleText.textContent) customSubtitleText.textContent = '';
       return;
     }
-    const effectiveTime = (video.currentTime || 0) - state.subtitleDelaySec;
+    const effectiveTime = getPlaybackTime() - state.subtitleDelaySec;
     const cue = state.parsedCues.find((c) => effectiveTime >= c.start && effectiveTime <= c.end);
     const next = cue ? cue.text : '';
     if (customSubtitleText.textContent !== next) customSubtitleText.textContent = next;
@@ -3570,7 +3770,7 @@
         closeAllPopovers();
         return;
       }
-      const resumeAt = (video && video.currentTime) || 0;
+      const resumeAt = getPlaybackTime();
       const wasInErrorOrLoading =
         playerRoot.classList.contains('is-loading') || loadingOverlay.classList.contains('is-error');
       state._triedStreamUrls = new Set();
@@ -3749,7 +3949,7 @@
     switchAutoskip.classList.toggle('on', state.autoSkip);
     const autoskipRow = switchAutoskip.closest('.settings-row-btn');
     if (autoskipRow) autoskipRow.setAttribute('aria-checked', String(state.autoSkip));
-    valShare.textContent = formatTime(video.currentTime || 0);
+    valShare.textContent = formatTime(getPlaybackTime());
   }
 
   /** Embed URL that opens this title at the current position (`?t=`). */
@@ -3757,7 +3957,7 @@
     const url = new URL(window.location.href);
     url.searchParams.delete('start');
     url.searchParams.delete('origin');
-    url.searchParams.set('t', String(Math.max(0, Math.floor(video.currentTime || 0))));
+    url.searchParams.set('t', String(Math.max(0, Math.floor(getPlaybackTime()))));
     url.hash = '';
     return url.toString();
   }
@@ -3786,7 +3986,7 @@
   }
 
   async function shareCurrentTime() {
-    const time = Math.max(0, Math.floor(video.currentTime || 0));
+    const time = Math.max(0, Math.floor(getPlaybackTime()));
     const url = buildShareUrl();
     const copied = await copyText(url);
     showToast(copied ? `Link copied · starts at ${formatTime(time)}` : 'Could not copy the link', 2600);
@@ -3869,7 +4069,7 @@
     });
   });
 
-  /** Switch to a payload quality; remembered across titles (`lol_embed_quality`). */
+  /** Switch to a payload or manifest-discovered quality; remembered across titles (`lol_embed_quality`). */
   function applyQuality(q, idx = state.qualities.indexOf(q), options = {}) {
     state.activeQualityId = q.id;
     if (options.remember !== false) {
@@ -3877,13 +4077,14 @@
       else storageSet(QUALITY_KEY, String(q.height));
     }
     if (state.hlsInstance && state.hlsInstance.levels && state.hlsInstance.levels.length > 0) {
-      // Match the payload quality to the real HLS level by height first.
-      // The old positional `idx - 1` assumption broke whenever the
-      // payload ladder and the manifest ladder disagreed (they usually
-      // do: payload is [Auto, 1080, 720, 480], hls.js levels ascend).
+      // Prefer the exact manifest index captured from hls.js. Height matching
+      // remains as a fallback for resolver-supplied rows and older payloads.
       const heights = state.hlsInstance.levels.map((l) => (l && l.height) || 0);
-      let levelIdx = -1;
-      if (q.id !== 'auto' && q.height) {
+      let levelIdx =
+        Number.isInteger(q.levelIndex) && q.levelIndex >= 0 && q.levelIndex < state.hlsInstance.levels.length
+          ? q.levelIndex
+          : -1;
+      if (levelIdx === -1 && q.id !== 'auto' && q.height) {
         levelIdx = heights.findIndex((h) => h === q.height);
         if (levelIdx === -1) {
           const closest = heights.reduce(
@@ -3897,11 +4098,50 @@
         ? -1
         : (levelIdx !== -1 ? levelIdx : Math.min(Math.max(idx - 1, 0), state.hlsInstance.levels.length - 1));
     } else if (!options.hlsOnly && q.url && state.stream && q.url !== state.stream.streamUrl) {
-      const resumeAt = (video && video.currentTime) || 0;
+      const resumeAt = getPlaybackTime();
       state.stream.streamUrl = q.url;
       prepareAudioRowsForSourceSwitch(q.url);
       attachStreamToVideo(q.url, resumeAt, state.loadToken);
     }
+    updateSettingsSummaryValues();
+  }
+
+  /**
+   * hls.js, not the resolver's initial row, is authoritative for a master
+   * playlist's quality ladder. Replace the visible menu with the levels that
+   * actually exist and retain each exact level index for duplicate-height
+   * ladders. A single media playlist consequently yields Auto + one honest
+   * rung instead of pretending that 1080/720/480 variants exist.
+   */
+  function syncHlsQualityLevels(hls, eventLevels) {
+    if (!hls || state.hlsInstance !== hls) return;
+    const levels = Array.isArray(eventLevels) ? eventLevels : hls.levels;
+    if (!Array.isArray(levels) || levels.length === 0) return;
+
+    const rows = levels
+      .map((level, levelIndex) => {
+        const height = Number(level && level.height) || 0;
+        const bitrate = Number(level && level.bitrate) || 0;
+        const bitrateLabel = bitrate > 0 ? `${Math.round(bitrate / 1000)} kbps` : '';
+        const name = String((level && level.name) || '').trim();
+        if (!height && !bitrateLabel && !name) return null;
+        return {
+          id: `hls-level-${levelIndex}`,
+          label: height > 0 ? `${height}p` : name || bitrateLabel,
+          height,
+          bitrate: bitrateLabel || undefined,
+          levelIndex,
+          url: ''
+        };
+      })
+      .filter(Boolean)
+      .sort((a, b) => b.height - a.height || (parseInt(b.bitrate, 10) || 0) - (parseInt(a.bitrate, 10) || 0));
+    if (rows.length === 0) return;
+
+    state.qualities = [{ id: 'auto', label: 'Auto', height: 0, url: '' }, ...rows];
+    const currentLevel = Number.isInteger(hls.currentLevel) ? hls.currentLevel : -1;
+    const currentRow = rows.find((row) => row.levelIndex === currentLevel);
+    state.activeQualityId = currentRow ? currentRow.id : 'auto';
     updateSettingsSummaryValues();
   }
 
@@ -3989,7 +4229,7 @@
       });
     } else if (panelType === 'speed') {
       settingsDrillTitle.textContent = 'Playback Speed';
-      [0.5, 0.75, 1, 1.25, 1.5, 1.75, 2].forEach((spd) => {
+      [0.5, 0.75, 1, 1.25, 1.5, 1.75, 2, 2.5, 3].forEach((spd) => {
         const item = createDrillOption(spd === 1 ? '1x (Normal)' : `${spd}x`, state.playbackSpeed === spd, () => {
           state.playbackSpeed = spd;
           video.playbackRate = spd;
@@ -4056,7 +4296,8 @@
   }
 
   function updateTimelineAndSkipState() {
-    const current = video.currentTime || 0;
+    const current = getPlaybackTime();
+    const mediaCurrent = video.currentTime || 0;
     const total = getEffectiveDuration();
     const pct = total > 0 ? clamp((current / total) * 100, 0, 100) : 0;
 
@@ -4077,12 +4318,13 @@
 
     if (total > 0 && video.buffered && video.buffered.length > 0) {
       // Use the buffered range that contains the playhead, not just the last one.
-      let bufEnd = 0;
+      let mediaBufEnd = 0;
       for (let i = 0; i < video.buffered.length; i++) {
-        if (video.buffered.start(i) <= current + 0.5 && video.buffered.end(i) >= bufEnd) {
-          bufEnd = video.buffered.end(i);
+        if (video.buffered.start(i) <= mediaCurrent + 0.5 && video.buffered.end(i) >= mediaBufEnd) {
+          mediaBufEnd = video.buffered.end(i);
         }
       }
+      const bufEnd = mediaBufEnd + getPlaybackOffset();
       timelineBuffered.style.width = `${clamp((bufEnd / total) * 100, 0, 100)}%`;
     }
 
@@ -4125,6 +4367,94 @@
     saveProgress();
   }
 
+  function generatedLocalSeekTime(target) {
+    const relative = target - getPlaybackOffset();
+    if (relative < 0) return null;
+    const ranges = video.seekable;
+    if (ranges && ranges.length > 0) {
+      for (let index = 0; index < ranges.length; index += 1) {
+        const start = ranges.start(index);
+        const end = ranges.end(index);
+        if (relative >= start - 0.35 && relative <= end + 0.35) {
+          return clamp(relative, start, end);
+        }
+      }
+    }
+    if (generatedHlsHasCompleted() && Number.isFinite(video.duration) && relative <= video.duration + 0.35) {
+      return clamp(relative, 0, video.duration);
+    }
+    return null;
+  }
+
+  // Seek in the original source timeline. Existing HLS ranges are used
+  // directly; an ungenerated range gets its own short-start conversion window
+  // instead of being clamped to the current live edge.
+  async function seekTo(seconds) {
+    const total = getEffectiveDuration();
+    const numeric = Number(seconds);
+    const target = clamp(Number.isFinite(numeric) ? numeric : 0, 0, total > 0 ? total : Infinity);
+    const seekToken = ++state.generatedSeekToken;
+
+    if (!isGeneratedHlsPlayback() || !state.generatedConversionUrl) {
+      state.pendingSeekTime = null;
+      video.currentTime = target;
+      updateTimelineAndSkipState();
+      return true;
+    }
+
+    const localTime = generatedLocalSeekTime(target);
+    if (localTime !== null) {
+      state.pendingSeekTime = null;
+      video.currentTime = localTime;
+      updateTimelineAndSkipState();
+      return true;
+    }
+
+    const conversionUrl = state.generatedConversionUrl;
+    const requestAttachToken = state.attachToken;
+    const requestLoadToken = state.loadToken;
+    const autoplay = !video.paused;
+    const isStale = () => seekToken !== state.generatedSeekToken ||
+      requestAttachToken !== state.attachToken || requestLoadToken !== state.loadToken;
+    state.pendingSeekTime = target;
+    updateTimelineAndSkipState();
+    showBuffering();
+
+    try {
+      const infoUrl = new URL(conversionUrl, window.location.href);
+      infoUrl.searchParams.set('info', '1');
+      infoUrl.searchParams.set('seek', String(Math.floor(target / 2) * 2));
+      const response = await fetch(infoUrl.href, { cache: 'no-store' });
+      const info = await response.json();
+      if (isStale()) return false;
+      if (!response.ok || !info || !info.masterUrl) {
+        throw new Error((info && (info.detail || info.error)) || `Seek failed (HTTP ${response.status})`);
+      }
+      const sourceOffset = Number(info.sourceOffset);
+      if (!Number.isFinite(sourceOffset) || sourceOffset < 0) throw new Error('Seek returned an invalid source offset');
+      const sourceDuration = Number(info.sourceDuration);
+      if (Number.isFinite(sourceDuration) && sourceDuration > 0) {
+        state.generatedSourceDuration = sourceDuration;
+      }
+      state.generatedSourceOffset = sourceOffset;
+      const masterUrl = new URL(info.masterUrl, infoUrl.href).href;
+      await attachStreamToVideo(masterUrl, 0, requestLoadToken, {
+        generatedStartTime: Math.max(0, target - sourceOffset),
+        preservePendingSeek: true,
+        autoplay
+      });
+      return true;
+    } catch (error) {
+      if (isStale()) return false;
+      state.pendingSeekTime = null;
+      hideBuffering();
+      updateTimelineAndSkipState();
+      showToast('That part could not be loaded — try seeking again', 2600);
+      if (PLAYER_DEBUG) console.error('[LOL Embed] HLS seek failed', error);
+      return false;
+    }
+  }
+
   function skipActiveSegment(options = {}) {
     const seg = state.activeSkipSegment;
     if (!seg) return false;
@@ -4136,7 +4466,7 @@
     const end = segmentEndSeconds(seg);
     // Never seek past the file; an open-ended credits segment lands just before the end.
     const targetSec = total > 0 ? Math.min(end, Math.max(0, total - 1)) : Number.isFinite(end) ? end : seg.start;
-    video.currentTime = targetSec;
+    seekTo(targetSec);
     clearActiveSkip();
     updateTimelineAndSkipState();
     showToast(options.auto ? `Auto-skipped ${seg.type} · ${formatTime(targetSec)}` : `Skipped to ${formatTime(targetSec)}`, 1800);
@@ -4175,11 +4505,12 @@
     timelineProgress.style.width = `${ratio * 100}%`;
     timelineThumb.style.left = `${ratio * 100}%`;
     timeCurrentEl.textContent = formatTime(seconds);
-    // Live-seek while dragging, throttled so the decoder is not thrashed.
-    if (!state.scrubSeekTimer) {
+    // Native streams can live-seek while dragging. Generated HLS previews the
+    // timestamp and seeks on release so one drag cannot spawn many encodes.
+    if (!isGeneratedHlsPlayback() && !state.scrubSeekTimer) {
       state.scrubSeekTimer = setTimeout(() => {
         state.scrubSeekTimer = null;
-        if (state.isDraggingTimeline) video.currentTime = state.scrubSeconds;
+        if (state.isDraggingTimeline) seekTo(state.scrubSeconds);
       }, 160);
     }
   }
@@ -4193,8 +4524,7 @@
       clearTimeout(state.scrubSeekTimer);
       state.scrubSeekTimer = null;
     }
-    video.currentTime = state.scrubSeconds;
-    updateTimelineAndSkipState();
+    seekTo(state.scrubSeconds);
   }
 
   timelineSlider.addEventListener('pointerdown', (e) => {
@@ -4227,8 +4557,8 @@
   timelineSlider.addEventListener('keydown', (e) => {
     if (e.key === 'ArrowLeft') { e.preventDefault(); seekBy(-5); }
     else if (e.key === 'ArrowRight') { e.preventDefault(); seekBy(5); }
-    else if (e.key === 'Home') { e.preventDefault(); video.currentTime = 0; }
-    else if (e.key === 'End' && hasRealDuration()) { e.preventDefault(); video.currentTime = Math.max(0, video.duration - 1); }
+    else if (e.key === 'Home') { e.preventDefault(); seekTo(0); }
+    else if (e.key === 'End' && hasRealDuration()) { e.preventDefault(); seekTo(Math.max(0, getEffectiveDuration() - 1)); }
   });
 
   // --- Playback Controls ---
@@ -4247,9 +4577,8 @@
   function seekBy(deltaSec) {
     const total = getEffectiveDuration();
     const max = total > 0 ? total : Infinity;
-    const target = clamp((video.currentTime || 0) + deltaSec, 0, max);
-    video.currentTime = target;
-    updateTimelineAndSkipState();
+    const target = clamp(getPlaybackTime() + deltaSec, 0, max);
+    seekTo(target);
 
     const feedbackEl = deltaSec < 0 ? seekFeedbackLeft : seekFeedbackRight;
     feedbackEl.textContent = `${deltaSec < 0 ? '-' : '+'}${Math.abs(deltaSec)}s`;
@@ -4647,7 +4976,7 @@
     if (hasRealDuration()) {
       storageSet(
         progressKey(state.type, state.tmdbId, state.season, state.episode),
-        JSON.stringify({ t: Math.floor(video.duration), d: Math.floor(video.duration) })
+        JSON.stringify({ t: Math.floor(getEffectiveDuration()), d: Math.floor(getEffectiveDuration()) })
       );
     } else {
       storageRemove(progressKey(state.type, state.tmdbId, state.season, state.episode));
@@ -5053,8 +5382,7 @@
       goToNextEpisode();
     } else if (/^[0-9]$/.test(key) && hasRealDuration()) {
       e.preventDefault();
-      video.currentTime = (parseInt(key, 10) / 10) * video.duration;
-      updateTimelineAndSkipState();
+      seekTo((parseInt(key, 10) / 10) * getEffectiveDuration());
     } else if (key === 'Escape') {
       closeAllPopovers();
       closeAllModals();
@@ -5104,9 +5432,7 @@
       case 'seek': {
         const t = num(msg.time !== undefined ? msg.time : msg.seconds);
         if (t === null) return { ok: false, error: 'seek needs a numeric `time` (seconds)' };
-        const total = getEffectiveDuration();
-        video.currentTime = clamp(t, 0, total > 0 ? total : Infinity);
-        updateTimelineAndSkipState();
+        seekTo(t);
         return { ok: true };
       }
       case 'seekBy': {
@@ -5240,7 +5566,7 @@
           type: state.type,
           season: state.season,
           episode: state.episode,
-          currentTime: video.currentTime || 0,
+          currentTime: getPlaybackTime(),
           duration: getEffectiveDuration()
         }]
       }, event.source || null, replyOrigin);

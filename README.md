@@ -171,9 +171,9 @@ The value must be an absolute `http(s)` URL (a path prefix is allowed and traili
 ## Backend surface
 
 - `GET /` — JSON service information; no HTML landing page (browsers get the rickroll).
-- `GET /embed` — the embeddable player page (Worker only; the Node API runtime stays JSON-only).
-- `GET /docs` (alias `/documentation`) — public documentation page (Worker only; see *Documentation page*).
-- `GET /reze` — owner dashboard shell (Worker only; every number on it comes from `/api/admin/stats`, see *Owner dashboard*).
+- `GET /embed` — the embeddable player page (Worker and full Node entrypoint; the JSON-only `src/server.js` does not serve it).
+- `GET /docs` (alias `/documentation`) — public documentation page (Worker and full Node entrypoint; see *Documentation page*).
+- `GET /reze` — owner dashboard shell (Worker and full Node entrypoint; every number on it comes from `/api/admin/stats`, see *Owner dashboard*).
 - `GET /meta-image.gif` — the LOL Embed social/meta image.
 - `GET /api/health` — service, runtime, and upstream health summary.
 - `GET /api/servers` — public, cacheable list of the player-visible servers (`id`, `name`, `badge`, `priority`); the ids are what `?server=` accepts. Never carries upstream/provider names.
@@ -244,13 +244,15 @@ tries:
 
 | Priority | Server id  | Player name  | Badge                  | Cascade                                |
 |----------|------------|--------------|------------------------|----------------------------------------|
-| 1        | `goldmine` | Goldmine MKV | Multi-Audio Dubs • MKV | Owner-hosted TMDB-Embed-API instance    |
+| 1        | `goldmine` | Goldmine | HLS • DASH • Multi-Audio | Owner-hosted TMDB-Embed-API instance    |
 
-The lineup is MKV-first and single-server. The legacy HLS-only servers
-(`andromeda`, `centaurus`) and the Node ffmpeg remux tier were removed with the
-move to Goldmine; the catalog machinery (priority order, listing, fallbacks,
-live admin edits) stays generic, so adding a second server later is a
-one-entry change.
+The lineup is single-server and the browser accepts only HLS or DASH. Native
+multi-audio HLS/DASH is ideal; multi-audio progressive sources become converter
+input ahead of single-audio streams. On a Node host with ffmpeg they become HLS
+with genuine quality/audio renditions. Where conversion is unavailable, those
+candidates are skipped. A ready source settles quickly instead of waiting for
+slow mirrors. The catalog machinery stays generic, so adding a second server
+later is a one-entry change.
 
 Every `/api/resolve` payload carries the `servers` array in this exact order with
 the answering server flagged `active`, and it is rebuilt from the live catalog on
@@ -282,18 +284,19 @@ then:
   scanning, so CDN host names can never masquerade as language hints.
 - **Deduplicates mirrors** — same-height alternates of the best pick become
   `backupUrls` instead of fake quality variants, while every row of the payload
-  becomes the player's Source 1…N list.
+  becomes the player's Source 1…N list. Native HLS quality/audio menus are then
+  populated from the actual manifest by hls.js; no server-side probe is added
+  to the normal startup path.
 - **Wraps header-gated files** — providers that demand a `Referer` /
   `User-Agent` (headers browsers refuse to send) route through the signed
   `/api/proxy?url=…` with server-side headers, CORS and Range support.
   `GOLDMINE_PROXY_STREAMS=false` disables the wrapping; URLs the upstream
   instance already proxied itself always pass through untouched.
-- **Picks the engine per source** — MKV / WebM / AVI / TS / MOV (and unknown
-  progressive files) play through the bundled movi-player (FFmpeg WASM); MP4 is
-  served to the native `<video>` element (hardware decode + native Range/seek)
-  and only escalates to movi when the browser rejects the file (HEVC/10-bit).
-  Each source carries its own `engine` in `sourceMeta`, so an MP4 backup of an
-  MKV primary is no longer dragged through the WASM demuxer.
+- **Uses streaming playback only** — HLS goes through hls.js (or native HLS on
+  supported Apple browsers), and DASH goes through dash.js. Progressive files
+  are never attached to a browser media element: a Node host converts them to
+  HLS, while a host without conversion skips them and tries another streaming
+  source.
 - **Pins one source manually** — `?source=<provider-id>` filters the aggregate
   to a single provider (a pinned request never falls through to the others).
 
@@ -346,16 +349,75 @@ MKV in the browser** possible:
   duplicates.
 - **HLS stays native:** aggregated HLS sources still play through hls.js with
   rendition switching and manifest-discovered audio rows.
-- **Quality:** the quality menu lists real heights (1080p/720p/480p) from the
-  deduplicated ladder; a progressive file keeps exactly one row at its native
-  resolution.
-- **Subtitles:** embedded MKV tracks (SRT/ASS/VTT/PGS/DVB) are selectable
-  through the engine; the external `/api/subtitles` tracks layer on top as
-  usual.
+- **Quality:** HLS menus are rebuilt from the actual levels hls.js discovers,
+  with exact level indexes and an Auto/ABR row. Progressive files retain the
+  real resolver-supplied alternatives rather than stale HLS choices.
+- **Subtitles:** external `/api/subtitles` tracks remain selectable. Generated
+  HLS carries the source's real video/audio renditions; embedded progressive
+  subtitle tracks are not advertised as converted renditions.
 
 Codec/device combinations (HEVC/AV1 profiles, HDR/Dolby Vision, AC-3/E-AC-3)
-may still not play in every browser — the WASM engine software-decodes a lot,
-but nothing is transcoded server-side to conceal the limits.
+may still not play in every browser. The default Worker path does not conceal
+those limits with a server transcode; a suitable Node host can opt in below.
+
+### Node HLS conversion for progressive fallbacks
+
+Native multi-audio HLS/DASH never needs this converter. The Codespace enables
+conversion for progressive fallbacks. Compatible H.264/AAC video/audio is
+remuxed, and the source-quality remux runs independently from the lower-rung
+encode so it can expose a complete VOD without waiting for that encode.
+Incompatible codecs and the additional quality rung still require real encoding.
+
+Cloudflare Workers cannot spawn ffmpeg. `scripts/dev-worker.mjs` therefore
+exposes `/api/mkv-hls` **only when `MKV_HLS_ENABLED=true` is set on that Node
+process**. Do not set this in `wrangler.toml` and expect Cloudflare to convert
+media: an ordinary Worker page advertises `mkvHlsEnabled=false` and skips
+progressive candidates rather than playing them raw.
+
+On an enabled Node host, an eligible progressive source goes **directly** to
+the converter. ffmpeg reads the original same-origin `/api/proxy` source and
+the browser receives only HLS. ffprobe discovers the actual streams before
+ffmpeg writes H.264/AAC HLS with:
+
+- up to two genuine video variants no higher than the source (1080p/720p for
+  a 1080p source, 720p/480p for a 720p source, and no cosmetic upscaling);
+- the source's real audio streams as selectable HLS renditions (up to eight),
+  shared by the video rungs instead of encoded again for each rung;
+- independent remux/encode playlists, with 2-second segments on encoded rungs
+  and the source's real keyframe boundaries on remuxed video.
+
+Playback never waits for a complete remux or a fixed buffer target. The first
+usable segments start playback while the source-quality remux continues toward
+a complete VOD in background. A browser-safe info handshake supplies ffprobe's
+real full duration for the timeline and intro/outro markers while media grows.
+The lower encode does not block startup. Scrubbing outside the current
+seekable range requests an on-demand HLS window at that source timestamp. Its
+first usable segments start playback while conversion continues from there;
+the player maps the window's relative media time back to absolute source time
+for the timeline, subtitles, skip markers and saved progress. Temporary output
+is deleted when a session expires or the host stops.
+`MKV_HLS_MAX_SESSIONS`
+(default `2`) bounds concurrent sessions, and renewed signed URLs for the same
+canonical source share one conversion. `MKV_HLS_DIR` overrides the temporary
+output directory. `npm test` includes a fully local, real ffmpeg integration
+test covering variant ladders, dual audio, codecs, segments and source-host
+validation.
+
+### 3× generation/delivery benchmark
+
+`npm run benchmark:hls` creates a local 60-second dual-audio source, converts it
+through the real handler, downloads the actual HLS segments against a 3×
+playback clock, and reports startup time, full-timeline status, late segments
+and buffer measurements. It uses no public provider or downloaded test video.
+Set `BENCHMARK_SECONDS` or `BENCHMARK_RATE` to change the workload.
+
+## Live provider test in GitHub Codespaces
+
+For a real upstream/MKV/HLS test without Render, Cloudflare media egress, or mocked fixtures, open this branch in **GitHub Codespaces**. The included devcontainer installs TMDB-Embed-API, starts it on private loopback, and serves the real Worker player + API on forwarded port `3000`. The port remains private to your GitHub session.
+
+Use **Code → Codespaces → Create codespace on this branch**, wait for setup, then open the forwarded URL at `/embed?type=movie&tmdb=693134`. Provider extraction and media requests originate from the Codespace. This is a temporary development test, not a production host or evidence that live playback has passed.
+
+See [`.devcontainer/README.md`](.devcontainer/README.md) for TV examples, provider settings, logs, and the browser verification checklist.
 
 ## Player UI harness (optional local/dev tooling)
 
@@ -363,7 +425,7 @@ but nothing is transcoded server-side to conceal the limits.
 
 ```bash
 npm run dev:player
-# http://localhost:8790/embed?type=tv&tmdb=94605&s=1&e=1            Goldmine MKV via the movi engine, dub-language chips (English/Hindi/Tamil), skip segments
+# http://localhost:8790/embed?type=tv&tmdb=94605&s=1&e=1            Goldmine HLS/DASH playback, dub-language chips, skip segments
 # http://localhost:8790/embed?type=tv&tmdb=94605&s=1&e=1&lang=ta    Tamil preselected
 # http://localhost:8790/embed?type=tv&tmdb=94605&s=1&e=1&t=1m30s&autoskip=1 start offset + auto-skip
 # http://localhost:8790/embed?type=movie&tmdb=0                     every source empty -> error screen with the server list inline
@@ -374,28 +436,93 @@ npm run dev:player
 
 `scripts/dev-worker.mjs` runs the real Worker code (`cloudflare-worker/worker.js`) against the live upstreams instead.
 
-## Run the Node backend (optional local/dev tooling)
+## Run the full player on Node
 
-The Node server in this repository is **optional local/dev tooling only**. The
-deployed product is the Cloudflare Worker, and every deployed server
-(Goldmine) resolves inside the Worker through the same shared services —
-nothing in production requires, or is delegated to, a Node deployment.
+`src/server.js` remains the JSON-only API entrypoint (`npm start`). The full
+player, API, stream proxy and ffmpeg converter share a second entrypoint,
+`scripts/player-server.mjs`; the development harness imports the same file:
 
 ```bash
+cp .env.example .env  # once; configure deployment-specific values
 npm ci
 npm test
-npm start
+npm run start:player
+# http://localhost:3000/embed
 ```
 
-The server listens on `0.0.0.0:3000` by default and serves the JSON API only — the player page ships with the Cloudflare Worker. Copy `.env.example` to `.env` and configure deployment-specific values (`GOLDMINE_API_BASE`, secrets, optional subtitle keys).
+The server listens on `0.0.0.0` and uses `PLAYER_PORT` (3000 in `.env.example`).
+Set `GOLDMINE_API_BASE`, strong secrets and optional subtitle keys in `.env`.
+For progressive MKV/MP4 conversion, keep both `MKV_HLS_ENABLED=true` and
+`MKV_HLS_NODE_HOST=true`; Cloudflare Workers cannot spawn ffmpeg.
 
-With Docker Compose:
+## Temporary HTTPS without a domain (Cloudflare Quick Tunnel)
+
+For a short test on a Node 22+ host, Cloudflare Quick Tunnel supplies a random
+`https://….trycloudflare.com` origin without a domain, Cloudflare account, or
+open inbound firewall port:
 
 ```bash
-docker compose up -d --build
+bash deploy/quick-tunnel.sh
 ```
 
-## Deploy the Cloudflare Worker
+The launcher preserves existing credentials, creates missing secrets, installs
+the standalone `cloudflared` binary and the real TMDB-Embed-API in the
+temporary directory, and reproduces the Codespace architecture: a private
+provider API on `127.0.0.1:8787` with `4khdhub`, `castletv`, `hdghartv` and
+`dahmermovies`, plus the full player/converter on port 3000. Only the player is
+exposed through the tunnel. It checks both local services and public HTTPS,
+verifies that the converter route is mounted, and requires the test movie to
+select a source with real multi-audio evidence before printing the player URL
+and log paths. The random URL lasts only while these processes run; use the
+VPS/Caddy deployment below for a stable domain.
+
+## One-command VPS deployment (player + API + converter)
+
+On a Linux VPS you already operate, point a domain's A/AAAA record at the VPS
+and open inbound TCP ports **80** and **443**. Then run this single command as
+a user with `sudo` access (replace the example domain):
+
+```bash
+git clone https://github.com/themithology/Proxy.git && cd Proxy && sudo bash deploy/vps.sh embed.example.com
+```
+
+If the repository is already checked out, the command is just
+`sudo bash deploy/vps.sh embed.example.com`.
+
+The script:
+
+- installs Docker Engine and Compose v2 through Docker's official installer if
+  they are absent (otherwise it leaves the existing installation alone);
+- creates `.env` from `.env.example` only when missing, generates strong
+  `ADMIN_SECRET` and `PROXY_SECRET` values only for empty/sample placeholders,
+  and **never replaces existing TMDB, FebBox or Goldmine credentials**;
+- starts **one** converter-capable Node process, plus Caddy for automatic HTTPS;
+- keeps generated HLS data in the persistent `hls-data` Docker volume and
+  Caddy certificates in their own volumes; and
+- waits for `/api/health` through both the container and public HTTPS URL.
+
+The browser still receives HLS/DASH only. The container runs the real Worker
+player with the Node MKV-to-HLS handler, not the older API-only image. The HLS
+volume survives restarts and upgrades, but it is temporary conversion storage,
+not a backup or a permanent media library.
+
+Useful commands from the repository root:
+
+```bash
+docker compose ps
+docker compose logs -f lol-embed caddy
+sudo bash deploy/vps.sh embed.example.com  # rebuild/upgrade, preserving .env
+docker compose down                        # stop; named volumes remain
+```
+
+`ecosystem.config.js` also runs the same full entrypoint for PM2 users. It is
+intentionally limited to one forked process: HLS sessions and ffmpeg children
+are process-local, so `instances: max` or a non-sticky multi-process cluster
+would break playback. This deployment does **not** claim 200-CCU capacity;
+public authentication, rate limiting and multi-host session coordination are
+separate scaling work.
+
+## Deploy the Cloudflare Worker (native HLS/DASH only)
 
 `cloudflare-worker/worker.js` runs the player page, the backend API, the edge proxy, the documentation page and the owner dashboard. The `public/` directory contains the `/embed` player page with its CSS/JS/vendor assets, `docs.html`, `reze.html` and the social/meta GIF; nothing in it is served unless the Worker routes to it (`run_worker_first`), so `/docs.html`, `/reze.html` or `/index.html` stay 404.
 

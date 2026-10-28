@@ -1234,7 +1234,7 @@ async function resolveGoldmineUpstream(metadata, env = null, options = {}) {
       preferredAudio,
       metadataPromise,
       directOnly: circuitOpen,
-      directFallback: circuitOpen ? 'always' : 'parallel',
+      directFallback: circuitOpen ? 'always' : undefined,
       directProviderOptions: {
         febboxCookies: (env && (env.FEBBOX_COOKIES || env.FEBBOX_COOKIE)) || '',
         febboxRegion: (env && env.FEBBOX_REGION) || '',
@@ -1305,7 +1305,7 @@ async function resolveStreamWaterfall(metadata, requestedServer, preferredAudio,
   // a 15-minute-old payload turns "Retry" into "fail again instantly", which is
   // exactly what a dead source looks like from the outside.
   const fresh = !!(options && options.fresh);
-  const cacheKey = `cf:resolve:v7:${metadata.type}:${metadata.tmdbId}:s${metadata.season}:e${metadata.episode}:${validServer}${
+  const cacheKey = `cf:resolve:v10:${metadata.type}:${metadata.tmdbId}:s${metadata.season}:e${metadata.episode}:${validServer}${
     onlySource ? `:${onlySource}` : ''
   }`;
   const cached = fresh ? null : await edgeCacheGet(cacheKey);
@@ -2329,7 +2329,12 @@ export default {
       if (!assetRes.ok) {
         return jsonResponse({ ok: false, error: 'Player page is unavailable' }, assetRes.status);
       }
-      let html = injectPageConfig(await assetRes.text(), { apiBaseUrl: normalizeApiBaseUrl(env.API_BASE_URL) });
+      let html = injectPageConfig(await assetRes.text(), {
+        apiBaseUrl: normalizeApiBaseUrl(env.API_BASE_URL),
+        // ffmpeg exists only on an explicitly configured Node host. A real
+        // Cloudflare Worker leaves this false and keeps the normal fallback.
+        mkvHlsEnabled: env.MKV_HLS_ENABLED === 'true' && env.MKV_HLS_NODE_HOST === 'true'
+      });
       // ADS_ENABLED is the global switch; ad-free domains are scoped exceptions.
       if (!adsEnabled(env) || await isCallerAdFree(request, url, env)) html = stripAdBlock(html);
       const headers = new Headers({
